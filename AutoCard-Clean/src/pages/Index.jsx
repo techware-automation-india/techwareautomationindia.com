@@ -9,6 +9,7 @@ import IndustriesSection from "../components/IndustriesSection.jsx";
 import ContactSection from "../components/ContactSection.jsx";
 import Footer from "../components/Footer.jsx";
 
+
 const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -17,6 +18,7 @@ const Index = () => {
       <AboutSection />
       <ServicesSection />
       <MachinesSection />
+      
       <LiveDemoSection />
       <BenefitsSection />
       <IndustriesSection />

@@ -25,24 +25,64 @@ const contactSchema = z.object({
   name: z
     .string()
     .trim()
-    .min(3)
-    .max(50)
-    .regex(/^[A-Za-z\s]+$/),
+    .min(3, {
+      message: "Name must be at least 3 characters.",
+    })
+    .max(50, {
+      message: "Name must not exceed 50 characters.",
+    })
+    .regex(/^[A-Za-z]+(?:\s[A-Za-z]+)*$/, {
+      message: "Please enter a valid name using letters only.",
+    }),
 
   email: z
     .string()
     .trim()
-    .email(),
+    .email("Please enter a valid email address.")
+    .refine((email) => {
+      const domain = email.split("@")[1]?.toLowerCase();
+
+      if (!domain) return false;
+
+      const allowedExtensions = [
+        ".com",
+        ".in",
+        ".co.in",
+        ".co.uk",
+        ".io",
+        ".ai",
+        ".tech",
+        ".dev",
+        ".app",
+        ".store",
+      ];
+
+      return allowedExtensions.some((ext) => domain.endsWith(ext));
+    }, {
+      message:
+        "Please use a valid email ",
+    }),
 
   phone: z
     .string()
-    .regex(/^[6-9]\d{9}$/),
+    .trim()
+    .regex(/^(?:\+91[\s-]?)?[6-9]\d{9}$/, {
+      message:
+        "Please enter a valid  mobile number.",
+    }),
 
   company: z
     .string()
     .trim()
-    .min(2)
-    .max(100),
+    .min(3, {
+      message: "Please enter a valid company name.",
+    })
+    .max(100, {
+      message: "Please enter a valid company name.",
+    })
+    .regex(/^[A-Za-z0-9][A-Za-z0-9&.,'()\-\/\s]*$/, {
+      message: "Please enter a valid company name.",
+    }),
 
   message: z
     .string()
@@ -61,9 +101,12 @@ router.post(
 
 
       if (!parsed.success) {
+        const errors = parsed.error.flatten().fieldErrors;
+
         return res.status(400).json({
           success: false,
-          message: "Invalid form data",
+          message: Object.values(errors).flat()[0],
+          errors,
         });
       }
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ChevronDown, ShieldCheck, Briefcase, User } from "lucide-react";
-import logo from "../assets/techwareLogo.jpg";
+import logo from "../assets/techwareLogo.png";
 const navLinks = [
   { label: "Home", href: "#home" },
   { label: "Services", href: "#services" },
@@ -47,16 +47,36 @@ const Navbar = ({ staticPosition = false }) => {
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className={`${staticPosition ? "sticky" : "fixed"} top-0 left-0 right-0 z-50 transition-all duration-300 ${isSolid ? "bg-background/95 backdrop-blur-md border-b border-border shadow-sm" : ""
-        }`}
+      className={`${staticPosition ? "sticky" : "fixed"} top-0 left-0 right-0 z-50 bg-white shadow-md border-b border-gray-200`}
     >
-      <div className="section-container flex items-center justify-between h-16 md:h-20">
-        <a href={`${sectionPath}#home`} className="flex items-center">
+      <div className="w-full max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 md:h-20">
+
+        <a
+          href={`${sectionPath}#home`}
+          className="flex items-center gap-2 sm:gap-3 md:gap-4 group ml-0 sm:-ml-2 md:-ml-8 lg:-ml-16"
+        >
           <img
             src={logo}
             alt="Techware Automation India"
-            className="h-18 md:h-20 w-auto"
+            className="h-11 sm:h-12 md:h-14 lg:h-16 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
           />
+          <div className="hidden sm:flex flex-col justify-center">
+            <h1 className="text-[24px] md:text-[28px] lg:text-[34px] font-extrabold leading-none tracking-tight">
+              <span style={{ color: "#2A3791" }}>TECH</span>
+              <span style={{ color: "#2A3791" }}>WARE</span>
+            </h1>
+
+            <p
+              className="uppercase text-[11px] md:text-xs font-semibold mt-1"
+              style={{
+                letterSpacing: "0.28em",
+                lineHeight: 1.2,
+              }}
+            >
+              <span style={{ color: "#2A3791" }}>AUTOMATION </span>
+              <span style={{ color: "#339DE0" }}>INDIA</span>
+            </p>
+          </div>
         </a>
 
         <div className="hidden md:flex items-center gap-8">
@@ -64,8 +84,7 @@ const Navbar = ({ staticPosition = false }) => {
             <a
               key={link.href}
               href={`${sectionPath}${link.href}`}
-              className={`text-sm font-medium transition-colors ${isSolid ? "text-muted-foreground hover:text-foreground" : "text-white/70 hover:text-white"
-                }`}
+              className="relative text-sm font-semibold text-slate-700 hover:text-[#2A3791] transition-all duration-300 after:absolute after:left-0 after:-bottom-1 after:h-[2px] after:w-0 after:bg-[#339DE0] after:transition-all after:duration-300 hover:after:w-full"
             >
               {link.label}
             </a>
@@ -112,7 +131,7 @@ const Navbar = ({ staticPosition = false }) => {
         </div>
 
         <button
-          className={`md:hidden ${isSolid ? "text-foreground" : "text-white"}`}
+          className="md:hidden text-gray-700"
           onClick={() => setMobileOpen(!mobileOpen)}
         >
           {mobileOpen ? <X size={24} /> : <Menu size={24} />}
@@ -125,7 +144,7 @@ const Navbar = ({ staticPosition = false }) => {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-background/95 backdrop-blur-md border-b border-border"
+            className="md:hidden bg-white border-b border-gray-200 shadow-md"
           >
             <div className="section-container py-4 flex flex-col gap-4">
               {navLinks.map((link) => (

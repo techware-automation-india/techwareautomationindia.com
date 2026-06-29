@@ -36,11 +36,13 @@ app.use(
 
 
 const contactLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
     success: false,
-    message: "Too many requests. Try again later.",
+    message: "Too many requests. Please try again after a minute.",
   },
 });
 
@@ -70,7 +72,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
+  console.log(`API server running on http://localhost:${PORT}/api/health`);
 });
 
 // Graceful shutdown.

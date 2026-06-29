@@ -1,5 +1,5 @@
 
-import logo from "../assets/techwareLogo.jpg";
+import logo from "../assets/techwareLogo.png";
 import {
   FaLinkedinIn,
   FaWhatsapp,
@@ -84,7 +84,7 @@ const Footer = () => {
                 "Home",
                 "About",
                 "Services",
-                "Machines",
+                "Products",
               ].map((link) => (
                 <a
                   key={link}

@@ -10,6 +10,12 @@ import mechineCardLaserMechine from "../assets/cardLaserMarker.jpg"
 import mechineModulePushpullTester from "../assets/modulePushpullTester.jpg"
 import mechineManualAtr from "../assets/manualAtr.jpg"
 import mechineManualImada from "../assets/manualmada.jpg"
+import laserFumeExtractor from "../assets/Laser_Fume_Extractor.jpg"
+import labelApplicatorMachine from "../assets/Label_Applicator_Machine.jpg"
+import dualHeadCardPunchingMachine  from "../assets/Dual_Head_Card_Punching_Machine.jpg"
+import acs from "../assets/acs.jpg"
+import pc_based_atr from "../assets/PC_based_ATR.jpg"
+
 const machines = [
   {
     name: "RFID Brushing Machine",
@@ -29,17 +35,19 @@ const machines = [
     ],
   },
   {
-    name: "Torsion Tester",
-    image: mechineTorsionTester,
-    desc: "The Torsion Tester is a high-precision quality testing system designed to evaluate the torsional strength, flexibility, and durability of smart cards, RFID cards, banking cards, SIM cards, and other plastic card products. The machine applies controlled twisting forces to simulate real-world mechanical stress, ensuring cards maintain structural integrity and functionality throughout their lifecycle. It is an essential solution for manufacturers seeking to meet international quality standards and deliver reliable, long-lasting card products.",
-    features: [
-      "Precision Torsion Testing",
-      "Adjustable Twist Angle",
-      "Smart Card Durability Testing",
-      "RFID Card Quality Verification",
-
-    ],
-  },
+  name: "PC-Based Online ACS Tester",
+  image: acs,
+  desc: "Advanced PC-Based Online ACS Tester designed for automatic smart card validation using ACS readers. It provides real-time card testing, pass/fail detection, data logging, and seamless PLC integration for efficient quality control in smart card production.",
+  features: [
+    "ACS Reader Integration",
+    "Real-Time Card Testing",
+    "Automatic Pass/Fail",
+    "PC-Based Software",
+    "PLC Integration",
+    "Data Logging & Reports"
+  ]
+},
+  
 
 
   {
@@ -115,6 +123,96 @@ const machines = [
       "Industrial Grade Construction",
     ],
   },
+ {
+  name: "Label Applicator Machine",
+  image: labelApplicatorMachine,
+  desc: "Automatic Label Applicator Machine designed for precise, high-speed labeling of smart cards and industrial products. It ensures accurate label placement, reduces manual effort, and improves production efficiency.",
+  features: [
+    "High-Speed Labeling",
+    "Precision Placement",
+    "PLC Control",
+    "Touch Screen HMI",
+    "Easy Operation",
+    "Low Maintenance"
+  ]
+},
+  {
+  name: "Dual Head Card Punching Machine",
+  image: dualHeadCardPunchingMachine,
+  desc: "High-speed automatic card punching machine equipped with dual punching heads for simultaneous processing of PVC and smart cards. It delivers precise punching, improved productivity, and consistent quality for high-volume card manufacturing.",
+  features: [
+    "Dual Punching Heads",
+    "High-Speed Operation",
+    "Precision Punching",
+    "PLC & HMI Control",
+    "Servo Driven System",
+    "Heavy-Duty Construction"
+  ]
+},
+{
+    name: "Torsion Tester",
+    image: mechineTorsionTester,
+    desc: "The Torsion Tester is a high-precision quality testing system designed to evaluate the torsional strength, flexibility, and durability of smart cards, RFID cards, banking cards, SIM cards, and other plastic card products. The machine applies controlled twisting forces to simulate real-world mechanical stress, ensuring cards maintain structural integrity and functionality throughout their lifecycle. It is an essential solution for manufacturers seeking to meet international quality standards and deliver reliable, long-lasting card products.",
+    features: [
+      "Precision Torsion Testing",
+      "Adjustable Twist Angle",
+      "Smart Card Durability Testing",
+      "RFID Card Quality Verification",
+
+    ],
+  },
+
+  {
+  name: "Three Card Punching Machine",
+  image: "/machines/three-card-punching-machine.webp",
+  desc: "Automatic Three Card Punching Machine engineered to punch three PVC or smart cards simultaneously in a single cycle. It offers high-speed production, precise punching, and reliable performance for large-scale card manufacturing.",
+  features: [
+    "Three Card Simultaneous Punching",
+    "High-Speed Operation",
+    "Precision Punching",
+    "PLC & HMI Control",
+    "Servo Motor Driven",
+    "Heavy-Duty Construction"
+  ]
+}, {
+  name: "Laser Fume Extractor",
+  image: laserFumeExtractor,
+  desc: "High-performance Laser Fume Extractor designed to remove smoke, dust, and hazardous fumes generated during laser marking, engraving, and cutting processes. It features multi-stage filtration for a cleaner, safer, and more efficient working environment.",
+  features: [
+    "HEPA Filtration",
+    "Activated Carbon Filter",
+    "High Suction Power",
+    "Low Noise Operation",
+    "Portable Design",
+    "Easy Maintenance"
+  ]
+},
+  {
+  name: "Milling Dust Collector",
+  image: "/machines/milling-dust-collector.webp",
+  desc: "High-efficiency Milling Dust Collector designed to capture fine dust and debris generated during card milling and precision machining. It ensures a clean workspace, protects equipment, and improves production quality with reliable dust extraction.",
+  features: [
+    "High Suction Power",
+    "Multi-Stage Filtration",
+    "Low Noise Operation",
+    "Compact Design",
+    "Continuous Dust Collection",
+    "Easy Maintenance"
+  ]
+},
+  {
+  name: "PC-Based Online ATR Tester",
+  image: pc_based_atr,
+  desc: "Advanced PC-Based Online ATR Tester designed for automatic Answer to Reset (ATR) validation of contact smart cards. It provides real-time testing, pass/fail detection, data logging, and seamless integration with industrial production lines for reliable quality control.",
+  features: [
+    "Real-Time ATR Validation",
+    "PC-Based Software",
+    "Automatic Pass/Fail Detection",
+    "PLC Integration",
+    "Data Logging & Reports",
+    "High-Speed Testing"
+  ]
+},  
 
 ];
 

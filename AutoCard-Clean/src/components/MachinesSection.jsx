@@ -98,7 +98,7 @@ const MachinesSection = () => {
             to="/machines"
             className="cta-gradient text-white font-semibold px-8 py-4 rounded-xl inline-flex items-center gap-2"
           >
-            View All Machines
+            View All Products
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>

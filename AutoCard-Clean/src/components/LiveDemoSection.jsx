@@ -1,12 +1,14 @@
 import { useRef } from "react";
 import { motion, useInView } from "framer-motion";
 import { Play, ChevronLeft, ChevronRight } from "lucide-react";
-
+import demoVideo_1 from "../video/VID-20240805-WA0001.mp4";
+import demoVideo_2 from "../video/SHEET COLLATION MACHINE WORKING TEST.mp4"
+import demoVideo_3 from "../video/demo_3.mp4"
 const demos = [
-  { title: "Card Sorting Machine", desc: "High-speed automated sorting with multi-bin classification.", video: "https://videos.pexels.com/video-files/5532765/5532765-sd_640_360_25fps.mp4" },
-  { title: "QR Validation System", desc: "Real-time QR and barcode scanning with pass/fail logic.", video: "https://videos.pexels.com/video-files/6153965/6153965-sd_640_360_25fps.mp4" },
-  { title: "Card Feeding System", desc: "Precision feeding mechanism for continuous production.", video: "https://videos.pexels.com/video-files/5532765/5532765-sd_640_360_25fps.mp4" },
-  { title: "Conveyor Inspection", desc: "Vision-based defect detection with AI-powered QA engine.", video: "https://videos.pexels.com/video-files/6153965/6153965-sd_640_360_25fps.mp4" },
+  { title: "Card Sorting Machine", desc: "High-speed automated sorting with multi-bin classification.", video: demoVideo_1 },
+  { title: "QR Validation System", desc: "Real-time QR and barcode scanning with pass/fail logic.", video: demoVideo_2 },
+  { title: "Card Feeding System", desc: "Precision feeding mechanism for continuous production.", video: demoVideo_3 },
+
 ];
 
 const LiveDemoSection = () => {

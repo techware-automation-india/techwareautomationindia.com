@@ -45,82 +45,9 @@ const ContactSection = () => {
       "demo",
     ];
 
-    const validateForm = () => {
-      // Name
-      const name = formData.name.trim();
 
-      if (!/^[A-Za-z\s]{3,50}$/.test(name)) {
-        toast.error("Enter a valid name");
-        return false;
-      }
 
-      if (suspiciousWords.includes(name.toLowerCase())) {
-        toast.error("Please enter your real name");
-        return false;
-      }
 
-      // Email
-      const email = formData.email.trim().toLowerCase();
-
-      const emailRegex =
-        /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}$/;
-
-      if (!emailRegex.test(email)) {
-        toast.error("Invalid email address");
-        return false;
-      }
-
-      const domain = email.split("@")[1];
-
-      if (blockedDomains.includes(domain)) {
-        toast.error("Temporary email not allowed");
-        return false;
-      }
-
-      // Mobile
-      if (!/^[6-9]\d{9}$/.test(formData.phone)) {
-        toast.error("Enter valid mobile number");
-        return false;
-      }
-
-      // Company
-      if (
-        formData.company.trim().length < 2 ||
-        formData.company.trim().length > 100
-      ) {
-        toast.error("Enter valid company name");
-        return false;
-      }
-
-      // Message
-      const msg = formData.message.trim();
-
-      if (msg.length < 10 || msg.length > 1000) {
-        toast.error(
-          "Message should be between 10 and 1000 characters"
-        );
-        return false;
-      }
-
-      // Block URLs
-      const urlRegex =
-        /(https?:\/\/|www\.|\.com|\.net|\.org)/i;
-
-      if (urlRegex.test(msg)) {
-        toast.error("Links are not allowed");
-        return false;
-      }
-
-      return true;
-    };
-
-    if (!/^[6-9]\d{9}$/.test(formData.phone)) {
-      return toast.error("Enter valid mobile number");
-    }
-
-    if (formData.message.trim().length < 10) {
-      return toast.error("Message must be at least 10 characters");
-    }
 
     const data = new FormData();
 
@@ -140,11 +67,7 @@ const ContactSection = () => {
       const response = await axios.post(
         "http://localhost:4000/api/contact",
         data,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
+
       );
 
       toast.success(response.data.message);
@@ -275,6 +198,7 @@ const ContactSection = () => {
 
 
           <motion.form
+            noValidate
             onSubmit={handleSubmit}
             initial={{ opacity: 0, x: 30 }}
             animate={isInView ? { opacity: 1, x: 0 } : {}}
@@ -301,27 +225,31 @@ const ContactSection = () => {
                 placeholder="Email Address"
                 value={formData.email}
                 onChange={(e) =>
-                  setFormData((p) => ({
-                    ...p,
+                  setFormData((prev) => ({
+                    ...prev,
                     email: e.target.value,
                   }))
                 }
+                autoComplete="email"
                 required
               />
             </div>
 
             <input
               type="tel"
+              inputMode="numeric"
               maxLength={10}
               className={inputClass}
-              placeholder="Mobile Number"
+              placeholder="9876543210"
               value={formData.phone}
-              onChange={(e) =>
-                setFormData((p) => ({
-                  ...p,
-                  phone: e.target.value.replace(/\D/g, ""),
-                }))
-              }
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, "");
+
+                setFormData((prev) => ({
+                  ...prev,
+                  phone: value,
+                }));
+              }}
               required
             />
 
@@ -340,12 +268,14 @@ const ContactSection = () => {
 
             <input
               type="file"
-              accept="image/*,.pdf"
+              accept=".jpg,.jpeg,.png"
               className={inputClass}
               onChange={(e) =>
                 setPhoto(e.target.files[0])
               }
             />
+
+
 
             <textarea
               className={inputClass + " resize-none"}

@@ -23,17 +23,26 @@ const HeroSection = () => {
            
 
             <motion.h1
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="text-5xl md:text-6xl xl:text-7xl font-bold text-white leading-tight mb-6"
-            >
-              Advanced Automation Machines for{" "}
-              <span className="text-amber-400">
-                Card Manufacturing
-              </span>{" "}
-              Industry
-            </motion.h1>
+  initial={{ opacity: 0, y: 30 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.6 }}
+ className="text-4xl sm:text-5xl md:text-[46px] lg:text-[52px] xl:text-[58px] 2xl:text-[64px] font-extrabold leading-[1.1] tracking-tight text-white mb-6 max-w-[680px]"
+>
+  Techware Automation
+  <br />
+
+  <span className="text-white">(INDIA)</span>
+  <br />
+
+  Machines for{" "}
+  <span className="text-amber-400">
+    Card Manufacturing
+  </span>
+
+  <br />
+
+  Industry
+</motion.h1>
 
             <motion.p
               initial={{ opacity: 0, y: 25 }}
@@ -54,7 +63,7 @@ const HeroSection = () => {
                 href="#machines"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-semibold flex items-center gap-2 transition"
               >
-                View Machines
+                View Products
                 <ArrowRight size={18} />
               </a>
 

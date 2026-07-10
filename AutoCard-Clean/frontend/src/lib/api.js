@@ -39,6 +39,9 @@ async function request(method, path, body) {
     const message = data?.message || "Request failed. Please try again.";
     const error = new Error(message);
     error.status = res.status;
+    if (data && typeof data === "object") {
+      Object.assign(error, data);
+    }
     throw error;
   }
 

@@ -1,45 +1,84 @@
-import { useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Menu, X, LogOut, ChevronLeft, ClipboardList, Clock } from "lucide-react";
 import { employeeModules } from "./modules.js";
+import { getAuthUser, clearAuth } from "../lib/auth.js";
 
 const EmployeeLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const authUser = getAuthUser();
+    setUser(authUser);
+
+    // If not logged in at all, redirect to login
+    if (!authUser) {
+      navigate("/login/employee", { replace: true });
+    }
+  }, [navigate, location.pathname]);
 
   const handleLogout = () => {
-    // Auth/session clearing will be wired here later.
+    console.log("🚪 [Employee Layout] Logging out");
+    clearAuth();
     navigate("/");
   };
 
   const sidebarContent = (
     <>
       <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/employee" className="font-display text-lg font-bold tracking-tight">
-          <span className="gradient-text">AutoCard</span>
-          <span className="text-foreground"> Staff</span>
+        <Link to="/employee" className="font-display flex items-center gap-0">
+          <div className="flex flex-col justify-center">
+            <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
+  <span style={{ color: "#2A3791" }}>Tech</span>
+  <span style={{ color: "#2A3791" }}>ware</span>
+</h1>
+
+<p
+  className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
+  style={{
+    letterSpacing: "0.28em",
+    lineHeight: 1.2,
+  }}
+>
+  <span style={{ color: "#2A3791" }}>Automation </span>
+  <span style={{ color: "#339DE0" }}>INDIA</span>
+</p>
+          </div>
         </Link>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {employeeModules.map(({ key, label, path, icon: Icon }) => (
-          <NavLink
-            key={key}
-            to={path}
-            end={path === "/employee"}
-            onClick={() => setMobileOpen(false)}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`
-            }
-          >
-            <Icon className="h-4.5 w-4.5 shrink-0" />
-            {label}
-          </NavLink>
-        ))}
+        {employeeModules.map(({ key, label, path, icon: Icon }) => {
+          // Hide non-onboarding modules if status is PENDING
+          const isPending = user?.onboardingStatus === "PENDING";
+          const isOnboardingModule = key === "onboarding" || key === "overview";
+          
+          if (isPending && !isOnboardingModule) {
+            return null; // Hide this module
+          }
+
+          return (
+            <NavLink
+              key={key}
+              to={path}
+              end={path === "/employee"}
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`
+              }
+            >
+              <Icon className="h-4.5 w-4.5 shrink-0" />
+              {label}
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div className="p-3 border-t border-border">
@@ -97,16 +136,45 @@ const EmployeeLayout = () => {
 
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-foreground">Staff Member</div>
-              <div className="text-xs text-muted-foreground">employee@autocard.com</div>
+              <div className="text-sm font-semibold text-foreground">{user?.fullName || "Employee"}</div>
+              <div className="text-xs text-muted-foreground">{user?.email || ""}</div>
             </div>
-            <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm">
-              SM
+            <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
+              {user?.profileImage ? (
+                <img
+                  src={`http://localhost:4000${user.profileImage}`}
+                  alt={user.fullName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                user?.fullName ? user.fullName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "EM"
+              )}
             </div>
           </div>
         </header>
 
         <main className="flex-1 p-4 lg:p-8">
+          {/* Onboarding Status Banner */}
+          {user?.onboardingStatus === "PENDING" && (
+            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 shrink-0" />
+              <span>
+                <strong>Action Required:</strong> Please complete your onboarding form to access all features.{" "}
+                <Link to="/employee/onboarding" className="underline font-semibold hover:text-amber-800">
+                  Complete Now
+                </Link>
+              </span>
+            </div>
+          )}
+          {user?.onboardingStatus === "SUBMITTED" && (
+            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+              <Clock className="h-4 w-4 shrink-0" />
+              <span>
+                <strong>Pending Approval:</strong> Your onboarding form is under review by the admin.
+              </span>
+            </div>
+          )}
+          
           <Outlet />
         </main>
       </div>

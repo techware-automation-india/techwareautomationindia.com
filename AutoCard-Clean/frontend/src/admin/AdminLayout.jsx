@@ -2,22 +2,46 @@ import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
 import { adminModules } from "./modules.js";
+import { getAuthUser, clearAuth } from "../lib/auth.js";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const user = getAuthUser();
+
+  // Redirect to login if not authenticated as admin
+  if (!user || user.role !== "ADMIN") {
+    clearAuth();
+    navigate("/login/admin", { replace: true });
+    return null;
+  }
 
   const handleLogout = () => {
-    // Auth/session clearing will be wired here later.
+    clearAuth();
     navigate("/");
   };
 
   const sidebarContent = (
     <>
       <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/admin" className="font-display text-lg font-bold tracking-tight">
-          <span className="gradient-text">AutoCard</span>
-          <span className="text-foreground"> Admin</span>
+        <Link to="/admin" className="font-display flex items-center gap-0">
+          <div className="flex flex-col justify-center">
+           <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
+  <span style={{ color: "#2A3791" }}>Techware</span>
+  
+</h1>
+
+<p
+  className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
+  style={{
+    letterSpacing: "0.28em",
+    lineHeight: 1.2,
+  }}
+>
+  <span style={{ color: "#2A3791" }}>Automation </span>
+  <span style={{ color: "#339DE0" }}> INDIA</span>
+</p>
+          </div>
         </Link>
       </div>
 
@@ -97,11 +121,11 @@ const AdminLayout = () => {
 
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-foreground">System Admin</div>
-              <div className="text-xs text-muted-foreground">admin@autocard.com</div>
+              <div className="text-sm font-semibold text-foreground">{user?.fullName || "Admin"}</div>
+              <div className="text-xs text-muted-foreground">{user?.email || ""}</div>
             </div>
             <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm">
-              SA
+              {user?.fullName ? user.fullName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "AD"}
             </div>
           </div>
         </header>

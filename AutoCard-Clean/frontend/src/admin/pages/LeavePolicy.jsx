@@ -10,6 +10,7 @@ const emptyForm = {
   description: "",
   isPaid: true,
   isActive: true,
+  requiresApproval: true,
 };
 
 const inputClass =
@@ -60,6 +61,7 @@ const LeavePolicy = () => {
       description: lt.description || "",
       isPaid: lt.isPaid,
       isActive: lt.isActive,
+      requiresApproval: lt.requiresApproval ?? true,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -75,6 +77,7 @@ const LeavePolicy = () => {
       description: form.description || undefined,
       isPaid: form.isPaid,
       isActive: form.isActive,
+      requiresApproval: form.requiresApproval,
     };
     try {
       if (editingId) {
@@ -155,6 +158,10 @@ const LeavePolicy = () => {
               <input type="checkbox" className="rounded border-border" checked={form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} />
               Active
             </label>
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+              <input type="checkbox" className="rounded border-border" checked={form.requiresApproval} onChange={(e) => setForm((p) => ({ ...p, requiresApproval: e.target.checked }))} />
+              Requires Approval
+            </label>
           </div>
           <div className="sm:col-span-2">
             <label className="text-sm font-medium mb-1.5 block">Description</label>
@@ -193,6 +200,7 @@ const LeavePolicy = () => {
                   <th className="px-6 py-3 font-medium">Code</th>
                   <th className="px-6 py-3 font-medium">Days/Year</th>
                   <th className="px-6 py-3 font-medium">Paid</th>
+                  <th className="px-6 py-3 font-medium">Approval</th>
                   <th className="px-6 py-3 font-medium">Status</th>
                   <th className="px-6 py-3 font-medium text-right">Actions</th>
                 </tr>
@@ -207,6 +215,17 @@ const LeavePolicy = () => {
                       <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${lt.isPaid ? "bg-emerald-100 text-emerald-700" : "bg-secondary text-muted-foreground"}`}>
                         {lt.isPaid ? "Paid" : "Unpaid"}
                       </span>
+                    </td>
+                    <td className="px-6 py-3">
+                      {(lt.requiresApproval ?? true) ? (
+                        <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-700">
+                          Requires Approval
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-100 text-blue-700">
+                          Auto Approved
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-3">
                       <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${lt.isActive ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>

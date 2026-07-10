@@ -1,4 +1,4 @@
-// Prisma schema for AutoCard Systems
+// Prisma schema for Techware Automation INDIA
 // Docs: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -64,6 +64,13 @@ enum ProjectStatus {
   ON_HOLD
   COMPLETED
   CANCELLED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  INTERN
+  CONTRACT
 }
 
 // ===========================================================================
@@ -133,6 +140,7 @@ model EmployeeProfile {
 
   // --- Professional details ---
   jobTitle          String?
+  employmentType    EmploymentType?
   highestQualification String?
   university           String?
   graduationYear       Int?
@@ -149,6 +157,7 @@ model EmployeeProfile {
   addressProofDocument   String?
   educationProofDocument String?
   resumeDocument         String?
+  profileImage           String?  // Employee profile photo
 
   // --- Job assignment (admin-managed) ---
   departmentId     String?
@@ -256,7 +265,7 @@ model RosterEntry {
   id         String   @id @default(uuid())
   employeeId String
   employee   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date       DateTime @db.Date
+  date       DateTime
   shiftId    String
   shift      Shift    @relation(fields: [shiftId], references: [id])
   locationId String?
@@ -278,7 +287,7 @@ model Attendance {
   id          String           @id @default(uuid())
   employeeId  String
   employee    EmployeeProfile  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date        DateTime         @db.Date
+  date        DateTime
   checkIn     DateTime?
   checkOut    DateTime?
   status      AttendanceStatus @default(PRESENT)
@@ -304,6 +313,7 @@ model LeaveType {
   description String?
   isPaid      Boolean  @default(true)
   isActive    Boolean  @default(true)
+  requiresApproval Boolean @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -335,8 +345,8 @@ model LeaveRequest {
   employee    EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   leaveTypeId String
   leaveType   LeaveType       @relation(fields: [leaveTypeId], references: [id])
-  startDate   DateTime        @db.Date
-  endDate     DateTime        @db.Date
+  startDate   DateTime
+  endDate     DateTime
   totalDays   Float
   reason      String?
   status      LeaveStatus     @default(PENDING)
@@ -359,15 +369,25 @@ model LeaveRequest {
 // HOLIDAYS
 // ===========================================================================
 
-model Holiday {
-  id          String   @id @default(uuid())
-  name        String
-  date        DateTime @unique @db.Date
-  description String?
-  isRecurring Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+enum HolidayType {
+  NATIONAL
+  FESTIVAL
+  OPTIONAL
+}
 
+model Holiday {
+  id          String      @id @default(uuid())
+  name        String
+  date        DateTime    @unique
+  holidayType HolidayType @default(FESTIVAL)
+  isOptional  Boolean     @default(false)
+  description String?
+  isRecurring Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([date])
+  @@index([holidayType])
   @@map("holidays")
 }
 
@@ -408,8 +428,8 @@ model Project {
   code        String        @unique
   description String?
   status      ProjectStatus @default(PLANNED)
-  startDate   DateTime?     @db.Date
-  endDate     DateTime?     @db.Date
+  startDate   DateTime?
+  endDate     DateTime?
 
   // Owning customer (optional — internal projects may have none).
   customerId String?

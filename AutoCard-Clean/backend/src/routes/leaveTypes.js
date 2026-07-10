@@ -23,6 +23,7 @@ const leaveTypeSchema = z.object({
   description: z.string().trim().max(300).optional().or(z.literal("")),
   isPaid: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  requiresApproval: z.boolean().optional(),
 });
 
 // GET /api/leave-types - list all leave types.
@@ -61,6 +62,7 @@ router.post("/", async (req, res) => {
         description: d.description || null,
         isPaid: d.isPaid ?? true,
         isActive: d.isActive ?? true,
+        requiresApproval: d.requiresApproval ?? true,
       },
     });
     res.status(201).json({ leaveType });
@@ -103,6 +105,7 @@ router.put("/:id", async (req, res) => {
         description: d.description || null,
         isPaid: d.isPaid ?? current.isPaid,
         isActive: d.isActive ?? current.isActive,
+        requiresApproval: d.requiresApproval ?? current.requiresApproval,
       },
     });
     res.json({ leaveType });

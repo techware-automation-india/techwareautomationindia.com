@@ -15,9 +15,24 @@ const CustomerLayout = () => {
   const sidebarContent = (
     <>
       <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/customer" className="font-display text-lg font-bold tracking-tight">
-          <span className="gradient-text">AutoCard</span>
-          <span className="text-foreground"> Portal</span>
+        <Link to="/customer" className="font-display flex items-center gap-0">
+          <div className="flex flex-col justify-center">
+             <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
+  <span style={{ color: "#2A3791" }}>Tech</span>
+  <span style={{ color: "#2A3791" }}>ware</span>
+</h1>
+
+<p
+  className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
+  style={{
+    letterSpacing: "0.28em",
+    lineHeight: 1.2,
+  }}
+>
+  <span style={{ color: "#2A3791" }}>Automation </span>
+  <span style={{ color: "#339DE0" }}>INDIA</span>
+</p>
+          </div>
         </Link>
       </div>
 
@@ -98,7 +113,7 @@ const CustomerLayout = () => {
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
               <div className="text-sm font-semibold text-foreground">Sample Customer</div>
-              <div className="text-xs text-muted-foreground">customer@autocard.com</div>
+              <div className="text-xs text-muted-foreground">customer@techware.com</div>
             </div>
             <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm">
               SC

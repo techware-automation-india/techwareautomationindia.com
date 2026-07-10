@@ -4,6 +4,7 @@ import {
   Fingerprint,
   Clock,
   Plane,
+  CalendarDays,
 } from "lucide-react";
 
 // Single source of truth for employee modules.
@@ -43,5 +44,12 @@ export const employeeModules = [
     path: "/employee/leave",
     icon: Plane,
     description: "Apply for and track your leave.",
+  },
+  {
+    key: "holidays",
+    label: "Holidays",
+    path: "/employee/holidays",
+    icon: CalendarDays,
+    description: "View company holiday calendar.",
   },
 ];

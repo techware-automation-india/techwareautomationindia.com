@@ -9,7 +9,9 @@ import NotFound from "./pages/NotFound.jsx";
 import AdminLayout from "./admin/AdminLayout.jsx";
 import Overview from "./admin/pages/Overview.jsx";
 import Employee from "./admin/pages/Employee.jsx";
+import EmployeeList from "./admin/pages/EmployeeList.jsx";
 import Customer from "./admin/pages/Customer.jsx";
+import CustomerList from "./admin/pages/CustomerList.jsx";
 import Requests from "./admin/pages/Requests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
@@ -25,6 +27,7 @@ import EmployeeOnboarding from "./employee/pages/Onboarding.jsx";
 import EmployeeMarkAttendance from "./employee/pages/MarkAttendance.jsx";
 import EmployeeAttendance from "./employee/pages/Attendance.jsx";
 import EmployeeLeave from "./employee/pages/Leave.jsx";
+import EmployeeHolidays from "./employee/pages/Holidays.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
 import CustomerLayout from "./customer/CustomerLayout.jsx";
@@ -43,7 +46,9 @@ const App = () => (
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Overview />} />
         <Route path="employee" element={<Employee />} />
+        <Route path="employee-list" element={<EmployeeList />} />
         <Route path="customer" element={<Customer />} />
+        <Route path="customer-list" element={<CustomerList />} />
         <Route path="requests" element={<Requests />} />
         <Route path="leave-policy" element={<LeavePolicy />} />
         <Route path="holidays" element={<Holidays />} />
@@ -60,6 +65,7 @@ const App = () => (
         <Route path="mark-attendance" element={<RequireOnboarding><EmployeeMarkAttendance /></RequireOnboarding>} />
         <Route path="attendance" element={<RequireOnboarding><EmployeeAttendance /></RequireOnboarding>} />
         <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} />
+        <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} />
       </Route>
 
       <Route path="/customer" element={<CustomerLayout />}>

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { sendWelcomeEmail } from "../utils/emailService.js";
 
 const router = Router();
 
@@ -84,6 +85,23 @@ router.post("/", async (req, res) => {
       },
       include: { employeeProfile: true },
     });
+
+    // Send welcome email with login credentials
+    try {
+      await sendWelcomeEmail({
+        employeeEmail: email,
+        employeeName: fullName,
+        employeeCode,
+        password, // Plain text password before hashing
+        loginUrl: process.env.FRONTEND_URL 
+          ? `${process.env.FRONTEND_URL}/login/employee` 
+          : "http://localhost:5173/login/employee",
+      });
+      console.log(`✅ [Employee Created] Welcome email sent to ${email}`);
+    } catch (emailError) {
+      console.error(`⚠️  [Employee Created] User created but email failed for ${email}:`, emailError.message);
+      // Don't fail the request if email fails - user is still created
+    }
 
     res.status(201).json({
       employee: {

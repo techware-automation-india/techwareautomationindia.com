@@ -10,11 +10,11 @@ const navLinks = [
   { label: "Contact", href: "#contact" },
 ];
 
-// const loginRoles = [
-//   { role: "admin", label: "Login as Admin", desc: "System administration access", icon: ShieldCheck },
-//   { role: "employee", label: "Login as Employee", desc: "Staff dashboard access", icon: Briefcase },
-//   { role: "customer", label: "Login as Customer", desc: "Track orders & support", icon: User },
-// ];
+const loginRoles = [
+{ role: "admin", label: "Login as Admin", desc: "System administration access", icon: ShieldCheck },
+{ role: "employee", label: "Login as Employee", desc: "Staff dashboard access", icon: Briefcase },
+ { role: "customer", label: "Login as Customer", desc: "Track orders & support", icon: User },
+ ];
 
 const Navbar = ({ staticPosition = false }) => {
   const [scrolled, setScrolled] = useState(false);
@@ -61,21 +61,24 @@ const Navbar = ({ staticPosition = false }) => {
             className="h-11 sm:h-12 md:h-14 lg:h-16 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
           />
           <div className="hidden sm:flex flex-col justify-center">
-            <h1 className="text-[24px] md:text-[28px] lg:text-[34px] font-extrabold leading-none tracking-tight">
-              <span style={{ color: "#2A3791" }}>TECH</span>
-              <span style={{ color: "#2A3791" }}>WARE</span>
-            </h1>
+            <h1
+  className="text-2xl md:text-4xl font-bold"
+  style={{ lineHeight: 1 }}
+>
+  <span style={{ color: "#2A3791" }}>Techware</span>
+ 
+</h1>
 
-            <p
-              className="uppercase text-[11px] md:text-xs font-semibold mt-1"
-              style={{
-                letterSpacing: "0.28em",
-                lineHeight: 1.2,
-              }}
-            >
-              <span style={{ color: "#2A3791" }}>AUTOMATION </span>
-              <span style={{ color: "#339DE0" }}>INDIA</span>
-            </p>
+<p
+  className="text-[11px] md:text-xs font-semibold mt-1"
+  style={{
+    letterSpacing: "0.28em",
+    lineHeight: 1.2,
+  }}
+>
+  <span style={{ color: "#2A3791" }}>Automation</span>
+  <span style={{ color: "#339DE0" }}> INDIA</span>
+</p>
           </div>
         </a>
 
@@ -90,7 +93,7 @@ const Navbar = ({ staticPosition = false }) => {
             </a>
           ))}
 
-          {/* <div className="relative" ref={loginRef}>
+          { <div className="relative" ref={loginRef}>
             <button
               onClick={() => setLoginOpen((o) => !o)}
               className="cta-gradient text-white font-semibold px-6 py-2 rounded-lg hover:opacity-90 transition-opacity text-sm inline-flex items-center gap-1.5"
@@ -127,7 +130,7 @@ const Navbar = ({ staticPosition = false }) => {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div> */}
+          </div> }
         </div>
 
         <button

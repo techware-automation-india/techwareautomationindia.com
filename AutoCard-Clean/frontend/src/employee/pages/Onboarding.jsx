@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
-import { ClipboardList, Loader2, Send, CheckCircle2, Clock, User, Landmark, Briefcase, FileText } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { 
+  ClipboardList, Loader2, Send, CheckCircle2, Clock, User, Landmark, 
+  Briefcase, FileText, MapPin, Heart, Camera, ChevronRight, ChevronLeft,
+  CheckCircle, UploadCloud, X, FileCheck2
+} from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { updateAuthUser } from "../../lib/auth.js";
@@ -18,6 +22,8 @@ const emptyForm = {
   // Proofs
   nationalIdNumber: "", taxIdNumber: "", passportNumber: "",
   idProofDocument: "", addressProofDocument: "", educationProofDocument: "", resumeDocument: "",
+  // Profile Image
+  profileImage: "",
 };
 
 const inputClass =
@@ -26,18 +32,6 @@ const inputClass =
 const currentYear = new Date().getFullYear();
 // Latest DOB allowing 18 years of age.
 const maxDob = new Date(Date.now() - 18 * 365.25 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-
-const SectionHeader = ({ icon: Icon, title, subtitle }) => (
-  <div className="flex items-center gap-3 mb-5">
-    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-      <Icon className="h-4.5 w-4.5 text-primary" />
-    </div>
-    <div>
-      <h2 className="font-display font-semibold">{title}</h2>
-      {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-    </div>
-  </div>
-);
 
 // Labeled field wrapper. `required` adds a red asterisk.
 const Field = ({ label, required, children, full }) => (
@@ -50,12 +44,31 @@ const Field = ({ label, required, children, full }) => (
 );
 
 const Onboarding = () => {
+  const [currentStep, setCurrentStep] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+
+  // Resume upload state
+  const [resumeFile, setResumeFile] = useState(null);
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeUploaded, setResumeUploaded] = useState(false); // true once server confirms
+  const resumeInputRef = useRef(null);
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+
+  const steps = [
+    { id: 0, name: "Profile Photo", icon: Camera, desc: "Upload your profile picture" },
+    { id: 1, name: "Personal Info", icon: User, desc: "Basic identity details" },
+    { id: 2, name: "Contact", icon: MapPin, desc: "Address and contact" },
+    { id: 3, name: "Emergency", icon: Heart, desc: "Emergency contact" },
+    { id: 4, name: "Banking", icon: Landmark, desc: "Bank account details" },
+    { id: 5, name: "Professional", icon: Briefcase, desc: "Work experience" },
+    { id: 6, name: "Documents", icon: FileText, desc: "Proof documents" },
+  ];
 
   const loadProfile = async () => {
     try {
@@ -74,6 +87,11 @@ const Onboarding = () => {
           })
         ),
       }));
+      // If a resume was previously uploaded, reflect it in the UI
+      if (p.resumeDocument) {
+        setResumeUploaded(true);
+        setResumeFile({ name: p.resumeDocument.split("/").pop(), size: 0 });
+      }
     } catch (err) {
       toast.error(err.message || "Failed to load onboarding.");
     } finally {
@@ -90,9 +108,41 @@ const Onboarding = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
+    
+    if (!validateStep(currentStep)) {
+      return;
+    }
+    
     setSubmitting(true);
     try {
-      const data = await apiPost("/onboarding/submit", form);
+      // Upload image first if selected
+      let profileImagePath = form.profileImage;
+      if (imageFile && !profileImagePath) {
+        try {
+          const formData = new FormData();
+          formData.append("profileImage", imageFile);
+          
+          const uploadResponse = await fetch("http://localhost:4000/api/onboarding/upload-image", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${localStorage.getItem("authToken")}`,
+            },
+            body: formData,
+          });
+          
+          if (uploadResponse.ok) {
+            const uploadData = await uploadResponse.json();
+            profileImagePath = uploadData.imagePath;
+          }
+        } catch (uploadErr) {
+          console.warn("Image upload failed, continuing without image:", uploadErr);
+        }
+      }
+
+      const data = await apiPost("/onboarding/submit", {
+        ...form,
+        profileImage: profileImagePath,
+      });
       setStatus(data.profile.onboardingStatus);
       updateAuthUser({ onboardingStatus: data.profile.onboardingStatus });
       toast.success("Onboarding submitted. Awaiting admin approval.");
@@ -104,14 +154,159 @@ const Onboarding = () => {
     }
   };
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please select an image file");
+        return;
+      }
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleResumeChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const allowedExts = /\.(pdf|doc|docx)$/i;
+    const allowedMimes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+
+    if (!allowedExts.test(file.name) || !allowedMimes.includes(file.type)) {
+      toast.error("Only PDF, DOC, or DOCX files are allowed.");
+      if (resumeInputRef.current) resumeInputRef.current.value = "";
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Resume file must be 10 MB or smaller.");
+      if (resumeInputRef.current) resumeInputRef.current.value = "";
+      return;
+    }
+
+    setResumeFile(file);
+    setResumeUploaded(false);
+    setResumeUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("resume", file);
+
+      const res = await fetch("http://localhost:4000/api/onboarding/upload-resume", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.message || "Resume upload failed.");
+        setResumeFile(null);
+        if (resumeInputRef.current) resumeInputRef.current.value = "";
+        return;
+      }
+
+      setForm((p) => ({ ...p, resumeDocument: data.resumePath }));
+      setResumeUploaded(true);
+      toast.success("Resume uploaded successfully!");
+    } catch (err) {
+      toast.error("Resume upload failed. Please try again.");
+      setResumeFile(null);
+      if (resumeInputRef.current) resumeInputRef.current.value = "";
+    } finally {
+      setResumeUploading(false);
+    }
+  };
+
+  const handleRemoveResume = () => {
+    setResumeFile(null);
+    setResumeUploaded(false);
+    setForm((p) => ({ ...p, resumeDocument: "" }));
+    if (resumeInputRef.current) resumeInputRef.current.value = "";
+  };
+
+  const formatBytes = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const validateStep = (step) => {
+    switch (step) {
+      case 0: // Profile photo - optional
+        return true;
+      case 1: // Personal Info
+        if (!form.firstName || !form.lastName || !form.phone || !form.dateOfBirth || !form.gender || !form.nationality) {
+          toast.error("Please fill all required personal fields");
+          return false;
+        }
+        return true;
+      case 2: // Contact
+        if (!form.addressLine1 || !form.city || !form.state || !form.postalCode || !form.country) {
+          toast.error("Please fill all required address fields");
+          return false;
+        }
+        return true;
+      case 3: // Emergency
+        if (!form.emergencyContactName || !form.emergencyContactRelation || !form.emergencyContactPhone) {
+          toast.error("Please fill all emergency contact fields");
+          return false;
+        }
+        return true;
+      case 4: // Banking
+        if (!form.bankName || !form.bankAccountName || !form.bankAccountNumber || !form.bankIfscCode) {
+          toast.error("Please fill all required banking fields");
+          return false;
+        }
+        return true;
+      case 5: // Professional
+        if (!form.jobTitle || !form.highestQualification) {
+          toast.error("Please fill all required professional fields");
+          return false;
+        }
+        return true;
+      case 6: // Documents
+        if (!form.nationalIdNumber || !form.idProofDocument) {
+          toast.error("Please fill all required document fields");
+          return false;
+        }
+        return true;
+      default:
+        return true;
+    }
+  };
+
+  const handleNext = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handlePrevious = () => {
+    setCurrentStep((prev) => Math.max(prev - 1, 0));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const header = (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-4 mb-8">
       <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
         <ClipboardList className="h-6 w-6 text-primary" />
       </div>
       <div>
-        <h1 className="font-display text-2xl font-bold">Onboarding Form</h1>
-        <p className="text-sm text-muted-foreground">Complete all required details to request access.</p>
+        <h1 className="font-display text-2xl font-bold">Employee Onboarding</h1>
+        <p className="text-sm text-muted-foreground">Complete your profile to get started</p>
       </div>
     </div>
   );
@@ -162,7 +357,7 @@ const Onboarding = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {header}
 
       {status === "REJECTED" && (
@@ -171,10 +366,122 @@ const Onboarding = () => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Personal details */}
-        <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-          <SectionHeader icon={User} title="Personal Details" subtitle="Your basic identity and contact information" />
+      {/* Progress Steps */}
+      <div className="rounded-2xl bg-background border border-border card-shadow p-6">
+        <div className="flex items-center justify-between mb-2">
+          {steps.map((step, idx) => (
+            <div key={step.id} className="flex items-center flex-1">
+              <div className="flex flex-col items-center flex-1">
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    idx < currentStep
+                      ? "bg-emerald-100 text-emerald-700"
+                      : idx === currentStep
+                      ? "bg-primary text-white"
+                      : "bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  {idx < currentStep ? (
+                    <CheckCircle className="h-5 w-5" />
+                  ) : (
+                    <step.icon className="h-5 w-5" />
+                  )}
+                </div>
+                <div className="text-center mt-2">
+                  <p className={`text-xs font-medium ${idx === currentStep ? "text-primary" : "text-muted-foreground"}`}>
+                    {step.name}
+                  </p>
+                </div>
+              </div>
+              {idx < steps.length - 1 && (
+                <div
+                  className={`h-0.5 flex-1 -mt-8 ${
+                    idx < currentStep ? "bg-emerald-300" : "bg-border"
+                  }`}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Step Content */}
+      <form onSubmit={handleSubmit} className="rounded-2xl bg-background border border-border card-shadow p-6">
+        <div className="mb-6">
+          <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+            {(() => {
+              const StepIcon = steps[currentStep].icon;
+              return <StepIcon className="h-5 w-5 text-primary" />;
+            })()}
+            {steps[currentStep].name}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">{steps[currentStep].desc}</p>
+        </div>
+
+        {/* Step 0: Profile Photo */}
+        {currentStep === 0 && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row items-center md:items-start gap-8 py-8">
+              {/* Left side: Instructions */}
+              <div className="flex-1 space-y-4">
+                <h3 className="text-lg font-semibold">Upload Your Profile Picture</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  A professional photo helps colleagues recognize you and makes your profile more personal. 
+                  Please choose a clear, recent photo where your face is visible.
+                </p>
+                <ul className="text-xs text-muted-foreground space-y-2">
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Use a recent photo with good lighting</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Face should be clearly visible</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Accepted formats: JPG, PNG, GIF, WEBP</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Maximum file size: 5MB</span>
+                  </li>
+                </ul>
+                <div className="pt-4">
+                  <label className="px-6 py-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 cursor-pointer transition-opacity inline-block">
+                    Choose Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-3 italic">This step is optional - you can skip and add later</p>
+                </div>
+              </div>
+
+              {/* Right side: Image preview */}
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-48 h-48 rounded-2xl overflow-hidden bg-secondary flex items-center justify-center border-4 border-border shadow-lg">
+                  {imagePreview || form.profileImage ? (
+                    <img
+                      src={imagePreview || `http://localhost:4000${form.profileImage}`}
+                      alt="Profile preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Camera className="w-24 h-24 text-muted-foreground" />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground text-center">Preview</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: Personal Info */}
+        {currentStep === 1 && (
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="First Name" required>
               <input className={inputClass} value={form.firstName} onChange={set("firstName")} maxLength={60} placeholder="Jane" required />
@@ -222,9 +529,10 @@ const Onboarding = () => {
               </select>
             </Field>
           </div>
+        )}
 
-          <div className="border-t border-border my-6" />
-          <h3 className="text-sm font-semibold mb-4">Address</h3>
+        {/* Step 2: Contact & Address */}
+        {currentStep === 2 && (
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Address Line 1" required full>
               <input className={inputClass} value={form.addressLine1} onChange={set("addressLine1")} maxLength={200} placeholder="Street address" required />
@@ -245,9 +553,10 @@ const Onboarding = () => {
               <input className={inputClass} value={form.country} onChange={set("country")} maxLength={80} placeholder="Country" required />
             </Field>
           </div>
+        )}
 
-          <div className="border-t border-border my-6" />
-          <h3 className="text-sm font-semibold mb-4">Emergency Contact</h3>
+        {/* Step 3: Emergency Contact */}
+        {currentStep === 3 && (
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Contact Name" required>
               <input className={inputClass} value={form.emergencyContactName} onChange={set("emergencyContactName")} maxLength={120} placeholder="Full name" required />
@@ -255,15 +564,14 @@ const Onboarding = () => {
             <Field label="Relationship" required>
               <input className={inputClass} value={form.emergencyContactRelation} onChange={set("emergencyContactRelation")} maxLength={60} placeholder="e.g. Spouse, Parent" required />
             </Field>
-            <Field label="Contact Phone" required>
+            <Field label="Contact Phone" required full>
               <input type="tel" className={inputClass} value={form.emergencyContactPhone} onChange={set("emergencyContactPhone")} pattern="[+]?[\d\s()\-]{7,20}" title="7-20 digits, may include + ( ) -" placeholder="+1 555 987 6543" required />
             </Field>
           </div>
-        </div>
+        )}
 
-        {/* Banking details */}
-        <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-          <SectionHeader icon={Landmark} title="Banking Details" subtitle="Used for salary disbursement" />
+        {/* Step 4: Banking */}
+        {currentStep === 4 && (
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Bank Name" required>
               <input className={inputClass} value={form.bankName} onChange={set("bankName")} maxLength={120} placeholder="Bank name" required />
@@ -277,15 +585,14 @@ const Onboarding = () => {
             <Field label="IFSC / Routing Code" required>
               <input className={inputClass} value={form.bankIfscCode} onChange={(e) => setForm((p) => ({ ...p, bankIfscCode: e.target.value.toUpperCase() }))} pattern="[A-Za-z0-9\-]{4,20}" title="4-20 letters, digits or hyphens" placeholder="e.g. ABCD0123456" required />
             </Field>
-            <Field label="Branch">
+            <Field label="Branch" full>
               <input className={inputClass} value={form.bankBranch} onChange={set("bankBranch")} maxLength={120} placeholder="Branch name (optional)" />
             </Field>
           </div>
-        </div>
+        )}
 
-        {/* Professional details */}
-        <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-          <SectionHeader icon={Briefcase} title="Professional Details" subtitle="Your qualifications and experience" />
+        {/* Step 5: Professional */}
+        {currentStep === 5 && (
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Job Title" required>
               <input className={inputClass} value={form.jobTitle} onChange={set("jobTitle")} maxLength={120} placeholder="e.g. Automation Engineer" required />
@@ -299,21 +606,51 @@ const Onboarding = () => {
             <Field label="Graduation Year">
               <input type="number" className={inputClass} value={form.graduationYear} onChange={set("graduationYear")} min={1950} max={currentYear} placeholder={`1950 - ${currentYear}`} />
             </Field>
-            <Field label="Total Experience (years)">
-              <input type="number" step="0.5" className={inputClass} value={form.totalExperienceYears} onChange={set("totalExperienceYears")} min={0} max={60} placeholder="e.g. 3.5" />
+            <Field label="Total Experience">
+              <select 
+                className={inputClass} 
+                value={form.totalExperienceYears} 
+                onChange={set("totalExperienceYears")}
+              >
+                <option value="">Select experience...</option>
+                <option value="0">Fresher (No Experience)</option>
+                <option value="0.5">6 months</option>
+                <option value="1">1 year</option>
+                <option value="1.5">1.5 years</option>
+                <option value="2">2 years</option>
+                <option value="2.5">2.5 years</option>
+                <option value="3">3 years</option>
+                <option value="3.5">3.5 years</option>
+                <option value="4">4 years</option>
+                <option value="4.5">4.5 years</option>
+                <option value="5">5 years</option>
+                <option value="6">6 years</option>
+                <option value="7">7 years</option>
+                <option value="8">8 years</option>
+                <option value="9">9 years</option>
+                <option value="10">10 years</option>
+                <option value="15">15 years</option>
+                <option value="20">20+ years</option>
+              </select>
             </Field>
             <Field label="Previous Employer">
-              <input className={inputClass} value={form.previousEmployer} onChange={set("previousEmployer")} maxLength={200} placeholder="Optional" />
+              <input 
+                className={inputClass} 
+                value={form.previousEmployer} 
+                onChange={set("previousEmployer")} 
+                maxLength={200} 
+                placeholder={form.totalExperienceYears === "0" ? "N/A (Fresher)" : "Optional"} 
+                disabled={form.totalExperienceYears === "0"}
+              />
             </Field>
             <Field label="Skills" full>
-              <textarea className={inputClass + " resize-none"} rows={2} value={form.skills} onChange={set("skills")} maxLength={500} placeholder="Comma-separated skills (optional)" />
+              <textarea className={inputClass + " resize-none"} rows={3} value={form.skills} onChange={set("skills")} maxLength={500} placeholder="Comma-separated skills (optional)" />
             </Field>
           </div>
-        </div>
+        )}
 
-        {/* Proofs / identification */}
-        <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-          <SectionHeader icon={FileText} title="Proofs & Identification" subtitle="Identity and document references" />
+        {/* Step 6: Documents */}
+        {currentStep === 6 && (
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="National ID Number" required>
               <input className={inputClass} value={form.nationalIdNumber} onChange={set("nationalIdNumber")} minLength={4} maxLength={40} placeholder="Government ID number" required />
@@ -335,26 +672,135 @@ const Onboarding = () => {
               <input className={inputClass} value={form.educationProofDocument} onChange={set("educationProofDocument")} maxLength={300} placeholder="Optional" />
             </Field>
             <Field label="Resume / CV" full>
-              <input className={inputClass} value={form.resumeDocument} onChange={set("resumeDocument")} maxLength={300} placeholder="Document name or link (optional)" />
-            </Field>
-          </div>
-          <p className="text-xs text-muted-foreground mt-4">
-            Note: document fields currently accept a file name or link reference. File uploads can be added later.
-          </p>
-        </div>
+              {/* ── Resume upload widget ── */}
+              <div className="space-y-3">
+                {/* Drop zone / picker */}
+                {!resumeUploaded ? (
+                  <label
+                    className={`flex flex-col items-center justify-center gap-3 w-full rounded-xl border-2 border-dashed px-6 py-8 cursor-pointer transition-colors
+                      ${resumeUploading
+                        ? "border-primary/40 bg-primary/5 cursor-not-allowed"
+                        : "border-border hover:border-primary/50 hover:bg-primary/5"
+                      }`}
+                  >
+                    {resumeUploading ? (
+                      <>
+                        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                        <span className="text-sm text-muted-foreground">Uploading…</span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-foreground">
+                            Click to upload your Resume / CV
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            PDF, DOC, DOCX &nbsp;·&nbsp; Max 10 MB
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    <input
+                      ref={resumeInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={handleResumeChange}
+                      disabled={resumeUploading}
+                      className="hidden"
+                    />
+                  </label>
+                ) : (
+                  /* Uploaded file card */
+                  <div className="flex items-center gap-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                      <FileCheck2 className="h-5 w-5 text-emerald-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-emerald-900 truncate">
+                        {resumeFile?.name || form.resumeDocument.split("/").pop()}
+                      </p>
+                      <p className="text-xs text-emerald-700 mt-0.5 flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" />
+                        Uploaded successfully
+                        {resumeFile?.size > 0 && (
+                          <span className="text-emerald-600 ml-1">· {formatBytes(resumeFile.size)}</span>
+                        )}
+                      </p>
+                    </div>
+                    {/* Allow replacing the file */}
+                    <button
+                      type="button"
+                      onClick={handleRemoveResume}
+                      className="p-1.5 rounded-lg hover:bg-emerald-200 text-emerald-700 transition-colors"
+                      title="Remove and re-upload"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
 
-        <div className="flex items-center justify-between gap-4 pb-4">
-          <p className="text-xs text-muted-foreground">Fields marked <span className="text-destructive">*</span> are required.</p>
+                {/* View link if already saved on server */}
+                {form.resumeDocument && (
+                  <a
+                    href={`http://localhost:4000${form.resumeDocument}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    View uploaded resume
+                  </a>
+                )}
+              </div>
+            </Field>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Fields marked <span className="text-destructive">*</span> are required. Resume upload is optional.
+            </p>
+          </div>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
           <button
-            type="submit"
-            disabled={submitting}
-            className="cta-gradient text-white font-semibold px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+            type="button"
+            onClick={handlePrevious}
+            disabled={currentStep === 0}
+            className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {submitting ? "Submitting..." : "Submit for Approval"}
+            <ChevronLeft className="h-4 w-4" />
+            Previous
           </button>
+
+          <div className="text-xs text-muted-foreground">
+            Step {currentStep + 1} of {steps.length}
+          </div>
+
+          {currentStep < steps.length - 1 ? (
+            <button
+              type="button"
+              onClick={handleNext}
+              className="cta-gradient text-white font-semibold px-6 py-2 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2 text-sm"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={submitting}
+              className="cta-gradient text-white font-semibold px-6 py-2 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {submitting ? "Submitting..." : "Submit for Approval"}
+            </button>
+          )}
         </div>
       </form>
+
+      <p className="text-xs text-muted-foreground text-center pb-4">
+        Fields marked <span className="text-destructive">*</span> are required.
+      </p>
     </div>
   );
 };

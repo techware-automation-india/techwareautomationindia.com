@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { UserPlus, Loader2, RefreshCw, Users, Clock, Send, CheckCircle2, XCircle, Trash2, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { UserPlus, Loader2, Users, Clock, Send, CheckCircle2, XCircle, Trash2, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiDelete } from "../../lib/api.js";
 
@@ -46,12 +47,14 @@ const StatCard = ({ icon: Icon, label, value, tone }) => {
 };
 
 const Employee = () => {
+  const navigate = useNavigate();
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const loadEmployees = async () => {
     try {
@@ -64,7 +67,6 @@ const Employee = () => {
     }
   };
 
-  // User-triggered refresh shows the loading state then refetches.
   const refresh = () => {
     setLoading(true);
     loadEmployees();
@@ -125,6 +127,14 @@ const Employee = () => {
     rejected: employees.filter((e) => e.onboardingStatus === "REJECTED").length,
   };
 
+  const handleStatCardClick = (status) => {
+    if (status === "all") {
+      navigate("/admin/employee-list");
+    } else {
+      navigate(`/admin/employee-list?status=${status.toUpperCase()}`);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4">
@@ -139,11 +149,21 @@ const Employee = () => {
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard icon={Users} label="Total Employees" value={stats.total} tone="primary" />
-        <StatCard icon={Clock} label="Pending" value={stats.pending} tone="amber" />
-        <StatCard icon={Send} label="Submitted" value={stats.submitted} tone="blue" />
-        <StatCard icon={CheckCircle2} label="Approved" value={stats.approved} tone="emerald" />
-        <StatCard icon={XCircle} label="Rejected" value={stats.rejected} tone="rose" />
+        <div onClick={() => handleStatCardClick("all")} className="cursor-pointer hover:scale-105 transition-transform">
+          <StatCard icon={Users} label="Total Employees" value={stats.total} tone="primary" />
+        </div>
+        <div onClick={() => handleStatCardClick("pending")} className="cursor-pointer hover:scale-105 transition-transform">
+          <StatCard icon={Clock} label="Pending" value={stats.pending} tone="amber" />
+        </div>
+        <div onClick={() => handleStatCardClick("submitted")} className="cursor-pointer hover:scale-105 transition-transform">
+          <StatCard icon={Send} label="Submitted" value={stats.submitted} tone="blue" />
+        </div>
+        <div onClick={() => handleStatCardClick("approved")} className="cursor-pointer hover:scale-105 transition-transform">
+          <StatCard icon={CheckCircle2} label="Approved" value={stats.approved} tone="emerald" />
+        </div>
+        <div onClick={() => handleStatCardClick("rejected")} className="cursor-pointer hover:scale-105 transition-transform">
+          <StatCard icon={XCircle} label="Rejected" value={stats.rejected} tone="rose" />
+        </div>
       </div>
 
       {/* Create form */}
@@ -183,13 +203,28 @@ const Employee = () => {
           </div>
           <div>
             <label className="text-sm font-medium mb-1.5 block">Default Password</label>
-            <input
-              className={inputClass}
-              placeholder="At least 6 characters"
-              value={form.password}
-              onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-              required
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                className={`${inputClass} pr-10`}
+                placeholder="At least 6 characters"
+                value={form.password}
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="sm:col-span-2">
             <label className="text-sm font-medium mb-1.5 block">Job Title <span className="text-muted-foreground font-normal">(optional)</span></label>
@@ -211,62 +246,6 @@ const Employee = () => {
             </button>
           </div>
         </form>
-      </div>
-
-      {/* Employee list */}
-      <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="font-display text-lg font-semibold">All Employees</h2>
-          <button
-            onClick={refresh}
-            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
-          >
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="p-12 flex items-center justify-center text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading...
-          </div>
-        ) : employees.length === 0 ? (
-          <div className="p-12 text-center text-sm text-muted-foreground">No employees yet. Create one above.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                  <th className="px-6 py-3 font-medium">Name</th>
-                  <th className="px-6 py-3 font-medium">Code</th>
-                  <th className="px-6 py-3 font-medium">Email</th>
-                  <th className="px-6 py-3 font-medium">Job Title</th>
-                  <th className="px-6 py-3 font-medium">Onboarding</th>
-                  <th className="px-6 py-3 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => (
-                  <tr key={emp.id} className="border-b border-border last:border-0 hover:bg-secondary/40 transition-colors">
-                    <td className="px-6 py-3 font-medium">{emp.fullName}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{emp.employeeCode}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{emp.email}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{emp.jobTitle || "—"}</td>
-                    <td className="px-6 py-3"><StatusBadge status={emp.onboardingStatus} /></td>
-                    <td className="px-6 py-3 text-right">
-                      <button
-                        onClick={() => setDeleteTarget(emp)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                        title="Delete employee"
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
       {/* Delete confirmation */}

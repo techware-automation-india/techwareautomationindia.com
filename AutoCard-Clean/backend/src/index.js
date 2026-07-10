@@ -5,12 +5,15 @@ import rateLimit from "express-rate-limit";
 //import prisma from "./prismaClient.js";
 import authRouter from "./routes/auth.js";
 import employeesRouter from "./routes/employees.js";
+import customersRouter from "./routes/customers.js";
 import onboardingRouter from "./routes/onboarding.js";
 import requestsRouter from "./routes/requests.js";
 import leaveTypesRouter from "./routes/leaveTypes.js";
+import leaveRouter from "./routes/leave.js";
 import holidaysRouter from "./routes/holidays.js";
 import attendanceRouter from "./routes/attendance.js";
 import contactRoutes from "./routes/email.js";
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -57,9 +60,11 @@ app.use("/uploads", express.static("uploads"));
 // Routes
 app.use("/api/auth", authRouter);
 app.use("/api/employees", employeesRouter);
+app.use("/api/customers", customersRouter);
 app.use("/api/onboarding", onboardingRouter);
 app.use("/api/requests", requestsRouter);
 app.use("/api/leave-types", leaveTypesRouter);
+app.use("/api/leave", leaveRouter);
 app.use("/api/holidays", holidaysRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/contact", contactRoutes);
@@ -71,13 +76,18 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}/api/health`);
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}/api/health`);
 });
 
-// Graceful shutdown.
 const shutdown = () => {
-  process.exit(0);
+  console.log("Stopping server...");
+
+  server.close(() => {
+    console.log("Server stopped.");
+    process.exit(0);
+  });
 };
+
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

@@ -11,8 +11,9 @@ import {
   FaLinkedinIn,
 } from "react-icons/fa";
 
-const API_BASE =
-  import.meta.env.VITE_API_URL || "http://localhost:4000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+
 
 const ContactSection = () => {
   const ref = useRef(null);
@@ -27,7 +28,30 @@ const ContactSection = () => {
 
   const [photo, setPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
+  const COMPANY_LOCATION = {
+    latitude: 28.6940557,
+    longitude: 77.4364926,
+  };
 
+  const openGoogleMaps = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${latitude},${longitude}&destination=${COMPANY_LOCATION.latitude},${COMPANY_LOCATION.longitude}&travelmode=driving`;
+
+        window.open(url, "_blank");
+      },
+      () => {
+        alert("Please allow location permission.");
+      },
+    );
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,10 +72,6 @@ const ContactSection = () => {
       "demo",
     ];
 
-
-
-
-
     const data = new FormData();
 
     data.append("name", formData.name);
@@ -68,8 +88,9 @@ const ContactSection = () => {
       setLoading(true);
 
       const response = await axios.post(
-        `${API_BASE}/api/contact`,
-        data
+        "http://localhost:4000/api/contact",
+        data,
+
       );
 
       toast.success(response.data.message);
@@ -84,31 +105,39 @@ const ContactSection = () => {
 
       setPhoto(null);
     } catch (error) {
-      toast.error(
-        error.response?.data?.message ||
-        "Failed to send message"
-      );
+      toast.error(error.response?.data?.message || "Failed to send message");
     } finally {
       setLoading(false);
     }
   };
 
-
-  const inputClass = "w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
+  const inputClass =
+    "w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
 
   return (
     <section id="contact" className="section-padding bg-card/50 relative">
       <div className="absolute inset-0 grid-overlay opacity-30" />
       <div className="section-container relative" ref={ref}>
         <div className="text-center max-w-2xl mx-auto mb-16">
-          <motion.span initial={{ opacity: 0 }} animate={isInView ? { opacity: 1 } : {}} className="text-sm font-semibold text-primary uppercase tracking-widest">Get In Touch</motion.span>
-          <motion.h2 initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ delay: 0.1 }} className="font-display text-3xl md:text-4xl lg:text-5xl font-bold mt-3 mb-4">
-            Let's Build Your <span className="gradient-text">Automation System</span>
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={isInView ? { opacity: 1 } : {}}
+            className="text-sm font-semibold text-primary uppercase tracking-widest"
+          >
+            Get In Touch
+          </motion.span>
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ delay: 0.1 }}
+            className="font-display text-3xl md:text-4xl lg:text-5xl font-bold mt-3 mb-4"
+          >
+            Let's Build Your{" "}
+            <span className="gradient-text">Automation System</span>
           </motion.h2>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-12 max-w-5xl mx-auto">
-
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={isInView ? { opacity: 1, x: 0 } : {}}
@@ -137,51 +166,59 @@ const ContactSection = () => {
                   label: "Location",
                   value:
                     "Khasra No. 1099, Vikas Nagar Industrial Area\nMeerut Road, Ghaziabad\nUttar Pradesh - 201003",
-                  link:
-                    "https://www.google.com/maps/dir/28.6940139,77.4363853/Techware+Automation+INDIA,+Khasra+No.+1099,+Vikas+Nagar,+Industrial+Area,+Ghukna,+Ghaziabad,+Uttar+Pradesh+201003/@28.694029,77.433864,17z/data=!3m1!4b1!4m17!1m7!3m6!1s0x390cf1cc085c77fb:0x1689002c4c8e4d56!2sTechware+Automation+INDIA!8m2!3d28.6940557!4d77.4364926!16s%2Fg%2F11kb33hdtj!4m8!1m1!4e1!1m5!1m1!1s0x390cf1cc085c77fb:0x1689002c4c8e4d56!2m2!1d77.4364926!2d28.6940557!18m1!1e1?entry=ttu&g_ep=EgoyMDI2MDYxMC4wIKXMDSoASAFQAw%3D%3D",
+                  link: "#",
                 },
               ].map(({ icon: Icon, label, value, link }) => (
-                <div
-                  key={label}
-                  className="flex items-start gap-4"
-                >
+                <div key={label} className="flex items-start gap-4">
                   {/* Icon */}
-                  <a
-                    href={link}
-                    target={label === "Location" ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 hover:bg-primary/20 transition-colors"
-                  >
-                    <Icon className="h-5 w-5 text-primary" />
-                  </a>
+                  {label === "Location" ? (
+                    <button
+                      type="button"
+                      onClick={openGoogleMaps}
+                      className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 hover:bg-primary/20 transition-colors"
+                    >
+                      <Icon className="h-5 w-5 text-primary" />
+                    </button>
+                  ) : (
+                    <a
+                      href={link}
+                      className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 hover:bg-primary/20 transition-colors"
+                    >
+                      <Icon className="h-5 w-5 text-primary" />
+                    </a>
+                  )}
 
                   {/* Content */}
                   <div>
-                    <div className="font-semibold text-sm mb-1">
-                      {label}
-                    </div>
+                    <div className="font-semibold text-sm mb-1">{label}</div>
 
-                    <a
-                      href={link}
-                      target={label === "Location" ? "_blank" : undefined}
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground text-sm whitespace-pre-line hover:text-primary transition-colors"
-                    >
-                      {value}
-                    </a>
+                    {label === "Location" ? (
+                      <button
+                        type="button"
+                        onClick={openGoogleMaps}
+                        className="text-left text-muted-foreground text-sm whitespace-pre-line hover:text-primary transition-colors"
+                      >
+                        {value}
+                      </button>
+                    ) : (
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground text-sm whitespace-pre-line hover:text-primary transition-colors"
+                      >
+                        {value}
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
 
-
-
             {/* Business Hours */}
 
             <div className="p-6 rounded-xl bg-card border border-border">
-              <h4 className="font-semibold mb-3">
-                Business Hours
-              </h4>
+              <h4 className="font-semibold mb-3">Business Hours</h4>
 
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex justify-between">
@@ -196,8 +233,6 @@ const ContactSection = () => {
               </div>
             </div>
           </motion.div>
-
-
 
           <motion.form
             noValidate
@@ -272,12 +307,8 @@ const ContactSection = () => {
               type="file"
               accept=".jpg,.jpeg,.png"
               className={inputClass}
-              onChange={(e) =>
-                setPhoto(e.target.files[0])
-              }
+              onChange={(e) => setPhoto(e.target.files[0])}
             />
-
-
 
             <textarea
               className={inputClass + " resize-none"}

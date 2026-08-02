@@ -148,6 +148,19 @@ router.post("/apply", requireAuth, requireRole("EMPLOYEE"), async (req, res) => 
       return res.status(404).json({ message: "Leave type not found or inactive." });
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const minAllowedStart = new Date(today);
+    minAllowedStart.setDate(minAllowedStart.getDate() + 2);
+
+    const isEmergencyLeave = leaveType.code === "EML";
+    if (!isEmergencyLeave && start < minAllowedStart) {
+      return res.status(400).json({
+        message:
+          "Leave applications must be submitted at least 2 days before the start date unless the leave type is EML.",
+      });
+    }
+
     const totalDays = countWorkingDays(start, end);
     if (totalDays === 0) {
       return res.status(400).json({ message: "No working days in the selected date range." });
@@ -177,7 +190,7 @@ router.post("/apply", requireAuth, requireRole("EMPLOYEE"), async (req, res) => 
     }
 
     // Emergency / no-approval leave → auto-approve and deduct balance immediately
-    const isAutoApproved = leaveType.requiresApproval === false;
+    const isAutoApproved = isEmergencyLeave || leaveType.requiresApproval === false;
 
     const request = await prisma.leaveRequest.create({
       data: {
@@ -189,7 +202,9 @@ router.post("/apply", requireAuth, requireRole("EMPLOYEE"), async (req, res) => 
         reason: reason || null,
         status: isAutoApproved ? "APPROVED" : "PENDING",
         ...(isAutoApproved && {
-          reviewNote: "Auto-approved (no approval required for this leave type)",
+          reviewNote: isEmergencyLeave
+            ? "Auto-approved EML leave (emergency leave does not require approval)."
+            : "Auto-approved (no approval required for this leave type)",
           reviewedAt: new Date(),
         }),
       },

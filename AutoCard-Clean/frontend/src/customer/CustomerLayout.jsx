@@ -1,14 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
 import { customerModules } from "./modules.js";
+import { getAuthUser, clearAuth } from "../lib/auth.js";
 
 const CustomerLayout = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  useEffect(() => {
+    const authUser = getAuthUser();
+    if (!authUser || authUser.role !== "CUSTOMER") {
+      clearAuth();
+      navigate("/login/customer", { replace: true });
+    }
+  }, [navigate]);
+
   const handleLogout = () => {
-    // Auth/session clearing will be wired here later.
+    clearAuth();
     navigate("/");
   };
 

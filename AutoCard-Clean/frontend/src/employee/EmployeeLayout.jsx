@@ -12,12 +12,14 @@ const EmployeeLayout = () => {
 
   useEffect(() => {
     const authUser = getAuthUser();
-    setUser(authUser);
 
-    // If not logged in at all, redirect to login
-    if (!authUser) {
+    if (!authUser || authUser.role !== "EMPLOYEE") {
+      clearAuth();
       navigate("/login/employee", { replace: true });
+      return;
     }
+
+    setUser(authUser);
   }, [navigate, location.pathname]);
 
   const handleLogout = () => {
@@ -55,9 +57,9 @@ const EmployeeLayout = () => {
           // Hide non-onboarding modules if status is PENDING
           const isPending = user?.onboardingStatus === "PENDING";
           const isOnboardingModule = key === "onboarding" || key === "overview";
-          
+
           if (isPending && !isOnboardingModule) {
-            return null; // Hide this module
+            return null; // Hide this module until onboarding is completed
           }
 
           return (

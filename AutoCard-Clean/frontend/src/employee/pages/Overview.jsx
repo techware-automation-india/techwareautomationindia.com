@@ -1,14 +1,46 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, CheckCircle2, Clock, ArrowRight } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, ArrowRight, CalendarDays, MapPin } from "lucide-react";
 import { employeeModules } from "../modules.js";
 import { getAuthUser } from "../../lib/auth.js";
+import { apiGet } from "../../lib/api.js";
 
 const Overview = () => {
   const user = getAuthUser();
   const onboardingStatus = user?.onboardingStatus;
+  const [assignedEntries, setAssignedEntries] = useState([]);
+  const [loadingRoster, setLoadingRoster] = useState(true);
+
+  const month = new Date().getMonth() + 1;
+  const year = new Date().getFullYear();
+
+  useEffect(() => {
+    const loadRoster = async () => {
+      setLoadingRoster(true);
+      try {
+        const data = await apiGet(`/roster/me?year=${year}&month=${month}`);
+        setAssignedEntries(data.entries || []);
+      } catch (err) {
+        console.warn("Failed to load roster:", err.message);
+        setAssignedEntries([]);
+      } finally {
+        setLoadingRoster(false);
+      }
+    };
+
+    loadRoster();
+  }, [month, year]);
 
   // Exclude the overview entry itself from the module grid.
   const modules = employeeModules.filter((m) => m.key !== "overview");
+
+  const upcomingAssignments = assignedEntries.filter((entry) => {
+    const entryDate = new Date(entry.date);
+    const today = new Date();
+    return entryDate >= new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  }).slice(0, 3);
+
+  const hasAssignments = assignedEntries.length > 0;
 
   return (
     <div className="space-y-8">
@@ -68,6 +100,53 @@ const Overview = () => {
               Welcome aboard! Your onboarding has been approved. You now have full access to all employee modules.
             </p>
           </div>
+        </div>
+      )}
+
+      {user?.onboardingStatus !== "PENDING" && (
+        <div className="rounded-2xl border border-border bg-background p-6 card-shadow">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="font-display text-xl font-semibold">Assigned Shifts &amp; Locations</h2>
+              <p className="text-sm text-muted-foreground">
+                See the shifts and locations assigned to you by the admin for {new Date(year, month - 1).toLocaleString("en-US", { month: "long", year: "numeric" })}.
+              </p>
+            </div>
+            <div className="text-sm text-muted-foreground">{hasAssignments ? `${assignedEntries.length} assignment${assignedEntries.length === 1 ? "" : "s"}` : "No assignments yet"}</div>
+          </div>
+
+          {loadingRoster ? (
+            <div className="p-8 text-center text-muted-foreground">Loading assignments…</div>
+          ) : !hasAssignments ? (
+            <div className="p-8 text-center text-muted-foreground">
+              No assigned shifts or locations were found for this month.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {upcomingAssignments.map((entry) => (
+                <div key={entry.id} className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">{new Date(entry.date).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })}</div>
+                      <div className="text-xs text-muted-foreground mt-1">{entry.shift?.name || "No shift assigned"}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{entry.shift ? `${entry.shift.startTime} – ${entry.shift.endTime}` : ""}</div>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-border bg-secondary/5 p-3">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">Location</div>
+                      <div className="mt-1 text-sm font-medium">{entry.location?.name || "No specific location"}</div>
+                      {entry.location?.city && <div className="text-xs text-muted-foreground">{entry.location.city}</div>}
+                    </div>
+                    <div className="rounded-2xl border border-border bg-secondary/5 p-3">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">Notes</div>
+                      <div className="mt-1 text-sm font-medium">{entry.note || "—"}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

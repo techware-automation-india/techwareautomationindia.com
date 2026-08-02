@@ -167,11 +167,9 @@ router.post("/upload-image", requireAuth, upload.single("profileImage"), async (
 router.post(
   "/upload-resume",
   requireAuth,
-  requireRole("EMPLOYEE"),
   (req, res, next) => {
     uploadDocument.single("resume")(req, res, (err) => {
       if (err) {
-        // Multer validation errors (wrong type, too large, etc.)
         return res.status(400).json({ message: err.message });
       }
       next();
@@ -184,16 +182,16 @@ router.post(
       return res.status(400).json({ message: "No resume file provided." });
     }
 
+    const targetUserId = req.query.userId || req.user.id;
     const resumePath = `/uploads/documents/${req.file.filename}`;
     const originalName = req.file.originalname;
     const fileSize = req.file.size;
 
-    console.log(`✅ [POST /api/onboarding/upload-resume] Resume uploaded: ${resumePath}`);
+    console.log(`✅ [POST /api/onboarding/upload-resume] Resume uploaded: ${resumePath} for user ${targetUserId}`);
 
-    // Persist the path to the employee's profile immediately so it's never lost
     try {
       const profile = await prisma.employeeProfile.findUnique({
-        where: { userId: req.user.id },
+        where: { userId: targetUserId },
       });
       if (profile) {
         await prisma.employeeProfile.update({
@@ -202,7 +200,6 @@ router.post(
         });
       }
     } catch (dbErr) {
-      // Non-fatal — the file is already saved; the path is returned to the client
       console.warn("⚠️  [POST /api/onboarding/upload-resume] DB update failed:", dbErr.message);
     }
 
@@ -212,6 +209,55 @@ router.post(
       fileSize,
       message: "Resume uploaded successfully.",
     });
+  }
+);
+
+// POST /api/onboarding/upload-document - upload any proof document (PDF/DOC/DOCX, employee only)
+// fieldName query param identifies which profile field to update:
+//   "idProofDocument" | "addressProofDocument" | "educationProofDocument"
+const ALLOWED_DOC_FIELDS = ["idProofDocument", "addressProofDocument", "educationProofDocument"];
+
+router.post(
+  "/upload-document",
+  requireAuth,
+  (req, res, next) => {
+    uploadDocument.single("document")(req, res, (err) => {
+      if (err) return res.status(400).json({ message: err.message });
+      next();
+    });
+  },
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No document file provided." });
+    }
+
+    const fieldName = req.query.field;
+    if (!ALLOWED_DOC_FIELDS.includes(fieldName)) {
+      return res.status(400).json({
+        message: `Invalid field. Must be one of: ${ALLOWED_DOC_FIELDS.join(", ")}`,
+      });
+    }
+
+    const targetUserId = req.query.userId || req.user.id;
+    const docPath = `/uploads/documents/${req.file.filename}`;
+    const originalName = req.file.originalname;
+    const fileSize = req.file.size;
+
+    try {
+      const profile = await prisma.employeeProfile.findUnique({
+        where: { userId: targetUserId },
+      });
+      if (profile) {
+        await prisma.employeeProfile.update({
+          where: { id: profile.id },
+          data: { [fieldName]: docPath },
+        });
+      }
+    } catch (dbErr) {
+      console.warn("⚠️  [upload-document] DB update failed:", dbErr.message);
+    }
+
+    res.json({ docPath, originalName, fileSize, fieldName, message: "Document uploaded successfully." });
   }
 );
 

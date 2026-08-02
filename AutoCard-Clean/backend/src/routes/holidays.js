@@ -26,6 +26,7 @@ const createHolidaySchema = z.object({
   date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
   holidayType: z.enum(["NATIONAL", "FESTIVAL", "OPTIONAL"]).default("FESTIVAL"),
   isOptional: z.boolean().default(false),
+  isRecurring: z.boolean().default(false),
   description: z.string().max(500).optional(),
 });
 
@@ -34,6 +35,7 @@ const updateHolidaySchema = z.object({
   date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format").optional(),
   holidayType: z.enum(["NATIONAL", "FESTIVAL", "OPTIONAL"]).optional(),
   isOptional: z.boolean().optional(),
+  isRecurring: z.boolean().optional(),
   description: z.string().max(500).optional(),
 });
 
@@ -91,7 +93,7 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 
   try {
-    const { name, date, holidayType, isOptional, description } = parsed.data;
+    const { name, date, holidayType, isOptional, isRecurring, description } = parsed.data;
     const holidayDate = new Date(date);
 
     // Check for duplicate
@@ -111,6 +113,7 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
         date: holidayDate,
         holidayType,
         isOptional,
+        isRecurring,
         description,
       },
     });

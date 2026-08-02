@@ -13,6 +13,10 @@ import leaveRouter from "./routes/leave.js";
 import holidaysRouter from "./routes/holidays.js";
 import attendanceRouter from "./routes/attendance.js";
 import contactRoutes from "./routes/email.js";
+import rolesAccessRouter from "./routes/rolesAccess.js";
+import shiftRouter from "./routes/shiftRoutes.js";
+import locationRouter from "./routes/locationRoutes.js";
+import rosterRouter from "./routes/rosterRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -68,6 +72,10 @@ app.use("/api/leave", leaveRouter);
 app.use("/api/holidays", holidaysRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/contact", contactRoutes);
+app.use("/api/roles-access", rolesAccessRouter);
+app.use("/api/shifts", shiftRouter);
+app.use("/api/locations", locationRouter);
+app.use("/api/roster", rosterRouter);
 // Health check - also verifies the database connection.
 app.get("/api/health", (_req, res) => {
   res.json({

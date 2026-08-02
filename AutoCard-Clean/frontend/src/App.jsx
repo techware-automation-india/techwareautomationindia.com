@@ -13,6 +13,7 @@ import EmployeeList from "./admin/pages/EmployeeList.jsx";
 import Customer from "./admin/pages/Customer.jsx";
 import CustomerList from "./admin/pages/CustomerList.jsx";
 import Requests from "./admin/pages/Requests.jsx";
+import LeaveRequests from "./admin/pages/LeaveRequests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
 import Attendance from "./admin/pages/Attendance.jsx";
@@ -50,6 +51,7 @@ const App = () => (
         <Route path="customer" element={<Customer />} />
         <Route path="customer-list" element={<CustomerList />} />
         <Route path="requests" element={<Requests />} />
+        <Route path="leave-requests" element={<LeaveRequests />} />
         <Route path="leave-policy" element={<LeavePolicy />} />
         <Route path="holidays" element={<Holidays />} />
         <Route path="attendance" element={<Attendance />} />

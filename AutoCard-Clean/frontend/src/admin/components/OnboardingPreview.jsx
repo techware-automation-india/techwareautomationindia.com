@@ -1,52 +1,86 @@
 import { useEffect, useState } from "react";
-import { 
-  X, Loader2, User, Landmark, Briefcase, FileText, Check, Edit, Save, 
+import {
+  X, Loader2, User, Briefcase, FileText, Check,
   Mail, Phone, MapPin, Heart, CreditCard, GraduationCap, Calendar,
-  Globe, Droplet, Award, Building2
+  Globe, Droplet, Award, Building2, ExternalLink, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPut } from "../../lib/api.js";
 
-// Read-only field display with icon
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+const fmtDate = (v) =>
+  v ? new Date(v).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : null;
+
+const fmtExp = (v) => {
+  if (v === null || v === undefined || v === "") return null;
+  return Number(v) === 0 ? "Fresher (No Experience)" : `${v} years`;
+};
+
+// ── sub-components ────────────────────────────────────────────────────────────
+
 const Item = ({ label, value, icon: Icon }) => (
-  <div className="group">
-    <div className="flex items-center gap-1.5 mb-1.5">
+  <div>
+    <div className="flex items-center gap-1.5 mb-1">
       {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />}
       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
     </div>
-    <div className="text-sm font-medium text-foreground break-words pl-5">{value || <span className="text-muted-foreground">—</span>}</div>
+    <div className="text-sm font-medium text-foreground break-words pl-5">
+      {value || <span className="text-muted-foreground/60">—</span>}
+    </div>
   </div>
 );
 
-// Editable field
-const EditableField = ({ label, value, onChange, type = "text", required = false }) => (
-  <div>
-    <label className="text-xs uppercase tracking-wide text-muted-foreground block mb-1">
-      {label} {required && <span className="text-destructive">*</span>}
-    </label>
-    <input
-      type={type}
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value)}
-      required={required}
-      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-    />
-  </div>
-);
+// Renders a clickable open-in-new-tab link for uploaded files,
+// falls back to plain text for non-path values, or "—" when empty.
+const DocItem = ({ label, value }) => {
+  const isUploadPath = value && value.startsWith("/uploads/");
+  const isUrl = value && (value.startsWith("http://") || value.startsWith("https://"));
+  const href = isUploadPath ? `${API_BASE}${value}` : isUrl ? value : null;
+  const filename = isUploadPath ? value.split("/").pop() : value;
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-1">
+        <FileText className="h-3.5 w-3.5 text-muted-foreground/60" />
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      </div>
+      <div className="pl-5">
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            <Eye className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate max-w-xs">{filename}</span>
+            <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+          </a>
+        ) : value ? (
+          <span className="text-sm font-medium">{value}</span>
+        ) : (
+          <span className="text-sm text-muted-foreground/60">—</span>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Section = ({ icon: Icon, title, subtitle, children, accent = "primary" }) => {
   const accentColors = {
     primary: "bg-primary/10 text-primary border-primary/20",
-    blue: "bg-blue-50 text-blue-600 border-blue-100",
+    blue:    "bg-blue-50 text-blue-600 border-blue-100",
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
-    amber: "bg-amber-50 text-amber-600 border-amber-100",
-    purple: "bg-purple-50 text-purple-600 border-purple-100",
+    amber:   "bg-amber-50 text-amber-600 border-amber-100",
+    purple:  "bg-purple-50 text-purple-600 border-purple-100",
   };
-
   return (
     <div className="rounded-xl border-2 border-border bg-gradient-to-br from-background to-secondary/20 p-6 hover:shadow-md transition-shadow">
       <div className="flex items-start gap-3 mb-5 pb-4 border-b border-border/50">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border-2 ${accentColors[accent]}`}>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border-2 shrink-0 ${accentColors[accent]}`}>
           <Icon className="h-5 w-5" />
         </div>
         <div className="flex-1">
@@ -59,28 +93,56 @@ const Section = ({ icon: Icon, title, subtitle, children, accent = "primary" }) 
   );
 };
 
-const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
+const EditableField = ({ label, value, onChange, type = "text", multiline = false, placeholder = "" }) => (
+  <label className="block">
+    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+    {multiline ? (
+      <textarea
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+      />
+    ) : (
+      <input
+        type={type}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+      />
+    )}
+  </label>
+);
 
-// Enhanced modal that can view/edit onboarding data from Employee module
-// Or approve/reject from Requests module
-const OnboardingPreview = ({ requestId, employee, onboardingData, loading: parentLoading, onClose, onApprove, onReject, onRefresh, acting }) => {
+// ── main component ────────────────────────────────────────────────────────────
+
+const OnboardingPreview = ({
+  requestId,
+  employee,
+  onboardingData,
+  loading: parentLoading,
+  onClose,
+  onApprove,
+  onReject,
+  acting,
+  onRefresh,
+}) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedProfile, setEditedProfile] = useState(null);
+  const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
 
   const isFromRequests = !!requestId;
-  const isFromEmployees = !!employee;
 
   const load = async () => {
     try {
       if (isFromRequests) {
-        // Load from requests (existing behavior)
         const data = await apiGet(`/requests/${requestId}/profile`);
         setProfile(data.profile);
-      } else if (isFromEmployees) {
-        // Data already passed from parent
+      } else if (onboardingData) {
         setProfile(onboardingData);
       }
     } catch (err) {
@@ -92,7 +154,7 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
   };
 
   useEffect(() => {
-    if (isFromEmployees && onboardingData) {
+    if (!isFromRequests && onboardingData) {
       setProfile(onboardingData);
       setLoading(false);
     } else if (isFromRequests) {
@@ -101,51 +163,161 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestId, onboardingData]);
 
-  const fullName = profile
-    ? [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.user?.fullName || employee?.fullName
-    : "";
+  useEffect(() => {
+    if (profile) {
+      setEditForm(profile);
+    }
+  }, [profile]);
 
-  const startEditing = () => {
-    setEditedProfile({ ...profile });
-    setIsEditing(true);
+  const handleEditField = (field, value) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const cancelEditing = () => {
-    setEditedProfile(null);
-    setIsEditing(false);
-  };
+  const handleDocumentUpload = async (event, fieldName) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const saveChanges = async () => {
-    console.log("💾 [Frontend] Saving onboarding changes:", editedProfile);
-    setSaving(true);
-    
+    const targetUserId = employee?.id || profile?.userId || profile?.user?.id;
+    if (!targetUserId) {
+      toast.error("Unable to identify the employee for upload.");
+      return;
+    }
+
+    const allowedExts = /\.(pdf|doc|docx)$/i;
+    const allowedMimes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+
+    if (!allowedExts.test(file.name) || !allowedMimes.includes(file.type)) {
+      toast.error("Only PDF, DOC, or DOCX files are allowed.");
+      event.target.value = "";
+      return;
+    }
+
     try {
-      await apiPut(`/onboarding/employee/${employee.id}`, editedProfile);
-      console.log("✅ [Frontend] Onboarding updated successfully");
-      toast.success("Onboarding details updated successfully!");
-      setProfile(editedProfile);
-      setIsEditing(false);
-      if (onRefresh) onRefresh();
+      const formData = new FormData();
+      formData.append("document", file);
+
+      const response = await fetch(
+        `${API_BASE}/api/onboarding/upload-document?field=${fieldName}&userId=${targetUserId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          },
+          body: formData,
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Document upload failed.");
+      }
+
+      setEditForm((prev) => ({ ...prev, [fieldName]: data.docPath }));
+      toast.success("Document updated successfully.");
     } catch (err) {
-      console.error("❌ [Frontend] Failed to update onboarding:", err);
-      toast.error(err.message || "Failed to update onboarding.");
+      toast.error(err.message || "Failed to upload document.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleResumeUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const targetUserId = employee?.id || profile?.userId || profile?.user?.id;
+    if (!targetUserId) {
+      toast.error("Unable to identify the employee for upload.");
+      return;
+    }
+
+    const allowedExts = /\.(pdf|doc|docx)$/i;
+    const allowedMimes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+
+    if (!allowedExts.test(file.name) || !allowedMimes.includes(file.type)) {
+      toast.error("Only PDF, DOC, or DOCX files are allowed.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("resume", file);
+
+      const response = await fetch(
+        `${API_BASE}/api/onboarding/upload-resume?userId=${targetUserId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          },
+          body: formData,
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Resume upload failed.");
+      }
+
+      setEditForm((prev) => ({ ...prev, resumeDocument: data.resumePath }));
+      toast.success("Resume updated successfully.");
+    } catch (err) {
+      toast.error(err.message || "Failed to upload resume.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    const targetUserId = employee?.id || profile?.userId || profile?.user?.id;
+
+    if (!targetUserId) {
+      toast.error("Unable to identify employee for update.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const payload = {
+        ...editForm,
+        dateOfBirth: editForm.dateOfBirth ? new Date(editForm.dateOfBirth).toISOString().slice(0, 10) : null,
+      };
+
+      const data = await apiPut(`/onboarding/employee/${targetUserId}`, payload);
+      setProfile(data.profile);
+      setIsEditing(false);
+      toast.success("Employee onboarding details updated.");
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err.message || "Failed to update employee onboarding details.");
     } finally {
       setSaving(false);
     }
   };
 
-  const updateField = (field, value) => {
-    setEditedProfile(prev => ({ ...prev, [field]: value }));
-  };
+  const fullName = profile
+    ? [profile.firstName, profile.lastName].filter(Boolean).join(" ") ||
+      profile.user?.fullName ||
+      employee?.fullName
+    : "";
 
-  const displayProfile = isEditing ? editedProfile : profile;
-  const showLoading = isFromRequests ? loading : (parentLoading || loading);
+  const showLoading = isFromRequests ? loading : parentLoading || loading;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 bg-foreground/60 backdrop-blur-sm">
       <div className="absolute inset-0" onClick={onClose} />
       <div className="relative bg-background rounded-2xl border-2 border-border shadow-2xl w-full max-w-5xl my-8">
-        {/* Header with gradient */}
+
+        {/* ── Modal Header ── */}
         <div className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-purple-500/10 to-blue-500/10" />
           <div className="relative flex items-center justify-between p-6 border-b border-border/50">
@@ -158,13 +330,15 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
                   {isFromRequests ? "Onboarding Submission" : "Employee Profile"}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {isFromRequests ? "Review and approve details" : (isEditing ? "Editing employee information" : `Viewing ${fullName}'s complete profile`)}
+                  {isFromRequests
+                    ? "Review the submitted details before approving"
+                    : `Viewing ${fullName}'s complete profile`}
                 </p>
               </div>
             </div>
-            <button 
-              onClick={onClose} 
-              className="text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg p-2 transition-colors" 
+            <button
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg p-2 transition-colors"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -172,23 +346,133 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
           </div>
         </div>
 
-        {/* Body */}
+        {/* ── Body ── */}
         {showLoading ? (
           <div className="p-16 flex flex-col items-center justify-center text-muted-foreground">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
             <p className="text-sm">Loading employee details...</p>
           </div>
+        ) : isEditing ? (
+          <div className="p-6 space-y-6 max-h-[calc(100vh-16rem)] overflow-y-auto">
+            <div className="rounded-2xl border-2 border-border bg-gradient-to-br from-primary/5 via-purple-500/5 to-blue-500/5 p-6">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <EditableField label="First Name" value={editForm.firstName} onChange={(v) => handleEditField("firstName", v)} />
+                <EditableField label="Last Name" value={editForm.lastName} onChange={(v) => handleEditField("lastName", v)} />
+                <EditableField label="Phone" value={editForm.phone} onChange={(v) => handleEditField("phone", v)} />
+                <EditableField label="Alternate Phone" value={editForm.alternatePhone} onChange={(v) => handleEditField("alternatePhone", v)} />
+                <EditableField label="Personal Email" type="email" value={editForm.personalEmail} onChange={(v) => handleEditField("personalEmail", v)} />
+                <EditableField label="Date of Birth" type="date" value={editForm.dateOfBirth ? new Date(editForm.dateOfBirth).toISOString().slice(0, 10) : ""} onChange={(v) => handleEditField("dateOfBirth", v)} />
+                <EditableField label="Gender" value={editForm.gender} onChange={(v) => handleEditField("gender", v)} />
+                <EditableField label="Marital Status" value={editForm.maritalStatus} onChange={(v) => handleEditField("maritalStatus", v)} />
+                <EditableField label="Nationality" value={editForm.nationality} onChange={(v) => handleEditField("nationality", v)} />
+                <EditableField label="Blood Group" value={editForm.bloodGroup} onChange={(v) => handleEditField("bloodGroup", v)} />
+              </div>
+            </div>
+
+            <Section icon={MapPin} title="Contact & Address" subtitle="Update address and contact information" accent="blue">
+              <EditableField label="Address Line 1" value={editForm.addressLine1} onChange={(v) => handleEditField("addressLine1", v)} />
+              <EditableField label="Address Line 2" value={editForm.addressLine2} onChange={(v) => handleEditField("addressLine2", v)} />
+              <EditableField label="City" value={editForm.city} onChange={(v) => handleEditField("city", v)} />
+              <EditableField label="State" value={editForm.state} onChange={(v) => handleEditField("state", v)} />
+              <EditableField label="Postal Code" value={editForm.postalCode} onChange={(v) => handleEditField("postalCode", v)} />
+              <EditableField label="Country" value={editForm.country} onChange={(v) => handleEditField("country", v)} />
+            </Section>
+
+            <Section icon={Heart} title="Emergency Contact" subtitle="Update emergency info" accent="amber">
+              <EditableField label="Contact Name" value={editForm.emergencyContactName} onChange={(v) => handleEditField("emergencyContactName", v)} />
+              <EditableField label="Relationship" value={editForm.emergencyContactRelation} onChange={(v) => handleEditField("emergencyContactRelation", v)} />
+              <EditableField label="Emergency Phone" value={editForm.emergencyContactPhone} onChange={(v) => handleEditField("emergencyContactPhone", v)} />
+            </Section>
+
+            <Section icon={CreditCard} title="Banking Information" subtitle="Edit salary details" accent="emerald">
+              <EditableField label="Bank Name" value={editForm.bankName} onChange={(v) => handleEditField("bankName", v)} />
+              <EditableField label="Account Holder" value={editForm.bankAccountName} onChange={(v) => handleEditField("bankAccountName", v)} />
+              <EditableField label="Account Number" value={editForm.bankAccountNumber} onChange={(v) => handleEditField("bankAccountNumber", v)} />
+              <EditableField label="IFSC / Routing" value={editForm.bankIfscCode} onChange={(v) => handleEditField("bankIfscCode", v)} />
+              <EditableField label="Branch" value={editForm.bankBranch} onChange={(v) => handleEditField("bankBranch", v)} />
+            </Section>
+
+            <Section icon={GraduationCap} title="Professional Details" subtitle="Update experience and qualifications" accent="purple">
+              <EditableField label="Job Title" value={editForm.jobTitle} onChange={(v) => handleEditField("jobTitle", v)} />
+              <EditableField label="Highest Qualification" value={editForm.highestQualification} onChange={(v) => handleEditField("highestQualification", v)} />
+              <EditableField label="University" value={editForm.university} onChange={(v) => handleEditField("university", v)} />
+              <EditableField label="Graduation Year" type="number" value={editForm.graduationYear ?? ""} onChange={(v) => handleEditField("graduationYear", v)} />
+              <EditableField label="Total Experience (Years)" type="number" value={editForm.totalExperienceYears ?? ""} onChange={(v) => handleEditField("totalExperienceYears", v)} />
+              <EditableField label="Previous Employer" value={editForm.previousemployer} onChange={(v) => handleEditField("previousemployer", v)} />
+              <div className="sm:col-span-2">
+                <EditableField label="Skills" value={editForm.skills} multiline onChange={(v) => handleEditField("skills", v)} />
+              </div>
+            </Section>
+
+            <Section icon={FileText} title="Documents & Identification" subtitle="Upload official records and document files" accent="primary">
+              <EditableField label="National ID Number" value={editForm.nationalIdNumber} onChange={(v) => handleEditField("nationalIdNumber", v)} />
+              <EditableField label="Tax ID" value={editForm.taxIdNumber} onChange={(v) => handleEditField("taxIdNumber", v)} />
+              <EditableField label="Passport Number" value={editForm.passportNumber} onChange={(v) => handleEditField("passportNumber", v)} />
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">ID Proof Document</span>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => handleDocumentUpload(e, "idProofDocument")}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-sm file:font-medium file:text-primary"
+                />
+                {editForm.idProofDocument && (
+                  <a href={`${API_BASE}${editForm.idProofDocument}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs text-primary hover:underline">View current file</a>
+                )}
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Address Proof Document</span>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => handleDocumentUpload(e, "addressProofDocument")}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-sm file:font-medium file:text-primary"
+                />
+                {editForm.addressProofDocument && (
+                  <a href={`${API_BASE}${editForm.addressProofDocument}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs text-primary hover:underline">View current file</a>
+                )}
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Education Proof Document</span>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => handleDocumentUpload(e, "educationProofDocument")}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-sm file:font-medium file:text-primary"
+                />
+                {editForm.educationProofDocument && (
+                  <a href={`${API_BASE}${editForm.educationProofDocument}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs text-primary hover:underline">View current file</a>
+                )}
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Resume / CV</span>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleResumeUpload}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-sm file:font-medium file:text-primary"
+                />
+                {editForm.resumeDocument && (
+                  <a href={`${API_BASE}${editForm.resumeDocument}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs text-primary hover:underline">View current file</a>
+                )}
+              </label>
+            </Section>
+          </div>
         ) : (
           <div className="p-6 space-y-6 max-h-[calc(100vh-16rem)] overflow-y-auto">
-            {/* Profile Header Card */}
+
+            {/* Profile header card */}
             <div className="rounded-2xl border-2 border-border bg-gradient-to-br from-primary/5 via-purple-500/5 to-blue-500/5 p-6">
               <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-                {/* Profile Image */}
-                <div className="flex-shrink-0">
-                  {displayProfile.profileImage ? (
-                    <div className="w-32 h-32 rounded-2xl overflow-hidden bg-secondary flex items-center justify-center border-4 border-primary/20 shadow-xl">
+                <div className="shrink-0">
+                  {profile.profileImage ? (
+                    <div className="w-32 h-32 rounded-2xl overflow-hidden border-4 border-primary/20 shadow-xl">
                       <img
-                        src={`http://localhost:4000${displayProfile.profileImage}`}
+                        src={`${API_BASE}${profile.profileImage}`}
                         alt={fullName}
                         className="w-full h-full object-cover"
                       />
@@ -199,12 +483,10 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
                     </div>
                   )}
                 </div>
-
-                {/* Quick Info */}
                 <div className="flex-1 text-center md:text-left space-y-3">
                   <div>
-                    <h3 className="font-display text-2xl font-bold">{fullName}</h3>
-                    <p className="text-muted-foreground">{displayProfile.jobTitle || "Employee"}</p>
+                    <h3 className="font-display text-2xl font-bold">{fullName || "—"}</h3>
+                    <p className="text-muted-foreground">{profile.jobTitle || "Employee"}</p>
                   </div>
                   <div className="flex flex-wrap gap-4 justify-center md:justify-start">
                     <div className="flex items-center gap-2 text-sm">
@@ -213,7 +495,7 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Email</div>
-                        <div className="font-medium">{displayProfile.user?.email || employee?.email}</div>
+                        <div className="font-medium">{profile.user?.email || employee?.email || "—"}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
@@ -222,17 +504,17 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Phone</div>
-                        <div className="font-medium">{displayProfile.phone || "—"}</div>
+                        <div className="font-medium">{profile.phone || "—"}</div>
                       </div>
                     </div>
-                    {displayProfile.employeeCode && (
+                    {profile.employeeCode && (
                       <div className="flex items-center gap-2 text-sm">
                         <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
                           <Award className="h-4 w-4 text-blue-600" />
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Employee Code</div>
-                          <div className="font-medium">{displayProfile.employeeCode}</div>
+                          <div className="font-medium">{profile.employeeCode}</div>
                         </div>
                       </div>
                     )}
@@ -241,165 +523,89 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
               </div>
             </div>
 
+            {/* Personal Info */}
             <Section icon={User} title="Personal Information" subtitle="Basic identity and demographics" accent="primary">
-              {isEditing ? (
-                <>
-                  <EditableField label="First Name" value={displayProfile.firstName} onChange={(v) => updateField('firstName', v)} required />
-                  <EditableField label="Last Name" value={displayProfile.lastName} onChange={(v) => updateField('lastName', v)} required />
-                  <EditableField label="Date of Birth" value={displayProfile.dateOfBirth?.slice(0, 10)} onChange={(v) => updateField('dateOfBirth', v)} type="date" />
-                  <EditableField label="Gender" value={displayProfile.gender} onChange={(v) => updateField('gender', v)} />
-                  <EditableField label="Marital Status" value={displayProfile.maritalStatus} onChange={(v) => updateField('maritalStatus', v)} />
-                  <EditableField label="Blood Group" value={displayProfile.bloodGroup} onChange={(v) => updateField('bloodGroup', v)} />
-                  <EditableField label="Nationality" value={displayProfile.nationality} onChange={(v) => updateField('nationality', v)} />
-                  <EditableField label="Personal Email" value={displayProfile.personalEmail} onChange={(v) => updateField('personalEmail', v)} type="email" />
-                </>
-              ) : (
-                <>
-                  <Item label="First Name" value={displayProfile.firstName} icon={User} />
-                  <Item label="Last Name" value={displayProfile.lastName} icon={User} />
-                  <Item label="Date of Birth" value={fmtDate(displayProfile.dateOfBirth)} icon={Calendar} />
-                  <Item label="Gender" value={displayProfile.gender} icon={User} />
-                  <Item label="Marital Status" value={displayProfile.maritalStatus} />
-                  <Item label="Blood Group" value={displayProfile.bloodGroup} icon={Droplet} />
-                  <Item label="Nationality" value={displayProfile.nationality} icon={Globe} />
-                  <Item label="Personal Email" value={displayProfile.personalEmail} icon={Mail} />
-                </>
-              )}
+              <Item label="First Name"     value={profile.firstName} icon={User} />
+              <Item label="Last Name"      value={profile.lastName}  icon={User} />
+              <Item label="Date of Birth"  value={fmtDate(profile.dateOfBirth)} icon={Calendar} />
+              <Item label="Gender"         value={profile.gender}    icon={User} />
+              <Item label="Marital Status" value={profile.maritalStatus} />
+              <Item label="Blood Group"    value={profile.bloodGroup}  icon={Droplet} />
+              <Item label="Nationality"    value={profile.nationality} icon={Globe} />
+              <Item label="Personal Email" value={profile.personalEmail} icon={Mail} />
             </Section>
 
+            {/* Contact & Address */}
             <Section icon={MapPin} title="Contact & Address" subtitle="Location and phone details" accent="blue">
-              {isEditing ? (
-                <>
-                  <EditableField label="Phone" value={displayProfile.phone} onChange={(v) => updateField('phone', v)} type="tel" required />
-                  <EditableField label="Alternate Phone" value={displayProfile.alternatePhone} onChange={(v) => updateField('alternatePhone', v)} type="tel" />
-                  <EditableField label="Address Line 1" value={displayProfile.addressLine1} onChange={(v) => updateField('addressLine1', v)} required />
-                  <EditableField label="Address Line 2" value={displayProfile.addressLine2} onChange={(v) => updateField('addressLine2', v)} />
-                  <EditableField label="City" value={displayProfile.city} onChange={(v) => updateField('city', v)} required />
-                  <EditableField label="State" value={displayProfile.state} onChange={(v) => updateField('state', v)} required />
-                  <EditableField label="Postal Code" value={displayProfile.postalCode} onChange={(v) => updateField('postalCode', v)} required />
-                  <EditableField label="Country" value={displayProfile.country} onChange={(v) => updateField('country', v)} required />
-                </>
-              ) : (
-                <>
-                  <Item label="Phone" value={displayProfile.phone} icon={Phone} />
-                  <Item label="Alternate Phone" value={displayProfile.alternatePhone} icon={Phone} />
-                  <div className="sm:col-span-2">
-                    <Item 
-                      label="Full Address" 
-                      value={[displayProfile.addressLine1, displayProfile.addressLine2, displayProfile.city, displayProfile.state, displayProfile.postalCode, displayProfile.country].filter(Boolean).join(", ")}
-                      icon={MapPin}
-                    />
-                  </div>
-                </>
-              )}
+              <Item label="Phone"           value={profile.phone}          icon={Phone} />
+              <Item label="Alternate Phone" value={profile.alternatePhone} icon={Phone} />
+              <div className="sm:col-span-2">
+                <Item
+                  label="Full Address"
+                  value={[
+                    profile.addressLine1, profile.addressLine2,
+                    profile.city, profile.state,
+                    profile.postalCode, profile.country,
+                  ].filter(Boolean).join(", ")}
+                  icon={MapPin}
+                />
+              </div>
             </Section>
 
+            {/* Emergency Contact */}
             <Section icon={Heart} title="Emergency Contact" subtitle="In case of emergency" accent="amber">
-              {isEditing ? (
-                <>
-                  <EditableField label="Contact Name" value={displayProfile.emergencyContactName} onChange={(v) => updateField('emergencyContactName', v)} required />
-                  <EditableField label="Relationship" value={displayProfile.emergencyContactRelation} onChange={(v) => updateField('emergencyContactRelation', v)} required />
-                  <EditableField label="Emergency Phone" value={displayProfile.emergencyContactPhone} onChange={(v) => updateField('emergencyContactPhone', v)} type="tel" required />
-                </>
-              ) : (
-                <>
-                  <Item label="Contact Name" value={displayProfile.emergencyContactName} icon={User} />
-                  <Item label="Relationship" value={displayProfile.emergencyContactRelation} icon={Heart} />
-                  <Item label="Emergency Phone" value={displayProfile.emergencyContactPhone} icon={Phone} />
-                </>
-              )}
+              <Item label="Contact Name"  value={profile.emergencyContactName}     icon={User} />
+              <Item label="Relationship"  value={profile.emergencyContactRelation} icon={Heart} />
+              <Item label="Emergency Phone" value={profile.emergencyContactPhone}  icon={Phone} />
             </Section>
 
+            {/* Banking */}
             <Section icon={CreditCard} title="Banking Information" subtitle="For salary disbursement" accent="emerald">
-              {isEditing ? (
-                <>
-                  <EditableField label="Bank Name" value={displayProfile.bankName} onChange={(v) => updateField('bankName', v)} required />
-                  <EditableField label="Account Holder" value={displayProfile.bankAccountName} onChange={(v) => updateField('bankAccountName', v)} required />
-                  <EditableField label="Account Number" value={displayProfile.bankAccountNumber} onChange={(v) => updateField('bankAccountNumber', v)} required />
-                  <EditableField label="IFSC / Routing" value={displayProfile.bankIfscCode} onChange={(v) => updateField('bankIfscCode', v)} required />
-                  <EditableField label="Branch" value={displayProfile.bankBranch} onChange={(v) => updateField('bankBranch', v)} />
-                </>
-              ) : (
-                <>
-                  <Item label="Bank Name" value={displayProfile.bankName} icon={Building2} />
-                  <Item label="Account Holder" value={displayProfile.bankAccountName} icon={User} />
-                  <Item label="Account Number" value={displayProfile.bankAccountNumber} icon={CreditCard} />
-                  <Item label="IFSC / Routing Code" value={displayProfile.bankIfscCode} />
-                  <Item label="Branch" value={displayProfile.bankBranch} icon={MapPin} />
-                </>
-              )}
+              <Item label="Bank Name"       value={profile.bankName}          icon={Building2} />
+              <Item label="Account Holder"  value={profile.bankAccountName}   icon={User} />
+              <Item label="Account Number"  value={profile.bankAccountNumber} icon={CreditCard} />
+              <Item label="IFSC / Routing"  value={profile.bankIfscCode} />
+              <Item label="Branch"          value={profile.bankBranch}        icon={MapPin} />
             </Section>
 
+            {/* Professional */}
             <Section icon={GraduationCap} title="Professional Details" subtitle="Qualifications and experience" accent="purple">
-              {isEditing ? (
-                <>
-                  <EditableField label="Job Title" value={displayProfile.jobTitle} onChange={(v) => updateField('jobTitle', v)} required />
-                  <EditableField label="Highest Qualification" value={displayProfile.highestQualification} onChange={(v) => updateField('highestQualification', v)} required />
-                  <EditableField label="University" value={displayProfile.university} onChange={(v) => updateField('university', v)} />
-                  <EditableField label="Graduation Year" value={displayProfile.graduationYear} onChange={(v) => updateField('graduationYear', v)} type="number" />
-                  <EditableField label="Total Experience (years)" value={displayProfile.totalExperienceYears} onChange={(v) => updateField('totalExperienceYears', v)} type="number" />
-                  <EditableField label="Previous Employer" value={displayProfile.previousemployer} onChange={(v) => updateField('previousemployer', v)} />
-                  <div className="sm:col-span-2">
-                    <EditableField label="Skills" value={displayProfile.skills} onChange={(v) => updateField('skills', v)} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <Item label="Job Title" value={displayProfile.jobTitle} icon={Briefcase} />
-                  <Item label="Highest Qualification" value={displayProfile.highestQualification} icon={GraduationCap} />
-                  <Item label="University" value={displayProfile.university} icon={Building2} />
-                  <Item label="Graduation Year" value={displayProfile.graduationYear} icon={Calendar} />
-                  <Item 
-                    label="Total Experience" 
-                    value={
-                      displayProfile.totalExperienceYears != null 
-                        ? displayProfile.totalExperienceYears === 0 || displayProfile.totalExperienceYears === "0"
-                          ? "Fresher (No Experience)"
-                          : `${displayProfile.totalExperienceYears} yrs` 
-                        : null
-                    } 
-                    icon={Award} 
-                  />
-                  <Item label="Previous Employer" value={displayProfile.previousemployer} icon={Building2} />
-                  <div className="sm:col-span-2">
-                    <Item label="Skills" value={displayProfile.skills} />
-                  </div>
-                </>
+              <Item label="Job Title"          value={profile.jobTitle}             icon={Briefcase} />
+              <Item label="Qualification"      value={profile.highestQualification} icon={GraduationCap} />
+              <Item label="University"         value={profile.university}           icon={Building2} />
+              <Item label="Graduation Year"    value={profile.graduationYear}       icon={Calendar} />
+              <Item label="Total Experience"   value={fmtExp(profile.totalExperienceYears)} icon={Award} />
+              <Item label="Previous Employer"  value={profile.previousemployer}     icon={Building2} />
+              {profile.skills && (
+                <div className="sm:col-span-2">
+                  <Item label="Skills" value={profile.skills} />
+                </div>
               )}
             </Section>
 
-            <Section icon={FileText} title="Documents & Identification" subtitle="Proof documents and IDs" accent="primary">
-              {isEditing ? (
-                <>
-                  <EditableField label="National ID" value={displayProfile.nationalIdNumber} onChange={(v) => updateField('nationalIdNumber', v)} required />
-                  <EditableField label="Tax ID" value={displayProfile.taxIdNumber} onChange={(v) => updateField('taxIdNumber', v)} />
-                  <EditableField label="Passport Number" value={displayProfile.passportNumber} onChange={(v) => updateField('passportNumber', v)} />
-                  <EditableField label="ID Proof Document" value={displayProfile.idProofDocument} onChange={(v) => updateField('idProofDocument', v)} required />
-                  <EditableField label="Address Proof" value={displayProfile.addressProofDocument} onChange={(v) => updateField('addressProofDocument', v)} />
-                  <EditableField label="Education Proof" value={displayProfile.educationProofDocument} onChange={(v) => updateField('educationProofDocument', v)} />
-                  <EditableField label="Resume / CV" value={displayProfile.resumeDocument} onChange={(v) => updateField('resumeDocument', v)} />
-                </>
-              ) : (
-                <>
-                  <Item label="National ID" value={displayProfile.nationalIdNumber} icon={FileText} />
-                  <Item label="Tax ID" value={displayProfile.taxIdNumber} icon={FileText} />
-                  <Item label="Passport Number" value={displayProfile.passportNumber} icon={FileText} />
-                  <Item label="ID Proof Document" value={displayProfile.idProofDocument} icon={FileText} />
-                  <Item label="Address Proof" value={displayProfile.addressProofDocument} icon={FileText} />
-                  <Item label="Education Proof" value={displayProfile.educationProofDocument} icon={FileText} />
-                  <Item label="Resume / CV" value={displayProfile.resumeDocument} icon={FileText} />
-                </>
-              )}
+            {/* Documents — all rendered as clickable links */}
+            <Section icon={FileText} title="Documents & Identification" subtitle="Click any link to open the document" accent="primary">
+              <Item    label="National ID"     value={profile.nationalIdNumber} icon={FileText} />
+              <Item    label="Tax ID"          value={profile.taxIdNumber}      icon={FileText} />
+              <Item    label="Passport Number" value={profile.passportNumber}   icon={FileText} />
+              <DocItem label="ID Proof"        value={profile.idProofDocument} />
+              <DocItem label="Address Proof"   value={profile.addressProofDocument} />
+              <DocItem label="Education Proof" value={profile.educationProofDocument} />
+              <div className="sm:col-span-2">
+                <DocItem label="Resume / CV"   value={profile.resumeDocument} />
+              </div>
             </Section>
+
           </div>
         )}
 
-        {/* Footer actions with gradient */}
+        {/* ── Footer ── */}
         {!showLoading && (
           <div className="relative overflow-hidden border-t-2 border-border/50">
             <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-purple-500/5 to-blue-500/5" />
             <div className="relative flex items-center justify-between gap-3 p-6">
               {isFromRequests ? (
+                /* Requests view: Approve / Reject */
                 <>
                   <button
                     onClick={onReject}
@@ -420,41 +626,46 @@ const OnboardingPreview = ({ requestId, employee, onboardingData, loading: paren
               ) : isEditing ? (
                 <>
                   <button
-                    onClick={cancelEditing}
-                    disabled={saving}
-                    className="px-5 py-2.5 rounded-lg border-2 border-border bg-background text-foreground text-sm font-semibold hover:bg-secondary transition-colors disabled:opacity-60"
+                    onClick={() => setIsEditing(false)}
+                    className="px-5 py-2.5 rounded-lg border-2 border-border bg-background text-foreground text-sm font-semibold hover:bg-secondary transition-colors"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={saveChanges}
+                    onClick={handleSaveEdit}
                     disabled={saving}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-gradient-to-r from-primary to-purple-600 text-white text-sm font-semibold hover:from-primary/90 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-gradient-to-r from-primary to-blue-600 text-white text-sm font-semibold hover:opacity-95 shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     {saving ? "Saving..." : "Save Changes"}
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="ml-auto px-6 py-2.5 rounded-lg border-2 border-border bg-background text-foreground text-sm font-semibold hover:bg-secondary transition-colors"
+                  >
+                    Close
                   </button>
                 </>
               ) : (
                 <>
                   <button
-                    onClick={onClose}
+                    onClick={() => setIsEditing(true)}
                     className="px-5 py-2.5 rounded-lg border-2 border-border bg-background text-foreground text-sm font-semibold hover:bg-secondary transition-colors"
                   >
-                    Close
+                    Edit
                   </button>
                   <button
-                    onClick={startEditing}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-gradient-to-r from-primary to-purple-600 text-white text-sm font-semibold hover:from-primary/90 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                    onClick={onClose}
+                    className="ml-auto px-6 py-2.5 rounded-lg border-2 border-border bg-background text-foreground text-sm font-semibold hover:bg-secondary transition-colors"
                   >
-                    <Edit className="h-4 w-4" />
-                    Edit Details
+                    Close
                   </button>
                 </>
               )}
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

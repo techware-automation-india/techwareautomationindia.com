@@ -332,20 +332,27 @@ const Leave = () => {
                   </p>
                 )}
                 {/* Auto-approve notice */}
-                {selectedLeaveType && selectedLeaveType.requiresApproval === false && (
+                {selectedLeaveType && (selectedLeaveType.code === "EML" || selectedLeaveType.requiresApproval === false) && (
                   <div className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
                     <Zap className="h-3.5 w-3.5 shrink-0 text-blue-600" />
                     <span>
-                      <strong>Auto Approved</strong> — This leave type does not require admin approval and will be approved instantly.
+                      <strong>Auto Approved</strong> — {selectedLeaveType.code === "EML" ? "EML leave is emergency leave and does not require admin approval." : "This leave type does not require admin approval and will be approved instantly."}
                     </span>
                   </div>
                 )}
                 {/* Pending-approval notice */}
-                {selectedLeaveType && (selectedLeaveType.requiresApproval ?? true) === true && (
+                {selectedLeaveType && selectedLeaveType.code !== "EML" && (selectedLeaveType.requiresApproval ?? true) === true && (
                   <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
                     <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600" />
                     <span>
                       <strong>Pending Approval</strong> — Your request will be sent to admin for review.
+                    </span>
+                  </div>
+                )}
+                {selectedLeaveType && selectedLeaveType.code !== "EML" && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-700">
+                    <span>
+                      <strong>Notice:</strong> Non-EML leave must be applied at least 2 days before the leave start date.
                     </span>
                   </div>
                 )}

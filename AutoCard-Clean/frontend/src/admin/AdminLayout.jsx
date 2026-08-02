@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
 import { adminModules } from "./modules.js";
@@ -9,17 +9,21 @@ const AdminLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const user = getAuthUser();
 
-  // Redirect to login if not authenticated as admin
-  if (!user || user.role !== "ADMIN") {
-    clearAuth();
-    navigate("/login/admin", { replace: true });
-    return null;
-  }
+  // Redirect to login if not authenticated as admin — must be inside useEffect
+  useEffect(() => {
+    if (!user || user.role !== "ADMIN") {
+      clearAuth();
+      navigate("/login/admin", { replace: true });
+    }
+  }, [navigate, user]);
 
   const handleLogout = () => {
     clearAuth();
     navigate("/");
   };
+
+  // While redirecting, render nothing
+  if (!user || user.role !== "ADMIN") return null;
 
   const sidebarContent = (
     <>
@@ -70,8 +74,10 @@ const AdminLayout = () => {
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          aria-label="Logout"
         >
-          <LogOut className="h-4.5 w-4.5" /> Logout
+          <LogOut className="h-4.5 w-4.5" />
+          Logout
         </button>
       </div>
     </>

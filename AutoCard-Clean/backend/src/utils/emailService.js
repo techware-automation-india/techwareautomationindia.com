@@ -996,3 +996,131 @@ export const sendTestEmail = async (toEmail) => {
     throw error;
   }
 };
+
+/**
+ * Send roster assignment notification to an employee
+ */
+export const sendRosterAssignmentEmail = async ({
+  employeeEmail,
+  employeeName,
+  date,
+  shiftName,
+  startTime,
+  endTime,
+  locationName = null,
+  locationCity = null,
+  note = null,
+}) => {
+  try {
+    const transporter = createTransporter();
+
+    const fmtDate = (d) =>
+      new Date(d).toLocaleDateString("en-IN", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+      });
+
+    const dateLabel    = fmtDate(date);
+    const locationLine = locationName
+      ? `${locationName}${locationCity ? `, ${locationCity}` : ""}`
+      : "Not specified";
+
+    const mailOptions = {
+      from: `"Techware Automation India" <${process.env.EMAIL_USER}>`,
+      to:   employeeEmail,
+      subject: `Roster Assignment — ${shiftName} on ${dateLabel}`,
+      attachments: [
+        { filename: "techwareLogo.jpg", path: logoPath, cid: "companylogo" },
+      ],
+      html: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; line-height:1.6; color:#2c3e50; background:#f5f5f5; }
+    .wrap { max-width:600px; margin:20px auto; background:#fff; border:1px solid #ddd; font-size:14px; }
+    .hdr  { background:#fff; padding:28px; text-align:center; border-bottom:2px solid #2A3791; }
+    .logo { width:75px; height:auto; margin-bottom:12px; }
+    .co   { font-size:22px; font-weight:700; color:#2A3791; letter-spacing:1px; }
+    .body { padding:28px; }
+    .hi   { font-size:15px; margin-bottom:14px; }
+    .lead { font-size:13px; color:#444; margin-bottom:20px; }
+    .ttl  { font-size:13px; font-weight:700; color:#2A3791; margin:18px 0 10px; }
+    .box  { background:#f9f9f9; border-left:3px solid #2A3791; padding:14px 16px; font-size:13px; line-height:2; }
+    .row  { display:flex; gap:8px; }
+    .lbl  { font-weight:600; color:#2A3791; min-width:90px; }
+    .val  { color:#333; }
+    .note { background:#fff8e1; border-left:3px solid #f59e0b; padding:12px 16px; margin-top:16px; font-size:13px; color:#6b4a00; }
+    .foot { background:#2c3e50; color:#ecf0f1; text-align:center; padding:18px; font-size:11px; margin-top:0; }
+    .flogo{ width:55px; height:auto; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hdr">
+      <img src="cid:companylogo" alt="Techware" class="logo"/>
+      <div class="co">Techware Automation India</div>
+    </div>
+    <div class="body">
+      <div class="hi">Dear <strong>${employeeName}</strong>,</div>
+      <div class="lead">
+        Your roster has been updated by the admin. Please review your assigned shift details below.
+      </div>
+      <div class="ttl">📅 Roster Assignment</div>
+      <div class="box">
+        <div class="row"><span class="lbl">Date</span><span class="val">${dateLabel}</span></div>
+        <div class="row"><span class="lbl">Shift</span><span class="val">${shiftName}</span></div>
+        <div class="row"><span class="lbl">Timing</span><span class="val">${startTime} – ${endTime}</span></div>
+        <div class="row"><span class="lbl">Location</span><span class="val">${locationLine}</span></div>
+      </div>
+      ${note ? `<div class="note"><strong>📝 Admin Note:</strong><br>${note}</div>` : ""}
+      <div style="margin-top:22px; font-size:13px; color:#555;">
+        If you have any questions, please contact HR at
+        <a href="mailto:hr@techwareautomationindia.com" style="color:#2A3791;">hr@techwareautomationindia.com</a>.
+      </div>
+      <div style="margin-top:20px; font-size:13px; color:#333;">
+        Best Regards,<br>
+        <strong style="color:#2A3791;">Techware Automation India — HR Team</strong>
+      </div>
+    </div>
+    <div class="foot">
+      <img src="cid:companylogo" alt="Techware" class="flogo"/>
+      <div>© ${new Date().getFullYear()} Techware Automation India. All Rights Reserved.</div>
+      <div style="margin-top:5px; color:#aaa;">This is an automated notification from the HR Management System.</div>
+    </div>
+  </div>
+</body>
+</html>`,
+      text: `Dear ${employeeName},
+
+Your roster has been updated by the admin.
+
+════════════════════════════════════════════
+ROSTER ASSIGNMENT DETAILS
+════════════════════════════════════════════
+
+Date      : ${dateLabel}
+Shift     : ${shiftName}
+Timing    : ${startTime} – ${endTime}
+Location  : ${locationLine}
+${note ? `\nAdmin Note : ${note}` : ""}
+
+════════════════════════════════════════════
+
+For any queries, contact HR at hr@techwareautomationindia.com
+
+Best Regards,
+Techware Automation India — HR Team
+© ${new Date().getFullYear()} Techware Automation India`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ [Email] Roster email sent to ${employeeEmail} — ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    console.error(`❌ [Email] Roster email failed for ${employeeEmail}:`, err);
+    // Non-fatal — log but don't crash the roster save
+    return { success: false, error: err.message };
+  }
+};

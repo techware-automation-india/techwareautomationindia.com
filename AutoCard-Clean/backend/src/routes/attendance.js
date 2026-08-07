@@ -11,6 +11,10 @@ const calculateWorkedHours = (checkIn, checkOut) => {
   return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
 };
 
+const normalizeUTCDate = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+const formatDateKey = (date) => normalizeUTCDate(date).toISOString().slice(0, 10);
+const isWorkingDay = (date) => date.getUTCDay() !== 0; // skip Sundays as non-working
+
 // ============================================================================
 // EMPLOYEE SELF-SERVICE ROUTES  (requireAuth only, no role guard)
 // ============================================================================
@@ -330,10 +334,99 @@ router.get("/:employeeId", async (req, res) => {
       where: { date: { gte: start, lt: end } },
     });
 
-    // Summary counts by status.
+    const leaveRequests = await prisma.leaveRequest.findMany({
+      where: {
+        employeeId,
+        status: "APPROVED",
+        startDate: { lt: end },
+        endDate: { gte: start },
+      },
+      include: { leaveType: { select: { name: true, code: true } } },
+    });
+
+    const attendanceByDate = new Map(records.map((r) => [formatDateKey(r.date), r]));
+    const holidayByDate = new Map(holidays.map((h) => [formatDateKey(h.date), h]));
+    const leaveByDate = new Map();
+
+    for (const leave of leaveRequests) {
+      let current = normalizeUTCDate(leave.startDate);
+      const last = normalizeUTCDate(leave.endDate);
+      while (current <= last) {
+        if (isWorkingDay(current)) {
+          leaveByDate.set(formatDateKey(current), leave);
+        }
+        current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1));
+      }
+    }
+
     const summary = { PRESENT: 0, ABSENT: 0, LATE: 0, HALF_DAY: 0, ON_LEAVE: 0, HOLIDAY: 0 };
-    for (const r of records) {
-      if (summary[r.status] !== undefined) summary[r.status] += 1;
+    const todayUtc = normalizeUTCDate(new Date());
+    const populatedRecords = [];
+
+    for (let current = new Date(start); current < end; current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1))) {
+      const key = formatDateKey(current);
+      const existing = attendanceByDate.get(key);
+
+      if (existing) {
+        const status = existing.status;
+        if (summary[status] !== undefined) summary[status] += 1;
+        populatedRecords.push({
+          id: existing.id,
+          date: existing.date,
+          checkIn: existing.checkIn,
+          checkOut: existing.checkOut,
+          status,
+          workedHours: existing.workedHours ?? calculateWorkedHours(existing.checkIn, existing.checkOut),
+          note: existing.note,
+        });
+        continue;
+      }
+
+      if (!isWorkingDay(current)) {
+        continue;
+      }
+
+      if (holidayByDate.has(key)) {
+        summary.HOLIDAY += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(current),
+          checkIn: null,
+          checkOut: null,
+          status: "HOLIDAY",
+          workedHours: null,
+          note: holidayByDate.get(key).name,
+        });
+        continue;
+      }
+
+      if (leaveByDate.has(key)) {
+        const leave = leaveByDate.get(key);
+        summary.ON_LEAVE += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(current),
+          checkIn: null,
+          checkOut: null,
+          status: "ON_LEAVE",
+          workedHours: null,
+          note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
+        });
+        continue;
+      }
+
+      if (current <= todayUtc) {
+        summary.ABSENT += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(current),
+          checkIn: null,
+          checkOut: null,
+          status: "ABSENT",
+          workedHours: null,
+          note: "No attendance record.",
+        });
+      }
     }
 
     res.json({
@@ -345,15 +438,7 @@ router.get("/:employeeId", async (req, res) => {
       },
       year,
       month,
-      records: records.map((r) => ({
-        id: r.id,
-        date: r.date,
-        checkIn: r.checkIn,
-        checkOut: r.checkOut,
-        status: r.status,
-        workedHours: r.workedHours ?? calculateWorkedHours(r.checkIn, r.checkOut),
-        note: r.note,
-      })),
+      records: populatedRecords,
       holidays: holidays.map((h) => ({ date: h.date, name: h.name })),
       summary,
     });

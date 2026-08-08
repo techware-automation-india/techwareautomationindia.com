@@ -182,7 +182,7 @@ router.post(
         from: `"Techware Website" <${emailConfig.user}>`,
         to: emailConfig.to,
         replyTo: email,
-        subject: `New Website Inquiry - ${name}`,
+        subject: `New Contact Form Submission - ${company}`,
         text: [
           "New Contact Form Submission",
           `Name: ${name}`,

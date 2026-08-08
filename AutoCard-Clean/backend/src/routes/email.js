@@ -14,7 +14,52 @@ const upload = multer({
   limits: {
     fileSize: 5 * 1024 * 1024, // 5 MB
   },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/png"];
+
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new Error("Only JPG and PNG files are allowed."));
+    }
+
+    cb(null, true);
+  },
 });
+
+const escapeHtml = (value) =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const getEmailConfig = () => {
+  const user = process.env.EMAIL_USER?.trim();
+  const pass = process.env.EMAIL_PASS?.replace(/\s+/g, "");
+  const to = process.env.EMAIL_TO?.trim() || user;
+
+  if (!user || !pass) {
+    throw new Error("Email credentials are not configured.");
+  }
+
+  return { user, pass, to };
+};
+
+const uploadPhoto = (req, res, next) => {
+  upload.single("photo")(req, res, (err) => {
+    if (!err) return next();
+
+    const message =
+      err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+        ? "Photo must be 5 MB or smaller."
+        : err.message || "Invalid photo upload.";
+
+    return res.status(400).json({
+      success: false,
+      message,
+    });
+  });
+};
 
 // Validation
 const contactSchema = z.object({
@@ -87,14 +132,9 @@ const contactSchema = z.object({
     .max(1000),
 });
 
-// POST /api/contact
-console.log("[email route] EMAIL_USER set:", !!process.env.EMAIL_USER);
-console.log("[email route] EMAIL_PASS set:", !!process.env.EMAIL_PASS);
-console.log("[email route] EMAIL_TO set:", !!process.env.EMAIL_TO);
-
 router.post(
   "/",
-  upload.single("photo"),
+  uploadPhoto,
   async (req, res) => {
     try {
       const parsed = contactSchema.safeParse(req.body);
@@ -118,11 +158,13 @@ router.post(
         message,
       } = parsed.data;
 
+      const emailConfig = getEmailConfig();
+
       const transporter = nodemailer.createTransport({
         service: "gmail",
         auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
+          user: emailConfig.user,
+          pass: emailConfig.pass,
         },
       });
 
@@ -137,18 +179,26 @@ router.post(
       }
 
       const info = await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: process.env.EMAIL_TO || process.env.EMAIL_USER,
+        from: `"Techware Website" <${emailConfig.user}>`,
+        to: emailConfig.to,
         replyTo: email,
         subject: `New Website Inquiry - ${name}`,
+        text: [
+          "New Contact Form Submission",
+          `Name: ${name}`,
+          `Email: ${email}`,
+          `Mobile: ${phone}`,
+          `Company: ${company}`,
+          `Message: ${message}`,
+        ].join("\n"),
         html: `
       <h2>New Contact Form Submission</h2>
 
-      <p><b>Name:</b> ${name}</p>
-      <p><b>Email:</b> ${email}</p>
-      <p><b>Mobile:</b> ${phone}</p>
-      <p><b>Company:</b> ${company}</p>
-      <p><b>Message:</b> ${message}</p>
+      <p><b>Name:</b> ${escapeHtml(name)}</p>
+      <p><b>Email:</b> ${escapeHtml(email)}</p>
+      <p><b>Mobile:</b> ${escapeHtml(phone)}</p>
+      <p><b>Company:</b> ${escapeHtml(company)}</p>
+      <p><b>Message:</b> ${escapeHtml(message).replace(/\n/g, "<br>")}</p>
     `,
         attachments,
       });
@@ -164,9 +214,13 @@ router.post(
       console.error("Error code:", err.code);
       console.error("Error stack:", err.stack);
 
-      return res.status(500).json({
+      const isConfigError = err.message === "Email credentials are not configured.";
+
+      return res.status(isConfigError ? 503 : 500).json({
         success: false,
-        message: "Failed to send message",
+        message: isConfigError
+          ? "Email service is not configured"
+          : "Failed to send message",
         ...(process.env.NODE_ENV !== "production" && { error: err.message }),
       });
     }

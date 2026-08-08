@@ -85,7 +85,7 @@ const ContactSection = () => {
     try {
       setLoading(true);
 
-      await axios.post(`${API_BASE}/api/contact`, data);
+      const response = await axios.post(`${API_BASE}/api/contact`, data);
 
       toast.success(response.data.message);
 

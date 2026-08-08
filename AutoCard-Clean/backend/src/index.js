@@ -8,10 +8,12 @@ const app = express();
 
 // Allow configured client origin + common local Vite ports
 const allowedOrigins = [
-  process.env.CLIENT_ORIGIN || "http://localhost:5173",
+  process.env.CLIENT_ORIGIN,
   "http://localhost:5173",
   "http://localhost:5174",
-];
+  "https://www.techwareautomation.com",
+  "https://techwareautomationindia-com-5xrn.vercel.app",
+].filter(Boolean);
 
 app.use(
   cors({

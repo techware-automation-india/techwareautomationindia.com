@@ -12,7 +12,7 @@ const Footer = () => {
   const socialLinks = [
     {
       icon: FaLinkedinIn,
-      href: "https://www.linkedin.com/in/techware-automation-india-640b25410/",
+      href: "https://www.linkedin.com/company/techware-automation-india/",
       label: "LinkedIn",
     },
     {

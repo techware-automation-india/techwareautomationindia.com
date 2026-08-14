@@ -2,7 +2,7 @@ import prisma from "./src/prismaClient.js";
 
 async function main() {
   const employeeId = process.argv[2];
-  const where = employeeId ? { id: employeeId, role: "EMPLOYEE" } : { role: "EMPLOYEE" };
+  const where =  employeeId ? { id: employeeId, role: "EMPLOYEE" } : { role: "EMPLOYEE" };
 
   const employees = await prisma.user.findMany({
     where,

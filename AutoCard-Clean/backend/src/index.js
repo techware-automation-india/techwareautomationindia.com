@@ -84,18 +84,24 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}/api/health`);
-});
-
-const shutdown = () => {
-  console.log("Stopping server...");
-
-  server.close(() => {
-    console.log("Server stopped.");
-    process.exit(0);
+// Only start the server if not in serverless environment (Vercel)
+if (process.env.VERCEL !== '1') {
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}/api/health`);
   });
-};
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+  const shutdown = () => {
+    console.log("Stopping server...");
+
+    server.close(() => {
+      console.log("Server stopped.");
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+// Export for Vercel serverless
+export default app;

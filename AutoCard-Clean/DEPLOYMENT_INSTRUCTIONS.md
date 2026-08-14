@@ -1,99 +1,119 @@
-# Vercel Deployment Instructions
+# Deployment Instructions (SQLite with Render.com)
 
-## ✅ Prerequisites Completed:
-- [x] Updated schema.prisma to use PostgreSQL
-- [x] Created PostgreSQL migration
-- [x] Configured backend for Vercel serverless
-- [x] Added vercel.json configuration
+## 🎯 Architecture:
+- **Frontend**: Vercel (Already deployed)
+- **Backend**: Render.com (FREE - Supports SQLite)
 
-## 🔧 Steps to Deploy:
+---
 
-### 1. Create PostgreSQL Database (Choose one):
+## 🚀 Deploy Backend to Render.com (FREE)
 
-#### Option A: Vercel Postgres (Recommended - Easiest)
-1. Go to https://vercel.com/dashboard
-2. Select your project
-3. Go to **Storage** → **Create Database** → **Postgres**
-4. Copy the `DATABASE_URL` connection string
-5. Go to **Settings** → **Environment Variables**
-6. Add: `DATABASE_URL` = (paste your connection string)
+### Step 1: Sign Up & Create Web Service
+1. Go to https://render.com
+2. Sign up with GitHub
+3. Click **"New +"** → **"Web Service"**
+4. Connect your GitHub repository
 
-#### Option B: Neon.tech (Free PostgreSQL)
-1. Go to https://neon.tech
-2. Create free account
-3. Create new project
-4. Copy connection string
-5. Add to Vercel Environment Variables: `DATABASE_URL`
-
-### 2. Set Environment Variables in Vercel:
-Go to your project → Settings → Environment Variables and add:
+### Step 2: Configure Web Service
+Fill in these settings:
 
 ```
-DATABASE_URL=your_postgresql_connection_string
-JWT_SECRET=your_secret_key_here
-CLIENT_ORIGIN=https://your-frontend-domain.vercel.app
+Name: techware-backend
+Region: Singapore (closest to India)
+Branch: test
+Root Directory: backend
+Runtime: Node
+Build Command: npm install && npx prisma generate && npx prisma migrate deploy
+Start Command: npm start
+```
+
+### Step 3: Add Environment Variables
+In Render dashboard, add these:
+
+```
+DATABASE_URL=file:./prisma/dev.db
+JWT_SECRET=change_me_to_a_long_random_string
+PORT=4001
+CLIENT_ORIGIN=https://your-frontend-url.vercel.app
 EMAIL_USER=ak0462463@gmail.com
 EMAIL_PASS=epbfnrruwzrgiigy
-PORT=4001
 NODE_ENV=production
 ```
 
-### 3. Deploy:
-```bash
-# Commit changes
-git add .
-git commit -m "feat: migrate to PostgreSQL for Vercel deployment"
+### Step 4: Deploy!
+- Click **"Create Web Service"**
+- Render will automatically deploy
+- Wait 2-3 minutes
+- Your backend URL: `https://techware-backend.onrender.com`
 
-# Push to trigger Vercel deployment
-git push origin test
+### Step 5: Update Frontend
+Update your frontend `.env` to point to Render backend:
+
+```env
+VITE_API_URL=https://techware-backend.onrender.com/api
 ```
 
-### 4. Run Migrations on Vercel:
-After deployment, go to Vercel Dashboard:
-1. Your Project → **Settings** → **Functions**
-2. Or use Vercel CLI:
+Then redeploy frontend on Vercel.
+
+---
+
+## ✅ Advantages of Render.com:
+
+1. ✅ **FREE** forever (with 750 hours/month)
+2. ✅ **SQLite supported** (persistent disk storage)
+3. ✅ **File uploads work** (Multer)
+4. ✅ **Auto-deploy** from GitHub
+5. ✅ **SSL certificate** included
+6. ✅ **No cold starts** on free plan after first deploy
+
+---
+
+## 🔄 Alternative: Railway.app
+
+If Render doesn't work, try Railway.app:
+
+1. https://railway.app
+2. "New Project" → GitHub repo
+3. Select `backend` folder
+4. Add environment variables
+5. Deploy
+
+---
+
+## 📝 Local Development (No Changes Needed)
+
+Your local setup remains the same:
+
 ```bash
-vercel env pull
-npx prisma migrate deploy
-```
-
-### 5. Seed Database (Optional):
-```bash
-# Connect to your database and run seed file
-node backend/prisma/seed.js
-```
-
-## ⚠️ Important Notes:
-
-1. **File Uploads**: 
-   - Multer uploads won't persist on Vercel serverless
-   - Use cloud storage (AWS S3, Cloudinary, Vercel Blob Storage)
-
-2. **Database**:
-   - SQLite is NOT supported on Vercel
-   - PostgreSQL is required
-
-3. **CORS**:
-   - Update CLIENT_ORIGIN to your Vercel frontend URL
-   - Backend is configured to accept all Vercel domains
-
-## 🚀 Verification:
-1. Visit: `https://your-backend.vercel.app/api/health`
-2. Should return: `{"status":"ok","server":"running"}`
-
-## 📝 Local Development:
-To develop locally with PostgreSQL:
-```bash
-# Install PostgreSQL locally
-# Update .env with local DATABASE_URL
-# Run migrations
+# Backend
 cd backend
-npx prisma migrate dev
+npm install
 npx prisma generate
+npm run dev
+
+# Frontend
+cd frontend
+npm install
 npm run dev
 ```
 
+---
+
 ## 🆘 Troubleshooting:
-- **500 Error**: Check Vercel logs for database connection issues
-- **CORS Error**: Add your frontend URL to CLIENT_ORIGIN
-- **Migration Failed**: Ensure DATABASE_URL is correct in Vercel env vars
+
+**Issue**: Backend URL not working
+**Fix**: Check Render logs, ensure all env vars are set
+
+**Issue**: CORS error
+**Fix**: Update `CLIENT_ORIGIN` in Render env vars to match your Vercel frontend URL
+
+**Issue**: Database not persisting
+**Fix**: Render free tier has persistent disk. Enable it in Settings → Disk
+
+---
+
+## 🎉 Final Result:
+
+- Frontend: `https://your-app.vercel.app` (Fast, CDN)
+- Backend: `https://techware-backend.onrender.com` (SQLite, persistent)
+- Database: SQLite on Render disk (automatically backed up)

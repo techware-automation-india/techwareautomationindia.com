@@ -79,7 +79,7 @@ app.use("/api/roster", rosterRouter);
 // Health check - also verifies the database connection.
 app.get("/api/health", (_req, res) => {
   res.json({
-    status: "ok",
+    status: "OK",
     server: "running"
   });
 });

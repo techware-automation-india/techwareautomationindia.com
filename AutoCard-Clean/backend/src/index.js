@@ -24,12 +24,12 @@ const PORT = process.env.PORT || 4001;
 
 // Allow the configured client origin plus common local Vite ports and all Vercel domains
 const allowedOrigins = [
-  process.env.CLIENT_ORIGIN || "http://localhost:5173",
   "http://localhost:5173",
   "http://localhost:5174",
   "https://techwareautomationindia.vercel.app",
-  /^https:\/\/.*\.vercel\.app$/,  // Allow all Vercel preview URLs
-];
+  "https://techwareautomationindia-ard3ck9jk-techware-automation-india.vercel.app",
+  process.env.CLIENT_ORIGIN,
+].filter(Boolean);
 
 app.use(
   cors({
@@ -99,9 +99,9 @@ app.get("/api/health", (_req, res) => {
 
 // Only start the server if not in serverless environment (Vercel)
 // Render.com needs the server to start normally
-if (process.env.VERCEL !== '1' || process.env.RENDER) {
+if (process.env.VERCEL !== "1") {
   const server = app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}/api/health`);
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 
   const shutdown = () => {

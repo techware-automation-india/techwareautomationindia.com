@@ -28,7 +28,10 @@ const HeroSection = () => {
   transition={{ duration: 0.6 }}
  className="text-4xl sm:text-5xl md:text-[46px] lg:text-[52px] xl:text-[58px] 2xl:text-[64px] font-extrabold leading-[1.1] tracking-tight text-white mb-6 max-w-[680px]"
 >
-  Techware Automation
+  Techware
+  <br />
+
+  <span className="text-white">Automation</span>
   <br />
 
   <span className="text-white">(INDIA)</span>

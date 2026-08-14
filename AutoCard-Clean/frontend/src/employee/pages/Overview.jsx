@@ -127,7 +127,14 @@ const Overview = () => {
                 <div key={entry.id} className="rounded-2xl border border-border bg-background p-4 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold">{new Date(entry.date).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })}</div>
+                      <div className="text-sm font-semibold">{(() => {
+                        const d = new Date(entry.date);
+                        if (Number.isNaN(d.getTime())) return "—";
+                        const day = String(d.getDate()).padStart(2, "0");
+                        const month = String(d.getMonth() + 1).padStart(2, "0");
+                        const year = d.getFullYear();
+                        return `${day}/${month}/${year}`;
+                      })()}</div>
                       <div className="text-xs text-muted-foreground mt-1">{entry.shift?.name || "No shift assigned"}</div>
                     </div>
                     <div className="text-xs text-muted-foreground">{entry.shift ? `${entry.shift.startTime} – ${entry.shift.endTime}` : ""}</div>
@@ -152,10 +159,11 @@ const Overview = () => {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {modules.map(({ key, label, path, icon: Icon, description }) => {
-          // Disable non-onboarding modules if status is PENDING
+          // Disable non-onboarding modules if status is PENDING, except mark attendance.
           const isPending = onboardingStatus === "PENDING";
           const isOnboardingModule = key === "onboarding";
-          const isDisabled = isPending && !isOnboardingModule;
+          const isMarkAttendance = key === "mark-attendance";
+          const isDisabled = isPending && !isOnboardingModule && !isMarkAttendance;
 
           if (isDisabled) {
             return (

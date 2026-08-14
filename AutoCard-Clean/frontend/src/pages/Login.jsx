@@ -70,8 +70,13 @@ const Login = () => {
       // Persist the authenticated session for use across the app.
       saveAuth(data.token, data.user);
 
+      if (role === "employee") {
+        navigate("/employee");
+      } else {
+        navigate(dashboardPath[role]);
+      }
+
       toast.success(`Welcome back, ${data.user.fullName}.`);
-      navigate(dashboardPath[role]);
     } catch (err) {
       toast.error(err.message || "Login failed. Please try again.");
     } finally {

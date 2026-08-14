@@ -8,6 +8,23 @@
     <meta name="description" content="Advanced automation machines for card manufacturing. Card sorting, QR validation, and conveyor inspection systems." />
   </head>
   <body>
+    <script>
+      (() => {
+        const isDashboardRoute = ["/admin", "/employee", "/customer"].some((path) =>
+          window.location.pathname.startsWith(path)
+        );
+        if (!isDashboardRoute) return;
+
+        const storedTheme = localStorage.getItem("techware-theme");
+        const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = storedTheme === "light" || storedTheme === "dark"
+          ? storedTheme
+          : systemDark ? "dark" : "light";
+
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

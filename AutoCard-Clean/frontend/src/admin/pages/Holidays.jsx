@@ -15,9 +15,15 @@ const emptyForm = {
 const inputClass =
   "w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
 
-// Formats a date string as a readable, locale-aware date.
-const fmt = (v) =>
-  v ? new Date(v).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
+const fmt = (v) => {
+  if (!v) return "—";
+  const date = new Date(v);
+  if (Number.isNaN(date.getTime())) return "—";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 const StatCard = ({ icon: Icon, label, value, tone }) => {
   const tones = {
@@ -184,7 +190,9 @@ const Holidays = () => {
 
   // Format day name
   const getDayName = (dateStr) => {
-    return new Date(dateStr).toLocaleDateString("en-IN", { weekday: "long" });
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "—";
+    return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][date.getDay()];
   };
 
   // Get filtered holidays based on modal filter
@@ -250,9 +258,9 @@ const Holidays = () => {
               <div className="text-xs font-medium text-primary/70 uppercase tracking-wide mb-1">Current Fiscal Year</div>
               <div className="font-display text-xl font-bold text-primary">{fiscalYearInfo.fiscalYearLabel}</div>
               <div className="text-xs text-muted-foreground mt-1">
-                {new Date(fiscalYearInfo.startDate).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })} 
+                {fmt(fiscalYearInfo.startDate)} 
                 {" → "} 
-                {new Date(fiscalYearInfo.endDate).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}
+                {fmt(fiscalYearInfo.endDate)}
               </div>
             </div>
             <div>

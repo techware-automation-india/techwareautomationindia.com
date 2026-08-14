@@ -14,11 +14,19 @@ export default function AddLocationModal({
     longitude: "",
     radius: "",
     status: "Active",
+    isDefault: false,
   });
 
   useEffect(() => {
     if (initialData) {
-      setForm(initialData);
+      setForm({
+        name: initialData.name ?? "",
+        address: initialData.addressLine ?? "",
+        latitude: initialData.latitude != null ? String(initialData.latitude) : "",
+        longitude: initialData.longitude != null ? String(initialData.longitude) : "",
+        radius: initialData.radius != null ? String(initialData.radius) : "",
+        status: initialData.isActive ? "Active" : "Inactive",
+      });
     } else {
       setForm({
         name: "",
@@ -34,9 +42,10 @@ export default function AddLocationModal({
   if (!open) return null;
 
   const handleChange = (e) => {
+    const { name, type, value, checked } = e.target;
     setForm({
       ...form,
-      [e.target.name]: e.target.value,
+      [name]: type === "checkbox" ? checked : value,
     });
   };
 
@@ -46,7 +55,16 @@ export default function AddLocationModal({
       return;
     }
 
-    onSave(form);
+    const payload = {
+      name: form.name,
+      addressLine: form.address || undefined,
+      latitude: form.latitude !== "" ? form.latitude : undefined,
+      longitude: form.longitude !== "" ? form.longitude : undefined,
+      radius: form.radius !== "" ? form.radius : undefined,
+      isActive: form.status === "Active",
+    };
+
+    onSave(payload);
     onClose();
   };
 
@@ -170,6 +188,11 @@ export default function AddLocationModal({
                 <option>Inactive</option>
               </select>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input id="isDefault" name="isDefault" type="checkbox" checked={form.isDefault} onChange={handleChange} />
+            <label htmlFor="isDefault" className="text-sm font-medium">Set as default location</label>
           </div>
         </div>
 

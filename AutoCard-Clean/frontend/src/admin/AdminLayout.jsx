@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
 import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
+import ThemeToggle from "../components/ThemeToggle.jsx";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
@@ -126,6 +127,7 @@ const AdminLayout = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <div className="text-right hidden sm:block">
               <div className="text-sm font-semibold text-foreground">{user?.fullName || "Admin"}</div>
               <div className="text-xs text-muted-foreground">{user?.email || ""}</div>

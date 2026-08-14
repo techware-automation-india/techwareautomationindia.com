@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Clock, Loader2, RefreshCw, ChevronLeft, ChevronRight,
-  LogIn, LogOut, CheckCircle2, XCircle, AlertTriangle,
-  CalendarDays, TrendingUp, MinusCircle,
+  LogIn, LogOut, CheckCircle2, XCircle,
+  CalendarDays, TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
@@ -27,16 +27,22 @@ const fmtWorkedHours = (value) => {
   return `${h}h ${m}m`;
 };
 
-const fmtDate = (v) =>
-  v ? new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDate = (v) => {
+  if (!v) return "—";
+  const date = new Date(v);
+  if (Number.isNaN(date.getTime())) return "—";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 const STATUS_META = {
   PRESENT:  { label: "Present",  bg: "bg-emerald-100", text: "text-emerald-700", cell: "bg-emerald-100 border-emerald-300 text-emerald-800" },
-  LATE:     { label: "Late",     bg: "bg-amber-100",   text: "text-amber-700",   cell: "bg-amber-100 border-amber-300 text-amber-800"   },
   ABSENT:   { label: "Absent",   bg: "bg-rose-100",    text: "text-rose-700",    cell: "bg-rose-100 border-rose-300 text-rose-800"       },
-  HALF_DAY: { label: "Half Day", bg: "bg-blue-100",    text: "text-blue-700",    cell: "bg-blue-100 border-blue-300 text-blue-800"       },
   ON_LEAVE: { label: "On Leave", bg: "bg-purple-100",  text: "text-purple-700",  cell: "bg-purple-100 border-purple-300 text-purple-800" },
   HOLIDAY:  { label: "Holiday",  bg: "bg-indigo-100",  text: "text-indigo-700",  cell: "bg-indigo-100 border-indigo-300 text-indigo-800" },
+  PENDING_APPROVAL: { label: "Awaiting Admin Approval", bg: "bg-amber-100", text: "text-amber-700", cell: "bg-amber-100 border-amber-300 text-amber-800" },
 };
 
 const StatCard = ({ icon: Icon, label, value, bg, text }) => (
@@ -239,6 +245,13 @@ const Attendance = () => {
         </div>
       </div>
 
+      <div className="rounded-2xl bg-secondary/50 border border-border p-4 text-sm text-slate-900">
+        <p className="font-semibold">Attendance policy</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Attendance tracking is enabled.
+        </p>
+      </div>
+
       {/* ── Month navigator ── */}
       <div className="flex items-center justify-between rounded-2xl bg-background border border-border card-shadow px-5 py-3">
         <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
@@ -258,12 +271,10 @@ const Attendance = () => {
       </div>
 
       {/* ── Summary stat cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {[
           { key: "PRESENT",  label: "Present",  Icon: CheckCircle2,   bg: "bg-emerald-100", text: "text-emerald-700" },
-          { key: "LATE",     label: "Late",     Icon: AlertTriangle,  bg: "bg-amber-100",   text: "text-amber-700"  },
           { key: "ABSENT",   label: "Absent",   Icon: XCircle,        bg: "bg-rose-100",    text: "text-rose-700"   },
-          { key: "HALF_DAY", label: "Half Day", Icon: MinusCircle,    bg: "bg-blue-100",    text: "text-blue-700"   },
           { key: "ON_LEAVE", label: "On Leave", Icon: CalendarDays,   bg: "bg-purple-100",  text: "text-purple-700" },
           { key: "HOLIDAY",  label: "Holiday",  Icon: CalendarDays,   bg: "bg-indigo-100",  text: "text-indigo-700" },
         ].map(({ key, label, Icon, bg, text }) => {

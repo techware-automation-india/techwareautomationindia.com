@@ -30,10 +30,9 @@ enum OnboardingStatus {
 enum AttendanceStatus {
   PRESENT
   ABSENT
-  LATE
-  HALF_DAY
   ON_LEAVE
   HOLIDAY
+  PENDING_APPROVAL
 }
 
 enum LeaveStatus {
@@ -250,7 +249,11 @@ model Location {
   city        String?
   state       String?
   country     String?
+  latitude    Float?
+  longitude   Float?
+  radius      Float?
   isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -296,6 +299,10 @@ model Attendance {
   status      AttendanceStatus @default(PRESENT)
   workedHours Float?
   note        String?
+  checkInLatitude   Float?  // GPS latitude where employee checked in
+  checkInLongitude  Float?  // GPS longitude where employee checked in
+  checkOutLatitude  Float?  // GPS latitude where employee checked out
+  checkOutLongitude Float?  // GPS longitude where employee checked out
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 

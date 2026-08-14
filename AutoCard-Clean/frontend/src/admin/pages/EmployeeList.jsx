@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { apiGet, apiDelete } from "../../lib/api.js";
 import OnboardingPreview from "../components/OnboardingPreview.jsx";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
 const statusStyles = {
   PENDING: "bg-amber-100 text-amber-700",
   SUBMITTED: "bg-blue-100 text-blue-700",
@@ -166,7 +168,7 @@ const EmployeeList = () => {
                       <div className="w-10 h-10 rounded-full overflow-hidden bg-secondary flex items-center justify-center border border-border">
                         {emp.profileImage ? (
                           <img
-                            src={`http://localhost:4000${emp.profileImage}`}
+                            src={`${API_BASE}${emp.profileImage}`}
                             alt={emp.fullName}
                             className="w-full h-full object-cover"
                           />

@@ -1,13 +1,19 @@
 import { z } from "zod";
 
 // Shared regex constraints.
-const phoneRegex = /^[+]?[\d\s()-]{7,20}$/;
+const mobileRegex = /^\d{10}$/;
 const postalRegex = /^[A-Za-z0-9\s-]{3,12}$/;
 const ifscRegex = /^[A-Za-z0-9-]{4,20}$/;
 const accountRegex = /^\d{6,20}$/;
 const currentYear = new Date().getFullYear();
 
 const optionalString = z.string().trim().max(200).optional().or(z.literal(""));
+const optionalMobile = z
+  .union([
+    z.literal(""),
+    z.string().trim().regex(mobileRegex, "Enter a valid 10-digit mobile number."),
+  ])
+  .optional();
 
 // Full onboarding payload validation. Mandatory fields use .min(1); the rest
 // are optional. Format constraints are enforced where it matters.
@@ -15,13 +21,8 @@ export const onboardingSchema = z.object({
   // --- Personal (mandatory core identity) ---
   firstName: z.string().trim().min(1, "First name is required.").max(60),
   lastName: z.string().trim().min(1, "Last name is required.").max(60),
-  phone: z.string().trim().regex(phoneRegex, "Enter a valid phone number."),
-  alternatePhone: z
-    .string()
-    .trim()
-    .regex(phoneRegex, "Enter a valid alternate phone number.")
-    .optional()
-    .or(z.literal("")),
+  phone: z.string().trim().regex(mobileRegex, "Enter a valid 10-digit mobile number."),
+  alternatePhone: optionalMobile,
   personalEmail: z.string().trim().email("Enter a valid email.").optional().or(z.literal("")),
   dateOfBirth: z
     .string()
@@ -48,7 +49,7 @@ export const onboardingSchema = z.object({
   // --- Emergency contact (mandatory) ---
   emergencyContactName: z.string().trim().min(1, "Emergency contact name is required.").max(120),
   emergencyContactRelation: z.string().trim().min(1, "Relationship is required.").max(60),
-  emergencyContactPhone: z.string().trim().regex(phoneRegex, "Enter a valid emergency contact phone."),
+  emergencyContactPhone: z.string().trim().regex(mobileRegex, "Enter a valid 10-digit emergency contact mobile number."),
 
   // --- Banking (mandatory) ---
   bankName: z.string().trim().min(1, "Bank name is required.").max(120),

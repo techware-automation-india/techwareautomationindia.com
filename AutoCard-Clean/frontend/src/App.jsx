@@ -1,6 +1,8 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
+import { applyTheme, getPreferredTheme, onThemeChange } from "./lib/theme.js";
 import Index from "./pages/Index.jsx";
 import Login from "./pages/Login.jsx";
 import Machines from "./pages/Machines.jsx";
@@ -35,49 +37,90 @@ import CustomerLayout from "./customer/CustomerLayout.jsx";
 import CustomerOverview from "./customer/pages/Overview.jsx";
 import CustomerProjects from "./customer/pages/Projects.jsx";
 
-const App = () => (
-  <BrowserRouter>
-    <ScrollToTop />
-    <Toaster position="top-right" />
-    <Routes>
-      <Route path="/" element={<Index />} />
-      <Route path="/machines" element={<Machines />} />
-      <Route path="/login/:role" element={<Login />} />
+const dashboardPrefixes = ["/admin", "/employee", "/customer"];
 
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<Overview />} />
-        <Route path="employee" element={<Employee />} />
-        <Route path="employee-list" element={<EmployeeList />} />
-        <Route path="customer" element={<Customer />} />
-        <Route path="customer-list" element={<CustomerList />} />
-        <Route path="requests" element={<Requests />} />
-        <Route path="leave-requests" element={<LeaveRequests />} />
-        <Route path="leave-policy" element={<LeavePolicy />} />
-        <Route path="holidays" element={<Holidays />} />
-        <Route path="attendance" element={<Attendance />} />
-        <Route path="projects" element={<Projects />} />
-        <Route path="roles-access" element={<RolesAccess />} />
-        <Route path="shift-location" element={<ShiftLocation />} />
-        <Route path="roster" element={<Roster />} />
-      </Route>
+const AppRoutes = () => {
+  const location = useLocation();
+  const [theme, setTheme] = useState(() => getPreferredTheme());
+  const isDashboardRoute = dashboardPrefixes.some((path) => location.pathname.startsWith(path));
 
-      <Route path="/employee" element={<EmployeeLayout />}>
-        <Route index element={<EmployeeOverview />} />
-        <Route path="onboarding" element={<EmployeeOnboarding />} />
-        <Route path="mark-attendance" element={<RequireOnboarding><EmployeeMarkAttendance /></RequireOnboarding>} />
-        <Route path="attendance" element={<RequireOnboarding><EmployeeAttendance /></RequireOnboarding>} />
-        <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} />
-        <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} />
-      </Route>
+  useEffect(() => {
+    if (isDashboardRoute) {
+      applyTheme(theme);
+    } else {
+      applyTheme("light", { persist: false });
+    }
 
-      <Route path="/customer" element={<CustomerLayout />}>
-        <Route index element={<CustomerOverview />} />
-        <Route path="projects" element={<CustomerProjects />} />
-      </Route>
+    return onThemeChange(setTheme);
+  }, [isDashboardRoute, theme]);
 
-      <Route path="*" element={<NotFound />} />
-    </Routes>
-  </BrowserRouter>
-);
+  useEffect(() => {
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = () => {
+      const stored = localStorage.getItem("techware-theme");
+      if (!stored && isDashboardRoute) {
+        const nextTheme = getPreferredTheme();
+        setTheme(nextTheme);
+        applyTheme(nextTheme);
+      }
+    };
+
+    systemTheme.addEventListener("change", handleSystemThemeChange);
+    return () => systemTheme.removeEventListener("change", handleSystemThemeChange);
+  }, [isDashboardRoute]);
+
+  return (
+    <>
+      <ScrollToTop />
+      <Toaster position="top-right" theme={isDashboardRoute ? theme : "light"} richColors />
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/machines" element={<Machines />} />
+        <Route path="/login/:role" element={<Login />} />
+
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Overview />} />
+          <Route path="employee" element={<Employee />} />
+          <Route path="employee-list" element={<EmployeeList />} />
+          <Route path="customer" element={<Customer />} />
+          <Route path="customer-list" element={<CustomerList />} />
+          <Route path="requests" element={<Requests />} />
+          <Route path="leave-requests" element={<LeaveRequests />} />
+          <Route path="leave-policy" element={<LeavePolicy />} />
+          <Route path="holidays" element={<Holidays />} />
+          <Route path="attendance" element={<Attendance />} />
+          <Route path="projects" element={<Projects />} />
+          <Route path="roles-access" element={<RolesAccess />} />
+          <Route path="shift-location" element={<ShiftLocation />} />
+          <Route path="roster" element={<Roster />} />
+        </Route>
+
+        <Route path="/employee" element={<EmployeeLayout />}>
+          <Route index element={<EmployeeOverview />} />
+          <Route path="onboarding" element={<EmployeeOnboarding />} />
+          <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
+          <Route path="attendance" element={<RequireOnboarding><EmployeeAttendance /></RequireOnboarding>} />
+          <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} />
+          <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} />
+        </Route>
+
+        <Route path="/customer" element={<CustomerLayout />}>
+          <Route index element={<CustomerOverview />} />
+          <Route path="projects" element={<CustomerProjects />} />
+        </Route>
+
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
+  );
+};
+
+const App = () => {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  );
+};
 
 export default App;

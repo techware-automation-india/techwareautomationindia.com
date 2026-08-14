@@ -122,6 +122,14 @@ Prisma Studio will open in your browser at `http://localhost:5555`
 
 ---
 
+## Admin: Locations
+
+- **New fields:** The admin Locations module now supports `latitude`, `longitude`, `radius`, and an `isDefault` flag for each location.
+- **Default location:** Admin users should create the default office location manually in the admin UI.
+- **Behaviour:** Marking a location as `isDefault` will unset `isDefault` on any other location automatically.
+- **Notes:** These fields are stored in the SQLite database and visible/editable from the admin UI under Locations.
+
+
 ## 🔑 Default Credentials
 
 After seeding the database, you can login with these credentials:

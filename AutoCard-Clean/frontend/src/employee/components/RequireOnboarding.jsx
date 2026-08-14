@@ -5,8 +5,9 @@ import { apiGet } from "../../lib/api.js";
 import { updateAuthUser } from "../../lib/auth.js";
 
 // Wraps employee module pages that should only be reachable once onboarding
-// is APPROVED. Checks the live status from the server on mount.
-const RequireOnboarding = ({ children }) => {
+// is APPROVED (or SUBMITTED when explicitly allowed). Checks the live status
+// from the server on mount.
+const RequireOnboarding = ({ children, allowSubmitted = false }) => {
   const navigate = useNavigate();
   const [state, setState] = useState({ loading: true, approved: false });
 
@@ -17,7 +18,8 @@ const RequireOnboarding = ({ children }) => {
         const data = await apiGet("/onboarding/me");
         const status = data.profile.onboardingStatus;
         updateAuthUser({ onboardingStatus: status });
-        if (active) setState({ loading: false, approved: status === "APPROVED" });
+        const isAllowed = status === "APPROVED" || (allowSubmitted && status === "SUBMITTED");
+        if (active) setState({ loading: false, approved: isAllowed });
       } catch {
         if (active) setState({ loading: false, approved: false });
       }

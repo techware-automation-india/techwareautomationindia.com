@@ -54,12 +54,14 @@ const documentFilter = (_req, file, cb) => {
     "application/pdf",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/octet-stream",
+    "application/vnd.ms-office",
   ];
 
   const extOk = allowedExts.test(path.extname(file.originalname));
   const mimeOk = allowedMimes.includes(file.mimetype);
 
-  if (extOk && mimeOk) {
+  if (extOk || mimeOk) {
     cb(null, true);
   } else {
     cb(new Error("Only PDF, DOC, or DOCX files are allowed."));

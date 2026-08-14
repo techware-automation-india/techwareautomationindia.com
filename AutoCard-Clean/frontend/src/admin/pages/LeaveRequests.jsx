@@ -3,6 +3,16 @@ import { Loader2, RefreshCw, Check, X, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 
+const fmt = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
 const statusStyles = {
   PENDING: "bg-amber-100 text-amber-700",
   APPROVED: "bg-emerald-100 text-emerald-700",
@@ -95,7 +105,7 @@ const LeaveRequests = () => {
                     {r.employee.employeeCode} · {r.employee.user.email}
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
-                    {new Date(r.startDate).toLocaleDateString()} – {new Date(r.endDate).toLocaleDateString()} · {r.totalDays} day(s)
+                    {fmt(r.startDate)} – {fmt(r.endDate)} · {r.totalDays} day(s)
                   </div>
                   {r.reason && <p className="text-sm text-muted-foreground mt-2">Reason: {r.reason}</p>}
                   {r.reviewNote && <p className="text-sm text-muted-foreground mt-1">Note: {r.reviewNote}</p>}
@@ -121,7 +131,7 @@ const LeaveRequests = () => {
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground shrink-0">
-                    Reviewed {r.reviewedAt ? new Date(r.reviewedAt).toLocaleDateString() : "—"}
+                    Reviewed {r.reviewedAt ? fmt(r.reviewedAt) : "—"}
                   </div>
                 )}
               </div>

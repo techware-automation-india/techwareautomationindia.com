@@ -17,18 +17,11 @@ const loginRoles = [
  ];
 
 const Navbar = ({ staticPosition = false }) => {
-  const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const loginRef = useRef(null);
   const { pathname } = useLocation();
   const sectionPath = pathname === "/" ? "" : "/";
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   useEffect(() => {
     const onClickOutside = (e) => {
@@ -40,14 +33,12 @@ const Navbar = ({ staticPosition = false }) => {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  const isSolid = staticPosition || scrolled;
-
   return (
     <motion.nav
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className={`${staticPosition ? "sticky" : "fixed"} top-0 left-0 right-0 z-50 bg-white shadow-md border-b border-gray-200`}
+      className={`${staticPosition ? "sticky" : "fixed"} top-0 left-0 right-0 z-50 bg-background shadow-md border-b border-border`}
     >
       <div className="w-full max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 md:h-20">
 
@@ -62,23 +53,23 @@ const Navbar = ({ staticPosition = false }) => {
           />
           <div className="hidden sm:flex flex-col justify-center">
             <h1
-  className="text-2xl md:text-4xl font-bold"
-  style={{ lineHeight: 1 }}
->
-  <span style={{ color: "#2A3791" }}>Techware</span>
- 
-</h1>
+              className="text-[1.1rem] sm:text-[1.2rem] md:text-[1.35rem] font-bold"
+              style={{ lineHeight: 1 }}
+            >
+              <span style={{ color: "#2A3791" }}>Techware</span>
+            </h1>
 
-<p
-  className="text-[11px] md:text-xs font-semibold mt-1"
-  style={{
-    letterSpacing: "0.28em",
-    lineHeight: 1.2,
-  }}
->
-  <span style={{ color: "#2A3791" }}>Automation</span>
-  <span style={{ color: "#339DE0" }}> INDIA</span>
-</p>
+            <p
+              className="text-[0.85rem] sm:text-[0.9rem] md:text-[0.95rem] font-semibold mt-1"
+              style={{
+                letterSpacing: "0.18em",
+                lineHeight: 1.25,
+              }}
+            >
+              <span style={{ color: "#2A3791" }}>Automation</span>
+              <br />
+              <span style={{ color: "#339DE0" }}>(INDIA)</span>
+            </p>
           </div>
         </a>
 
@@ -87,7 +78,7 @@ const Navbar = ({ staticPosition = false }) => {
             <a
               key={link.href}
               href={`${sectionPath}${link.href}`}
-              className="relative text-sm font-semibold text-slate-700 hover:text-[#2A3791] transition-all duration-300 after:absolute after:left-0 after:-bottom-1 after:h-[2px] after:w-0 after:bg-[#339DE0] after:transition-all after:duration-300 hover:after:w-full"
+              className="relative text-sm font-semibold text-foreground/80 hover:text-primary transition-all duration-300 after:absolute after:left-0 after:-bottom-1 after:h-[2px] after:w-0 after:bg-[#339DE0] after:transition-all after:duration-300 hover:after:w-full"
             >
               {link.label}
             </a>
@@ -134,8 +125,9 @@ const Navbar = ({ staticPosition = false }) => {
         </div>
 
         <button
-          className="md:hidden text-gray-700"
+          className="md:hidden text-foreground"
           onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
         >
           {mobileOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -147,7 +139,7 @@ const Navbar = ({ staticPosition = false }) => {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-white border-b border-gray-200 shadow-md"
+            className="md:hidden bg-background border-b border-border shadow-md"
           >
             <div className="section-container py-4 flex flex-col gap-4">
               {navLinks.map((link) => (

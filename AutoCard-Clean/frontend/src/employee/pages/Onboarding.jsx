@@ -88,6 +88,8 @@ const emptyForm = {
 const inputClass =
   "w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
 
+const mobileOnly = (value) => value.replace(/\D/g, "").slice(0, 10);
+
 const currentYear = new Date().getFullYear();
 // Latest DOB allowing 18 years of age.
 const maxDob = new Date(Date.now() - 18 * 365.25 * 24 * 3600 * 1000)
@@ -108,6 +110,21 @@ const formatBytes = (bytes) => {
   if (!bytes || bytes < 1024) return bytes ? `${bytes} B` : "";
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const isAllowedDocumentFile = (file) => {
+  if (!file) return false;
+
+  const allowedExts = /\.(pdf|doc|docx)$/i;
+  const allowedMimes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/octet-stream",
+    "application/vnd.ms-office",
+  ];
+
+  return allowedExts.test(file.name || "") || allowedMimes.includes(file.type);
 };
 
 // ── Reusable doc upload widget ────────────────────────────────────────────────
@@ -244,14 +261,15 @@ const DocLink = ({ label, path }) => {
 };
 
 const ReadOnlyProfile = ({ profile, status }) => {
-  const fmtDate = (v) =>
-    v
-      ? new Date(v).toLocaleDateString("en-IN", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        })
-      : null;
+  const fmtDate = (v) => {
+    if (!v) return null;
+    const date = new Date(v);
+    if (Number.isNaN(date.getTime())) return null;
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
   const fmtExp = (v) => {
     if (v === null || v === undefined || v === "") return null;
     return Number(v) === 0 ? "Fresher (No Experience)" : `${v} years`;
@@ -415,7 +433,14 @@ const Onboarding = () => {
     educationProofDocument: eduProofRef,
   };
 
-  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+  const set = (key) => (e) => {
+    const raw = e.target.value;
+    const nextValue = ["phone", "alternatePhone", "emergencyContactPhone"].includes(key)
+      ? mobileOnly(raw)
+      : raw;
+
+    setForm((p) => ({ ...p, [key]: nextValue }));
+  };
 
   const [countries] = useState(Country.getAllCountries());
   const [states, setStates] = useState([]);
@@ -644,14 +669,7 @@ const Onboarding = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const allowedExts = /\.(pdf|doc|docx)$/i;
-    const allowedMimes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-
-    if (!allowedExts.test(file.name) || !allowedMimes.includes(file.type)) {
+    if (!isAllowedDocumentFile(file)) {
       toast.error("Only PDF, DOC, or DOCX files are allowed.");
       if (resumeInputRef.current) resumeInputRef.current.value = "";
       return;
@@ -670,16 +688,13 @@ const Onboarding = () => {
       const formData = new FormData();
       formData.append("resume", file);
 
-      const res = await fetch(
-        "http://localhost:4000/api/onboarding/upload-resume",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-          },
-          body: formData,
+      const res = await fetch(`${API_BASE}/api/onboarding/upload-resume`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
         },
-      );
+        body: formData,
+      });
 
       const data = await res.json();
 
@@ -713,13 +728,7 @@ const Onboarding = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const allowedExts = /\.(pdf|doc|docx)$/i;
-    const allowedMimes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-    if (!allowedExts.test(file.name) || !allowedMimes.includes(file.type)) {
+    if (!isAllowedDocumentFile(file)) {
       toast.error("Only PDF, DOC, or DOCX files are allowed.");
       if (docRefs[fieldName]?.current) docRefs[fieldName].current.value = "";
       return;
@@ -789,6 +798,14 @@ const Onboarding = () => {
           toast.error("Please fill all required personal fields");
           return false;
         }
+        if (!/^\d{10}$/.test(form.phone)) {
+          toast.error("Mobile number must be exactly 10 digits.");
+          return false;
+        }
+        if (form.alternatePhone && !/^\d{10}$/.test(form.alternatePhone)) {
+          toast.error("Alternate mobile number must be exactly 10 digits.");
+          return false;
+        }
         return true;
       case 2: // Contact
         if (
@@ -809,6 +826,10 @@ const Onboarding = () => {
           !form.emergencyContactPhone
         ) {
           toast.error("Please fill all emergency contact fields");
+          return false;
+        }
+        if (!/^\d{10}$/.test(form.emergencyContactPhone)) {
+          toast.error("Emergency contact mobile number must be exactly 10 digits.");
           return false;
         }
         return true;
@@ -1046,8 +1067,7 @@ const Onboarding = () => {
                   {imagePreview || form.profileImage ? (
                     <img
                       src={
-                        imagePreview ||
-                        `http://localhost:4000${form.profileImage}`
+                        imagePreview || `${API_BASE}${form.profileImage}`
                       }
                       alt="Profile preview"
                       className="w-full h-full object-cover"
@@ -1090,24 +1110,28 @@ const Onboarding = () => {
             <Field label="Phone" required>
               <input
                 type="tel"
+                inputMode="numeric"
                 className={inputClass}
                 value={form.phone}
                 onChange={set("phone")}
-                pattern="[+]?[\d\s()\-]{7,20}"
-                title="7-20 digits, may include + ( ) -"
-                placeholder="+1 555 123 4567"
+                pattern="\d{10}"
+                title="Enter exactly 10 digits"
+                placeholder="9876543210"
+                maxLength={10}
                 required
               />
             </Field>
             <Field label="Alternate Phone">
               <input
                 type="tel"
+                inputMode="numeric"
                 className={inputClass}
                 value={form.alternatePhone}
                 onChange={set("alternatePhone")}
-                pattern="[+]?[\d\s()\-]{7,20}"
-                title="7-20 digits, may include + ( ) -"
+                pattern="\d{10}"
+                title="Enter exactly 10 digits"
                 placeholder="Optional"
+                maxLength={10}
               />
             </Field>
             <Field label="Personal Email">
@@ -1316,12 +1340,14 @@ const Onboarding = () => {
             <Field label="Contact Phone" required full>
               <input
                 type="tel"
+                inputMode="numeric"
                 className={inputClass}
                 value={form.emergencyContactPhone}
                 onChange={set("emergencyContactPhone")}
-                pattern="[+]?[\d\s()\-]{7,20}"
-                title="7-20 digits, may include + ( ) -"
-                placeholder="+1 555 987 6543"
+                pattern="\d{10}"
+                title="Enter exactly 10 digits"
+                placeholder="9876543210"
+                maxLength={10}
                 required
               />
             </Field>

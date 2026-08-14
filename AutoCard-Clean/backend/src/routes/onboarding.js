@@ -143,19 +143,29 @@ router.post("/submit", requireAuth, requireRole("EMPLOYEE"), async (req, res) =>
 // POST /api/onboarding/upload-image - upload profile image (employee or admin)
 router.post("/upload-image", requireAuth, upload.single("profileImage"), async (req, res) => {
   console.log("📥 [POST /api/onboarding/upload-image] Request received");
-  
+
   try {
     if (!req.file) {
       console.log("❌ [POST /api/onboarding/upload-image] No file uploaded");
       return res.status(400).json({ message: "No image file provided." });
     }
 
+    const targetUserId = req.query.userId || req.user.id;
     const imagePath = `/uploads/profiles/${req.file.filename}`;
-    console.log(`✅ [POST /api/onboarding/upload-image] Image uploaded: ${imagePath}`);
-    
-    res.json({ 
+
+    const profile = await prisma.employeeProfile.findUnique({ where: { userId: targetUserId } });
+    if (profile) {
+      await prisma.employeeProfile.update({
+        where: { id: profile.id },
+        data: { profileImage: imagePath },
+      });
+    }
+
+    console.log(`✅ [POST /api/onboarding/upload-image] Image uploaded: ${imagePath} for user ${targetUserId}`);
+
+    res.json({
       imagePath,
-      message: "Image uploaded successfully." 
+      message: "Image uploaded successfully."
     });
   } catch (err) {
     console.error("❌ [POST /api/onboarding/upload-image] Error:", err);
@@ -269,7 +279,7 @@ router.get("/employee/:userId", requireAuth, requireRole("ADMIN"), async (req, r
   try {
     const profile = await prisma.employeeProfile.findUnique({
       where: { userId },
-      include: { user: true },
+      include: { user: true, location: true },
     });
     
     if (!profile) {
@@ -341,11 +351,13 @@ router.put("/employee/:userId", requireAuth, requireRole("ADMIN"), async (req, r
       addressProofDocument: toNull(req.body.addressProofDocument),
       educationProofDocument: toNull(req.body.educationProofDocument),
       resumeDocument: toNull(req.body.resumeDocument),
+      locationId: req.body.locationId ?? profile.locationId,
     };
 
     const updated = await prisma.employeeProfile.update({
       where: { id: profile.id },
       data: updateData,
+      include: { user: true, location: true },
     });
 
     console.log(`✅ [PUT /api/onboarding/employee/${userId}] Profile updated successfully`);

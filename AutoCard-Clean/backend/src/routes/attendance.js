@@ -11,6 +11,96 @@ const calculateWorkedHours = (checkIn, checkOut) => {
   return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
 };
 
+const parseLocationString = (location) => {
+  if (!location || typeof location !== "string") return null;
+  const match = location.match(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+};
+
+const getLocationLabel = (targetLocation) => {
+  if (!targetLocation) return "Assigned location";
+  return targetLocation.isDefault ? "Office" : targetLocation.name || "Assigned location";
+};
+
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  const earthRadiusMeters = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+};
+
+const getRosterLocation = async (profileId) => {
+  const today = new Date();
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const tomorrow = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1));
+
+  const rosterEntry = await prisma.rosterEntry.findFirst({
+    where: {
+      employeeId: profileId,
+      date: { gte: start, lt: tomorrow },
+      locationId: { not: null },
+    },
+    include: { location: true },
+  });
+
+  return rosterEntry?.location ?? null;
+};
+
+const getTargetLocation = async (profile) => {
+  const rosterLocation = await getRosterLocation(profile.id);
+  if (rosterLocation) {
+    return rosterLocation;
+  }
+
+  if (profile.location) {
+    return profile.location;
+  }
+
+  return prisma.location.findFirst({ where: { isDefault: true, isActive: true } });
+};
+
+const getCheckInStatus = (date) => {
+  return "PRESENT";
+};
+
+const getAttendanceStatusAfterCheckout = (checkIn, checkOut, previousStatus) => {
+  return previousStatus;
+};
+
+const findNearestLocation = async (coordinates) => {
+  const allLocations = await prisma.location.findMany({
+    where: { isActive: true },
+  });
+
+  let nearest = null;
+  let minDistance = Infinity;
+
+  for (const loc of allLocations) {
+    if (loc.latitude == null || loc.longitude == null) continue;
+    const distance = getDistanceInMeters(
+      loc.latitude,
+      loc.longitude,
+      coordinates.latitude,
+      coordinates.longitude,
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = { location: loc, distance };
+    }
+  }
+
+  return nearest;
+};
+
 const normalizeUTCDate = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 const formatDateKey = (date) => normalizeUTCDate(date).toISOString().slice(0, 10);
 const isWorkingDay = (date) => date.getUTCDay() !== 0; // skip Sundays as non-working
@@ -40,7 +130,7 @@ router.get("/me", requireAuth, async (req, res) => {
     const start = new Date(Date.UTC(year, month - 1, 1));
     const end   = new Date(Date.UTC(year, month, 1));
 
-    const [records, holidays] = await Promise.all([
+    const [records, holidays, leaveRequests] = await Promise.all([
       prisma.attendance.findMany({
         where: { employeeId: profile.id, date: { gte: start, lt: end } },
         orderBy: { date: "asc" },
@@ -48,22 +138,108 @@ router.get("/me", requireAuth, async (req, res) => {
       prisma.holiday.findMany({
         where: { date: { gte: start, lt: end } },
       }),
+      prisma.leaveRequest.findMany({
+        where: {
+          employeeId: profile.id,
+          status: "APPROVED",
+          startDate: { lt: end },
+          endDate: { gte: start },
+        },
+        include: { leaveType: { select: { name: true, code: true } } },
+      }),
     ]);
 
-    const summary = { PRESENT: 0, ABSENT: 0, LATE: 0, HALF_DAY: 0, ON_LEAVE: 0, HOLIDAY: 0 };
-    for (const r of records) {
-      if (summary[r.status] !== undefined) summary[r.status] += 1;
+    const attendanceByDate = new Map(records.map((r) => [formatDateKey(r.date), r]));
+    const holidayByDate = new Map(holidays.map((h) => [formatDateKey(h.date), h.name]));
+    const leaveByDate = new Map();
+
+    for (const leave of leaveRequests) {
+      let current = normalizeUTCDate(leave.startDate);
+      const last = normalizeUTCDate(leave.endDate);
+      while (current <= last) {
+        if (isWorkingDay(current)) {
+          leaveByDate.set(formatDateKey(current), leave);
+        }
+        current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1));
+      }
+    }
+
+    const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
+    const populatedRecords = [];
+    const now = new Date();
+    const todayUtc = normalizeUTCDate(now);
+
+    for (let current = new Date(start); current < end; current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1))) {
+      const key = formatDateKey(current);
+      const attendance = attendanceByDate.get(key);
+
+      if (attendance) {
+        const status = attendance.status;
+        if (summary[status] !== undefined) summary[status] += 1;
+        populatedRecords.push({
+          id: attendance.id,
+          date: attendance.date,
+          checkIn: attendance.checkIn,
+          checkOut: attendance.checkOut,
+          status,
+          workedHours: attendance.workedHours ?? calculateWorkedHours(attendance.checkIn, attendance.checkOut),
+          note: attendance.note,
+        });
+        continue;
+      }
+
+      if (!isWorkingDay(current)) {
+        continue;
+      }
+
+      if (holidayByDate.has(key)) {
+        summary.HOLIDAY += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(current),
+          checkIn: null,
+          checkOut: null,
+          status: "HOLIDAY",
+          workedHours: null,
+          note: holidayByDate.get(key),
+        });
+        continue;
+      }
+
+      if (leaveByDate.has(key)) {
+        const leave = leaveByDate.get(key);
+        summary.ON_LEAVE += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(current),
+          checkIn: null,
+          checkOut: null,
+          status: "ON_LEAVE",
+          workedHours: null,
+          note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
+        });
+        continue;
+      }
+
+      const isPastDay = current < todayUtc;
+      if (isPastDay) {
+        summary.ABSENT += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(current),
+          checkIn: null,
+          checkOut: null,
+          status: "ABSENT",
+          workedHours: null,
+          note: "No attendance record.",
+        });
+      }
     }
 
     res.json({
-      year, month,
-      records: records.map((r) => ({
-        id: r.id, date: r.date,
-        checkIn: r.checkIn, checkOut: r.checkOut,
-        status: r.status,
-        workedHours: r.workedHours ?? calculateWorkedHours(r.checkIn, r.checkOut),
-        note: r.note,
-      })),
+      year,
+      month,
+      records: populatedRecords,
       holidays: holidays.map((h) => ({ date: h.date, name: h.name })),
       summary,
     });
@@ -102,14 +278,27 @@ router.post("/checkin", requireAuth, requireRole("EMPLOYEE"), async (req, res) =
   try {
     const profile = await prisma.employeeProfile.findUnique({
       where: { userId: req.user.id },
+      include: { location: true },
     });
     if (!profile) return res.status(404).json({ message: "Employee profile not found." });
     if (profile.onboardingStatus !== "APPROVED") {
       return res.status(403).json({ message: "Your onboarding must be approved before marking attendance." });
     }
 
+    const targetLocation = await getTargetLocation(profile);
     const now   = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+    const { location, reason } = req.body;
+    const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+    if (!targetLocation && !normalizedReason) {
+      return res.status(400).json({ message: "No assigned/default location is configured. Please add a reason for this check-in." });
+    }
+
+    if (targetLocation && targetLocation.latitude == null || targetLocation && targetLocation.longitude == null) {
+      return res.status(400).json({ message: "The target check-in location has no coordinates configured." });
+    }
     const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
 
     const existing = await prisma.attendance.findFirst({
@@ -120,10 +309,71 @@ router.post("/checkin", requireAuth, requireRole("EMPLOYEE"), async (req, res) =
       return res.status(400).json({ message: "You have already checked in today." });
     }
 
-    // Always mark as PRESENT — no time-based late detection
-    const status = "PRESENT";
+    if (!location) {
+      return res.status(400).json({ message: "Please provide your GPS location to check in." });
+    }
 
-    const { location } = req.body; // optional string
+    const coordinates = parseLocationString(location);
+    if (!coordinates) {
+      return res.status(400).json({ message: "Invalid GPS location format. Please try again." });
+    }
+
+    // Find which location employee is checking into
+    const nearestLocationInfo = await findNearestLocation(coordinates);
+    const checkinLocation = nearestLocationInfo?.location;
+    const checkinDistance = nearestLocationInfo?.distance ?? Infinity;
+
+    // Get the default location
+    const defaultLocation = await prisma.location.findFirst({
+      where: { isDefault: true, isActive: true },
+    });
+
+    let status = getCheckInStatus(now);
+    let note = `Checkin: ${getLocationLabel(targetLocation)}`;
+    let requiresApproval = false;
+
+    // Check if the location where employee is checking in is their assigned or default location
+    if (checkinLocation && checkinDistance <= (checkinLocation.radius ?? 50)) {
+      // Employee is within a location's radius
+      const isAssignedLocation = profile.locationId === checkinLocation.id;
+      const isDefaultLocation = defaultLocation && checkinLocation.id === defaultLocation.id;
+
+      if (!isAssignedLocation && !isDefaultLocation) {
+        // Checking in to a location that is neither assigned nor default
+        requiresApproval = true;
+        status = "PENDING_APPROVAL";
+        note = `Checkin to unapproved location: ${checkinLocation.name} (${Math.round(checkinDistance)}m). Pending admin approval.`;
+      } else {
+        note = `Checkin: ${checkinLocation.name}`;
+      }
+    } else {
+      // Not within any location radius
+      const allowedRadius = targetLocation?.radius ?? 50;
+      const distanceToAssigned = targetLocation
+        ? getDistanceInMeters(
+            targetLocation.latitude,
+            targetLocation.longitude,
+            coordinates.latitude,
+            coordinates.longitude,
+          )
+        : Infinity;
+
+      if (targetLocation && distanceToAssigned > allowedRadius) {
+        if (!normalizedReason) {
+          return res.status(403).json({
+            message: `You are ${Math.round(distanceToAssigned)}m away from the assigned location. Please check in within ${allowedRadius}m of ${targetLocation.name}.`,
+          });
+        }
+
+        requiresApproval = true;
+        status = "PENDING_APPROVAL";
+        note = `Checkin from unassigned location (${Math.round(distanceToAssigned)}m away). Reason: ${normalizedReason}. Pending admin approval.`;
+      } else if (!targetLocation && normalizedReason) {
+        requiresApproval = true;
+        status = "PENDING_APPROVAL";
+        note = `Checkin from unassigned location. Reason: ${normalizedReason}. Pending admin approval.`;
+      }
+    }
 
     const record = await prisma.attendance.create({
       data: {
@@ -131,14 +381,47 @@ router.post("/checkin", requireAuth, requireRole("EMPLOYEE"), async (req, res) =
         date: today,
         checkIn: now,
         status,
-        note: location ? `Checkin: ${location}` : undefined,
+        note,
+        checkInLatitude: coordinates.latitude,
+        checkInLongitude: coordinates.longitude,
       },
     });
 
-    res.json({ record, message: "Checked in successfully." });
+    const message = requiresApproval
+      ? `Checked in to ${checkinLocation?.name || 'unapproved location'}. Awaiting admin approval.`
+      : "Checked in successfully.";
+
+    res.json({ record, message });
   } catch (err) {
     console.error("Check-in error:", err);
     res.status(500).json({ message: "Failed to check in." });
+  }
+});
+
+router.get("/checkin-location", requireAuth, requireRole("EMPLOYEE"), async (req, res) => {
+  try {
+    const profile = await prisma.employeeProfile.findUnique({
+      where: { userId: req.user.id },
+      include: { location: true },
+    });
+    if (!profile) return res.status(404).json({ message: "Employee profile not found." });
+
+    const targetLocation = await getTargetLocation(profile);
+    if (!targetLocation) {
+      return res.status(404).json({ message: "No assigned or default location is configured. Please ask admin to create one." });
+    }
+
+    res.json({ location: {
+      id: targetLocation.id,
+      name: targetLocation.name,
+      latitude: targetLocation.latitude,
+      longitude: targetLocation.longitude,
+      radius: targetLocation.radius,
+      isDefault: targetLocation.isDefault,
+    }});
+  } catch (err) {
+    console.error("Get checkin location error:", err);
+    res.status(500).json({ message: "Failed to load check-in location." });
   }
 });
 
@@ -147,11 +430,26 @@ router.post("/checkout", requireAuth, requireRole("EMPLOYEE"), async (req, res) 
   try {
     const profile = await prisma.employeeProfile.findUnique({
       where: { userId: req.user.id },
+      include: { location: true },
     });
     if (!profile) return res.status(404).json({ message: "Employee profile not found." });
 
+    const targetLocation = await getTargetLocation(profile);
+    const defaultLocation = await prisma.location.findFirst({ where: { isDefault: true, isActive: true } });
+    const comparisonLocation = targetLocation || defaultLocation;
     const now   = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+    const { location, reason } = req.body;
+    const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+    if (!comparisonLocation && !normalizedReason) {
+      return res.status(400).json({ message: "No assigned/default location is configured. Please add a reason for this check-out." });
+    }
+
+    if (comparisonLocation && (comparisonLocation.latitude == null || comparisonLocation.longitude == null)) {
+      return res.status(400).json({ message: "The target check-out location has no coordinates configured." });
+    }
     const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
 
     const record = await prisma.attendance.findFirst({
@@ -165,32 +463,74 @@ router.post("/checkout", requireAuth, requireRole("EMPLOYEE"), async (req, res) 
       return res.status(400).json({ message: "You have already checked out today." });
     }
 
-    // Worked hours
-    const workedHours = calculateWorkedHours(record.checkIn, now);
-
-    const { location } = req.body; // optional checkout location
-
-    // Build updated note: keep check-in note, append checkout location
-    let updatedNote = record.note ?? "";
-    if (location) {
-      updatedNote = updatedNote
-        ? `${updatedNote} | Checkout: ${location}`
-        : `Checkout: ${location}`;
+    if (!location) {
+      return res.status(400).json({ message: "Please provide your GPS location to check out." });
     }
+
+    const coordinates = parseLocationString(location);
+    if (!coordinates) {
+      return res.status(400).json({ message: "Invalid GPS location format. Please try again." });
+    }
+
+    const allowedRadius = comparisonLocation?.radius ?? 50;
+    const distance = comparisonLocation
+      ? getDistanceInMeters(
+          comparisonLocation.latitude,
+          comparisonLocation.longitude,
+          coordinates.latitude,
+          coordinates.longitude,
+        )
+      : Infinity;
+
+    const workedHours = calculateWorkedHours(record.checkIn, now);
+    const isOutside = !!comparisonLocation && distance > allowedRadius;
+
+    // If checkout happens outside allowed radius, mark pending approval
+    if (isOutside || (!comparisonLocation && normalizedReason)) {
+      const reasonText = normalizedReason ? ` Reason: ${normalizedReason}.` : "";
+      const checkoutNote = comparisonLocation
+        ? `Checkout outside assigned location (${Math.round(distance)}m). Pending admin approval.${reasonText}`
+        : `Checkout from unassigned location. Pending admin approval.${reasonText}`;
+      const updatedNote = record.note ? `${record.note} | ${checkoutNote}` : checkoutNote;
+
+      const updated = await prisma.attendance.update({
+        where: { id: record.id },
+        data: {
+          checkOut: now,
+          checkOutLatitude: coordinates.latitude,
+          checkOutLongitude: coordinates.longitude,
+          workedHours,
+          status: "PENDING_APPROVAL",
+          note: updatedNote,
+        },
+      });
+
+      return res.json({ record: updated, message: "Checked out outside location — pending admin approval." });
+    }
+
+    const status = getAttendanceStatusAfterCheckout(record.checkIn, now, record.status);
+
+    const checkoutNote = `Checkout: ${getLocationLabel(comparisonLocation)}`;
+    const updatedNote = record.note ? `${record.note} | ${checkoutNote}` : checkoutNote;
 
     const updated = await prisma.attendance.update({
       where: { id: record.id },
       data: {
         checkOut: now,
+        checkOutLatitude: coordinates.latitude,
+        checkOutLongitude: coordinates.longitude,
         workedHours,
-        note: updatedNote || undefined,
+        status,
+        note: updatedNote,
       },
     });
 
     res.json({ record: updated, message: "Checked out successfully." });
   } catch (err) {
     console.error("Check-out error:", err);
-    res.status(500).json({ message: "Failed to check out." });
+    console.error("Error stack:", err.stack);
+    console.error("Error message:", err.message);
+    res.status(500).json({ message: "Failed to check out.", error: err.message });
   }
 });
 
@@ -225,6 +565,32 @@ router.get("/employees", async (_req, res) => {
   }
 });
 
+// GET /api/attendance/pending-approvals - Get all pending check-in approvals
+router.get("/pending-approvals", async (_req, res) => {
+  try {
+    const pendingRecords = await prisma.attendance.findMany({
+      where: { status: "PENDING_APPROVAL" },
+      include: {
+        employee: {
+          include: {
+            user: {
+              select: { fullName: true, email: true },
+            },
+          },
+        },
+      },
+      orderBy: { date: "desc" },
+    });
+
+    console.log("Pending records sample:", JSON.stringify(pendingRecords[0], null, 2));
+
+    res.json({ pendingRecords });
+  } catch (err) {
+    console.error("Get pending approvals error:", err);
+    res.status(500).json({ message: "Failed to load pending approvals." });
+  }
+});
+
 // GET /api/attendance/today - today's summary for all employees.
 router.get("/today", async (_req, res) => {
   try {
@@ -256,7 +622,7 @@ router.get("/today", async (_req, res) => {
     const attendanceByEmployeeId = new Map(attendanceRecords.map((rec) => [rec.employeeId, rec]));
     const leaveByEmployeeId = new Map(leaveRequests.map((req) => [req.employeeId, req]));
 
-    const summary = { PRESENT: 0, ABSENT: 0, LATE: 0, HALF_DAY: 0, ON_LEAVE: 0, HOLIDAY: 0 };
+    const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
     const records = employees.map((employee) => {
       const attendance = attendanceByEmployeeId.get(employee.id);
       const leave = leaveByEmployeeId.get(employee.id);
@@ -297,6 +663,226 @@ router.get("/today", async (_req, res) => {
   } catch (err) {
     console.error("Get today attendance error:", err);
     res.status(500).json({ message: "Failed to load today attendance." });
+  }
+});
+
+// GET /api/attendance/register/weekly?days=7 - all employee attendance register.
+router.get("/register/weekly", async (req, res) => {
+  const daysParam = Number(req.query.days ?? 7);
+  const days = Number.isInteger(daysParam) && daysParam > 0 && daysParam <= 31 ? daysParam : 7;
+
+  // Optional ISO start date (YYYY-MM-DD) to request a specific week range (admin use)
+  const startParam = req.query.start;
+
+  try {
+    const now = new Date();
+    const today = normalizeUTCDate(now);
+
+    let start;
+    if (startParam) {
+      // Try parse provided start param as UTC date key (YYYY-MM-DD)
+      const parsed = new Date(startParam);
+      if (!Number.isNaN(parsed.getTime())) {
+        start = normalizeUTCDate(parsed);
+      }
+    }
+
+    if (!start) {
+      start = days === 7
+        ? new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - today.getUTCDay()))
+        : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - (days - 1)));
+    }
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + days));
+
+    const [employees, attendanceRecords, holidays, leaveRequests] = await Promise.all([
+      prisma.employeeProfile.findMany({
+        include: { user: { select: { fullName: true, email: true } } },
+        orderBy: { employeeCode: "asc" },
+      }),
+      prisma.attendance.findMany({
+        where: { date: { gte: start, lt: end } },
+        orderBy: [{ date: "desc" }],
+      }),
+      prisma.holiday.findMany({
+        where: { date: { gte: start, lt: end } },
+      }),
+      prisma.leaveRequest.findMany({
+        where: {
+          status: "APPROVED",
+          startDate: { lt: end },
+          endDate: { gte: start },
+        },
+        include: { leaveType: { select: { name: true, code: true } } },
+      }),
+    ]);
+
+    const dates = [];
+    for (let i = 0; i < days; i++) {
+      dates.push(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + i)));
+    }
+
+    const attendanceByEmployeeAndDate = new Map(
+      attendanceRecords.map((record) => [`${record.employeeId}:${formatDateKey(record.date)}`, record]),
+    );
+    const holidayByDate = new Map(holidays.map((holiday) => [formatDateKey(holiday.date), holiday]));
+    const leaveByEmployeeAndDate = new Map();
+
+    for (const leave of leaveRequests) {
+      let current = normalizeUTCDate(leave.startDate);
+      const last = normalizeUTCDate(leave.endDate);
+      while (current <= last) {
+        if (current >= start && current < end && isWorkingDay(current)) {
+          leaveByEmployeeAndDate.set(`${leave.employeeId}:${formatDateKey(current)}`, leave);
+        }
+        current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1));
+      }
+    }
+
+    const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
+    const records = [];
+
+    for (const date of dates) {
+      const dateKey = formatDateKey(date);
+      const holiday = holidayByDate.get(dateKey);
+
+      for (const employee of employees) {
+        const mapKey = `${employee.id}:${dateKey}`;
+        const attendance = attendanceByEmployeeAndDate.get(mapKey);
+        const leave = leaveByEmployeeAndDate.get(mapKey);
+
+        let status = "ABSENT";
+        let checkIn = null;
+        let checkOut = null;
+        let workedHours = null;
+        let note = "No attendance record.";
+
+        if (attendance) {
+          status = attendance.status;
+          checkIn = attendance.checkIn;
+          checkOut = attendance.checkOut;
+          workedHours = attendance.workedHours ?? calculateWorkedHours(attendance.checkIn, attendance.checkOut);
+          note = attendance.note || null;
+        } else if (!isWorkingDay(date)) {
+          status = "HOLIDAY";
+          note = "Weekly off.";
+        } else if (holiday) {
+          status = "HOLIDAY";
+          note = holiday.name;
+        } else if (leave) {
+          status = "ON_LEAVE";
+          note = `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`;
+        }
+
+        if (summary[status] !== undefined) summary[status] += 1;
+
+        records.push({
+          id: attendance?.id ?? `${employee.id}-${dateKey}`,
+          employeeId: employee.id,
+          employeeCode: employee.employeeCode,
+          fullName: employee.user.fullName,
+          email: employee.user.email,
+          date: new Date(date),
+          status,
+          checkIn,
+          checkOut,
+          workedHours,
+          note,
+        });
+      }
+    }
+
+    res.json({
+      startDate: start,
+      endDate: today,
+      days,
+      totalEmployees: employees.length,
+      summary,
+      records,
+    });
+  } catch (err) {
+    console.error("Get weekly attendance register error:", err);
+    res.status(500).json({ message: "Failed to load attendance register." });
+  }
+});
+
+// GET /api/attendance/pending - list pending approval attendance records (ADMIN)
+router.get("/pending", async (req, res) => {
+  try {
+    const pending = await prisma.attendance.findMany({
+      where: { status: "PENDING_APPROVAL" },
+      include: { employee: { include: { user: { select: { fullName: true, email: true } } } } },
+      orderBy: { date: "desc" },
+    });
+
+    const result = pending.map((p) => ({
+      id: p.id,
+      employeeId: p.employeeId,
+      fullName: p.employee?.user?.fullName,
+      email: p.employee?.user?.email,
+      date: p.date,
+      checkIn: p.checkIn,
+      checkOut: p.checkOut,
+      workedHours: p.workedHours,
+      note: p.note,
+    }));
+
+    res.json({ records: result });
+  } catch (err) {
+    console.error("Get pending attendance error:", err);
+    res.status(500).json({ message: "Failed to load pending attendance." });
+  }
+});
+
+// POST /api/attendance/:id/approve - approve pending attendance (ADMIN)
+router.post("/:id/approve", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const record = await prisma.attendance.findUnique({ where: { id } });
+    if (!record) return res.status(404).json({ message: "Attendance record not found." });
+    if (record.status !== "PENDING_APPROVAL") return res.status(400).json({ message: "Record is not pending approval." });
+
+    const workedHours = calculateWorkedHours(record.checkIn, record.checkOut ?? new Date());
+    // Recompute status based on original checkIn time and worked hours
+    const checkInDate = record.checkIn ? new Date(record.checkIn) : null;
+    const baseStatus = checkInDate ? getCheckInStatus(checkInDate) : "PRESENT";
+    const finalStatus = record.checkOut ? getAttendanceStatusAfterCheckout(record.checkIn, record.checkOut, baseStatus) : baseStatus;
+
+    const updated = await prisma.attendance.update({
+      where: { id },
+      data: {
+        workedHours,
+        status: finalStatus,
+        note: record.note ? `${record.note} | Approved by admin` : "Approved by admin",
+      },
+    });
+
+    res.json({ record: updated, message: "Attendance approved." });
+  } catch (err) {
+    console.error("Approve attendance error:", err);
+    res.status(500).json({ message: "Failed to approve attendance." });
+  }
+});
+
+// POST /api/attendance/:id/reject - reject pending attendance (ADMIN)
+router.post("/:id/reject", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const record = await prisma.attendance.findUnique({ where: { id } });
+    if (!record) return res.status(404).json({ message: "Attendance record not found." });
+    if (record.status !== "PENDING_APPROVAL") return res.status(400).json({ message: "Record is not pending approval." });
+
+    const updated = await prisma.attendance.update({
+      where: { id },
+      data: {
+        status: "ABSENT",
+        note: record.note ? `${record.note} | Rejected by admin` : "Rejected by admin",
+      },
+    });
+
+    res.json({ record: updated, message: "Attendance rejected and marked absent." });
+  } catch (err) {
+    console.error("Reject attendance error:", err);
+    res.status(500).json({ message: "Failed to reject attendance." });
   }
 });
 
@@ -359,7 +945,7 @@ router.get("/:employeeId", async (req, res) => {
       }
     }
 
-    const summary = { PRESENT: 0, ABSENT: 0, LATE: 0, HALF_DAY: 0, ON_LEAVE: 0, HOLIDAY: 0 };
+    const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
     const todayUtc = normalizeUTCDate(new Date());
     const populatedRecords = [];
 
@@ -445,6 +1031,102 @@ router.get("/:employeeId", async (req, res) => {
   } catch (err) {
     console.error("Get attendance error:", err);
     res.status(500).json({ message: "Failed to load attendance." });
+  }
+});
+
+// GET /api/attendance/pending-approvals - Get all pending check-in approvals
+router.get("/pending-approvals", async (_req, res) => {
+  try {
+    const pendingRecords = await prisma.attendance.findMany({
+      where: { status: "PENDING_APPROVAL" },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            user: { select: { fullName: true, email: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ pendingRecords });
+  } catch (err) {
+    console.error("Get pending approvals error:", err);
+    res.status(500).json({ message: "Failed to load pending approvals." });
+  }
+});
+
+// POST /api/attendance/approve/:id - Approve a pending check-in
+router.post("/approve/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const record = await prisma.attendance.findUnique({
+      where: { id },
+      include: { employee: true },
+    });
+
+    if (!record) {
+      return res.status(404).json({ message: "Attendance record not found." });
+    }
+
+    if (record.status !== "PENDING_APPROVAL") {
+      return res.status(400).json({ message: "Record is not pending approval." });
+    }
+
+    const updatedNote = record.note ? `${record.note} | Admin approved.` : "Admin approved.";
+
+    const updated = await prisma.attendance.update({
+      where: { id },
+      data: {
+        status: "PRESENT",
+        note: updatedNote,
+      },
+    });
+
+    res.json({ record: updated, message: "Check-in approved successfully." });
+  } catch (err) {
+    console.error("Approve check-in error:", err);
+    res.status(500).json({ message: "Failed to approve check-in." });
+  }
+});
+
+// POST /api/attendance/reject/:id - Reject a pending check-in
+router.post("/reject/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const record = await prisma.attendance.findUnique({
+      where: { id },
+      include: { employee: true },
+    });
+
+    if (!record) {
+      return res.status(404).json({ message: "Attendance record not found." });
+    }
+
+    if (record.status !== "PENDING_APPROVAL") {
+      return res.status(400).json({ message: "Record is not pending approval." });
+    }
+
+    const rejectionNote = reason ? `Admin rejected: ${reason}` : "Admin rejected.";
+    const updatedNote = record.note ? `${record.note} | ${rejectionNote}` : rejectionNote;
+
+    const updated = await prisma.attendance.update({
+      where: { id },
+      data: {
+        status: "ABSENT",
+        note: updatedNote,
+      },
+    });
+
+    res.json({ record: updated, message: "Check-in rejected successfully." });
+  } catch (err) {
+    console.error("Reject check-in error:", err);
+    res.status(500).json({ message: "Failed to reject check-in." });
   }
 });
 

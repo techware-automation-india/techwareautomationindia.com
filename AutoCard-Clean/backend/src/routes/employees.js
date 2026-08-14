@@ -35,6 +35,7 @@ router.get("/", async (_req, res) => {
       employeeCode: u.employeeProfile?.employeeCode ?? null,
       jobTitle: u.employeeProfile?.jobTitle ?? null,
       onboardingStatus: u.employeeProfile?.onboardingStatus ?? null,
+      profileImage: u.employeeProfile?.profileImage ?? null,
       createdAt: u.createdAt,
     }));
 

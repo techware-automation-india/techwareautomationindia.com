@@ -1,26 +1,61 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Fingerprint, Loader2, LogIn, LogOut, MapPin, Clock,
-  CheckCircle2, RefreshCw, Calendar, AlertCircle,
+  Fingerprint, Loader2, LogIn, LogOut, Clock,
+  CheckCircle2, RefreshCw, Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
+import { getAuthUser } from "../../lib/auth.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const fmtTime = (v) =>
   v ? new Date(v).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) : "—";
 
-const fmtDate = (v) =>
-  v ? new Date(v).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "—";
+const fmtDate = (v) => {
+  if (!v) return "—";
+  const date = new Date(v);
+  if (Number.isNaN(date.getTime())) return "—";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 const STATUS_META = {
   PRESENT:  { label: "Present",   bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
-  LATE:     { label: "Late",      bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-500"  },
   ABSENT:   { label: "Absent",    bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500"   },
-  HALF_DAY: { label: "Half Day",  bg: "bg-blue-100",    text: "text-blue-700",    dot: "bg-blue-500"   },
   ON_LEAVE: { label: "On Leave",  bg: "bg-purple-100",  text: "text-purple-700",  dot: "bg-purple-500" },
   HOLIDAY:  { label: "Holiday",   bg: "bg-indigo-100",  text: "text-indigo-700",  dot: "bg-indigo-500" },
+};
+
+const toRadians = (value) => (value * Math.PI) / 180;
+
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  const earthRadiusMeters = 6371000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+};
+
+const parseLocationCoordinates = (location) => {
+  if (!location || typeof location !== "string") return null;
+
+  const match = location.match(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? { latitude, longitude }
+    : null;
 };
 
 // Returns "lat, lon (±Xm)" or throws an error string
@@ -30,76 +65,59 @@ const getGPSLocation = () =>
       reject(new Error("Geolocation is not supported by your browser."));
       return;
     }
+
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 25000,
+      maximumAge: 10000,
+    };
+
     navigator.geolocation.getCurrentPosition(
       ({ coords }) =>
         resolve(`${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} (±${Math.round(coords.accuracy)}m)`),
-      (err) =>
-        reject(new Error(
-          err.code === 1
-            ? "Location permission denied. Please allow location access and try again."
-            : "Could not get your location. Please try again.",
-        )),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      async (err) => {
+        let message = "Could not get your location. Please try again.";
+
+        if (err.code === 1) {
+          message = "Location permission is blocked. Please enable location access for this browser and try again.";
+        } else if (err.code === 2) {
+          message = "Location services are unavailable right now. Please turn on GPS/Location Services and try again.";
+        } else if (err.code === 3) {
+          message = "Location request timed out. Please try again with a stronger signal or move to an open area.";
+        }
+
+        if (typeof navigator !== "undefined" && navigator.permissions?.query) {
+          try {
+            const permissionStatus = await navigator.permissions.query({ name: "geolocation" });
+            if (permissionStatus.state === "denied") {
+              message = "Location permission is blocked. Please enable location access for this browser and try again.";
+            }
+          } catch {
+            // ignore and use fallback message
+          }
+        }
+
+        reject(new Error(message));
+      },
+      options,
     );
   });
-
-// ── Location input block ──────────────────────────────────────────────────────
-
-const LocationBlock = ({ action, value, onChange, fetchingLoc, onFetch }) => {
-  const isFetching = fetchingLoc === action;
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium flex items-center gap-1.5">
-          <MapPin className="h-3.5 w-3.5 text-primary" />
-          Location <span className="text-destructive">*</span>
-        </label>
-        {!value && (
-          <span className="text-xs text-rose-600 flex items-center gap-1">
-            <AlertCircle className="h-3 w-3" /> Required
-          </span>
-        )}
-      </div>
-      <div className="flex gap-2">
-        <input
-          className={`flex-1 px-3 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-background ${
-            value ? "border-emerald-300 text-foreground" : "border-rose-300 text-muted-foreground"
-          }`}
-          placeholder="Click 'Get Location' to capture GPS…"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-        <button
-          type="button"
-          onClick={() => onFetch(action)}
-          disabled={isFetching || fetchingLoc !== false}
-          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-primary bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors disabled:opacity-60 whitespace-nowrap"
-        >
-          {isFetching
-            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Fetching…</>
-            : <><MapPin className="h-3.5 w-3.5" /> Get Location</>}
-        </button>
-      </div>
-      {value && (
-        <p className="text-xs text-emerald-600 flex items-center gap-1">
-          <CheckCircle2 className="h-3 w-3" /> Location captured
-        </p>
-      )}
-    </div>
-  );
-};
 
 // ── Main component ────────────────────────────────────────────────────────────
 
 const MarkAttendance = () => {
+  const navigate = useNavigate();
   const [record,      setRecord]      = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [checkingIn,  setCheckingIn]  = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
   const [now,         setNow]         = useState(new Date());
-  const [checkInLoc,  setCheckInLoc]  = useState("");
-  const [checkOutLoc, setCheckOutLoc] = useState("");
-  const [fetchingLoc, setFetchingLoc] = useState(false); // "checkin" | "checkout" | false
+  const [capturingLocation, setCapturingLocation] = useState(false);
+  const [targetLocation, setTargetLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [locationError, setLocationError] = useState(null);
+  const [reasonModal, setReasonModal] = useState(null);
+  const [reasonText, setReasonText] = useState("");
 
   // Live clock — tick every second
   useEffect(() => {
@@ -120,56 +138,162 @@ const MarkAttendance = () => {
     }
   }, []);
 
-  useEffect(() => { loadToday(); }, [loadToday]);
-
-  // Fetch GPS for a given action ("checkin" | "checkout")
-  const fetchLocFor = async (action) => {
-    setFetchingLoc(action);
+  const loadTargetLocation = useCallback(async () => {
+    setLocationLoading(true);
+    setLocationError(null);
     try {
-      const loc = await getGPSLocation();
-      if (action === "checkin")  setCheckInLoc(loc);
-      if (action === "checkout") setCheckOutLoc(loc);
-      toast.success("Location captured.");
+      const data = await apiGet("/attendance/checkin-location");
+      setTargetLocation(data.location);
     } catch (err) {
-      toast.error(err.message);
+      setTargetLocation(null);
+      setLocationError(err.message || "Failed to load assigned location.");
     } finally {
-      setFetchingLoc(false);
+      setLocationLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadToday();
+    loadTargetLocation();
+  }, [loadToday, loadTargetLocation]);
+
+  const openReasonModal = (type, location, coordinates, distanceMeters) => {
+    setReasonModal({
+      type,
+      location,
+      coordinates,
+      distanceMeters,
+      locationName: targetLocation?.name || "Unassigned location",
+    });
+    setReasonText("");
+  };
+
+  const submitReasonedAttendance = async () => {
+    if (!reasonModal) return;
+    const trimmedReason = reasonText.trim();
+    if (!trimmedReason) {
+      toast.error("Please enter a reason before submitting.");
+      return;
+    }
+
+    const payload = {
+      location: reasonModal.location,
+      reason: trimmedReason,
+    };
+
+    try {
+      if (reasonModal.type === "checkin") {
+        const data = await apiPost("/attendance/checkin", payload);
+        const authUser = getAuthUser();
+        if (data.record?.id && authUser?.id) {
+          localStorage.setItem(`employee-has-checked-in:${authUser.id}`, "true");
+        }
+        setRecord(data.record);
+        toast.success(data.message || "Checked in successfully!");
+        navigate("/employee", { replace: true });
+      } else {
+        const data = await apiPost("/attendance/checkout", payload);
+        setRecord(data.record);
+        toast.success(data.message || "Checked out successfully!");
+      }
+    } catch (err) {
+      toast.error(err.message || "Request failed.");
+    } finally {
+      setReasonModal(null);
+      setReasonText("");
     }
   };
 
   const handleCheckIn = async () => {
-    if (checkingIn) return;
-    if (!checkInLoc.trim()) {
-      toast.error("Location is required. Click 'Get Location' to capture it.");
-      return;
-    }
+    if (checkingIn || capturingLocation) return;
     setCheckingIn(true);
+    setCapturingLocation(true);
     try {
-      const data = await apiPost("/attendance/checkin", { location: checkInLoc });
+      const now = new Date();
+
+      const location = await getGPSLocation();
+      const coordinates = parseLocationCoordinates(location);
+
+      if (!coordinates) {
+        throw new Error("Unable to read your location coordinates. Please try again.");
+      }
+
+      if (!targetLocation) {
+        openReasonModal("checkin", location, coordinates, null);
+        return;
+      }
+      if (targetLocation.latitude == null || targetLocation.longitude == null) {
+        throw new Error("The assigned location has no GPS coordinates configured.");
+      }
+
+      const distanceMeters = getDistanceInMeters(
+        targetLocation.latitude,
+        targetLocation.longitude,
+        coordinates.latitude,
+        coordinates.longitude,
+      );
+
+      if (distanceMeters > (targetLocation.radius ?? 50)) {
+        openReasonModal("checkin", location, coordinates, Math.round(distanceMeters));
+        return;
+      }
+
+      const data = await apiPost("/attendance/checkin", { location });
+      const authUser = getAuthUser();
+      if (data.record?.id && authUser?.id) {
+        localStorage.setItem(`employee-has-checked-in:${authUser.id}`, "true");
+      }
       setRecord(data.record);
       toast.success(data.message || "Checked in successfully!");
+      navigate("/employee", { replace: true });
     } catch (err) {
       toast.error(err.message || "Check-in failed.");
     } finally {
       setCheckingIn(false);
+      setCapturingLocation(false);
     }
   };
 
   const handleCheckOut = async () => {
-    if (checkingOut) return;
-    if (!checkOutLoc.trim()) {
-      toast.error("Location is required. Click 'Get Location' to capture it.");
-      return;
-    }
+    if (checkingOut || capturingLocation) return;
     setCheckingOut(true);
+    setCapturingLocation(true);
     try {
-      const data = await apiPost("/attendance/checkout", { location: checkOutLoc });
+      const location = await getGPSLocation();
+      const coordinates = parseLocationCoordinates(location);
+
+      if (!coordinates) {
+        throw new Error("Unable to read your location coordinates. Please try again.");
+      }
+
+      if (!targetLocation) {
+        openReasonModal("checkout", location, coordinates, null);
+        return;
+      }
+      if (targetLocation.latitude == null || targetLocation.longitude == null) {
+        throw new Error("The assigned location has no GPS coordinates configured.");
+      }
+
+      const distanceMeters = getDistanceInMeters(
+        targetLocation.latitude,
+        targetLocation.longitude,
+        coordinates.latitude,
+        coordinates.longitude,
+      );
+
+      if (distanceMeters > (targetLocation.radius ?? 50)) {
+        openReasonModal("checkout", location, coordinates, Math.round(distanceMeters));
+        return;
+      }
+
+      const data = await apiPost("/attendance/checkout", { location });
       setRecord(data.record);
       toast.success(data.message || "Checked out successfully!");
     } catch (err) {
       toast.error(err.message || "Check-out failed.");
     } finally {
       setCheckingOut(false);
+      setCapturingLocation(false);
     }
   };
 
@@ -209,6 +333,13 @@ const MarkAttendance = () => {
         >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </button>
+      </div>
+
+      <div className="rounded-2xl bg-secondary/50 border border-border p-4 text-sm text-muted-foreground">
+        <p className="font-semibold text-slate-900">Attendance policy</p>
+        <p className="mt-1">
+          Attendance tracking is enabled.
+        </p>
       </div>
 
       {/* Live clock */}
@@ -279,46 +410,29 @@ const MarkAttendance = () => {
             </div>
           )}
 
-          {/* Check-In: location + button */}
+
+          {/* Check-In button */}
           {!hasCheckedIn && (
-            <>
-              <LocationBlock
-                action="checkin"
-                value={checkInLoc}
-                onChange={setCheckInLoc}
-                fetchingLoc={fetchingLoc}
-                onFetch={fetchLocFor}
-              />
-              <button
-                onClick={handleCheckIn}
-                disabled={checkingIn || !checkInLoc.trim()}
-                className="w-full cta-gradient text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {checkingIn ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
-                {checkingIn ? "Checking In…" : "Check In"}
-              </button>
-            </>
+            <button
+              onClick={handleCheckIn}
+              disabled={checkingIn || capturingLocation}
+              className="w-full cta-gradient text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {checkingIn || capturingLocation ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}
+              {checkingIn || capturingLocation ? "Capturing Location…" : "Check In"}
+            </button>
           )}
 
-          {/* Check-Out: location + button */}
+          {/* Check-Out button */}
           {hasCheckedIn && !hasCheckedOut && (
-            <>
-              <LocationBlock
-                action="checkout"
-                value={checkOutLoc}
-                onChange={setCheckOutLoc}
-                fetchingLoc={fetchingLoc}
-                onFetch={fetchLocFor}
-              />
-              <button
-                onClick={handleCheckOut}
-                disabled={checkingOut || !checkOutLoc.trim()}
-                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {checkingOut ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogOut className="h-5 w-5" />}
-                {checkingOut ? "Checking Out…" : "Check Out"}
-              </button>
-            </>
+            <button
+              onClick={handleCheckOut}
+              disabled={checkingOut || capturingLocation}
+              className="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {checkingOut || capturingLocation ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogOut className="h-5 w-5" />}
+              {checkingOut || capturingLocation ? "Capturing Location…" : "Check Out"}
+            </button>
           )}
 
           {/* Fully done */}
@@ -329,13 +443,71 @@ const MarkAttendance = () => {
             </div>
           )}
 
-          {/* Stored location note */}
-          {record?.note && (
-            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-2">
-              <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              {record.note}
+        </div>
+      )}
+
+      {reasonModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-border">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-display text-xl font-bold text-slate-900">
+                  {reasonModal.type === "checkin" ? "Check-in reason" : "Check-out reason"}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  You are checking {reasonModal.type === "checkin" ? "in" : "out"} away from your assigned or default location.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setReasonModal(null);
+                  setReasonText("");
+                }}
+                className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary"
+              >
+                ✕
+              </button>
             </div>
-          )}
+
+            <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+              <div className="font-medium">Location info</div>
+              <div className="mt-1">
+                {reasonModal.locationName}
+                {reasonModal.distanceMeters != null && (
+                  <span className="ml-2">({reasonModal.distanceMeters}m away)</span>
+                )}
+              </div>
+            </div>
+
+            <label className="mt-5 block text-sm font-medium text-slate-700">
+              Reason
+            </label>
+            <textarea
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              rows={5}
+              placeholder="Please enter the reason for checking in/out from this location..."
+              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setReasonModal(null);
+                  setReasonText("");
+                }}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitReasonedAttendance}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

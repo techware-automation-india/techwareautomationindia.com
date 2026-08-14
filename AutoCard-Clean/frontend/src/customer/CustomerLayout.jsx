@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
 import { customerModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
+import ThemeToggle from "../components/ThemeToggle.jsx";
 
 const CustomerLayout = () => {
   const navigate = useNavigate();
@@ -120,6 +121,7 @@ const CustomerLayout = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <div className="text-right hidden sm:block">
               <div className="text-sm font-semibold text-foreground">Sample Customer</div>
               <div className="text-xs text-muted-foreground">customer@techware.com</div>

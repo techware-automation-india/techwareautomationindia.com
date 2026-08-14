@@ -31,12 +31,31 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 
+const optionalLatitude = z.preprocess((value) => {
+  if (value === "" || value === undefined || value === null) return null;
+  return Number(value);
+}, z.number().finite().min(-90).max(90).nullable());
+
+const optionalLongitude = z.preprocess((value) => {
+  if (value === "" || value === undefined || value === null) return null;
+  return Number(value);
+}, z.number().finite().min(-180).max(180).nullable());
+
+const optionalRadius = z.preprocess((value) => {
+  if (value === "" || value === undefined || value === null) return null;
+  return Number(value);
+}, z.number().finite().min(0).nullable());
+
 const locationSchema = z.object({
   name:        z.string().trim().min(2, "Location name is required."),
   addressLine: z.string().trim().max(300).optional().or(z.literal("")),
   city:        z.string().trim().max(80).optional().or(z.literal("")),
   state:       z.string().trim().max(80).optional().or(z.literal("")),
   country:     z.string().trim().max(80).optional().or(z.literal("")),
+  latitude:    optionalLatitude.optional(),
+  longitude:   optionalLongitude.optional(),
+  radius:      optionalRadius.optional(),
+  isDefault:   z.boolean().optional().default(false),
   isActive:    z.boolean().default(true),
 });
 
@@ -63,6 +82,11 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
     const exists = await prisma.location.findFirst({ where: { name: data.name } });
     if (exists) return res.status(400).json({ success: false, message: "A location with this name already exists." });
 
+    // If new location is marked default, unset any existing default locations first
+    if (data.isDefault) {
+      await prisma.location.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
+    }
+
     const loc = await prisma.location.create({
       data: {
         name:        data.name,
@@ -70,7 +94,11 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
         city:        toNull(data.city),
         state:       toNull(data.state),
         country:     toNull(data.country),
+        latitude:    toNull(data.latitude),
+        longitude:   toNull(data.longitude),
+        radius:      toNull(data.radius),
         isActive:    data.isActive ?? true,
+        isDefault:   data.isDefault ?? false,
       },
     });
     res.status(201).json({ success: true, message: "Location created.", data: loc });
@@ -93,6 +121,11 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
       if (exists) return res.status(400).json({ success: false, message: "A location with this name already exists." });
     }
 
+    // If this update marks the location as default, unset default on other locations
+    if (data.isDefault) {
+      await prisma.location.updateMany({ where: { isDefault: true, NOT: { id: req.params.id } }, data: { isDefault: false } });
+    }
+
     const updated = await prisma.location.update({
       where: { id: req.params.id },
       data: {
@@ -101,7 +134,11 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
         ...(data.city        !== undefined && { city: toNull(data.city) }),
         ...(data.state       !== undefined && { state: toNull(data.state) }),
         ...(data.country     !== undefined && { country: toNull(data.country) }),
+        ...(data.latitude    !== undefined && { latitude: toNull(data.latitude) }),
+        ...(data.longitude   !== undefined && { longitude: toNull(data.longitude) }),
+        ...(data.radius      !== undefined && { radius: toNull(data.radius) }),
         ...(data.isActive    !== undefined && { isActive: data.isActive }),
+        ...(data.isDefault   !== undefined && { isDefault: data.isDefault }),
       },
     });
     res.json({ success: true, message: "Location updated.", data: updated });

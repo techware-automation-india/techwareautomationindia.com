@@ -3,6 +3,9 @@ import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-do
 import { Menu, X, LogOut, ChevronLeft, ClipboardList, Clock } from "lucide-react";
 import { employeeModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
+import ThemeToggle from "../components/ThemeToggle.jsx";
+
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 const EmployeeLayout = () => {
   const navigate = useNavigate();
@@ -53,16 +56,15 @@ const EmployeeLayout = () => {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {employeeModules.map(({ key, label, path, icon: Icon }) => {
-          // Hide non-onboarding modules if status is PENDING
-          const isPending = user?.onboardingStatus === "PENDING";
-          const isOnboardingModule = key === "onboarding" || key === "overview";
-
-          if (isPending && !isOnboardingModule) {
-            return null; // Hide this module until onboarding is completed
-          }
-
-          return (
+        {employeeModules
+          .filter(({ key }) => {
+            // Hide non-onboarding modules if status is PENDING, but allow mark attendance.
+            const isPending = user?.onboardingStatus === "PENDING";
+            const isOnboardingModule = key === "onboarding" || key === "overview";
+            const isMarkAttendance = key === "mark-attendance";
+            return !isPending || isOnboardingModule || isMarkAttendance;
+          })
+          .map(({ key, label, path, icon: Icon }) => (
             <NavLink
               key={key}
               to={path}
@@ -79,8 +81,7 @@ const EmployeeLayout = () => {
               <Icon className="h-4.5 w-4.5 shrink-0" />
               {label}
             </NavLink>
-          );
-        })}
+          ))}
       </nav>
 
       <div className="p-3 border-t border-border">
@@ -137,6 +138,7 @@ const EmployeeLayout = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <div className="text-right hidden sm:block">
               <div className="text-sm font-semibold text-foreground">{user?.fullName || "Employee"}</div>
               <div className="text-xs text-muted-foreground">{user?.email || ""}</div>
@@ -144,7 +146,7 @@ const EmployeeLayout = () => {
             <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
               {user?.profileImage ? (
                 <img
-                  src={`http://localhost:4000${user.profileImage}`}
+                  src={`${API_BASE}${user.profileImage}`}
                   alt={user.fullName}
                   className="w-full h-full object-cover"
                 />

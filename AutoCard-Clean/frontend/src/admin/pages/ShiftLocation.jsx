@@ -271,7 +271,18 @@ const ShiftsPanel = () => {
   );
 };
 // ── Locations section ─────────────────────────────────────────────────────────
-const emptyLocation = { name: "", addressLine: "", city: "", state: "", country: "", isActive: true };
+const emptyLocation = {
+  name: "",
+  addressLine: "",
+  city: "",
+  state: "",
+  country: "",
+  latitude: "",
+  longitude: "",
+  radius: "",
+  isDefault: false,
+  isActive: true,
+};
 
 const LocationsPanel = () => {
   const [locations,    setLocations]    = useState([]);
@@ -299,9 +310,16 @@ const LocationsPanel = () => {
 
   const startEdit = (l) => {
     setForm({
-      name: l.name, addressLine: l.addressLine ?? "",
-      city: l.city ?? "", state: l.state ?? "",
-      country: l.country ?? "", isActive: l.isActive,
+      name: l.name,
+      addressLine: l.addressLine ?? "",
+      city: l.city ?? "",
+      state: l.state ?? "",
+      country: l.country ?? "",
+      latitude: l.latitude != null ? String(l.latitude) : "",
+      longitude: l.longitude != null ? String(l.longitude) : "",
+      radius: l.radius != null ? String(l.radius) : "",
+      isDefault: !!l.isDefault,
+      isActive: l.isActive,
     });
     setEditingId(l.id);
     setShowForm(true);
@@ -425,6 +443,30 @@ const LocationsPanel = () => {
                 onChange={e => setForm(p => ({ ...p, country: e.target.value }))}
                 placeholder="Country" maxLength={80} />
             </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Latitude</label>
+              <input className={inputClass} value={form.latitude}
+                onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))}
+                placeholder="e.g. 28.6139" maxLength={20} />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Longitude</label>
+              <input className={inputClass} value={form.longitude}
+                onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
+                placeholder="e.g. 77.2090" maxLength={20} />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Radius (m)</label>
+              <input type="number" className={inputClass} value={form.radius}
+                onChange={e => setForm(p => ({ ...p, radius: e.target.value }))}
+                placeholder="100" min="0" />
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
+                <input type="checkbox" checked={form.isDefault} onChange={e => setForm(p => ({ ...p, isDefault: e.target.checked }))} />
+                <span> Set as default</span>
+              </label>
+            </div>
             <div className="flex items-end pb-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
                 <div onClick={() => setForm(p => ({ ...p, isActive: !p.isActive }))}
@@ -470,6 +512,10 @@ const LocationsPanel = () => {
                   <th className="px-5 py-3 text-left">City</th>
                   <th className="px-5 py-3 text-left">State</th>
                   <th className="px-5 py-3 text-left">Country</th>
+                  <th className="px-5 py-3 text-left">Latitude</th>
+                  <th className="px-5 py-3 text-left">Longitude</th>
+                  <th className="px-5 py-3 text-left">Radius</th>
+                  <th className="px-5 py-3 text-center">Default</th>
                   <th className="px-5 py-3 text-center">Status</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
@@ -482,6 +528,14 @@ const LocationsPanel = () => {
                     <td className="px-5 py-3">{l.city || "—"}</td>
                     <td className="px-5 py-3">{l.state || "—"}</td>
                     <td className="px-5 py-3">{l.country || "—"}</td>
+                    <td className="px-5 py-3">{l.latitude != null ? l.latitude : "—"}</td>
+                    <td className="px-5 py-3">{l.longitude != null ? l.longitude : "—"}</td>
+                    <td className="px-5 py-3">{l.radius != null ? l.radius : "—"}</td>
+                    <td className="px-5 py-3 text-center">
+                      {l.isDefault ? (
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">Default</span>
+                      ) : "—"}
+                    </td>
                     <td className="px-5 py-3 text-center">
                       <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${l.isActive ? "bg-green-100 text-green-700" : "bg-rose-100 text-rose-600"}`}>
                         {l.isActive ? "Active" : "Inactive"}

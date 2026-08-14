@@ -22,19 +22,32 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 
-// Allow the configured client origin plus common local Vite ports.
+// Allow the configured client origin plus common local Vite ports and all Vercel domains
 const allowedOrigins = [
   process.env.CLIENT_ORIGIN || "http://localhost:5173",
   "http://localhost:5173",
   "http://localhost:5174",
+  "https://techwareautomationindia.vercel.app",
+  /^https:\/\/.*\.vercel\.app$/,  // Allow all Vercel preview URLs
 ];
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin matches any allowed pattern
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (typeof allowed === 'string') return origin === allowed;
+        if (allowed instanceof RegExp) return allowed.test(origin);
+        return false;
+      });
+      
+      if (isAllowed) {
         return callback(null, true);
       }
+      
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,

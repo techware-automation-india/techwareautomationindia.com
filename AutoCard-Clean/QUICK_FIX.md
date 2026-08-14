@@ -1,11 +1,23 @@
-# 🚨 URGENT FIX - Your Vercel App Can't Access Localhost!
+# 🚨 URGENT FIX - Vercel Backend Crash
 
 ## ❌ Current Problem:
-Your Vercel frontend is trying to access `http://localhost:4001` which doesn't exist in production!
+Vercel is trying to deploy your backend as a serverless function, but it's crashing because:
+1. Backend needs persistent server (not serverless)
+2. SQLite doesn't work on Vercel serverless
+3. File uploads (Multer) won't persist
 
-## ✅ Solution: Deploy Backend to Render.com (5 minutes)
+## ✅ IMMEDIATE SOLUTION:
 
-### Step 1: Deploy Backend
+Your backend should **NOT** be on Vercel at all!
+
+### What I've Done:
+1. ✅ Created `.vercelignore` to exclude backend from Vercel
+2. ✅ Created `vercel.json` to deploy ONLY frontend
+3. ✅ Backend is ready for Render.com deployment
+
+### What YOU Need to Do NOW:
+
+## 🚀 Step 1: Deploy Backend to Render.com (FREE - 5 minutes)
 1. **Go to**: https://render.com
 2. **Sign up** with GitHub
 3. **New +** → **Web Service**

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "buildCommand": "cd AutoCard-Clean/frontend && npm install && npm run build",
+  "outputDirectory": "AutoCard-Clean/frontend/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

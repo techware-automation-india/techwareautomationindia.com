@@ -19,7 +19,7 @@ import locationRouter from "./routes/locationRoutes.js";
 import rosterRouter from "./routes/rosterRoutes.js";
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4001;
 
 
 // Allow the configured client origin plus common local Vite ports and all Vercel domains
@@ -98,7 +98,8 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Only start the server if not in serverless environment (Vercel)
-if (process.env.VERCEL !== '1') {
+// Render.com needs the server to start normally
+if (process.env.VERCEL !== '1' || process.env.RENDER) {
   const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}/api/health`);
   });
@@ -116,5 +117,5 @@ if (process.env.VERCEL !== '1') {
   process.on("SIGTERM", shutdown);
 }
 
-// Export for Vercel serverless
+// Export for Vercel serverless (not used on Render)
 export default app;

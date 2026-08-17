@@ -1,26 +1,22 @@
+# Ignore backend - deployed separately to Render.com
+backend/
+api/
+scripts/
+
+# Ignore database files
+*.db
+*.db-journal
+
 # Node modules
 node_modules/
 **/node_modules/
 
-# Environment files (set in Vercel dashboard)
+# Environment files
 .env
 .env.local
 .env.*.local
 
-# SQLite database (using PostgreSQL now)
-*.db
-*.db-journal
-
-# Local development
-.DS_Store
-*.log
-npm-debug.log*
-
-# Build outputs
-dist/
-.next/
-out/
-
 # IDE
 .vscode/
 .idea/
+.DS_Store

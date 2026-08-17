@@ -32,31 +32,30 @@ const allowedOrigins = [
   "http://localhost:5174",
   "https://techwareautomationindia.vercel.app",
   "https://techwareautomationindia-ard3ck9jk-techware-automation-india.vercel.app",
+  /^https:\/\/techwareautomationindia-[a-z0-9-]+\.vercel\.app$/,
   process.env.CLIENT_ORIGIN,
 ].filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-      
-      // Check if origin matches any allowed pattern
-      const isAllowed = allowedOrigins.some(allowed => {
-        if (typeof allowed === 'string') return origin === allowed;
-        if (allowed instanceof RegExp) return allowed.test(origin);
-        return false;
-      });
-      
-      if (isAllowed) {
-        return callback(null, true);
-      }
-      
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    const isAllowed = allowedOrigins.some((allowed) => {
+      if (typeof allowed === "string") return origin === allowed;
+      if (allowed instanceof RegExp) return allowed.test(origin);
+      return false;
+    });
+
+    if (isAllowed) return callback(null, true);
+
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 
 const contactLimiter = rateLimit({

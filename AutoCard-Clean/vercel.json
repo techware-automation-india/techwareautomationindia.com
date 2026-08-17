@@ -1,7 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "cd AutoCard-Clean/frontend && npm install && npm run build",
-  "outputDirectory": "AutoCard-Clean/frontend/dist",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "cd frontend && npm install",
+  "framework": "vite",
   "rewrites": [
     {
       "source": "/(.*)",

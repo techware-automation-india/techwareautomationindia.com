@@ -1,7 +1,5 @@
-# Ignore backend - it will be deployed separately to Render.com
-backend/
-AutoCard-Clean/backend/
-
-# Keep only frontend for Vercel deployment
+# Ignore EVERYTHING except frontend
+*
 !frontend/
-!AutoCard-Clean/frontend/
+!frontend/**
+!vercel.json

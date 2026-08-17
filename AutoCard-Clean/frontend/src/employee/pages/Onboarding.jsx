@@ -610,7 +610,7 @@ const Onboarding = () => {
           formData.append("profileImage", imageFile);
 
           const uploadResponse = await fetch(
-            "http://localhost:4000/api/onboarding/upload-image",
+            `${API_BASE}/api/onboarding/upload-image`,
             {
               method: "POST",
               headers: {

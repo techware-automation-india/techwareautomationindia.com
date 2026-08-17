@@ -2,12 +2,22 @@ import { Router } from "express";
 import { z } from "zod";
 import nodemailer from "nodemailer";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const router = Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadDir = process.env.VERCEL === "1"
+  ? path.join("/tmp", "contact")
+  : path.join(__dirname, "../../uploads/contact");
+
+fs.mkdirSync(uploadDir, { recursive: true });
 
 // Multer Config
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: uploadDir,
   filename: (req, file, cb) => {
     cb(null, Date.now() + "-" + file.originalname);
   },

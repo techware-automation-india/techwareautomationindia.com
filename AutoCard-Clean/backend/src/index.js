@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import path from "path";
+import { fileURLToPath } from "url";
 //import prisma from "./prismaClient.js";
 import authRouter from "./routes/auth.js";
 import employeesRouter from "./routes/employees.js";
@@ -20,6 +22,8 @@ import rosterRouter from "./routes/rosterRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 4001;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 
 // Allow the configured client origin plus common local Vite ports and all Vercel domains
@@ -71,9 +75,21 @@ app.use("/api/contact", contactLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/", (_req, res) => {
+  res.json({
+    status: "OK",
+    server: "Techware backend running",
+    health: "/api/health"
+  });
+});
+
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
+
 // Serve uploaded files (skip on Vercel as files are in /tmp and not persistent)
 if (process.env.VERCEL !== "1") {
-  app.use("/uploads", express.static("uploads"));
+  app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 }
 
 // Routes

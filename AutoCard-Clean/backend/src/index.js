@@ -71,8 +71,10 @@ app.use("/api/contact", contactLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files
-app.use("/uploads", express.static("uploads"));
+// Serve uploaded files (skip on Vercel as files are in /tmp and not persistent)
+if (process.env.VERCEL !== "1") {
+  app.use("/uploads", express.static("uploads"));
+}
 
 // Routes
 app.use("/api/auth", authRouter);

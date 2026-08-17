@@ -1,14 +1,35 @@
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper function to get upload directory based on environment
+function getUploadDir(subdir) {
+  // On Vercel, use /tmp directory (only writable location)
+  if (process.env.VERCEL === "1") {
+    const tmpDir = path.join("/tmp", subdir);
+    // Ensure directory exists
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    return tmpDir;
+  }
+  
+  // Local development - use uploads directory
+  const localDir = path.join(__dirname, "../../uploads", subdir);
+  if (!fs.existsSync(localDir)) {
+    fs.mkdirSync(localDir, { recursive: true });
+  }
+  return localDir;
+}
+
 // ── Profile image storage ─────────────────────────────────────────────────────
 const imageStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, path.join(__dirname, "../../uploads/profiles"));
+    cb(null, getUploadDir("profiles"));
   },
   filename: (_req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -36,7 +57,7 @@ export const upload = multer({
 // ── Resume / document storage ─────────────────────────────────────────────────
 const documentStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, path.join(__dirname, "../../uploads/documents"));
+    cb(null, getUploadDir("documents"));
   },
   filename: (_req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);

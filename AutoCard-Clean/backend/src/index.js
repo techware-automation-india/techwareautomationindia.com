@@ -26,32 +26,58 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 
-// Allow the configured client origin plus common local Vite ports and all Vercel domains
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://techwareautomationindia.vercel.app",
+  "https://techwareautomationindia-2ueq34zwi-techware-automation-india.vercel.app",
   "https://techwareautomationindia-ard3ck9jk-techware-automation-india.vercel.app",
-  /^https:\/\/techwareautomationindia-[a-z0-9-]+\.vercel\.app$/,
-  process.env.CLIENT_ORIGIN,
-].filter(Boolean);
+  "https://techwareautomationindia.com",
+  "https://www.techwareautomationindia.com",
+];
 
 const corsOptions = {
-  origin(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+  origin: function (origin, callback) {
+    // Allow requests without Origin header
+    if (!origin) {
+      return callback(null, true);
+    }
 
-    const isAllowed = allowedOrigins.some((allowed) => {
-      if (typeof allowed === "string") return origin === allowed;
-      if (allowed instanceof RegExp) return allowed.test(origin);
-      return false;
-    });
+    // Allow exact domains
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-    if (isAllowed) return callback(null, true);
+    // Allow Vercel deployment URLs
+    if (
+      /^https:\/\/techwareautomationindia-[a-z0-9-]+-techware-automation-india\.vercel\.app$/.test(
+        origin
+      )
+    ) {
+      return callback(null, true);
+    }
 
-    return callback(new Error("Not allowed by CORS"));
+    console.log("❌ CORS blocked origin:", origin);
+
+    // IMPORTANT: don't throw an error
+    return callback(null, false);
   },
+
   credentials: true,
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+  ],
 };
 
 app.use(cors(corsOptions));

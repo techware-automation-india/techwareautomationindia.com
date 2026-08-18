@@ -19,12 +19,20 @@ import locationRouter from "../backend/src/routes/locationRoutes.js";
 const app = express();
 
 // CORS configuration
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://techwareautomationindia.vercel.app",
-  process.env.CLIENT_ORIGIN,
-];
+const allowedOrigins = new Set(
+  [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://techwareautomationindia.vercel.app",
+    "https://techwareautomationindia.com",
+    "https://www.techwareautomationindia.com",
+    process.env.CLIENT_ORIGIN,
+    process.env.FRONTEND_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  ].filter(Boolean)
+);
+
+const vercelPreviewPattern = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
 
 app.use(
   cors({
@@ -33,10 +41,7 @@ app.use(
       if (!origin) return callback(null, true);
       
       // Check if origin matches allowed patterns
-      if (
-        allowedOrigins.includes(origin) ||
-        /^https:\/\/.*\.vercel\.app$/.test(origin)
-      ) {
+      if (allowedOrigins.has(origin) || vercelPreviewPattern.test(origin)) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));

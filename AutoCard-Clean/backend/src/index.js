@@ -26,17 +26,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 
-const allowedOrigins = [
+const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:5174",
   "https://techwareautomationindia.vercel.app",
-  "https://techwareautomationindia-2ueq34zwi-techware-automation-india.vercel.app",
-  "https://techwareautomationindia-ard3ck9jk-techware-automation-india.vercel.app",
   "https://techwareautomationindia.com",
   "https://www.techwareautomationindia.com",
-  
- 
-];
+  process.env.CLIENT_ORIGIN,
+  process.env.FRONTEND_URL,
+].filter(Boolean));
+
+const vercelPreviewPattern = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
+const techwarePreviewPattern =
+  /^https:\/\/techwareautomationindia(?:-[a-z0-9-]+)?-techware-automation-india\.vercel\.app$/i;
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -46,16 +48,12 @@ const corsOptions = {
     }
 
     // Allow exact domains
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.has(origin)) {
       return callback(null, true);
     }
 
-    // Allow Vercel deployment URLs
-    if (
-      /^https:\/\/techwareautomationindia-[a-z0-9-]+-techware-automation-india\.vercel\.app$/.test(
-        origin
-      )
-    ) {
+    // Allow any Vercel preview deployment for this project.
+    if (vercelPreviewPattern.test(origin) || techwarePreviewPattern.test(origin)) {
       return callback(null, true);
     }
 

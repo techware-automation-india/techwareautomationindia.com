@@ -34,6 +34,8 @@ const allowedOrigins = [
   "https://techwareautomationindia-ard3ck9jk-techware-automation-india.vercel.app",
   "https://techwareautomationindia.com",
   "https://www.techwareautomationindia.com",
+  
+ 
 ];
 
 const corsOptions = {

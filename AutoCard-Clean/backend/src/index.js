@@ -4,7 +4,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
-//import prisma from "./prismaClient.js";
+import prisma from "./prismaClient.js";
 import authRouter from "./routes/auth.js";
 import employeesRouter from "./routes/employees.js";
 import customersRouter from "./routes/customers.js";
@@ -24,6 +24,15 @@ const app = express();
 const PORT = process.env.PORT || 4001;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+async function logDatabaseConnection() {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    console.log("Database connected successfully.");
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+  }
+}
 
 
 const allowedOrigins = new Set([
@@ -143,8 +152,9 @@ app.get("/api/health", (_req, res) => {
 // Only start the server if not in serverless environment (Vercel)
 // Render.com needs the server to start normally
 if (process.env.VERCEL !== "1") {
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    await logDatabaseConnection();
   });
 
   const shutdown = () => {
@@ -159,6 +169,8 @@ if (process.env.VERCEL !== "1") {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
+
+logDatabaseConnection();
 
 // Export for Vercel serverless (not used on Render)
 export default app;

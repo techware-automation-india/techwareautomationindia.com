@@ -15,8 +15,18 @@ import contactRoutes from "../backend/src/routes/email.js";
 import rolesAccessRouter from "../backend/src/routes/rolesAccess.js";
 import shiftRouter from "../backend/src/routes/shiftRoutes.js";
 import locationRouter from "../backend/src/routes/locationRoutes.js";
+import prisma from "../backend/src/prismaClient.js";
 
 const app = express();
+
+async function logDatabaseConnection() {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    console.log("Database connected successfully.");
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+  }
+}
 
 // CORS configuration
 const allowedOrigins = new Set(
@@ -93,6 +103,8 @@ app.use((err, req, res, next) => {
     message: err.message || "Internal server error",
   });
 });
+
+logDatabaseConnection();
 
 // Export for Vercel serverless
 export default app;

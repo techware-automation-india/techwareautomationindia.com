@@ -21,7 +21,7 @@ Before you begin, ensure you have the following installed:
 - **Node.js** (v16 or higher)
 - **npm** or **yarn**
 
-**Note:** This project uses **SQLite** for the database, so no separate database server installation is required!
+**Note:** This project now uses **MySQL**, so you will need a hosted or local MySQL database.
 
 ---
 
@@ -50,16 +50,16 @@ npm install
 
 ### 4. Setup Environment Variables
 
-The `.env` file is already created in the `backend` directory with SQLite configuration:
+The `.env` file is already created in the `backend` directory with MySQL configuration:
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="mysql://USER:PASSWORD@HOST:3306/DATABASE"
 JWT_SECRET="change_me_to_a_long_random_string"
 PORT=4000
 CLIENT_ORIGIN="http://localhost:5173"
 ```
 
-**Note:** SQLite stores data in a local file (`dev.db`), so no database credentials are needed!
+**Note:** Replace the `DATABASE_URL` with your real MySQL connection string from your database host.
 
 ---
 
@@ -100,7 +100,7 @@ npm run prisma:generate
 npm run prisma:migrate
 ```
 
-This will create all necessary tables in your SQLite database file (`dev.db`).
+This will create all necessary tables in your MySQL database.
 
 ### 3. Seed the Database
 
@@ -127,7 +127,7 @@ Prisma Studio will open in your browser at `http://localhost:5555`
 - **New fields:** The admin Locations module now supports `latitude`, `longitude`, `radius`, and an `isDefault` flag for each location.
 - **Default location:** Admin users should create the default office location manually in the admin UI.
 - **Behaviour:** Marking a location as `isDefault` will unset `isDefault` on any other location automatically.
-- **Notes:** These fields are stored in the SQLite database and visible/editable from the admin UI under Locations.
+- **Notes:** These fields are stored in the MySQL database and visible/editable from the admin UI under Locations.
 
 
 ## 🔑 Default Credentials
@@ -212,7 +212,7 @@ npx prisma format
 ### Backend
 - **Node.js** with Express 4.21.2
 - **Prisma ORM** 6.1.0
-- **SQLite** Database (no server required!)
+- **MySQL** Database
 - **JWT** Authentication (jsonwebtoken 9.0.3)
 - **bcryptjs** 2.4.3 (Password hashing)
 - **Zod** 3.24.1 (Validation)
@@ -267,7 +267,7 @@ AutoCard-Clean/
 
 ### Database Issues
 
-Since this project uses SQLite, most database connection issues are eliminated! The database file (`dev.db`) is created automatically.
+Since this project uses MySQL, make sure your `DATABASE_URL` is correct and that the database is reachable from your backend host.
 
 If you need to reset the database:
 

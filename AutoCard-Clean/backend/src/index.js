@@ -46,43 +46,10 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow server-to-server / tools without Origin
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // Allow all Vercel deployments
-    if (origin.endsWith(".vercel.app")) {
-      return callback(null, true);
-    }
-
-    // Allow configured production/local origins
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    console.log("❌ CORS blocked:", origin);
-    return callback(new Error("Not allowed by CORS"));
-  },
-
+  origin: true,
   credentials: true,
-
-  methods: [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS",
-  ],
-
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-  ],
-
-  optionsSuccessStatus: 204,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
 
 app.use(cors(corsOptions));

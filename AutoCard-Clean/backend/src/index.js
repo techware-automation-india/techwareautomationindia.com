@@ -35,7 +35,7 @@ async function logDatabaseConnection() {
 }
 
 
-const allowedOrigins = new Set([
+const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://techwareautomationindia.vercel.app",
@@ -43,31 +43,27 @@ const allowedOrigins = new Set([
   "https://www.techwareautomationindia.com",
   process.env.CLIENT_ORIGIN,
   process.env.FRONTEND_URL,
-].filter(Boolean));
-
-const vercelPreviewPattern = /^https:\/\/.*\.vercel\.app$/i;
+].filter(Boolean);
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests without Origin header
+  origin: (origin, callback) => {
+    // Allow server-to-server / tools without Origin
     if (!origin) {
       return callback(null, true);
     }
 
-    // Allow exact domains
-    if (allowedOrigins.has(origin)) {
+    // Allow all Vercel deployments
+    if (origin.endsWith(".vercel.app")) {
       return callback(null, true);
     }
 
-    // Allow ANY Vercel preview deployment (including git branch previews)
-    if (vercelPreviewPattern.test(origin)) {
+    // Allow configured production/local origins
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    console.log("❌ CORS blocked origin:", origin);
-
-    // IMPORTANT: don't throw an error
-    return callback(null, false);
+    console.log("❌ CORS blocked:", origin);
+    return callback(new Error("Not allowed by CORS"));
   },
 
   credentials: true,
@@ -85,10 +81,11 @@ const corsOptions = {
     "Content-Type",
     "Authorization",
   ],
+
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
 
 
 const contactLimiter = rateLimit({

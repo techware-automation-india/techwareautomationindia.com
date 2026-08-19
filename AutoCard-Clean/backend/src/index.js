@@ -114,10 +114,10 @@ app.get("/api/health", (_req, res) => {
 // Only start the server if not in serverless environment (Vercel)
 // Render.com needs the server to start normally
 if (process.env.VERCEL !== "1") {
-  const server = app.listen(PORT, async () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    await logDatabaseConnection();
-  });
+  const server = app.listen(PORT, "0.0.0.0", async () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  await logDatabaseConnection();
+});
 
   const shutdown = () => {
     console.log("Stopping server...");

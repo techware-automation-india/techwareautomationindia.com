@@ -45,9 +45,7 @@ const allowedOrigins = new Set([
   process.env.FRONTEND_URL,
 ].filter(Boolean));
 
-const vercelPreviewPattern = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
-const techwarePreviewPattern =
-  /^https:\/\/techwareautomationindia(?:-[a-z0-9-]+)?-techware-automation-india\.vercel\.app$/i;
+const vercelPreviewPattern = /^https:\/\/.*\.vercel\.app$/i;
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -61,8 +59,8 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow any Vercel preview deployment for this project.
-    if (vercelPreviewPattern.test(origin) || techwarePreviewPattern.test(origin)) {
+    // Allow ANY Vercel preview deployment (including git branch previews)
+    if (vercelPreviewPattern.test(origin)) {
       return callback(null, true);
     }
 

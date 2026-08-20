@@ -31,6 +31,7 @@ import EmployeeMarkAttendance from "./employee/pages/MarkAttendance.jsx";
 import EmployeeAttendance from "./employee/pages/Attendance.jsx";
 import EmployeeLeave from "./employee/pages/Leave.jsx";
 import EmployeeHolidays from "./employee/pages/Holidays.jsx";
+import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
 import CustomerLayout from "./customer/CustomerLayout.jsx";
@@ -102,6 +103,7 @@ const AppRoutes = () => {
           <Route path="attendance" element={<RequireOnboarding><EmployeeAttendance /></RequireOnboarding>} />
           <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} />
           <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} />
+          <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} />
         </Route>
 
         <Route path="/customer" element={<CustomerLayout />}>

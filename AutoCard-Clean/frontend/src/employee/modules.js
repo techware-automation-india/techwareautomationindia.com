@@ -5,6 +5,7 @@ import {
   Clock,
   Plane,
   CalendarDays,
+  ShieldCheck,
 } from "lucide-react";
 
 // Single source of truth for employee modules.
@@ -51,5 +52,12 @@ export const employeeModules = [
     path: "/employee/holidays",
     icon: CalendarDays,
     description: "View company holiday calendar.",
+  },
+  {
+    key: "access-modules",
+    label: "Access Modules",
+    path: "/employee/access-modules",
+    icon: ShieldCheck,
+    description: "View your assigned module permissions.",
   },
 ];

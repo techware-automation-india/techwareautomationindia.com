@@ -11,7 +11,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "node prisma/seed.js"
+    "db:seed": "node prisma/seed.js",
+    "deploy": "npx prisma generate && npx prisma db push --accept-data-loss && node prisma/seed.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

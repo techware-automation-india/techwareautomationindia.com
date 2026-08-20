@@ -83,6 +83,7 @@ const AccessModules = () => {
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState({});
   const [modules, setModules] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     loadPermissions();
@@ -105,6 +106,17 @@ const AccessModules = () => {
   const accessibleModules = modules.filter((mod) => {
     const perms = permissions[mod.key];
     return perms && Object.values(perms).some((v) => v === true);
+  });
+
+  // Filter modules based on search query
+  const filteredModules = accessibleModules.filter((mod) => {
+    const info = MODULE_INFO[mod.key] || { label: mod.label, description: "" };
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      info.label.toLowerCase().includes(searchLower) ||
+      info.description.toLowerCase().includes(searchLower) ||
+      mod.key.toLowerCase().includes(searchLower)
+    );
   });
 
   // Calculate stats
@@ -217,18 +229,32 @@ const AccessModules = () => {
       {/* Accessible Modules - Clickable Cards */}
       {grantedModules > 0 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <h2 className="font-semibold text-lg flex items-center gap-2">
               <Unlock className="h-5 w-5 text-primary" />
-              Your Accessible Modules ({grantedModules})
+              Your Accessible Modules ({filteredModules.length})
             </h2>
-            <p className="text-xs text-muted-foreground">
-              Click any module to open and work on it
-            </p>
+            
+            {/* Search Box */}
+            <div className="relative flex-1 max-w-md">
+              <input
+                type="text"
+                placeholder="Search modules..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-4 py-2 pl-10 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <Eye className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {accessibleModules.map((mod) => {
+          {filteredModules.length === 0 ? (
+            <div className="rounded-2xl bg-background border border-border card-shadow p-8 text-center">
+              <p className="text-muted-foreground">No modules found matching "{searchQuery}"</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredModules.map((mod) => {
               const perms = permissions[mod.key] || {};
               const info = MODULE_INFO[mod.key] || { label: mod.label, description: "", route: null };
               const grantedPerms = Object.entries(perms).filter(([_, v]) => v);
@@ -314,6 +340,7 @@ const AccessModules = () => {
               );
             })}
           </div>
+          )}
         </div>
       )}
 

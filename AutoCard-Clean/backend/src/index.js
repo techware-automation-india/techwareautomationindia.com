@@ -45,28 +45,39 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-
+// Pattern to match ALL Vercel preview deployments
+const vercelPattern = /^https:\/\/.*\.vercel\.app$/i;
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests without Origin, such as Postman/server-to-server
+    // Allow requests without Origin (Postman, server-to-server, mobile apps)
     if (!origin) {
       return callback(null, true);
     }
 
+    // Check exact match first
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    console.log("CORS blocked origin:", origin);
-    return callback(new Error("Not allowed by CORS"));
+    // Allow any Vercel preview deployment
+    if (vercelPattern.test(origin)) {
+      console.log("✅ CORS allowed Vercel preview:", origin);
+      return callback(null, true);
+    }
+
+    console.log("❌ CORS blocked origin:", origin);
+    return callback(null, false); // Don't throw error, just deny
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204, // Some legacy browsers choke on 204
 };
 
 app.use(cors(corsOptions));
+// Handle preflight requests explicitly
+app.options("*", cors(corsOptions));
 
 
 const contactLimiter = rateLimit({

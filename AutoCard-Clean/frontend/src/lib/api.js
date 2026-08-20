@@ -1,5 +1,5 @@
 // Base URL for the backend API. Override via VITE_API_URL if needed.
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4001";
 
 const TOKEN_KEY = "authToken";
 

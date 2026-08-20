@@ -31,7 +31,7 @@ Start Command: npm start
 In Render dashboard, add these:
 
 ```
-DATABASE_URL=file:./prisma/dev.db
+
 JWT_SECRET=change_me_to_a_long_random_string
 PORT=4001
 CLIENT_ORIGIN=https://your-frontend-url.vercel.app

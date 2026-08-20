@@ -33,7 +33,7 @@ Your backend should **NOT** be on Vercel at all!
 
 6. **Add Environment Variables** (copy from backend/.env):
    ```
-   DATABASE_URL=file:./prisma/dev.db
+   
    JWT_SECRET=change_me_to_a_long_random_string
    PORT=4001
    EMAIL_USER=ak0462463@gmail.com

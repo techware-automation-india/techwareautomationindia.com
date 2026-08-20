@@ -46,7 +46,7 @@ const StatCard = ({ icon: Icon, label, value, tone }) => {
   );
 };
 
-const Employee = () => {
+const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
   const navigate = useNavigate();
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -55,6 +55,17 @@ const Employee = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Permission helpers - Admin has all permissions, Employee has assigned permissions
+  const permissions = employeePermissions || {
+    canView: true,
+    canCreate: true,
+    canEdit: true,
+    canDelete: true,
+  };
+  
+  const canCreate = permissions.canCreate;
+  const canDelete = permissions.canDelete;
 
   const loadEmployees = async () => {
     try {
@@ -166,9 +177,10 @@ const Employee = () => {
         </div>
       </div>
 
-      {/* Create form */}
-      <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-        <h2 className="font-display text-lg font-semibold mb-4">Create New Employee</h2>
+      {/* Create form - Only show if canCreate permission */}
+      {canCreate && (
+        <div className="rounded-2xl bg-background border border-border card-shadow p-6">
+          <h2 className="font-display text-lg font-semibold mb-4">Create New Employee</h2>
         <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="text-sm font-medium mb-1.5 block">Full Name</label>
@@ -247,6 +259,16 @@ const Employee = () => {
           </div>
         </form>
       </div>
+      )}
+
+      {/* No Create Permission Message */}
+      {!canCreate && isEmployeeView && (
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <p className="text-sm text-amber-800">
+            <strong>Note:</strong> You don't have permission to create new employees. Contact your administrator if you need this access.
+          </p>
+        </div>
+      )}
 
       {/* Delete confirmation */}
       {deleteTarget && (

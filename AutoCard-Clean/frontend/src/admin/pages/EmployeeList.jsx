@@ -20,7 +20,7 @@ const StatusBadge = ({ status }) => (
   </span>
 );
 
-const EmployeeList = () => {
+const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) => {
   const [searchParams] = useSearchParams();
   const filterStatus = searchParams.get("status"); // Get status from URL
   
@@ -31,6 +31,16 @@ const EmployeeList = () => {
   const [viewingEmployee, setViewingEmployee] = useState(null);
   const [onboardingData, setOnboardingData] = useState(null);
   const [loadingOnboarding, setLoadingOnboarding] = useState(false);
+
+  // Permission helpers
+  const permissions = employeePermissions || {
+    canView: true,
+    canCreate: true,
+    canEdit: true,
+    canDelete: true,
+  };
+  
+  const canDelete = permissions.canDelete;
 
   const loadEmployees = async () => {
     console.log("🔄 [Frontend] Loading employees...");
@@ -195,13 +205,15 @@ const EmployeeList = () => {
                             <Eye className="h-4 w-4" /> View
                           </button>
                         )}
-                        <button
-                          onClick={() => setDeleteTarget(emp)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                          title="Delete employee"
-                        >
-                          <Trash2 className="h-4 w-4" /> Delete
-                        </button>
+                        {canDelete && (
+                          <button
+                            onClick={() => setDeleteTarget(emp)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                            title="Delete employee"
+                          >
+                            <Trash2 className="h-4 w-4" /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

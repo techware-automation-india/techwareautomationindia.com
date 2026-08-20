@@ -10,64 +10,76 @@ import {
   Trash2,
   Lock,
   Unlock,
-  ChevronRight,
-  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
-import { useNavigate } from "react-router-dom";
 
-// Module metadata with route paths
+// Import admin module components to embed
+import Employee from "../../admin/pages/Employee.jsx";
+import Customer from "../../admin/pages/Customer.jsx";
+import Requests from "../../admin/pages/Requests.jsx";
+import LeavePolicy from "../../admin/pages/LeavePolicy.jsx";
+import Holidays from "../../admin/pages/Holidays.jsx";
+import Attendance from "../../admin/pages/Attendance.jsx";
+import Projects from "../../admin/pages/Projects.jsx";
+import ShiftLocation from "../../admin/pages/ShiftLocation.jsx";
+import Roster from "../../admin/pages/Roster.jsx";
+
+// Module metadata with component references
 const MODULE_INFO = {
   overview: { 
     label: "Dashboard", 
     description: "Your personal dashboard overview",
-    route: "/employee"
+    component: null // Dashboard is always accessible separately
   },
   employee: { 
     label: "Employee Management", 
-    description: "Manage employee records",
-    route: "/employee/employee-management"
+    description: "Manage employee records - same interface as admin",
+    component: Employee
   },
   customer: { 
     label: "Customer Management", 
-    description: "Manage customer accounts",
-    route: "/employee/customer-management"
+    description: "Manage customer accounts - same interface as admin",
+    component: Customer
   },
   requests: { 
     label: "Requests", 
-    description: "View and manage requests",
-    route: "/employee/requests"
+    description: "View and manage employee requests",
+    component: Requests
   },
   "leave-policy": { 
     label: "Leave Policy", 
-    description: "Leave types and policies",
-    route: "/employee/leave-policy"
+    description: "Manage leave types and policies",
+    component: LeavePolicy
   },
   holidays: { 
     label: "Holidays", 
-    description: "Company holiday calendar",
-    route: "/employee/holidays"
+    description: "Manage company holiday calendar",
+    component: Holidays
   },
   attendance: { 
     label: "Attendance", 
-    description: "Attendance tracking system",
-    route: "/employee/attendance"
+    description: "View and manage attendance records",
+    component: Attendance
   },
   projects: { 
     label: "Projects", 
-    description: "Project management",
-    route: "/employee/projects"
+    description: "Manage projects and assignments",
+    component: Projects
   },
   "shift-location": { 
     label: "Shift & Location", 
-    description: "Shift and location management",
-    route: "/employee/shift-location"
+    description: "Manage shifts and locations",
+    component: ShiftLocation
   },
   roster: { 
     label: "Roster", 
-    description: "Employee scheduling",
-    route: "/employee/roster"
+    description: "Manage employee scheduling",
+    component: Roster
   },
 };
 
@@ -79,11 +91,11 @@ const PERMISSION_LABELS = {
 };
 
 const AccessModules = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState({});
   const [modules, setModules] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedModule, setExpandedModule] = useState(null);
 
   useEffect(() => {
     loadPermissions();
@@ -128,12 +140,11 @@ const AccessModules = () => {
     return sum + Object.values(perms).filter((v) => v).length;
   }, 0);
 
-  const handleModuleClick = (moduleKey) => {
-    const info = MODULE_INFO[moduleKey];
-    if (info && info.route) {
-      navigate(info.route);
+  const handleModuleToggle = (moduleKey) => {
+    if (expandedModule === moduleKey) {
+      setExpandedModule(null);
     } else {
-      toast.error("Module page not available");
+      setExpandedModule(moduleKey);
     }
   };
 
@@ -146,7 +157,7 @@ const AccessModules = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center gap-4">
         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -155,7 +166,7 @@ const AccessModules = () => {
         <div>
           <h1 className="font-display text-2xl font-bold">Access Modules</h1>
           <p className="text-sm text-muted-foreground">
-            Click on any assigned module below to start working on it.
+            Click any module below to expand and work on it - same interface as admin panel
           </p>
         </div>
       </div>
@@ -181,7 +192,7 @@ const AccessModules = () => {
             </div>
             <div>
               <div className="font-display text-xl font-bold text-red-600">{totalModules - grantedModules}</div>
-              <div className="text-xs text-muted-foreground">Restricted Modules</div>
+              <div className="text-xs text-muted-foreground">Restricted</div>
             </div>
           </div>
         </div>
@@ -193,7 +204,7 @@ const AccessModules = () => {
             </div>
             <div>
               <div className="font-display text-xl font-bold text-green-600">{grantedPermissions}</div>
-              <div className="text-xs text-muted-foreground">Granted Permissions</div>
+              <div className="text-xs text-muted-foreground">Permissions</div>
             </div>
           </div>
         </div>
@@ -221,143 +232,190 @@ const AccessModules = () => {
           </div>
           <h3 className="font-display text-lg font-semibold mb-2">No Module Access Assigned</h3>
           <p className="text-sm text-muted-foreground max-w-md">
-            You don't have access to any additional modules yet. Please contact your administrator to request access.
+            You don't have access to any additional modules yet. Please contact your administrator.
           </p>
         </div>
       )}
 
-      {/* Accessible Modules - Clickable Cards */}
+      {/* Accessible Modules */}
       {grantedModules > 0 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <h2 className="font-semibold text-lg flex items-center gap-2">
-              <Unlock className="h-5 w-5 text-primary" />
-              Your Accessible Modules ({filteredModules.length})
+          {/* Search */}
+          <div className="flex items-center gap-4">
+            <h2 className="font-semibold text-lg">
+              Your Modules ({filteredModules.length})
             </h2>
-            
-            {/* Search Box */}
             <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search modules..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2 pl-10 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
-              <Eye className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             </div>
           </div>
 
-          {filteredModules.length === 0 ? (
-            <div className="rounded-2xl bg-background border border-border card-shadow p-8 text-center">
-              <p className="text-muted-foreground">No modules found matching "{searchQuery}"</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredModules.map((mod) => {
-              const perms = permissions[mod.key] || {};
-              const info = MODULE_INFO[mod.key] || { label: mod.label, description: "", route: null };
-              const grantedPerms = Object.entries(perms).filter(([_, v]) => v);
-              const hasRoute = !!info.route;
+          {/* Module Cards */}
+          <div className="space-y-3">
+            {filteredModules.length === 0 ? (
+              <div className="rounded-xl bg-background border border-border p-8 text-center text-muted-foreground">
+                No modules found matching "{searchQuery}"
+              </div>
+            ) : (
+              filteredModules.map((mod) => {
+                const perms = permissions[mod.key] || {};
+                const info = MODULE_INFO[mod.key] || { label: mod.label, description: "", component: null };
+                const grantedPerms = Object.entries(perms).filter(([_, v]) => v);
+                const hasComponent = !!info.component;
+                const isExpanded = expandedModule === mod.key;
+                const ModuleComponent = info.component;
 
-              return (
-                <button
-                  key={mod.key}
-                  onClick={() => hasRoute && handleModuleClick(mod.key)}
-                  disabled={!hasRoute}
-                  className={`rounded-2xl bg-background border-2 border-border card-shadow p-5 text-left transition-all ${
-                    hasRoute 
-                      ? "hover:border-primary hover:shadow-lg hover:scale-[1.02] cursor-pointer" 
-                      : "opacity-60 cursor-not-allowed"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-lg">{info.label}</h3>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                          <CheckCircle2 className="h-3 w-3" /> Active
-                        </span>
+                return (
+                  <div
+                    key={mod.key}
+                    className={`rounded-2xl bg-background border-2 transition-all overflow-hidden ${
+                      isExpanded ? "border-primary shadow-lg" : "border-border"
+                    }`}
+                  >
+                    {/* Module Header */}
+                    <button
+                      onClick={() => hasComponent && handleModuleToggle(mod.key)}
+                      disabled={!hasComponent}
+                      className={`w-full p-5 text-left transition-colors ${
+                        hasComponent
+                          ? "hover:bg-secondary/30 cursor-pointer"
+                          : "opacity-60 cursor-not-allowed"
+                      } ${isExpanded ? "bg-primary/5" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <h3 className="font-semibold text-lg">{info.label}</h3>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              ✓ Active
+                            </span>
+                            {isExpanded && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                📂 Expanded
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{info.description}</p>
+                        </div>
+                        {hasComponent && (
+                          <div className="shrink-0">
+                            {isExpanded ? (
+                              <ChevronUp className="h-6 w-6 text-primary" />
+                            ) : (
+                              <ChevronDown className="h-6 w-6 text-primary" />
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <p className="text-sm text-muted-foreground">{info.description}</p>
-                    </div>
-                    {hasRoute && (
-                      <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+
+                      {/* Permissions */}
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(PERMISSION_LABELS).map(([key, meta]) => {
+                          const hasPermission = perms[key];
+                          const Icon = meta.icon;
+                          return (
+                            <div
+                              key={key}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${
+                                hasPermission
+                                  ? `${meta.bg} ${meta.color}`
+                                  : "bg-secondary/50 text-muted-foreground opacity-50"
+                              }`}
+                            >
+                              {hasPermission ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                              <Icon className="h-3 w-3" />
+                              {meta.label}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Hint */}
+                      {hasComponent && !isExpanded && (
+                        <div className="mt-3 pt-3 border-t border-border text-xs text-primary font-medium">
+                          💡 Click to expand and work on this module
+                        </div>
+                      )}
+                    </button>
+
+                    {/* Expanded Module Content */}
+                    {isExpanded && hasComponent && ModuleComponent && (
+                      <div className="border-t-2 border-primary">
+                        {/* Permission Banner */}
+                        <div className="bg-gradient-to-r from-blue-50 to-primary/5 border-b border-blue-200 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-blue-900 mb-2">
+                                🔐 Your Permissions for {info.label}
+                              </p>
+                              <div className="flex gap-2 flex-wrap">
+                                {perms.canView && (
+                                  <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                                    ✓ View Data
+                                  </span>
+                                )}
+                                {perms.canCreate && (
+                                  <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">
+                                    ✓ Create New
+                                  </span>
+                                )}
+                                {perms.canEdit && (
+                                  <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                                    ✓ Edit Existing
+                                  </span>
+                                )}
+                                {perms.canDelete && (
+                                  <span className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
+                                    ✓ Delete Records
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedModule(null);
+                              }}
+                              className="shrink-0 p-2 rounded-lg hover:bg-blue-200 transition-colors"
+                              title="Close module"
+                            >
+                              <X className="h-5 w-5 text-blue-700" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Embedded Admin Module Component */}
+                        <div className="p-6 bg-secondary/5 min-h-[400px]">
+                          <ModuleComponent 
+                            employeePermissions={perms} 
+                            isEmployeeView={true}
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {/* Permission Badges */}
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {Object.entries(PERMISSION_LABELS).map(([key, meta]) => {
-                      const hasPermission = perms[key];
-                      const Icon = meta.icon;
-
-                      return (
-                        <div
-                          key={key}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium ${
-                            hasPermission
-                              ? `${meta.bg} ${meta.color} border-transparent`
-                              : "bg-secondary/30 text-muted-foreground border-border opacity-40"
-                          }`}
-                        >
-                          {hasPermission ? (
-                            <CheckCircle2 className="h-3 w-3" />
-                          ) : (
-                            <XCircle className="h-3 w-3" />
-                          )}
-                          <Icon className="h-3 w-3" />
-                          <span>{meta.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="flex items-center justify-between text-xs pt-3 border-t border-border">
-                    <span className="text-muted-foreground">
-                      <span className="font-semibold text-foreground">{grantedPerms.length}</span> of 4 permissions
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${(grantedPerms.length / 4) * 100}%` }}
-                        />
-                      </div>
-                      <span className="font-medium text-primary ml-1">{Math.round((grantedPerms.length / 4) * 100)}%</span>
-                    </div>
-                  </div>
-
-                  {/* Click to open indicator */}
-                  {hasRoute && (
-                    <div className="mt-3 pt-3 border-t border-border flex items-center gap-2 text-xs text-primary font-medium">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Click to open module
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+                );
+              })
+            )}
           </div>
-          )}
         </div>
       )}
 
       {/* Restricted Modules */}
       {totalModules - grantedModules > 0 && (
-        <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-          <div className="p-5 border-b border-border bg-secondary/10">
-            <h2 className="font-semibold flex items-center gap-2">
-              <Lock className="h-4.5 w-4.5 text-red-600" />
-              Restricted Modules ({totalModules - grantedModules})
-            </h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              You don't have access to these modules. Contact your administrator to request access.
-            </p>
-          </div>
-
-          <div className="divide-y divide-border">
+        <details className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
+          <summary className="p-5 cursor-pointer hover:bg-secondary/20 transition-colors flex items-center gap-2">
+            <Lock className="h-5 w-5 text-red-600" />
+            <span className="font-semibold">Restricted Modules ({totalModules - grantedModules})</span>
+          </summary>
+          <div className="divide-y divide-border border-t">
             {modules
               .filter((mod) => {
                 const perms = permissions[mod.key];
@@ -365,46 +423,34 @@ const AccessModules = () => {
               })
               .map((mod) => {
                 const info = MODULE_INFO[mod.key] || { label: mod.label, description: "" };
-
                 return (
-                  <div key={mod.key} className="p-5 opacity-60">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-base">{info.label}</h3>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
-                            <Lock className="h-3 w-3" /> No Access
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{info.description}</p>
-                        <p className="text-xs font-mono text-muted-foreground/60 mt-0.5">{mod.key}</p>
+                  <div key={mod.key} className="p-4 opacity-60">
+                    <div className="flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-red-600" />
+                      <div>
+                        <div className="font-semibold text-sm">{info.label}</div>
+                        <div className="text-xs text-muted-foreground">{info.description}</div>
                       </div>
                     </div>
                   </div>
                 );
               })}
           </div>
-        </div>
+        </details>
       )}
 
-      {/* Help Text */}
+      {/* Help */}
       <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
         <div className="flex gap-3">
-          <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+          <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0" />
           <div className="text-sm text-blue-800">
-            <p className="font-semibold mb-1">How to Use Access Modules</p>
-            <p className="mb-2">
-              Click on any accessible module card above to open and work on it. Your permissions control what actions you can perform:
-            </p>
-            <ul className="list-disc list-inside space-y-1 ml-2">
-              <li><strong>View:</strong> You can see the data</li>
-              <li><strong>Create:</strong> You can add new records</li>
-              <li><strong>Edit:</strong> You can modify existing data</li>
-              <li><strong>Delete:</strong> You can remove records</li>
+            <p className="font-semibold mb-1">💡 How It Works</p>
+            <ul className="space-y-1 text-xs">
+              <li>• Click any accessible module to expand it</li>
+              <li>• Work directly in the expanded interface - same as admin panel</li>
+              <li>• Your actions are limited by your assigned permissions</li>
+              <li>• Click the X button or module header to collapse</li>
             </ul>
-            <p className="mt-2">
-              If you need access to additional modules or permissions, please contact your administrator.
-            </p>
           </div>
         </div>
       </div>

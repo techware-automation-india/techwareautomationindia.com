@@ -3,12 +3,13 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 import { sendWelcomeEmail } from "../utils/emailService.js";
 
 const router = Router();
 
-// All routes here require an authenticated ADMIN.
-router.use(requireAuth, requireRole("ADMIN"));
+// All routes require authentication
+router.use(requireAuth);
 
 const createEmployeeSchema = z.object({
   fullName: z.string().min(1, "Full name is required."),
@@ -19,7 +20,8 @@ const createEmployeeSchema = z.object({
 });
 
 // GET /api/employees - list all employees with their profile + status.
-router.get("/", async (_req, res) => {
+// Accessible by ADMIN or EMPLOYEE with 'canView' permission on 'employee' module
+router.get("/", requireAdminOrModulePermission("employee", "canView"), async (_req, res) => {
   try {
     const employees = await prisma.user.findMany({
       where: { role: "EMPLOYEE" },
@@ -47,7 +49,8 @@ router.get("/", async (_req, res) => {
 });
 
 // POST /api/employees - create an employee account + profile.
-router.post("/", async (req, res) => {
+// Accessible by ADMIN or EMPLOYEE with 'canCreate' permission
+router.post("/", requireAdminOrModulePermission("employee", "canCreate"), async (req, res) => {
   const parsed = createEmployeeSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -122,7 +125,8 @@ router.post("/", async (req, res) => {
 
 // DELETE /api/employees/:id - remove an employee account and all related
 // records (profile, attendance, leave, requests cascade via the schema).
-router.delete("/:id", async (req, res) => {
+// Accessible by ADMIN or EMPLOYEE with 'canDelete' permission
+router.delete("/:id", requireAdminOrModulePermission("employee", "canDelete"), async (req, res) => {
   const { id } = req.params;
   try {
     const user = await prisma.user.findUnique({ where: { id } });

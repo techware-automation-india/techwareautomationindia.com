@@ -6,17 +6,24 @@ import {
   Plane,
   CalendarDays,
   ShieldCheck,
+  UserCog,
+  Contact,
+  FileText,
+  BookOpen,
+  FolderKanban,
+  MapPin,
+  CalendarRange,
 } from "lucide-react";
 
-// Single source of truth for employee modules.
-// Sidebar navigation and routes are both generated from this list.
-export const employeeModules = [
+// Default modules always visible to employees
+const defaultModules = [
   {
     key: "overview",
     label: "Dashboard",
     path: "/employee",
     icon: LayoutDashboard,
     description: "Your personal dashboard overview.",
+    alwaysVisible: true,
   },
   {
     key: "onboarding",
@@ -24,6 +31,7 @@ export const employeeModules = [
     path: "/employee/onboarding",
     icon: ClipboardList,
     description: "Complete your onboarding details.",
+    alwaysVisible: true,
   },
   {
     key: "mark-attendance",
@@ -31,6 +39,7 @@ export const employeeModules = [
     path: "/employee/mark-attendance",
     icon: Fingerprint,
     description: "Check in and check out for the day.",
+    alwaysVisible: true,
   },
   {
     key: "attendance",
@@ -38,6 +47,7 @@ export const employeeModules = [
     path: "/employee/attendance",
     icon: Clock,
     description: "View your attendance history.",
+    alwaysVisible: true,
   },
   {
     key: "leave",
@@ -45,6 +55,7 @@ export const employeeModules = [
     path: "/employee/leave",
     icon: Plane,
     description: "Apply for and track your leave.",
+    alwaysVisible: true,
   },
   {
     key: "holidays",
@@ -52,6 +63,7 @@ export const employeeModules = [
     path: "/employee/holidays",
     icon: CalendarDays,
     description: "View company holiday calendar.",
+    alwaysVisible: true,
   },
   {
     key: "access-modules",
@@ -59,5 +71,89 @@ export const employeeModules = [
     path: "/employee/access-modules",
     icon: ShieldCheck,
     description: "View your assigned module permissions.",
+    alwaysVisible: true,
   },
 ];
+
+// Admin modules that can be assigned to employees
+const adminModules = [
+  {
+    key: "employee",
+    label: "Employee Management",
+    path: "/employee/employee-management",
+    icon: UserCog,
+    description: "Manage employee records.",
+    adminKey: "employee",
+  },
+  {
+    key: "customer",
+    label: "Customer Management",
+    path: "/employee/customer-management",
+    icon: Contact,
+    description: "Manage customer accounts.",
+    adminKey: "customer",
+  },
+  {
+    key: "requests",
+    label: "Requests",
+    path: "/employee/requests",
+    icon: FileText,
+    description: "View and manage requests.",
+    adminKey: "requests",
+  },
+  {
+    key: "leave-policy",
+    label: "Leave Policy",
+    path: "/employee/leave-policy",
+    icon: BookOpen,
+    description: "Leave types and policies.",
+    adminKey: "leave-policy",
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    path: "/employee/projects",
+    icon: FolderKanban,
+    description: "Project management.",
+    adminKey: "projects",
+  },
+  {
+    key: "shift-location",
+    label: "Shift & Location",
+    path: "/employee/shift-location",
+    icon: MapPin,
+    description: "Shift and location management.",
+    adminKey: "shift-location",
+  },
+  {
+    key: "roster",
+    label: "Roster",
+    path: "/employee/roster",
+    icon: CalendarRange,
+    description: "Employee scheduling.",
+    adminKey: "roster",
+  },
+];
+
+// All modules combined
+export const employeeModules = [...defaultModules, ...adminModules];
+
+/**
+ * Get modules to display based on employee permissions
+ * @param {Object} permissions - Permission object from API
+ * @returns {Array} - Array of module objects to display
+ */
+export function getModulesByPermissions(permissions) {
+  // Always include default modules
+  const modules = [...defaultModules];
+
+  // Add admin modules if employee has at least 'canView' permission
+  adminModules.forEach((module) => {
+    const perm = permissions[module.adminKey];
+    if (perm && perm.canView) {
+      modules.push(module);
+    }
+  });
+
+  return modules;
+}

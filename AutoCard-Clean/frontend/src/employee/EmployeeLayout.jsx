@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft, ClipboardList, Clock } from "lucide-react";
-import { employeeModules } from "./modules.js";
+import { employeeModules, getModulesByPermissions } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
+import { apiGet } from "../lib/api.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
@@ -12,6 +13,8 @@ const EmployeeLayout = () => {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [visibleModules, setVisibleModules] = useState([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
 
   useEffect(() => {
     const authUser = getAuthUser();
@@ -24,6 +27,27 @@ const EmployeeLayout = () => {
 
     setUser(authUser);
   }, [navigate, location.pathname]);
+
+  // Load permissions and determine visible modules
+  useEffect(() => {
+    if (!user) return;
+
+    const loadPermissions = async () => {
+      try {
+        const data = await apiGet("/roles-access/me/permissions");
+        const modules = getModulesByPermissions(data.permissions || {});
+        setVisibleModules(modules);
+      } catch (err) {
+        console.error("Failed to load permissions:", err);
+        // Fallback to default modules if permission loading fails
+        setVisibleModules(employeeModules);
+      } finally {
+        setLoadingPermissions(false);
+      }
+    };
+
+    loadPermissions();
+  }, [user]);
 
   const handleLogout = () => {
     console.log("🚪 [Employee Layout] Logging out");
@@ -56,32 +80,38 @@ const EmployeeLayout = () => {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {employeeModules
-          .filter(({ key }) => {
-            // Hide non-onboarding modules if status is PENDING, but allow mark attendance.
-            const isPending = user?.onboardingStatus === "PENDING";
-            const isOnboardingModule = key === "onboarding" || key === "overview";
-            const isMarkAttendance = key === "mark-attendance";
-            return !isPending || isOnboardingModule || isMarkAttendance;
-          })
-          .map(({ key, label, path, icon: Icon }) => (
-            <NavLink
-              key={key}
-              to={path}
-              end={path === "/employee"}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`
-              }
-            >
-              <Icon className="h-4.5 w-4.5 shrink-0" />
-              {label}
-            </NavLink>
-          ))}
+        {loadingPermissions ? (
+          <div className="flex items-center justify-center py-8">
+            <Clock className="h-5 w-5 animate-spin text-primary" />
+          </div>
+        ) : (
+          visibleModules
+            .filter(({ key }) => {
+              // Hide non-onboarding modules if status is PENDING, but allow mark attendance.
+              const isPending = user?.onboardingStatus === "PENDING";
+              const isOnboardingModule = key === "onboarding" || key === "overview";
+              const isMarkAttendance = key === "mark-attendance";
+              return !isPending || isOnboardingModule || isMarkAttendance;
+            })
+            .map(({ key, label, path, icon: Icon }) => (
+              <NavLink
+                key={key}
+                to={path}
+                end={path === "/employee"}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  }`
+                }
+              >
+                <Icon className="h-4.5 w-4.5 shrink-0" />
+                {label}
+              </NavLink>
+            ))
+        )}
       </nav>
 
       <div className="p-3 border-t border-border">

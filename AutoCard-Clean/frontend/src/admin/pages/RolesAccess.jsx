@@ -8,7 +8,7 @@ import {
   Users,
   CheckCircle2,
   ChevronDown,
-  LayoutDashboard,
+ 
   UserCog,
   Contact,
   ClipboardList,
@@ -32,7 +32,7 @@ const PERM_COLS = [
 ];
 
 const MODULE_ICONS = {
-  overview:       LayoutDashboard,
+  
   employee:       UserCog,
   customer:       Contact,
   requests:       ClipboardList,

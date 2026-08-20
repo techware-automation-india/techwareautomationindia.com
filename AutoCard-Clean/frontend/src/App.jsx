@@ -32,6 +32,13 @@ import EmployeeAttendance from "./employee/pages/Attendance.jsx";
 import EmployeeLeave from "./employee/pages/Leave.jsx";
 import EmployeeHolidays from "./employee/pages/Holidays.jsx";
 import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
+import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
+import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
+import EmployeeRequests from "./employee/pages/Requests.jsx";
+import EmployeeLeavePolicy from "./employee/pages/LeavePolicy.jsx";
+import EmployeeProjects from "./employee/pages/Projects.jsx";
+import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
+import EmployeeRoster from "./employee/pages/Roster.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
 import CustomerLayout from "./customer/CustomerLayout.jsx";
@@ -104,6 +111,13 @@ const AppRoutes = () => {
           <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} />
           <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} />
           <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} />
+          <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} />
+          <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} />
+          <Route path="requests" element={<RequireOnboarding><EmployeeRequests /></RequireOnboarding>} />
+          <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} />
+          <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} />
+          <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} />
+          <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} />
         </Route>
 
         <Route path="/customer" element={<CustomerLayout />}>

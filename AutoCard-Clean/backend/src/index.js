@@ -19,6 +19,9 @@ import rolesAccessRouter from "./routes/rolesAccess.js";
 import shiftRouter from "./routes/shiftRoutes.js";
 import locationRouter from "./routes/locationRoutes.js";
 import rosterRouter from "./routes/rosterRoutes.js";
+import projectsRouter from "./routes/projects.js";
+import servicesRouter from "./routes/services.js";
+import supportRouter from "./routes/support.js";
 
 const app = express();
 const PORT = process.env.PORT || 4001;
@@ -128,6 +131,9 @@ app.use("/api/roles-access", rolesAccessRouter);
 app.use("/api/shifts", shiftRouter);
 app.use("/api/locations", locationRouter);
 app.use("/api/roster", rosterRouter);
+app.use("/api/projects", projectsRouter);
+app.use("/api/services", servicesRouter);
+app.use("/api/support", supportRouter);
 // Health check - also verifies the database connection.
 app.get("/api/health", (_req, res) => {
   res.json({

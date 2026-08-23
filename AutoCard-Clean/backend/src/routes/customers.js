@@ -2,13 +2,14 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 import { sendCustomerWelcomeEmail, sendPasswordResetEmail } from "../utils/emailService.js";
 
 const router = Router();
 
-// All routes here require an authenticated ADMIN.
-router.use(requireAuth, requireRole("ADMIN"));
+// All routes require authentication
+router.use(requireAuth);
 
 const createCustomerSchema = z.object({
   fullName: z
@@ -52,7 +53,7 @@ const createCustomerSchema = z.object({
 });
 
 // GET /api/customers - list all customers with their profile.
-router.get("/", async (_req, res) => {
+router.get("/", requireAdminOrModulePermission("customer", "canView"), async (_req, res) => {
   console.log("📥 [GET /api/customers] Request received");
   try {
     const customers = await prisma.user.findMany({
@@ -85,7 +86,7 @@ router.get("/", async (_req, res) => {
 });
 
 // POST /api/customers - create a customer account + profile.
-router.post("/", async (req, res) => {
+router.post("/", requireAdminOrModulePermission("customer", "canCreate"), async (req, res) => {
   console.log("📥 [POST /api/customers] Request received:", JSON.stringify(req.body, null, 2));
   
   const parsed = createCustomerSchema.safeParse(req.body);
@@ -180,7 +181,7 @@ router.post("/", async (req, res) => {
 });
 
 // PUT /api/customers/:id - update customer profile.
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireAdminOrModulePermission("customer", "canEdit"), async (req, res) => {
   const { id } = req.params;
   console.log(`📥 [PUT /api/customers/${id}] Request received:`, JSON.stringify(req.body, null, 2));
 
@@ -247,7 +248,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // DELETE /api/customers/:id - remove a customer account.
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdminOrModulePermission("customer", "canDelete"), async (req, res) => {
   const { id } = req.params;
   console.log(`📥 [DELETE /api/customers/${id}] Request received`);
   
@@ -270,7 +271,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // POST /api/customers/:id/reset-password - reset customer password.
-router.post("/:id/reset-password", async (req, res) => {
+router.post("/:id/reset-password", requireAdminOrModulePermission("customer", "canEdit"), async (req, res) => {
   const { id } = req.params;
   console.log(`📥 [POST /api/customers/${id}/reset-password] Request received`);
 
@@ -347,3 +348,577 @@ router.post("/:id/reset-password", async (req, res) => {
 });
 
 export default router;
+
+// ============================================================================
+// CUSTOMER PORTAL ENDPOINTS
+// ============================================================================
+
+// GET /api/customers/me/dashboard - Get customer dashboard data
+router.get("/me/dashboard", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: "Customer profile not found." });
+    }
+
+    // Get projects count
+    const projectsStats = await prisma.project.groupBy({
+      by: ['status'],
+      where: {
+        customerId: customerProfile.id,
+        isArchived: false,
+      },
+      _count: true,
+    });
+
+    const [pendingRequests, recentRequests] = await Promise.all([
+      prisma.customerServiceRequest.count({
+        where: {
+          customerId: customerProfile.id,
+          status: { in: ["PENDING", "IN_PROGRESS"] },
+        },
+      }),
+      prisma.customerServiceRequest.findMany({
+        where: { customerId: customerProfile.id },
+        include: {
+          service: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+    ]);
+
+    const stats = {
+      activeProjects: projectsStats
+        .filter(p => p.status === 'IN_PROGRESS')
+        .reduce((sum, p) => sum + p._count, 0),
+      completedProjects: projectsStats
+        .filter(p => p.status === 'COMPLETED')
+        .reduce((sum, p) => sum + p._count, 0),
+      totalProjects: projectsStats
+        .reduce((sum, p) => sum + p._count, 0),
+      pendingRequests,
+      outstandingInvoices: 0, // TODO: Add invoices count when invoicing system is implemented
+    };
+
+    // Get recent projects (last 5)
+    const recentProjects = await prisma.project.findMany({
+      where: {
+        customerId: customerProfile.id,
+        isArchived: false,
+      },
+      include: {
+        assignments: {
+          include: {
+            employee: {
+              select: {
+                user: {
+                  select: {
+                    fullName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            tasks: true,
+            documents: true,
+            comments: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    });
+
+    const formattedProjects = recentProjects.map(p => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      status: p.status,
+      progress: p.progress,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      priority: p.priority,
+      teamSize: p.assignments.length,
+      tasksCount: p._count.tasks,
+      documentsCount: p._count.documents,
+      commentsCount: p._count.comments,
+    }));
+
+    res.json({
+      stats,
+      recentProjects: formattedProjects,
+      recentRequests,
+    });
+  } catch (err) {
+    console.error("Get customer dashboard error:", err);
+    res.status(500).json({ message: "Failed to load dashboard data." });
+  }
+});
+
+// GET /api/customers/me/projects - Get customer's projects
+router.get("/me/projects", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: "Customer profile not found." });
+    }
+
+    const { status, search } = req.query;
+
+    const where = {
+      customerId: customerProfile.id,
+      isArchived: false,
+    };
+
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const projects = await prisma.project.findMany({
+      where,
+      include: {
+        assignments: {
+          select: {
+            id: true,
+            roleOnProject: true,
+            employee: {
+              select: {
+                user: {
+                  select: {
+                    fullName: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        tasks: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+        _count: {
+          select: {
+            tasks: true,
+            documents: true,
+            comments: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formattedProjects = projects.map(p => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      description: p.description,
+      status: p.status,
+      priority: p.priority,
+      progress: p.progress,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      team: p.assignments.map(a => ({
+        name: a.employee.user.fullName,
+        email: a.employee.user.email,
+        role: a.roleOnProject,
+      })),
+      tasks: {
+        total: p._count.tasks,
+        completed: p.tasks.filter(t => t.status === 'COMPLETED').length,
+        inProgress: p.tasks.filter(t => t.status === 'IN_PROGRESS').length,
+      },
+      documentsCount: p._count.documents,
+      commentsCount: p._count.comments,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    }));
+
+    res.json({ projects: formattedProjects });
+  } catch (err) {
+    console.error("Get customer projects error:", err);
+    res.status(500).json({ message: "Failed to load projects." });
+  }
+});
+
+// GET /api/customers/me/projects/:id - Get single project details
+router.get("/me/projects/:id", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: "Customer profile not found." });
+    }
+
+    const project = await prisma.project.findFirst({
+      where: {
+        id,
+        customerId: customerProfile.id,
+      },
+      include: {
+        assignments: {
+          include: {
+            employee: {
+              select: {
+                user: {
+                  select: {
+                    fullName: true,
+                    email: true,
+                  },
+                },
+                employeeCode: true,
+              },
+            },
+          },
+        },
+        tasks: {
+          orderBy: { orderIndex: 'asc' },
+        },
+        documents: {
+          orderBy: { uploadedAt: 'desc' },
+        },
+        comments: {
+          orderBy: { createdAt: 'desc' },
+        },
+        activities: {
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        },
+      },
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found or access denied." });
+    }
+
+    res.json({ project });
+  } catch (err) {
+    console.error("Get customer project details error:", err);
+    res.status(500).json({ message: "Failed to load project details." });
+  }
+});
+
+// GET /api/customers/me/profile - Get customer's own profile
+router.get("/me/profile", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        customerProfile: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.json({
+      profile: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        isActive: user.isActive,
+        companyName: user.customerProfile?.companyName || null,
+        phone: user.customerProfile?.phone || null,
+        address: user.customerProfile?.address || null,
+        city: user.customerProfile?.city || null,
+        country: user.customerProfile?.country || null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
+  } catch (err) {
+    console.error("Get customer profile error:", err);
+    res.status(500).json({ message: "Failed to load profile." });
+  }
+});
+
+// PATCH /api/customers/me/profile - Update customer's own profile
+router.patch("/me/profile", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const updateSchema = z.object({
+      fullName: z.string().min(3).max(120).optional(),
+      companyName: z.string().max(200).optional(),
+      phone: z.string().regex(/^[+]?[\d\s()\-]{7,20}$/).optional(),
+      address: z.string().max(300).optional(),
+      city: z.string().max(100).optional(),
+      country: z.string().max(100).optional(),
+    });
+
+    const parsed = updateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0].message });
+    }
+
+    const { fullName, ...profileData } = parsed.data;
+
+    // Update user and profile
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(fullName && { fullName }),
+        customerProfile: {
+          update: profileData,
+        },
+      },
+      include: { customerProfile: true },
+    });
+
+    res.json({
+      profile: {
+        id: updated.id,
+        fullName: updated.fullName,
+        email: updated.email,
+        companyName: updated.customerProfile.companyName,
+        phone: updated.customerProfile.phone,
+        address: updated.customerProfile.address,
+        city: updated.customerProfile.city,
+        country: updated.customerProfile.country,
+      },
+    });
+  } catch (err) {
+    console.error("Update customer profile error:", err);
+    res.status(500).json({ message: "Failed to update profile." });
+  }
+});
+
+// GET /api/customers/me/requests - Get customer's service requests
+router.get("/me/requests", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: "Customer profile not found." });
+    }
+
+    const requests = await prisma.customerServiceRequest.findMany({
+      where: { customerId: customerProfile.id },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            price: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ requests });
+  } catch (err) {
+    console.error("Get customer requests error:", err);
+    res.status(500).json({ message: "Failed to load requests." });
+  }
+});
+
+// POST /api/customers/me/requests - Create new service request
+router.post("/me/requests", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const requestSchema = z.object({
+      subject: z.string().min(5, "Subject must be at least 5 characters.").max(200),
+      description: z.string().min(10, "Description must be at least 10 characters.").max(2000),
+      priority: z.enum(["LOW", "MEDIUM", "HIGH"]).default("MEDIUM"),
+      serviceId: z.string().uuid("Invalid service selected.").optional().nullable(),
+    });
+
+    const parsed = requestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0].message });
+    }
+
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: "Customer profile not found." });
+    }
+
+    let service = null;
+    if (parsed.data.serviceId) {
+      service = await prisma.service.findFirst({
+        where: {
+          id: parsed.data.serviceId,
+          isActive: true,
+        },
+      });
+
+      if (!service) {
+        return res.status(400).json({ message: "Selected service is not available." });
+      }
+    }
+
+    const request = await prisma.customerServiceRequest.create({
+      data: {
+        customerId: customerProfile.id,
+        serviceId: service?.id || null,
+        subject: parsed.data.subject,
+        description: parsed.data.description,
+        priority: parsed.data.priority,
+      },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            price: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      message: "Request submitted successfully. Our team will review it shortly.",
+      request,
+    });
+  } catch (err) {
+    console.error("Create customer request error:", err);
+    res.status(500).json({ message: "Failed to submit request." });
+  }
+});
+
+// GET /api/customers/me/documents - Get customer's project documents
+router.get("/me/documents", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (req.user.role !== "CUSTOMER") {
+      return res.status(403).json({ message: "Access denied. Customer role required." });
+    }
+
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: "Customer profile not found." });
+    }
+
+    // Get all projects for this customer
+    const projects = await prisma.project.findMany({
+      where: {
+        customerId: customerProfile.id,
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+      },
+    });
+
+    const projectIds = projects.map(p => p.id);
+
+    // Get all documents from customer's projects
+    const documents = await prisma.projectDocument.findMany({
+      where: {
+        projectId: { in: projectIds },
+      },
+      include: {
+        project: {
+          select: {
+            name: true,
+            code: true,
+          },
+        },
+      },
+      orderBy: { uploadedAt: "desc" },
+    });
+
+    const formatted = documents.map(doc => ({
+      id: doc.id,
+      fileName: doc.fileName,
+      fileUrl: doc.fileUrl,
+      fileSize: doc.fileSize,
+      fileType: doc.fileType,
+      uploadedAt: doc.uploadedAt,
+      uploadedById: doc.uploadedById,
+      project: {
+        id: doc.projectId,
+        name: doc.project.name,
+        code: doc.project.code,
+      },
+    }));
+
+    res.json({ documents: formatted });
+  } catch (err) {
+    console.error("Get customer documents error:", err);
+    res.status(500).json({ message: "Failed to load documents." });
+  }
+});

@@ -1,23 +1,32 @@
 import { useState, useEffect } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
 import { customerModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
 const CustomerLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const authUser = getAuthUser();
+
     if (!authUser || authUser.role !== "CUSTOMER") {
       clearAuth();
-      navigate("/login/customer", { replace: true });
+      navigate("/login", { replace: true });
+      return;
     }
-  }, [navigate]);
+
+    setUser(authUser);
+  }, [navigate, location.pathname]);
 
   const handleLogout = () => {
+    console.log("🚪 [Customer Layout] Logging out");
     clearAuth();
     navigate("/");
   };
@@ -27,21 +36,20 @@ const CustomerLayout = () => {
       <div className="h-16 flex items-center px-6 border-b border-border">
         <Link to="/customer" className="font-display flex items-center gap-0">
           <div className="flex flex-col justify-center">
-             <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
-  <span style={{ color: "#2A3791" }}>Tech</span>
-  <span style={{ color: "#2A3791" }}>ware</span>
-</h1>
-
-<p
-  className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
-  style={{
-    letterSpacing: "0.28em",
-    lineHeight: 1.2,
-  }}
->
-  <span style={{ color: "#2A3791" }}>Automation </span>
-  <span style={{ color: "#339DE0" }}>INDIA</span>
-</p>
+            <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
+              <span style={{ color: "#2A3791" }}>Tech</span>
+              <span style={{ color: "#2A3791" }}>ware</span>
+            </h1>
+            <p
+              className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
+              style={{
+                letterSpacing: "0.28em",
+                lineHeight: 1.2,
+              }}
+            >
+              <span style={{ color: "#2A3791" }}>Automation </span>
+              <span style={{ color: "#339DE0" }}>(INDIA)</span>
+            </p>
           </div>
         </Link>
       </div>
@@ -123,11 +131,19 @@ const CustomerLayout = () => {
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-foreground">Sample Customer</div>
-              <div className="text-xs text-muted-foreground">customer@techware.com</div>
+              <div className="text-sm font-semibold text-foreground">{user?.fullName || "Customer"}</div>
+              <div className="text-xs text-muted-foreground">{user?.email || ""}</div>
             </div>
-            <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm">
-              SC
+            <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
+              {user?.profileImage ? (
+                <img
+                  src={`${API_BASE}${user.profileImage}`}
+                  alt={user.fullName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                user?.fullName ? user.fullName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "CU"
+              )}
             </div>
           </div>
         </header>

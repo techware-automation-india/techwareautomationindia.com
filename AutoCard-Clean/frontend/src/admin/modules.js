@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Clock,
   FolderKanban,
+  Wrench,
   ShieldCheck,
   Building2,
   CalendarRange,
@@ -78,6 +79,7 @@ export const adminModules = [
     icon: FolderKanban,
     description: "Create projects and assign team members.",
   },
+  
   {
     key: "roles-access",
     label: "Roles & Access",

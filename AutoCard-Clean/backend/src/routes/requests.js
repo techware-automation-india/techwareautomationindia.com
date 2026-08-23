@@ -1,19 +1,20 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 
 const router = Router();
 
-// All routes here require an authenticated ADMIN.
-router.use(requireAuth, requireRole("ADMIN"));
+// All routes require authentication
+router.use(requireAuth);
 
 const reviewSchema = z.object({
   note: z.string().optional(),
 });
 
 // GET /api/requests - list employee requests (newest first).
-router.get("/", async (req, res) => {
+router.get("/", requireAdminOrModulePermission("requests", "canView"), async (req, res) => {
   try {
     const { status } = req.query;
     const where = {};
@@ -58,7 +59,7 @@ router.get("/", async (req, res) => {
 
 // GET /api/requests/:id/profile - full employee profile for previewing an
 // onboarding request before approving it.
-router.get("/:id/profile", async (req, res) => {
+router.get("/:id/profile", requireAdminOrModulePermission("requests", "canView"), async (req, res) => {
   const { id } = req.params;
   try {
     const request = await prisma.employeeRequest.findUnique({
@@ -132,9 +133,9 @@ async function reviewRequest(req, res, decision) {
 }
 
 // POST /api/requests/:id/approve
-router.post("/:id/approve", (req, res) => reviewRequest(req, res, "approve"));
+router.post("/:id/approve", requireAdminOrModulePermission("requests", "canEdit"), (req, res) => reviewRequest(req, res, "approve"));
 
 // POST /api/requests/:id/reject
-router.post("/:id/reject", (req, res) => reviewRequest(req, res, "reject"));
+router.post("/:id/reject", requireAdminOrModulePermission("requests", "canEdit"), (req, res) => reviewRequest(req, res, "reject"));
 
 export default router;

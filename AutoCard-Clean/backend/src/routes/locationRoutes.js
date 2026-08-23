@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 
 const router = Router();
 
@@ -75,8 +76,8 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/locations — admin only
-router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// POST /api/locations — admin or with permission
+router.post("/", requireAdminOrModulePermission("shift-location", "canCreate"), async (req, res) => {
   try {
     const data = locationSchema.parse(req.body);
     const exists = await prisma.location.findFirst({ where: { name: data.name } });
@@ -109,8 +110,8 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// PATCH /api/locations/:id — admin only
-router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// PATCH /api/locations/:id — admin or with permission
+router.patch("/:id", requireAdminOrModulePermission("shift-location", "canEdit"), async (req, res) => {
   try {
     const data = updateLocationSchema.parse(req.body);
     const loc = await prisma.location.findUnique({ where: { id: req.params.id } });
@@ -149,8 +150,8 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// DELETE /api/locations/:id — admin only
-router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// DELETE /api/locations/:id — admin or with permission
+router.delete("/:id", requireAdminOrModulePermission("shift-location", "canDelete"), async (req, res) => {
   try {
     const loc = await prisma.location.findUnique({ where: { id: req.params.id } });
     if (!loc) return res.status(404).json({ success: false, message: "Location not found." });

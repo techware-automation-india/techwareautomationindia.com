@@ -11,6 +11,7 @@ import {
   FileText,
   BookOpen,
   FolderKanban,
+  Wrench,
   MapPin,
   CalendarRange,
 } from "lucide-react";
@@ -65,14 +66,6 @@ const defaultModules = [
     description: "View company holiday calendar.",
     alwaysVisible: true,
   },
-  {
-    key: "access-modules",
-    label: "Access Modules",
-    path: "/employee/access-modules",
-    icon: ShieldCheck,
-    description: "View your assigned module permissions.",
-    alwaysVisible: true,
-  },
 ];
 
 // Admin modules that can be assigned to employees
@@ -117,6 +110,7 @@ const adminModules = [
     description: "Project management.",
     adminKey: "projects",
   },
+ 
   {
     key: "shift-location",
     label: "Shift & Location",

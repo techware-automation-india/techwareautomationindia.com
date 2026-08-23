@@ -16,6 +16,7 @@ const employeeModules = [
   { key: "holidays", label: "Holidays" },
   { key: "attendance", label: "Attendance" },
   { key: "projects", label: "Projects" },
+  { key: "services", label: "Services" },
   { key: "shift-location", label: "Shift & Location" },
   { key: "roster", label: "Roster" },
 ];

@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 
 const router = Router();
 
-// All routes here require an authenticated ADMIN.
-router.use(requireAuth, requireRole("ADMIN"));
+// All routes require authentication
+router.use(requireAuth);
 
 const leaveTypeSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(80),
@@ -27,7 +28,7 @@ const leaveTypeSchema = z.object({
 });
 
 // GET /api/leave-types - list all leave types.
-router.get("/", async (_req, res) => {
+router.get("/", requireAdminOrModulePermission("leave-policy", "canView"), async (_req, res) => {
   try {
     const leaveTypes = await prisma.leaveType.findMany({ orderBy: { createdAt: "desc" } });
     res.json({ leaveTypes });
@@ -38,7 +39,7 @@ router.get("/", async (_req, res) => {
 });
 
 // POST /api/leave-types - create a leave type.
-router.post("/", async (req, res) => {
+router.post("/", requireAdminOrModulePermission("leave-policy", "canCreate"), async (req, res) => {
   const parsed = leaveTypeSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -73,7 +74,7 @@ router.post("/", async (req, res) => {
 });
 
 // PUT /api/leave-types/:id - update a leave type.
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireAdminOrModulePermission("leave-policy", "canEdit"), async (req, res) => {
   const parsed = leaveTypeSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -116,7 +117,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // DELETE /api/leave-types/:id - remove a leave type.
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdminOrModulePermission("leave-policy", "canDelete"), async (req, res) => {
   const { id } = req.params;
   try {
     const current = await prisma.leaveType.findUnique({ where: { id } });

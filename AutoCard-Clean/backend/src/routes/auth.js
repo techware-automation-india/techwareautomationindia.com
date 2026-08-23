@@ -16,7 +16,7 @@ const roleMap = {
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  role: z.enum(["admin", "employee", "customer"]),
+  role: z.enum(["admin", "employee", "customer"]).optional(),
 });
 
 // Builds the public user object returned to the client, including the
@@ -40,12 +40,12 @@ router.post("/login", async (req, res) => {
   }
 
   const { email, password, role } = parsed.data;
-  const expectedRole = roleMap[role];
+  const expectedRole = role ? roleMap[role] : null; // null means universal login
 
   try {
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { employeeProfile: true },
+      include: { employeeProfile: true, customerProfile: true },
     });
 
     // Generic message so we don't leak which emails exist.
@@ -62,8 +62,9 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({ message: "This account is inactive." });
     }
 
-    // Enforce that the account role matches the login portal being used.
-    if (user.role !== expectedRole) {
+    // If role is provided (old login pages), enforce role match
+    // If no role (universal login), allow any role
+    if (expectedRole && user.role !== expectedRole) {
       return res.status(403).json({
         message: `These credentials are not valid for ${role} login.`,
       });

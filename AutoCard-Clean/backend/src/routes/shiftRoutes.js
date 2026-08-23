@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 
 const router = Router();
 
@@ -53,8 +54,8 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/shifts — admin only
-router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// POST /api/shifts — admin or with permission
+router.post("/", requireAdminOrModulePermission("shift-location", "canCreate"), async (req, res) => {
   try {
     const data = shiftSchema.parse(req.body);
     const exists = await prisma.shift.findFirst({ where: { name: data.name } });
@@ -69,8 +70,8 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// PATCH /api/shifts/:id — admin only
-router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// PATCH /api/shifts/:id — admin or with permission
+router.patch("/:id", requireAdminOrModulePermission("shift-location", "canEdit"), async (req, res) => {
   try {
     const data = updateShiftSchema.parse(req.body);
     const shift = await prisma.shift.findUnique({ where: { id: req.params.id } });
@@ -93,8 +94,8 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// DELETE /api/shifts/:id — admin only
-router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// DELETE /api/shifts/:id — admin or with permission
+router.delete("/:id", requireAdminOrModulePermission("shift-location", "canDelete"), async (req, res) => {
   try {
     const shift = await prisma.shift.findUnique({ where: { id: req.params.id } });
     if (!shift) return res.status(404).json({ success: false, message: "Shift not found." });

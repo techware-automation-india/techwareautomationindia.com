@@ -114,11 +114,13 @@ const Login = () => {
             <p className="text-sm text-muted-foreground mt-1">{config.subtitle}</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="email"
+                name={`${role}-login-email`}
+                autoComplete="off"
                 className={inputClass}
                 placeholder="Email address"
                 value={formData.email}
@@ -131,6 +133,8 @@ const Login = () => {
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type={showPassword ? "text" : "password"}
+                name={`${role}-login-password`}
+                autoComplete="off"
                 className={inputClass + " pr-11"}
                 placeholder="Password"
                 value={formData.password}
@@ -172,15 +176,7 @@ const Login = () => {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            Need a different access level?{" "}
-            <button
-              onClick={() => navigate("/")}
-              className="text-primary hover:underline font-medium"
-            >
-              Choose another role
-            </button>
-          </div>
+          
         </div>
       </motion.div>
     </div>

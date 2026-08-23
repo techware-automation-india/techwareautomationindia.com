@@ -57,8 +57,15 @@ enum RequestStatus {
   REJECTED
 }
 
+enum CustomerRequestStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
 enum ProjectStatus {
-  PLANNED
+  PLANNING
   IN_PROGRESS
   ON_HOLD
   COMPLETED
@@ -206,6 +213,7 @@ model CustomerProfile {
 
   // A customer owns many projects.
   projects Project[]
+  serviceRequests CustomerServiceRequest[]
 
   @@map("customer_profiles")
 }
@@ -432,26 +440,53 @@ model EmployeeRequest {
 // PROJECTS
 // ===========================================================================
 
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETED
+  BLOCKED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 model Project {
   id          String        @id @default(uuid())
   name        String
   code        String        @unique
-  description String?
-  status      ProjectStatus @default(PLANNED)
+  description String?       @db.Text
+  status      ProjectStatus @default(PLANNING)
+  priority    TaskPriority  @default(MEDIUM)
+  progress    Int           @default(0) // 0-100
   startDate   DateTime?
   endDate     DateTime?
+  isArchived  Boolean       @default(false)
 
   // Owning customer (optional — internal projects may have none).
   customerId String?
   customer   CustomerProfile? @relation(fields: [customerId], references: [id])
 
+  // Project manager (optional).
+  managerId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relations
   assignments ProjectAssignment[]
+  tasks       ProjectTask[]
+  documents   ProjectDocument[]
+  comments    ProjectComment[]
+  activities  ProjectActivity[]
 
   @@index([customerId])
   @@index([status])
+  @@index([isArchived])
   @@map("projects")
 }
 
@@ -461,11 +496,83 @@ model ProjectAssignment {
   project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   employeeId    String
   employee      EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  roleOnProject String?
+  roleOnProject String?         // e.g., "Developer", "Designer", "Project Manager"
   assignedAt    DateTime        @default(now())
 
   @@unique([projectId, employeeId])
+  @@index([projectId])
+  @@index([employeeId])
   @@map("project_assignments")
+}
+
+model ProjectTask {
+  id          String       @id @default(uuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?      @db.Text
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  
+  // Assignment
+  assignedToId String?
+  dueDate      DateTime?
+  completedAt  DateTime?
+  
+  // Task order within project
+  orderIndex Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assignedToId])
+  @@map("project_tasks")
+}
+
+model ProjectDocument {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName    String
+  fileUrl     String
+  fileSize    Int?     // in bytes
+  fileType    String?  // MIME type
+  uploadedById String
+  uploadedAt  DateTime @default(now())
+
+  @@index([projectId])
+  @@map("project_documents")
+}
+
+model ProjectComment {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("project_comments")
+}
+
+model ProjectActivity {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  activityType String  // e.g., "created", "status_changed", "member_added", "task_completed"
+  description String   @db.Text
+  metadata    String?  @db.Text // JSON string for additional data
+  createdAt   DateTime @default(now())
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("project_activities")
 }
 
 // ===========================================================================
@@ -521,4 +628,67 @@ model ContactSubmission {
   createdAt DateTime @default(now())
 
   @@map("contact_submissions")
+}
+
+// ===========================================================================
+// SERVICES
+// ===========================================================================
+
+model Service {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @db.Text
+  features    String   @db.Text // JSON array stored as text
+  price       String
+  category    String?
+  isActive    Boolean  @default(true)
+  orderIndex  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customerRequests CustomerServiceRequest[]
+
+  @@index([isActive])
+  @@index([orderIndex])
+  @@map("services")
+}
+
+model CustomerServiceRequest {
+  id          String                @id @default(uuid())
+  customerId  String
+  customer    CustomerProfile       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  serviceId   String?
+  service     Service?              @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  subject     String
+  description String                @db.Text
+  priority    TaskPriority          @default(MEDIUM)
+  status      CustomerRequestStatus @default(PENDING)
+  response    String?               @db.Text
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([customerId])
+  @@index([serviceId])
+  @@index([status])
+  @@map("customer_service_requests")
+}
+
+// ===========================================================================
+// SUPPORT
+// ===========================================================================
+
+model SupportInfo {
+  id              String   @id @default(uuid())
+  companyName     String
+  supportEmail    String
+  supportPhone    String
+  liveChatEnabled Boolean  @default(false)
+  liveChatUrl     String?
+  supportHours    String   @db.Text // JSON object with day-wise hours
+  faqs            String   @db.Text // JSON array of FAQ objects
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("support_info")
 }

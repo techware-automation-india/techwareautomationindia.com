@@ -26,6 +26,7 @@ import LeavePolicy from "../../admin/pages/LeavePolicy.jsx";
 import Holidays from "../../admin/pages/Holidays.jsx";
 import Attendance from "../../admin/pages/Attendance.jsx";
 import Projects from "../../admin/pages/Projects.jsx";
+import Services from "../../admin/pages/Services.jsx";
 import ShiftLocation from "../../admin/pages/ShiftLocation.jsx";
 import Roster from "../../admin/pages/Roster.jsx";
 
@@ -70,6 +71,11 @@ const MODULE_INFO = {
     label: "Projects", 
     description: "Manage projects and assignments",
     component: Projects
+  },
+  services: {
+    label: "Services",
+    description: "Create and manage customer-facing services",
+    component: Services
   },
   "shift-location": { 
     label: "Shift & Location", 

@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 
 const router = Router();
 
@@ -81,8 +82,8 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/holidays - Create a new holiday (Admin only)
-router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// POST /api/holidays - Create a new holiday (Admin or with permission)
+router.post("/", requireAdminOrModulePermission("holidays", "canCreate"), async (req, res) => {
   console.log("📥 [POST /api/holidays] Request received:", JSON.stringify(req.body, null, 2));
   
   const parsed = createHolidaySchema.safeParse(req.body);
@@ -126,8 +127,8 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// PUT /api/holidays/:id - Update a holiday (Admin only)
-router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// PUT /api/holidays/:id - Update a holiday (Admin or with permission)
+router.put("/:id", requireAdminOrModulePermission("holidays", "canEdit"), async (req, res) => {
   const { id } = req.params;
   console.log(`📥 [PUT /api/holidays/${id}] Request received:`, JSON.stringify(req.body, null, 2));
   
@@ -160,8 +161,8 @@ router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-// DELETE /api/holidays/:id - Delete a holiday (Admin only)
-router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// DELETE /api/holidays/:id - Delete a holiday (Admin or with permission)
+router.delete("/:id", requireAdminOrModulePermission("holidays", "canDelete"), async (req, res) => {
   const { id } = req.params;
   console.log(`📥 [DELETE /api/holidays/${id}] Request received`);
   

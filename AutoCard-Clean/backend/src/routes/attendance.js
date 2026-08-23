@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
 
 const router = Router();
 
@@ -535,14 +536,11 @@ router.post("/checkout", requireAuth, requireRole("EMPLOYEE"), async (req, res) 
 });
 
 // ============================================================================
-// ADMIN ROUTES  (requireAuth + requireRole("ADMIN"))
+// ADMIN ROUTES  (requireAuth + permission check)
 // ============================================================================
 
-// All routes below require an authenticated ADMIN.
-router.use(requireAuth, requireRole("ADMIN"));
-
 // GET /api/attendance/employees - approved employees for the picker.
-router.get("/employees", async (_req, res) => {
+router.get("/employees", requireAdminOrModulePermission("attendance", "canView"), async (_req, res) => {
   try {
     const employees = await prisma.employeeProfile.findMany({
       include: { user: { select: { fullName: true, email: true } } },
@@ -566,7 +564,7 @@ router.get("/employees", async (_req, res) => {
 });
 
 // GET /api/attendance/pending-approvals - Get all pending check-in approvals
-router.get("/pending-approvals", async (_req, res) => {
+router.get("/pending-approvals", requireAdminOrModulePermission("attendance", "canView"), async (_req, res) => {
   try {
     const pendingRecords = await prisma.attendance.findMany({
       where: { status: "PENDING_APPROVAL" },
@@ -592,7 +590,7 @@ router.get("/pending-approvals", async (_req, res) => {
 });
 
 // GET /api/attendance/today - today's summary for all employees.
-router.get("/today", async (_req, res) => {
+router.get("/today", requireAdminOrModulePermission("attendance", "canView"), async (_req, res) => {
   try {
     const now = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -667,7 +665,7 @@ router.get("/today", async (_req, res) => {
 });
 
 // GET /api/attendance/register/weekly?days=7 - all employee attendance register.
-router.get("/register/weekly", async (req, res) => {
+router.get("/register/weekly", requireAdminOrModulePermission("attendance", "canView"), async (req, res) => {
   const daysParam = Number(req.query.days ?? 7);
   const days = Number.isInteger(daysParam) && daysParam > 0 && daysParam <= 31 ? daysParam : 7;
 
@@ -806,7 +804,7 @@ router.get("/register/weekly", async (req, res) => {
 });
 
 // GET /api/attendance/pending - list pending approval attendance records (ADMIN)
-router.get("/pending", async (req, res) => {
+router.get("/pending", requireAdminOrModulePermission("attendance", "canView"), async (req, res) => {
   try {
     const pending = await prisma.attendance.findMany({
       where: { status: "PENDING_APPROVAL" },
@@ -834,7 +832,7 @@ router.get("/pending", async (req, res) => {
 });
 
 // POST /api/attendance/:id/approve - approve pending attendance (ADMIN)
-router.post("/:id/approve", async (req, res) => {
+router.post("/:id/approve", requireAdminOrModulePermission("attendance", "canEdit"), async (req, res) => {
   const { id } = req.params;
   try {
     const record = await prisma.attendance.findUnique({ where: { id } });
@@ -864,7 +862,7 @@ router.post("/:id/approve", async (req, res) => {
 });
 
 // POST /api/attendance/:id/reject - reject pending attendance (ADMIN)
-router.post("/:id/reject", async (req, res) => {
+router.post("/:id/reject", requireAdminOrModulePermission("attendance", "canEdit"), async (req, res) => {
   const { id } = req.params;
   try {
     const record = await prisma.attendance.findUnique({ where: { id } });
@@ -888,7 +886,7 @@ router.post("/:id/reject", async (req, res) => {
 
 // GET /api/attendance/:employeeId?year=YYYY&month=M (month is 1-12)
 // Returns the employee's attendance records for the given month plus a summary.
-router.get("/:employeeId", async (req, res) => {
+router.get("/:employeeId", requireAdminOrModulePermission("attendance", "canView"), async (req, res) => {
   const { employeeId } = req.params;
   const year = Number(req.query.year);
   const month = Number(req.query.month); // 1-12
@@ -1035,7 +1033,7 @@ router.get("/:employeeId", async (req, res) => {
 });
 
 // GET /api/attendance/pending-approvals - Get all pending check-in approvals
-router.get("/pending-approvals", async (_req, res) => {
+router.get("/pending-approvals", requireAdminOrModulePermission("attendance", "canView"), async (_req, res) => {
   try {
     const pendingRecords = await prisma.attendance.findMany({
       where: { status: "PENDING_APPROVAL" },
@@ -1059,7 +1057,7 @@ router.get("/pending-approvals", async (_req, res) => {
 });
 
 // POST /api/attendance/approve/:id - Approve a pending check-in
-router.post("/approve/:id", async (req, res) => {
+router.post("/approve/:id", requireAdminOrModulePermission("attendance", "canEdit"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1094,7 +1092,7 @@ router.post("/approve/:id", async (req, res) => {
 });
 
 // POST /api/attendance/reject/:id - Reject a pending check-in
-router.post("/reject/:id", async (req, res) => {
+router.post("/reject/:id", requireAdminOrModulePermission("attendance", "canEdit"), async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;

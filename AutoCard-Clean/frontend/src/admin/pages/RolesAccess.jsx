@@ -16,6 +16,7 @@ import {
   CalendarDays,
   Clock,
   FolderKanban,
+  Wrench,
   MapPin,
   CalendarRange,
 } from "lucide-react";
@@ -40,6 +41,7 @@ const MODULE_ICONS = {
   holidays:       CalendarDays,
   attendance:     Clock,
   projects:       FolderKanban,
+  services:       Wrench,
   "shift-location": MapPin,
   roster:         CalendarRange,
 };

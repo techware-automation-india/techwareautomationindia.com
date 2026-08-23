@@ -4,7 +4,8 @@ import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
 import { applyTheme, getPreferredTheme, onThemeChange } from "./lib/theme.js";
 import Index from "./pages/Index.jsx";
-import Login from "./pages/Login.jsx";
+
+import UniversalLogin from "./pages/UniversalLogin.jsx";
 import Machines from "./pages/Machines.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
@@ -20,6 +21,8 @@ import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
 import Attendance from "./admin/pages/Attendance.jsx";
 import Projects from "./admin/pages/Projects.jsx";
+import ProjectDetails from "./admin/pages/ProjectDetails.jsx";
+import Services from "./admin/pages/Services.jsx";
 import RolesAccess from "./admin/pages/RolesAccess.jsx";
 import ShiftLocation from "./admin/pages/ShiftLocation.jsx";
 import Roster from "./admin/pages/Roster.jsx";
@@ -37,13 +40,22 @@ import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
 import EmployeeRequests from "./employee/pages/Requests.jsx";
 import EmployeeLeavePolicy from "./employee/pages/LeavePolicy.jsx";
 import EmployeeProjects from "./employee/pages/Projects.jsx";
+import EmployeeServices from "./employee/pages/Services.jsx";
 import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
 import EmployeeRoster from "./employee/pages/Roster.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
 import CustomerLayout from "./customer/CustomerLayout.jsx";
 import CustomerOverview from "./customer/pages/Overview.jsx";
+import CustomerProfile from "./customer/pages/Profile.jsx";
 import CustomerProjects from "./customer/pages/Projects.jsx";
+import CustomerRequests from "./customer/pages/Requests.jsx";
+
+import CustomerDocuments from "./customer/pages/Documents.jsx";
+
+import CustomerSupport from "./customer/pages/Support.jsx";
+import CustomerNotifications from "./customer/pages/Notifications.jsx";
+import CustomerSettings from "./customer/pages/Settings.jsx";
 
 const dashboardPrefixes = ["/admin", "/employee", "/customer"];
 
@@ -84,7 +96,8 @@ const AppRoutes = () => {
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/machines" element={<Machines />} />
-        <Route path="/login/:role" element={<Login />} />
+        <Route path="/login" element={<UniversalLogin />} />
+        
 
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Overview />} />
@@ -98,6 +111,8 @@ const AppRoutes = () => {
           <Route path="holidays" element={<Holidays />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="projects" element={<Projects />} />
+          <Route path="project/:id" element={<ProjectDetails />} />
+          
           <Route path="roles-access" element={<RolesAccess />} />
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
@@ -116,13 +131,22 @@ const AppRoutes = () => {
           <Route path="requests" element={<RequireOnboarding><EmployeeRequests /></RequireOnboarding>} />
           <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} />
           <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} />
+         
           <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} />
           <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} />
         </Route>
 
         <Route path="/customer" element={<CustomerLayout />}>
           <Route index element={<CustomerOverview />} />
+          <Route path="profile" element={<CustomerProfile />} />
           <Route path="projects" element={<CustomerProjects />} />
+          <Route path="requests" element={<CustomerRequests />} />
+          
+          <Route path="documents" element={<CustomerDocuments />} />
+         
+          <Route path="support" element={<CustomerSupport />} />
+          <Route path="notifications" element={<CustomerNotifications />} />
+          <Route path="settings" element={<CustomerSettings />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

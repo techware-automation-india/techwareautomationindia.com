@@ -7,7 +7,8 @@ import { fileURLToPath } from "url";
 import prisma from "./prismaClient.js";
 import authRouter from "./routes/auth.js";
 import employeesRouter from "./routes/employees.js";
-import customersRouter from "./routes/customers.js";
+// CUSTOMER ROUTES COMMENTED OUT
+// import customersRouter from "./routes/customers.js";
 import onboardingRouter from "./routes/onboarding.js";
 import requestsRouter from "./routes/requests.js";
 import leaveTypesRouter from "./routes/leaveTypes.js";
@@ -119,7 +120,7 @@ if (process.env.VERCEL !== "1") {
 // Routes
 app.use("/api/auth", authRouter);
 app.use("/api/employees", employeesRouter);
-app.use("/api/customers", customersRouter);
+// app.use("/api/customers", customersRouter); // CUSTOMER ROUTES COMMENTED OUT
 app.use("/api/onboarding", onboardingRouter);
 app.use("/api/requests", requestsRouter);
 app.use("/api/leave-types", leaveTypesRouter);

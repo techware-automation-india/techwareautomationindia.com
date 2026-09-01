@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api.js";
+import { formatTime12Hour } from "../../lib/timeFormat.js";
 
 // ── shared styles ─────────────────────────────────────────────────────────────
 const inputClass =
@@ -240,8 +241,8 @@ const ShiftsPanel = () => {
                 {shifts.map(s => (
                   <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
                     <td className="px-5 py-3 font-semibold">{s.name}</td>
-                    <td className="px-5 py-3 font-mono">{s.startTime}</td>
-                    <td className="px-5 py-3 font-mono">{s.endTime}</td>
+                    <td className="px-5 py-3 font-mono">{formatTime12Hour(s.startTime)}</td>
+                    <td className="px-5 py-3 font-mono">{formatTime12Hour(s.endTime)}</td>
                     <td className="px-5 py-3 text-muted-foreground max-w-[200px] truncate">{s.description || "—"}</td>
                     <td className="px-5 py-3 text-center">
                       <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${s.isActive ? "bg-green-100 text-green-700" : "bg-rose-100 text-rose-600"}`}>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Time Format</title>
+</head>
+<body>
+    <h1>Time Format Test</h1>
+    <div id="output"></div>
+    
+    <script type="module">
+        const formatTime12Hour = (time24) => {
+          if (!time24) return "";
+          
+          const timeStr = String(time24).trim();
+          const match = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+          if (!match) return timeStr;
+          
+          let hours = parseInt(match[1], 10);
+          const minutes = match[2];
+          
+          const period = hours >= 12 ? 'PM' : 'AM';
+          
+          if (hours === 0) {
+            hours = 12;
+          } else if (hours > 12) {
+            hours = hours - 12;
+          }
+          
+          return `${hours}:${minutes} ${period}`;
+        };
+        
+        const formatTimeRange = (startTime, endTime, separator = " – ") => {
+          if (!startTime || !endTime) return "";
+          return `${formatTime12Hour(startTime)}${separator}${formatTime12Hour(endTime)}`;
+        };
+        
+        const output = document.getElementById('output');
+        output.innerHTML = `
+            <p><strong>09:00</strong> = ${formatTime12Hour('09:00')}</p>
+            <p><strong>14:30</strong> = ${formatTime12Hour('14:30')}</p>
+            <p><strong>17:00</strong> = ${formatTime12Hour('17:00')}</p>
+            <p><strong>00:00</strong> = ${formatTime12Hour('00:00')}</p>
+            <p><strong>12:00</strong> = ${formatTime12Hour('12:00')}</p>
+            <hr>
+            <p><strong>Range 09:00-17:00</strong> = ${formatTimeRange('09:00', '17:00')}</p>
+        `;
+    </script>
+</body>
+</html>

@@ -7,6 +7,9 @@ import { sendRosterAssignmentEmail } from "../utils/emailService.js";
 
 const router = Router();
 
+// All routes require authentication
+router.use(requireAuth);
+
 router.get("/me", requireAuth, async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear();
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -59,6 +62,7 @@ const includeRelations = {
 
 // GET /api/roster?year=YYYY&month=M&employeeId=
 router.get("/", requireAdminOrModulePermission("roster", "canView"), async (req, res) => {
+  console.log("📋 [GET /roster] Request received, user:", req.user?.id, "role:", req.user?.role);
   const year  = parseInt(req.query.year)  || new Date().getFullYear();
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
   const employeeId = req.query.employeeId || undefined;
@@ -87,6 +91,7 @@ router.get("/", requireAdminOrModulePermission("roster", "canView"), async (req,
 
 // GET /api/roster/meta — returns all employees, shifts, locations for dropdowns
 router.get("/meta", requireAdminOrModulePermission("roster", "canView"), async (_req, res) => {
+  console.log("📋 [GET /roster/meta] Request received, user:", _req.user?.id, "role:", _req.user?.role);
   try {
     const [employees, shifts, locations] = await Promise.all([
       prisma.user.findMany({
@@ -105,7 +110,7 @@ router.get("/meta", requireAdminOrModulePermission("roster", "canView"), async (
 });
 
 // POST /api/roster — create single entry
-router.post("/", requireAdminOrModulePermission("roster", "canCreate"), async (req, res) => {
+router.post("/", requireAuth, requireAdminOrModulePermission("roster", "canCreate"), async (req, res) => {
   const parsed = rosterEntrySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
 
@@ -154,7 +159,7 @@ router.post("/", requireAdminOrModulePermission("roster", "canCreate"), async (r
 });
 
 // POST /api/roster/bulk — upsert many entries at once
-router.post("/bulk", requireAdminOrModulePermission("roster", "canCreate"), async (req, res) => {
+router.post("/bulk", requireAuth, requireAdminOrModulePermission("roster", "canCreate"), async (req, res) => {
   const parsed = bulkSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
 
@@ -181,7 +186,7 @@ router.post("/bulk", requireAdminOrModulePermission("roster", "canCreate"), asyn
 });
 
 // DELETE /api/roster/:id
-router.delete("/:id", requireAdminOrModulePermission("roster", "canDelete"), async (req, res) => {
+router.delete("/:id", requireAuth, requireAdminOrModulePermission("roster", "canDelete"), async (req, res) => {
   try {
     await prisma.rosterEntry.delete({ where: { id: req.params.id } });
     res.json({ message: "Roster entry deleted." });

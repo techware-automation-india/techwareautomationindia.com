@@ -36,8 +36,7 @@ router.get("/me", requireAuth, requireRole("EMPLOYEE"), async (req, res) => {
   }
 });
 
-// POST /api/onboarding/submit - validate + save form, set status to SUBMITTED,
-// and raise an approval request in the admin Requests module.
+// POST /api/onboarding/submit - validate + save form, set status to APPROVED automatically (AUTO-APPROVE)
 router.post("/submit", requireAuth, requireRole("EMPLOYEE"), async (req, res) => {
   const parsed = onboardingSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -56,9 +55,6 @@ router.post("/submit", requireAuth, requireRole("EMPLOYEE"), async (req, res) =>
 
     if (profile.onboardingStatus === "APPROVED") {
       return res.status(400).json({ message: "Your onboarding is already approved." });
-    }
-    if (profile.onboardingStatus === "SUBMITTED") {
-      return res.status(400).json({ message: "Your onboarding is already submitted and pending approval." });
     }
 
     const profileData = {
@@ -108,28 +104,20 @@ router.post("/submit", requireAuth, requireRole("EMPLOYEE"), async (req, res) =>
       resumeDocument: toNull(d.resumeDocument),
       // Profile image.
       profileImage: toNull(req.body.profileImage),
-      // Status.
-      onboardingStatus: "SUBMITTED",
+      // Status - AUTO-APPROVE
+      onboardingStatus: "APPROVED",
     };
 
-    // Update profile, flip status, and create the approval request atomically.
-    const [updated] = await prisma.$transaction([
-      prisma.employeeProfile.update({
-        where: { id: profile.id },
-        data: profileData,
-      }),
-      prisma.employeeRequest.create({
-        data: {
-          employeeId: profile.id,
-          type: "ONBOARDING",
-          subject: "Onboarding approval request",
-          description: "Employee has completed and submitted the onboarding form.",
-          status: "PENDING",
-        },
-      }),
-    ]);
+    // Update profile and auto-approve (no request creation needed)
+    const updated = await prisma.employeeProfile.update({
+      where: { id: profile.id },
+      data: profileData,
+    });
 
-    res.json({ profile: updated });
+    res.json({ 
+      profile: updated,
+      message: "Onboarding submitted and automatically approved!"
+    });
   } catch (err) {
     console.error("Submit onboarding error:", err);
     res.status(500).json({ message: "Failed to submit onboarding." });

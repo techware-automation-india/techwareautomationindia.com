@@ -13,12 +13,14 @@ import AdminLayout from "./admin/AdminLayout.jsx";
 import Overview from "./admin/pages/Overview.jsx";
 import Employee from "./admin/pages/Employee.jsx";
 import EmployeeList from "./admin/pages/EmployeeList.jsx";
-import Customer from "./admin/pages/Customer.jsx";
-import CustomerList from "./admin/pages/CustomerList.jsx";
+// CUSTOMER ADMIN PAGES COMMENTED OUT
+// import Customer from "./admin/pages/Customer.jsx";
+// import CustomerList from "./admin/pages/CustomerList.jsx";
 import Requests from "./admin/pages/Requests.jsx";
 import LeaveRequests from "./admin/pages/LeaveRequests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
+import AdminMarkAttendance from "./admin/pages/MarkAttendance.jsx";
 import Attendance from "./admin/pages/Attendance.jsx";
 import Projects from "./admin/pages/Projects.jsx";
 import ProjectDetails from "./admin/pages/ProjectDetails.jsx";
@@ -36,7 +38,8 @@ import EmployeeLeave from "./employee/pages/Leave.jsx";
 import EmployeeHolidays from "./employee/pages/Holidays.jsx";
 import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
 import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
-import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
+// CUSTOMER MANAGEMENT COMMENTED OUT
+// import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
 import EmployeeRequests from "./employee/pages/Requests.jsx";
 import EmployeeLeavePolicy from "./employee/pages/LeavePolicy.jsx";
 import EmployeeProjects from "./employee/pages/Projects.jsx";
@@ -45,19 +48,18 @@ import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
 import EmployeeRoster from "./employee/pages/Roster.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
-import CustomerLayout from "./customer/CustomerLayout.jsx";
-import CustomerOverview from "./customer/pages/Overview.jsx";
-import CustomerProfile from "./customer/pages/Profile.jsx";
-import CustomerProjects from "./customer/pages/Projects.jsx";
-import CustomerRequests from "./customer/pages/Requests.jsx";
+// CUSTOMER PANEL COMMENTED OUT
+// import CustomerLayout from "./customer/CustomerLayout.jsx";
+// import CustomerOverview from "./customer/pages/Overview.jsx";
+// import CustomerProfile from "./customer/pages/Profile.jsx";
+// import CustomerProjects from "./customer/pages/Projects.jsx";
+// import CustomerRequests from "./customer/pages/Requests.jsx";
+// import CustomerDocuments from "./customer/pages/Documents.jsx";
+// import CustomerSupport from "./customer/pages/Support.jsx";
+// import CustomerNotifications from "./customer/pages/Notifications.jsx";
+// import CustomerSettings from "./customer/pages/Settings.jsx";
 
-import CustomerDocuments from "./customer/pages/Documents.jsx";
-
-import CustomerSupport from "./customer/pages/Support.jsx";
-import CustomerNotifications from "./customer/pages/Notifications.jsx";
-import CustomerSettings from "./customer/pages/Settings.jsx";
-
-const dashboardPrefixes = ["/admin", "/employee", "/customer"];
+const dashboardPrefixes = ["/admin", "/employee" /*, "/customer" */];
 
 const AppRoutes = () => {
   const location = useLocation();
@@ -100,43 +102,48 @@ const AppRoutes = () => {
         
 
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Overview />} />
+          {/* <Route index element={<Overview />} /> */}
+          <Route index element={<Employee />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
-          <Route path="customer" element={<Customer />} />
-          <Route path="customer-list" element={<CustomerList />} />
+          {/* CUSTOMER ADMIN ROUTES COMMENTED OUT */}
+          {/* <Route path="customer" element={<Customer />} /> */}
+          {/* <Route path="customer-list" element={<CustomerList />} /> */}
           <Route path="requests" element={<Requests />} />
-          <Route path="leave-requests" element={<LeaveRequests />} />
-          <Route path="leave-policy" element={<LeavePolicy />} />
-          <Route path="holidays" element={<Holidays />} />
+          {/* <Route path="leave-requests" element={<LeaveRequests />} /> */}
+          {/* <Route path="leave-policy" element={<LeavePolicy />} /> */}
+          {/* <Route path="holidays" element={<Holidays />} /> */}
+          <Route path="mark-attendance" element={<AdminMarkAttendance />} />
           <Route path="attendance" element={<Attendance />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="project/:id" element={<ProjectDetails />} />
+          {/* <Route path="projects" element={<Projects />} /> */}
+          {/* <Route path="project/:id" element={<ProjectDetails />} /> */}
           
-          <Route path="roles-access" element={<RolesAccess />} />
+          {/* <Route path="roles-access" element={<RolesAccess />} /> */}
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
         </Route>
 
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeOverview />} />
-          <Route path="onboarding" element={<EmployeeOnboarding />} />
+          {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
-          <Route path="attendance" element={<RequireOnboarding><EmployeeAttendance /></RequireOnboarding>} />
-          <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} />
-          <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} />
-          <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} />
-          <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} />
-          <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} />
-          <Route path="requests" element={<RequireOnboarding><EmployeeRequests /></RequireOnboarding>} />
-          <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} />
-          <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} />
+          <Route path="attendance" element={<EmployeeAttendance />} />
+          {/* <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} /> */}
+          {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
+          {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
+          {/* <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} /> */}
+          {/* CUSTOMER MANAGEMENT ROUTE COMMENTED OUT */}
+          {/* <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} /> */}
+          {/* <Route path="requests" element={<RequireOnboarding><EmployeeRequests /></RequireOnboarding>} /> */}
+          {/* <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} /> */}
+          {/* <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} /> */}
          
-          <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} />
-          <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} />
+          {/* <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} /> */}
+          {/* <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} /> */}
         </Route>
 
-        <Route path="/customer" element={<CustomerLayout />}>
+        {/* CUSTOMER ROUTES COMMENTED OUT */}
+        {/* <Route path="/customer" element={<CustomerLayout />}>
           <Route index element={<CustomerOverview />} />
           <Route path="profile" element={<CustomerProfile />} />
           <Route path="projects" element={<CustomerProjects />} />
@@ -147,7 +154,7 @@ const AppRoutes = () => {
           <Route path="support" element={<CustomerSupport />} />
           <Route path="notifications" element={<CustomerNotifications />} />
           <Route path="settings" element={<CustomerSettings />} />
-        </Route>
+        </Route> */}
 
         <Route path="*" element={<NotFound />} />
       </Routes>

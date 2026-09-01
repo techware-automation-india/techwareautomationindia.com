@@ -14,7 +14,7 @@ const AdminLayout = () => {
   useEffect(() => {
     if (!user || user.role !== "ADMIN") {
       clearAuth();
-      navigate("/login/admin", { replace: true });
+      navigate("/login", { replace: true });
     }
   }, [navigate, user]);
 

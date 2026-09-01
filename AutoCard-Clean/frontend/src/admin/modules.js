@@ -11,18 +11,19 @@ import {
   ShieldCheck,
   Building2,
   CalendarRange,
+  Fingerprint,
 } from "lucide-react";
 
 // Single source of truth for admin modules.
 // Sidebar navigation and routes are both generated from this list.
 export const adminModules = [
-  {
-    key: "overview",
-    label: "Dashboard",
-    path: "/admin",
-    icon: LayoutDashboard,
-    description: "Overview of all admin activity and key metrics.",
-  },
+  // {
+  //   key: "overview",
+  //   label: "Dashboard",
+  //   path: "/admin",
+  //   icon: LayoutDashboard,
+  //   description: "Overview of all admin activity and key metrics.",
+  // },
   {
     key: "employee",
     label: "Employee",
@@ -30,13 +31,13 @@ export const adminModules = [
     icon: UserPlus,
     description: "Create and manage employee records.",
   },
-  {
-    key: "customer",
-    label: "Customer",
-    path: "/admin/customer",
-    icon: Users,
-    description: "Create and manage customer records.",
-  },
+  // {
+  //   key: "customer",
+  //   label: "Customer",
+  //   path: "/admin/customer",
+  //   icon: Users,
+  //   description: "Create and manage customer records.",
+  // },
   {
     key: "requests",
     label: "Requests",
@@ -44,26 +45,33 @@ export const adminModules = [
     icon: Inbox,
     description: "Review and act on incoming employee requests.",
   },
+  // {
+  //   key: "leave-requests",
+  //   label: "Leave Requests",
+  //   path: "/admin/leave-requests",
+  //   icon: CalendarDays,
+  //   description: "Review and approve employee leave applications.",
+  // },
+  // {
+  //   key: "leave-policy",
+  //   label: "Leave Policy",
+  //   path: "/admin/leave-policy",
+  //   icon: ClipboardList,
+  //   description: "Define leave types, balances, and rules.",
+  // },
+  // {
+  //   key: "holidays",
+  //   label: "Holidays",
+  //   path: "/admin/holidays",
+  //   icon: CalendarDays,
+  //   description: "Manage the company holiday calendar.",
+  // },
   {
-    key: "leave-requests",
-    label: "Leave Requests",
-    path: "/admin/leave-requests",
-    icon: CalendarDays,
-    description: "Review and approve employee leave applications.",
-  },
-  {
-    key: "leave-policy",
-    label: "Leave Policy",
-    path: "/admin/leave-policy",
-    icon: ClipboardList,
-    description: "Define leave types, balances, and rules.",
-  },
-  {
-    key: "holidays",
-    label: "Holidays",
-    path: "/admin/holidays",
-    icon: CalendarDays,
-    description: "Manage the company holiday calendar.",
+    key: "mark-attendance",
+    label: "Mark Attendance",
+    path: "/admin/mark-attendance",
+    icon: Fingerprint,
+    description: "Mark your own attendance as admin.",
   },
   {
     key: "attendance",
@@ -72,21 +80,21 @@ export const adminModules = [
     icon: Clock,
     description: "Track and review employee attendance.",
   },
-  {
-    key: "projects",
-    label: "Projects",
-    path: "/admin/projects",
-    icon: FolderKanban,
-    description: "Create projects and assign team members.",
-  },
+  // {
+  //   key: "projects",
+  //   label: "Projects",
+  //   path: "/admin/projects",
+  //   icon: FolderKanban,
+  //   description: "Create projects and assign team members.",
+  // },
   
-  {
-    key: "roles-access",
-    label: "Roles & Access",
-    path: "/admin/roles-access",
-    icon: ShieldCheck,
-    description: "Configure roles and permission levels.",
-  },
+  // {
+  //   key: "roles-access",
+  //   label: "Roles & Access",
+  //   path: "/admin/roles-access",
+  //   icon: ShieldCheck,
+  //   description: "Configure roles and permission levels.",
+  // },
   {
     key: "shift-location",
     label: "Shift & Location",

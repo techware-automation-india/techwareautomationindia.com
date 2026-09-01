@@ -77,7 +77,7 @@ router.get("/:id", requireAuth, async (req, res) => {
 });
 
 // POST /api/locations — admin or with permission
-router.post("/", requireAdminOrModulePermission("shift-location", "canCreate"), async (req, res) => {
+router.post("/", requireAuth, requireAdminOrModulePermission("shift-location", "canCreate"), async (req, res) => {
   try {
     const data = locationSchema.parse(req.body);
     const exists = await prisma.location.findFirst({ where: { name: data.name } });
@@ -111,7 +111,7 @@ router.post("/", requireAdminOrModulePermission("shift-location", "canCreate"), 
 });
 
 // PATCH /api/locations/:id — admin or with permission
-router.patch("/:id", requireAdminOrModulePermission("shift-location", "canEdit"), async (req, res) => {
+router.patch("/:id", requireAuth, requireAdminOrModulePermission("shift-location", "canEdit"), async (req, res) => {
   try {
     const data = updateLocationSchema.parse(req.body);
     const loc = await prisma.location.findUnique({ where: { id: req.params.id } });
@@ -151,7 +151,7 @@ router.patch("/:id", requireAdminOrModulePermission("shift-location", "canEdit")
 });
 
 // DELETE /api/locations/:id — admin or with permission
-router.delete("/:id", requireAdminOrModulePermission("shift-location", "canDelete"), async (req, res) => {
+router.delete("/:id", requireAuth, requireAdminOrModulePermission("shift-location", "canDelete"), async (req, res) => {
   try {
     const loc = await prisma.location.findUnique({ where: { id: req.params.id } });
     if (!loc) return res.status(404).json({ success: false, message: "Location not found." });

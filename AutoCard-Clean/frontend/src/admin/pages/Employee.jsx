@@ -71,6 +71,25 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
     try {
       const data = await apiGet("/employees");
       setEmployees(data.employees);
+      
+      // Auto-generate next employee code
+      if (data.employees.length > 0) {
+        // Find the highest employee code number
+        const empCodes = data.employees
+          .map(e => e.employeeCode)
+          .filter(code => code && code.startsWith('EMP-'))
+          .map(code => {
+            const num = parseInt(code.replace('EMP-', ''), 10);
+            return isNaN(num) ? 0 : num;
+          });
+        
+        const maxCode = empCodes.length > 0 ? Math.max(...empCodes) : 0;
+        const nextCode = `EMP-${String(maxCode + 1).padStart(3, '0')}`;
+        setForm(prev => ({ ...prev, employeeCode: nextCode }));
+      } else {
+        // First employee
+        setForm(prev => ({ ...prev, employeeCode: 'EMP-001' }));
+      }
     } catch (err) {
       toast.error(err.message || "Failed to load employees.");
     } finally {
@@ -101,9 +120,9 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
         employeeCode: form.employeeCode,
         jobTitle: form.jobTitle || undefined,
       });
-      toast.success(`Employee "${form.fullName}" created.`);
-      setForm(emptyForm);
-      refresh();
+      toast.success(`Employee "${form.fullName}" created with code ${form.employeeCode}.`);
+      setForm({ ...emptyForm }); // Clear form but keep other fields empty
+      refresh(); // This will auto-generate the next code
     } catch (err) {
       toast.error(err.message || "Failed to create employee.");
     } finally {
@@ -200,7 +219,9 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
               value={form.employeeCode}
               onChange={(e) => setForm((p) => ({ ...p, employeeCode: e.target.value }))}
               required
+              title="Auto-generated employee code (you can edit if needed)"
             />
+            <p className="text-xs text-muted-foreground mt-1">✨ Auto-generated (editable)</p>
           </div>
           <div>
             <label className="text-sm font-medium mb-1.5 block">Login Email</label>

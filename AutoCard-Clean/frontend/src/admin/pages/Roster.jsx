@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiDelete } from "../../lib/api.js";
+import { formatTimeRange } from "../../lib/timeFormat.js";
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const MONTH_NAMES = [
@@ -34,7 +35,7 @@ const toDateStr = (d) => {
 };
 
 // ── empty form ────────────────────────────────────────────────────────────────
-const emptyForm = { employeeId: "", date: "", shiftId: "", locationId: "", note: "" };
+const emptyForm = { employeeId: "", fromDate: "", toDate: "", shiftId: "", locationId: "", note: "" };
 
 // ── StatCard ──────────────────────────────────────────────────────────────────
 const StatCard = ({ icon: Icon, label, value, tone }) => {
@@ -128,19 +129,47 @@ const Roster = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (saving) return;
-    if (!form.employeeId || !form.date || !form.shiftId) {
-      toast.error("Employee, date and shift are required.");
+    if (!form.employeeId || !form.fromDate || !form.toDate || !form.shiftId) {
+      toast.error("Employee, from date, to date and shift are required.");
       return;
     }
+    
+    // Validate date range
+    const from = new Date(form.fromDate);
+    const to = new Date(form.toDate);
+    if (to < from) {
+      toast.error("To date must be after or equal to From date.");
+      return;
+    }
+    
     setSaving(true);
     try {
-      await apiPost("/roster", form);
-      toast.success("Roster entry saved.");
+      // Create roster entries for each day in the range
+      const promises = [];
+      const currentDate = new Date(from);
+      
+      while (currentDate <= to) {
+        const dateStr = toDateStr(currentDate);
+        const entryData = {
+          employeeId: form.employeeId,
+          date: dateStr,
+          shiftId: form.shiftId,
+          locationId: form.locationId || "",
+          note: form.note || "",
+        };
+        promises.push(apiPost("/roster", entryData));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      await Promise.all(promises);
+      
+      const daysCount = Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1;
+      toast.success(`${daysCount} roster ${daysCount === 1 ? 'entry' : 'entries'} created successfully.`);
       setForm(emptyForm);
       setShowForm(false);
       loadRoster();
     } catch (err) {
-      toast.error(err.message || "Failed to save entry.");
+      toast.error(err.message || "Failed to save entries.");
     } finally {
       setSaving(false);
     }
@@ -255,17 +284,22 @@ const Roster = () => {
         </select>
       </div>
 
-      {/* ── Add Entry Form ── */}
+      {/* ── Add Entry Form (Modal) ── */}
       {showForm && (
-        <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-base font-semibold">Add Roster Entry</h2>
-            <button onClick={() => { setShowForm(false); setForm(emptyForm); }}
-              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <form onSubmit={handleSave} className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Overlay - click to close */}
+          <div className="absolute inset-0 bg-foreground/50" onClick={() => { setShowForm(false); setForm(emptyForm); }} />
+          
+          {/* Form Card */}
+          <div className="relative bg-background rounded-2xl border border-border shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-base font-semibold">Add Roster Entry</h2>
+              <button onClick={() => { setShowForm(false); setForm(emptyForm); }}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSave} className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <label className="text-sm font-medium mb-1.5 block">Employee <span className="text-destructive">*</span></label>
               <select className={inputClass} value={form.employeeId} onChange={e => setForm(p=>({...p, employeeId: e.target.value}))} required>
@@ -278,15 +312,19 @@ const Roster = () => {
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Date <span className="text-destructive">*</span></label>
-              <input type="date" className={inputClass} value={form.date} onChange={e => setForm(p=>({...p, date: e.target.value}))} required />
+              <label className="text-sm font-medium mb-1.5 block">From Date <span className="text-destructive">*</span></label>
+              <input type="date" className={inputClass} value={form.fromDate} onChange={e => setForm(p=>({...p, fromDate: e.target.value}))} required />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">To Date <span className="text-destructive">*</span></label>
+              <input type="date" className={inputClass} value={form.toDate} onChange={e => setForm(p=>({...p, toDate: e.target.value}))} required />
             </div>
             <div>
               <label className="text-sm font-medium mb-1.5 block">Shift <span className="text-destructive">*</span></label>
               <select className={inputClass} value={form.shiftId} onChange={e => setForm(p=>({...p, shiftId: e.target.value}))} required>
                 <option value="">Select shift…</option>
                 {shifts.map(s => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.startTime}–{s.endTime})</option>
+                  <option key={s.id} value={s.id}>{s.name} ({formatTimeRange(s.startTime, s.endTime, '–')})</option>
                 ))}
               </select>
             </div>
@@ -299,7 +337,7 @@ const Roster = () => {
                 ))}
               </select>
             </div>
-            <div className="lg:col-span-2">
+            <div className="sm:col-span-2 lg:col-span-3">
               <label className="text-sm font-medium mb-1.5 block">Note</label>
               <input className={inputClass} value={form.note} onChange={e => setForm(p=>({...p, note: e.target.value}))} placeholder="Optional note" maxLength={300} />
             </div>
@@ -315,6 +353,7 @@ const Roster = () => {
               </button>
             </div>
           </form>
+          </div>
         </div>
       )}
 
@@ -362,7 +401,7 @@ const Roster = () => {
                     </div>
                   ))}
                   {/* quick-add: click empty day */}
-                  <button onClick={() => { setForm(p=>({...p, date: dateStr})); setShowForm(true); }}
+                  <button onClick={() => { setForm(p=>({...p, fromDate: dateStr, toDate: dateStr})); setShowForm(true); }}
                     className="mt-auto text-muted-foreground/40 hover:text-primary transition-colors self-center">
                     <Plus className="h-3.5 w-3.5" />
                   </button>
@@ -410,7 +449,7 @@ const Roster = () => {
                         </span>
                       </td>
                       <td className="px-5 py-3 font-mono text-xs whitespace-nowrap">
-                        {e.shift ? `${e.shift.startTime} – ${e.shift.endTime}` : "—"}
+                        {e.shift ? formatTimeRange(e.shift.startTime, e.shift.endTime) : "—"}
                       </td>
                       <td className="px-5 py-3">{e.location?.name ?? "—"}</td>
                       <td className="px-5 py-3 text-muted-foreground max-w-[160px] truncate">{e.note || "—"}</td>

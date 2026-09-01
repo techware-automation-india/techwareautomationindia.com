@@ -71,8 +71,8 @@ router.post("/", requireAdminOrModulePermission("employee", "canCreate"), async 
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create user + employee profile together. Profile starts as PENDING,
-    // so the employee must complete onboarding before accessing modules.
+    // Create user + employee profile together. Profile is auto-approved
+    // so the employee can immediately access modules without onboarding.
     const user = await prisma.user.create({
       data: {
         email,
@@ -83,7 +83,7 @@ router.post("/", requireAdminOrModulePermission("employee", "canCreate"), async 
           create: {
             employeeCode,
             jobTitle: jobTitle || null,
-            onboardingStatus: "PENDING",
+            onboardingStatus: "APPROVED", // AUTO-APPROVED when created by admin
           },
         },
       },

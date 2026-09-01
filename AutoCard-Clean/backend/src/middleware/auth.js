@@ -13,14 +13,20 @@ export function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
+  console.log("🔐 [Auth Middleware] Header:", header.substring(0, 50) + "...");
+  console.log("🔐 [Auth Middleware] Token extracted:", token ? "YES" : "NO");
+
   if (!token) {
+    console.log("❌ [Auth Middleware] No token provided");
     return res.status(401).json({ message: "Authentication required." });
   }
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
+    console.log("✅ [Auth Middleware] Token valid for user:", req.user.id, "role:", req.user.role);
     next();
-  } catch {
+  } catch (err) {
+    console.log("❌ [Auth Middleware] Token verification failed:", err.message);
     return res.status(401).json({ message: "Invalid or expired session." });
   }
 }

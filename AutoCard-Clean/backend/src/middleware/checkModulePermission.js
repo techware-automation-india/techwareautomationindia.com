@@ -7,15 +7,18 @@ import prisma from "../prismaClient.js";
  */
 export function checkModulePermission(moduleKey, permission = 'canView') {
   return async (req, res, next) => {
+    console.log(`🔒 [Permission Check] Module: ${moduleKey}, Permission: ${permission}, User:`, req.user?.id, "Role:", req.user?.role);
     try {
       const user = req.user;
 
       if (!user) {
+        console.log("❌ [Permission Check] No user found in request");
         return res.status(401).json({ message: "Authentication required." });
       }
 
       // ADMIN always has full access
       if (user.role === "ADMIN") {
+        console.log("✅ [Permission Check] ADMIN access granted");
         return next();
       }
 

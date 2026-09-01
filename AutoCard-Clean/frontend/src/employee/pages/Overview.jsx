@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Clock, ArrowRight, CalendarDays, MapPin } fr
 import { employeeModules } from "../modules.js";
 import { getAuthUser } from "../../lib/auth.js";
 import { apiGet } from "../../lib/api.js";
+import { formatTimeRange } from "../../lib/timeFormat.js";
 
 const Overview = () => {
   const user = getAuthUser();
@@ -137,7 +138,7 @@ const Overview = () => {
                       })()}</div>
                       <div className="text-xs text-muted-foreground mt-1">{entry.shift?.name || "No shift assigned"}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">{entry.shift ? `${entry.shift.startTime} – ${entry.shift.endTime}` : ""}</div>
+                    <div className="text-xs text-muted-foreground">{entry.shift ? formatTimeRange(entry.shift.startTime, entry.shift.endTime) : ""}</div>
                   </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <div className="rounded-2xl border border-border bg-secondary/5 p-3">

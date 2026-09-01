@@ -45,12 +45,15 @@ const allowedOrigins = [
   "https://techwareautomationindia.vercel.app",
   "https://techwareautomationindia.com",
   "https://www.techwareautomationindia.com",
+  "https://techwareautomationindia.co.org",
+  "https://www.techwareautomationindia.co.org",
   process.env.CLIENT_ORIGIN,
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-// Pattern to match ALL Vercel preview deployments
+// Pattern to match ALL Vercel preview deployments and Hostinger domains
 const vercelPattern = /^https:\/\/.*\.vercel\.app$/i;
+const hostingerPattern = /^https:\/\/.*\.hostinger\.site$/i;
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -67,6 +70,12 @@ const corsOptions = {
     // Allow any Vercel preview deployment
     if (vercelPattern.test(origin)) {
       console.log("✅ CORS allowed Vercel preview:", origin);
+      return callback(null, true);
+    }
+
+    // Allow any Hostinger deployment
+    if (hostingerPattern.test(origin)) {
+      console.log("✅ CORS allowed Hostinger:", origin);
       return callback(null, true);
     }
 

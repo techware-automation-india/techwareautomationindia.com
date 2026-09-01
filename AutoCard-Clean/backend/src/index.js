@@ -43,6 +43,8 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://techwareautomationindia.vercel.app",
+  "https://techwareautomation.in",
+  "https://www.techwareautomation.in",
   "https://techwareautomationindia.com",
   "https://www.techwareautomationindia.com",
   "https://techwareautomationindia.co.org",

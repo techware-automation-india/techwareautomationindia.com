@@ -17,13 +17,13 @@ import {
 // Single source of truth for admin modules.
 // Sidebar navigation and routes are both generated from this list.
 export const adminModules = [
-  // {
-  //   key: "overview",
-  //   label: "Dashboard",
-  //   path: "/admin",
-  //   icon: LayoutDashboard,
-  //   description: "Overview of all admin activity and key metrics.",
-  // },
+  {
+    key: "overview",
+    label: "Dashboard",
+    path: "/admin",
+    icon: LayoutDashboard,
+    description: "Overview of all admin activity and key metrics.",
+  },
   {
     key: "employee",
     label: "Employee",

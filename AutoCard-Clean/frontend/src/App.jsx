@@ -102,8 +102,7 @@ const AppRoutes = () => {
         
 
         <Route path="/admin" element={<AdminLayout />}>
-          {/* <Route index element={<Overview />} /> */}
-          <Route index element={<Employee />} />
+          <Route index element={<Overview />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
           {/* CUSTOMER ADMIN ROUTES COMMENTED OUT */}

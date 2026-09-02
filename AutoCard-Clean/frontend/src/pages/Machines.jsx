@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 
 import Navbar from "../components/Navbar.jsx";
-import Footer from "../components/Footer.jsx";
+const Footer = lazy(() => import("../components/Footer.jsx"));
 import machines from "../data/machines.js";
 
 const ITEMS_PER_PAGE = 6;
@@ -170,7 +170,9 @@ const Machines = () => {
         </section>
       </main>
 
-      <Footer />
+      <Suspense fallback={<div className="h-96" />}>
+        <Footer />
+      </Suspense>
     </div>
   );
 };

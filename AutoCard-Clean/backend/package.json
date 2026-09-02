@@ -17,7 +17,7 @@
     "prisma:studio": "prisma studio",
     "db:seed": "node prisma/seed.js",
     "deploy": "npx prisma generate && npx prisma db push --accept-data-loss && node prisma/seed.js",
-    "postinstall": "prisma generate && prisma db push"
+"postinstall": "prisma generate && prisma db push && node prisma/seed.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

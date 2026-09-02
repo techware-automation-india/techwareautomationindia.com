@@ -40,6 +40,28 @@ async function logDatabaseConnection() {
   }
 }
 
+// Keep database connection alive with periodic health checks
+function startDatabaseHealthCheck() {
+  // Check database connection every 5 minutes
+  const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  
+  setInterval(async () => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      console.log("🔄 Database connection is healthy");
+    } catch (error) {
+      console.error("⚠️ Database health check failed:", error.message);
+      // Try to reconnect
+      try {
+        await prisma.$connect();
+        console.log("✅ Database reconnected");
+      } catch (reconnectError) {
+        console.error("❌ Database reconnection failed:", reconnectError.message);
+      }
+    }
+  }, HEALTH_CHECK_INTERVAL);
+}
+
 
 const allowedOrigins = [
   "http://localhost:5173",
@@ -163,6 +185,12 @@ if (process.env.VERCEL !== "1") {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     await logDatabaseConnection();
+    
+    // Start database health check to prevent timeouts
+    if (process.env.NODE_ENV === 'production') {
+      startDatabaseHealthCheck();
+      console.log("🔄 Database health check started");
+    }
   });
 
   // Handle server errors

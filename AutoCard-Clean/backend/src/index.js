@@ -25,16 +25,18 @@ import servicesRouter from "./routes/services.js";
 import supportRouter from "./routes/support.js";
 
 const app = express();
-const PORT = process.env.PORT || 4001;
+const PORT = process.env.PORT || 4000; // Use 4000 as fallback instead of 4001
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function logDatabaseConnection() {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    console.log("Database connected successfully.");
+    await prisma.$connect();
+    console.log("✅ Database connected successfully.");
   } catch (error) {
-    console.error("Database connection failed:", error.message);
+    console.error("❌ Database connection failed:", error.message);
+    // Don't exit - let the server continue running
+    // Database may reconnect automatically
   }
 }
 
@@ -155,16 +157,28 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Only start the server if not in serverless environment (Vercel)
-// Render.com needs the server to start normally
+// Hostinger/Render needs the server to start normally
 if (process.env.VERCEL !== "1") {
   const server = app.listen(PORT, "0.0.0.0", async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  await logDatabaseConnection();
-});
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    await logDatabaseConnection();
+  });
 
-  const shutdown = () => {
+  // Handle server errors
+  server.on('error', (error) => {
+    console.error('❌ Server error:', error);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use`);
+    }
+  });
+
+  const shutdown = async () => {
     console.log("Stopping server...");
-
+    
+    // Disconnect Prisma
+    await prisma.$disconnect();
+    
     server.close(() => {
       console.log("Server stopped.");
       process.exit(0);
@@ -175,6 +189,7 @@ if (process.env.VERCEL !== "1") {
   process.on("SIGTERM", shutdown);
 }
 
+// Log database connection on startup (for serverless too)
 logDatabaseConnection();
 
 // Export for Vercel serverless (not used on Render)

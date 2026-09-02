@@ -187,10 +187,10 @@ if (process.env.VERCEL !== "1") {
     await logDatabaseConnection();
     
     // Start database health check to prevent timeouts
-    if (process.env.NODE_ENV === 'production') {
-      startDatabaseHealthCheck();
-      console.log("🔄 Database health check started");
-    }
+    //if (process.env.NODE_ENV === 'production') {
+    //  startDatabaseHealthCheck();
+    //  console.log("🔄 Database health check started");
+  ///  }
   });
 
   // Handle server errors

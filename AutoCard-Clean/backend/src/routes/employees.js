@@ -13,7 +13,7 @@ router.use(requireAuth);
 
 const createEmployeeSchema = z.object({
   fullName: z.string().min(1, "Full name is required."),
-  email: z.string().email("A valid email is required."),
+  email: z.string().min(1, "Username is required."), // Accept any string, not just email
   password: z.string().min(6, "Password must be at least 6 characters."),
   employeeCode: z.string().min(1, "Employee code is required."),
   jobTitle: z.string().optional(),

@@ -77,18 +77,18 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
         // Find the highest employee code number
         const empCodes = data.employees
           .map(e => e.employeeCode)
-          .filter(code => code && code.startsWith('EMP-'))
+          .filter(code => code && code.startsWith('TAI'))
           .map(code => {
-            const num = parseInt(code.replace('EMP-', ''), 10);
+            const num = parseInt(code.replace('TAI', ''), 10);
             return isNaN(num) ? 0 : num;
           });
         
         const maxCode = empCodes.length > 0 ? Math.max(...empCodes) : 0;
-        const nextCode = `EMP-${String(maxCode + 1).padStart(3, '0')}`;
+        const nextCode = `TAI${String(maxCode + 1).padStart(3, '0')}`;
         setForm(prev => ({ ...prev, employeeCode: nextCode }));
       } else {
         // First employee
-        setForm(prev => ({ ...prev, employeeCode: 'EMP-001' }));
+        setForm(prev => ({ ...prev, employeeCode: 'TAI001' }));
       }
     } catch (err) {
       toast.error(err.message || "Failed to load employees.");
@@ -215,7 +215,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
             <label className="text-sm font-medium mb-1.5 block">Employee Code</label>
             <input
               className={inputClass}
-              placeholder="EMP-001"
+              placeholder="TAI001"
               value={form.employeeCode}
               onChange={(e) => setForm((p) => ({ ...p, employeeCode: e.target.value }))}
               required

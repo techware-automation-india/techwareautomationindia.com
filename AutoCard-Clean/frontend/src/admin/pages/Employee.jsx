@@ -226,9 +226,9 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
           <div>
             <label className="text-sm font-medium mb-1.5 block">Username</label>
             <input
-              type="email"
+              type="text"
               className={inputClass}
-              placeholder="jane@autocard.com"
+              placeholder="jane@autocard.com or username"
               value={form.email}
               onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
               required

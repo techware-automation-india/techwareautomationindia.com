@@ -224,7 +224,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
             <p className="text-xs text-muted-foreground mt-1">✨ Auto-generated (editable)</p>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Login ID</label>
+            <label className="text-sm font-medium mb-1.5 block">Username</label>
             <input
               type="email"
               className={inputClass}

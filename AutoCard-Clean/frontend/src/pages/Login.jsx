@@ -46,6 +46,11 @@ const Login = () => {
 
   const Icon = config.icon;
 
+  // Determine login field label and type based on role
+  const loginFieldConfig = role === "employee" 
+    ? { label: "Employee ID", placeholder: "Employee ID (e.g., EMP-001)", type: "text", icon: Briefcase }
+    : { label: "Email", placeholder: "Email address", type: "email", icon: Mail };
+
   const dashboardPath = {
     admin: "/admin",
     employee: "/employee",
@@ -116,13 +121,13 @@ const Login = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <loginFieldConfig.icon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
-                type="email"
-                name={`${role}-login-email`}
+                type={loginFieldConfig.type}
+                name={`${role}-login-identifier`}
                 autoComplete="off"
                 className={inputClass}
-                placeholder="Email address"
+                placeholder={loginFieldConfig.placeholder}
                 value={formData.email}
                 onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
                 required

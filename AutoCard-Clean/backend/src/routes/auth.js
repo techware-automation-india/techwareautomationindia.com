@@ -14,7 +14,7 @@ const roleMap = {
 };
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1), // Can be email or employee code
   password: z.string().min(1),
   role: z.enum(["admin", "employee", "customer"]).optional(),
 });
@@ -43,19 +43,41 @@ router.post("/login", async (req, res) => {
   const expectedRole = role ? roleMap[role] : null; // null means universal login
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: { employeeProfile: true, customerProfile: true },
-    });
+    let user;
+    
+    // For employee login, check if the input is an employee code
+    if (role === "employee") {
+      // Try to find by employee code first
+      const employeeProfile = await prisma.employeeProfile.findUnique({
+        where: { employeeCode: email },
+        include: { user: { include: { employeeProfile: true, customerProfile: true } } },
+      });
+      
+      if (employeeProfile) {
+        user = employeeProfile.user;
+      } else {
+        // Fall back to email lookup
+        user = await prisma.user.findUnique({
+          where: { email },
+          include: { employeeProfile: true, customerProfile: true },
+        });
+      }
+    } else {
+      // For admin and customer, use email only
+      user = await prisma.user.findUnique({
+        where: { email },
+        include: { employeeProfile: true, customerProfile: true },
+      });
+    }
 
-    // Generic message so we don't leak which emails exist.
+    // Generic message so we don't leak which emails/IDs exist.
     if (!user) {
-      return res.status(401).json({ message: "Invalid email or password." });
+      return res.status(401).json({ message: "Invalid credentials." });
     }
 
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
     if (!passwordValid) {
-      return res.status(401).json({ message: "Invalid email or password." });
+      return res.status(401).json({ message: "Invalid credentials." });
     }
 
     if (!user.isActive) {

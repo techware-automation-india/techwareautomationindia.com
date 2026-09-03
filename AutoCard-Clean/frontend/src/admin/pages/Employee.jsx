@@ -261,7 +261,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
               <input
                 type={showPassword ? "text" : "password"}
                 className={`${inputClass} pr-10`}
-                placeholder="At least 6 characters"
+                placeholder="Enter password"
                 value={form.password}
                 onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
                 required

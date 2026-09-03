@@ -48,7 +48,7 @@ const Login = () => {
 
   // Determine login field label and type based on role
   const loginFieldConfig = role === "employee" 
-    ? { label: "Employee ID", placeholder: "Employee ID (e.g., TAI001)", type: "text", icon: Briefcase }
+    ? { label: "Username", placeholder: "Enter your username", type: "text", icon: User }
     : { label: "Email", placeholder: "Email address", type: "email", icon: Mail };
 
   const dashboardPath = {

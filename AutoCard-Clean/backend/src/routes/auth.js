@@ -45,11 +45,41 @@ router.post("/login", async (req, res) => {
   try {
     let user;
     
-    // For all roles, use the email/username field to find the user
-    user = await prisma.user.findUnique({
-      where: { email },
-      include: { employeeProfile: true, customerProfile: true },
-    });
+    // For employees, use username (employee code) only
+    if (role === "employee") {
+      const employeeProfile = await prisma.employeeProfile.findFirst({
+        where: { employeeCode: email },
+        include: { user: { include: { employeeProfile: true, customerProfile: true } } },
+      });
+      
+      if (employeeProfile) {
+        user = employeeProfile.user;
+      }
+    } else if (!role) {
+      // Universal login - try email first, then employee code
+      user = await prisma.user.findUnique({
+        where: { email },
+        include: { employeeProfile: true, customerProfile: true },
+      });
+      
+      // If not found by email, try to find employee by employee code
+      if (!user) {
+        const employeeProfile = await prisma.employeeProfile.findFirst({
+          where: { employeeCode: email },
+          include: { user: { include: { employeeProfile: true, customerProfile: true } } },
+        });
+        
+        if (employeeProfile) {
+          user = employeeProfile.user;
+        }
+      }
+    } else {
+      // For admin and customer, use email only
+      user = await prisma.user.findUnique({
+        where: { email },
+        include: { employeeProfile: true, customerProfile: true },
+      });
+    }
 
     // Generic message so we don't leak which emails/IDs exist.
     if (!user) {

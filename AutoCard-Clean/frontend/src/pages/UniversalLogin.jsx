@@ -80,17 +80,17 @@ const UniversalLogin = () => {
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
+            {/* Email or Username */}
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
-                type="email"
+                type="text"
                 className={inputClass}
-                placeholder="Email address"
+                placeholder="Email or Username"
                 value={formData.email}
                 onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
                 required
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
 

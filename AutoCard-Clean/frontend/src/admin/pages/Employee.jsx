@@ -6,9 +6,9 @@ import { apiGet, apiPost, apiDelete } from "../../lib/api.js";
 
 const emptyForm = {
   fullName: "",
-  email: "",
-  password: "",
-  employeeCode: "",
+  email: "", // Will be auto-filled by loadEmployees
+  password: "", // Will be auto-filled by loadEmployees
+  employeeCode: "", // Will be auto-filled by loadEmployees
   jobTitle: "",
 };
 
@@ -72,24 +72,35 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
       const data = await apiGet("/employees");
       setEmployees(data.employees);
       
-      // Auto-generate next employee code
+      // Auto-generate next employee code ONLY (format: TAI-001, TAI-002, etc.)
+      let nextCode;
+      
       if (data.employees.length > 0) {
         // Find the highest employee code number
         const empCodes = data.employees
           .map(e => e.employeeCode)
           .filter(code => code && code.startsWith('TAI'))
           .map(code => {
-            const num = parseInt(code.replace('TAI', ''), 10);
+            // Handle both TAI001 and TAI-001 formats
+            const num = parseInt(code.replace('TAI', '').replace('-', ''), 10);
             return isNaN(num) ? 0 : num;
           });
         
         const maxCode = empCodes.length > 0 ? Math.max(...empCodes) : 0;
-        const nextCode = `TAI${String(maxCode + 1).padStart(3, '0')}`;
-        setForm(prev => ({ ...prev, employeeCode: nextCode }));
+        nextCode = `TAI-${String(maxCode + 1).padStart(3, '0')}`; // Format: TAI-001
       } else {
         // First employee
-        setForm(prev => ({ ...prev, employeeCode: 'TAI001' }));
+        nextCode = 'TAI-001';
       }
+      
+      console.log('Auto-filling employee code only:', { nextCode });
+      
+      // Only set employee code, NOT username or password
+      setForm(prev => ({ 
+        ...prev, 
+        employeeCode: nextCode
+        // email and password remain empty - admin must fill them
+      }));
     } catch (err) {
       toast.error(err.message || "Failed to load employees.");
     } finally {
@@ -121,8 +132,18 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
         jobTitle: form.jobTitle || undefined,
       });
       toast.success(`Employee "${form.fullName}" created with code ${form.employeeCode}.`);
-      setForm({ ...emptyForm }); // Clear form but keep other fields empty
-      refresh(); // This will auto-generate the next code
+      
+      // Clear form first
+      setForm({
+        fullName: "",
+        email: "",
+        password: "",
+        employeeCode: "",
+        jobTitle: "",
+      });
+      
+      // Then reload and auto-fill with next values
+      refresh();
     } catch (err) {
       toast.error(err.message || "Failed to create employee.");
     } finally {
@@ -215,7 +236,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
             <label className="text-sm font-medium mb-1.5 block">Employee Code</label>
             <input
               className={inputClass}
-              placeholder="TAI001"
+              placeholder="TAI-001"
               value={form.employeeCode}
               onChange={(e) => setForm((p) => ({ ...p, employeeCode: e.target.value }))}
               required
@@ -228,7 +249,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
             <input
               type="text"
               className={inputClass}
-              placeholder="jane@autocard.com or username"
+              placeholder="TAI-001"
               value={form.email}
               onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
               required

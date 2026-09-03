@@ -5,6 +5,7 @@ import ScrollToTop from "./components/ScrollToTop.jsx";
 import { applyTheme, getPreferredTheme, onThemeChange } from "./lib/theme.js";
 import Index from "./pages/Index.jsx";
 
+import Login from "./pages/Login.jsx";
 import UniversalLogin from "./pages/UniversalLogin.jsx";
 import Machines from "./pages/Machines.jsx";
 import NotFound from "./pages/NotFound.jsx";
@@ -99,6 +100,7 @@ const AppRoutes = () => {
         <Route path="/" element={<Index />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/login" element={<UniversalLogin />} />
+        <Route path="/login/:role" element={<Login />} />
         
 
         <Route path="/admin" element={<AdminLayout />}>

@@ -123,6 +123,7 @@ const Login = () => {
             <div className="relative">
               <loginFieldConfig.icon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
+                key={`${role}-login-field`}
                 type={loginFieldConfig.type}
                 name={`${role}-login-identifier`}
                 autoComplete="off"
@@ -131,6 +132,7 @@ const Login = () => {
                 value={formData.email}
                 onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
                 required
+                inputMode={role === "employee" ? "text" : "email"}
               />
             </div>
 

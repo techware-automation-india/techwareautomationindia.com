@@ -77,9 +77,10 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-// Pattern to match ALL Vercel preview deployments and Hostinger domains
+// Pattern to match ALL Vercel deployments (including preview deployments with hashes)
 const vercelPattern = /^https:\/\/.*\.vercel\.app$/i;
 const hostingerPattern = /^https:\/\/.*\.hostinger\.site$/i;
+const hostingerWebPattern = /^https:\/\/.*\.hostingersite\.com$/i;
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -93,14 +94,14 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow any Vercel preview deployment
+    // Allow any Vercel deployment (production and preview)
     if (vercelPattern.test(origin)) {
-      console.log("✅ CORS allowed Vercel preview:", origin);
+      console.log("✅ CORS allowed Vercel:", origin);
       return callback(null, true);
     }
 
     // Allow any Hostinger deployment
-    if (hostingerPattern.test(origin)) {
+    if (hostingerPattern.test(origin) || hostingerWebPattern.test(origin)) {
       console.log("✅ CORS allowed Hostinger:", origin);
       return callback(null, true);
     }
@@ -111,7 +112,8 @@ const corsOptions = {
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  optionsSuccessStatus: 204, // Some legacy browsers choke on 204
+  exposedHeaders: ["Content-Length", "X-Request-Id"],
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));

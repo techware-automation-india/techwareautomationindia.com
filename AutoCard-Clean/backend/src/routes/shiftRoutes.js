@@ -99,11 +99,25 @@ router.delete("/:id", requireAuth, requireAdminOrModulePermission("shift-locatio
   try {
     const shift = await prisma.shift.findUnique({ where: { id: req.params.id } });
     if (!shift) return res.status(404).json({ success: false, message: "Shift not found." });
+    
+    // First, unassign this shift from all employees
+    await prisma.employeeProfile.updateMany({
+      where: { shiftId: req.params.id },
+      data: { shiftId: null }
+    });
+    
+    // Then delete all roster entries with this shift
+    await prisma.rosterEntry.deleteMany({
+      where: { shiftId: req.params.id }
+    });
+    
+    // Finally, delete the shift
     await prisma.shift.delete({ where: { id: req.params.id } });
-    res.json({ success: true, message: "Shift deleted." });
+    
+    res.json({ success: true, message: "Shift deleted and unassigned from all employees." });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Internal server error." });
+    res.status(500).json({ success: false, message: "Failed to delete shift. Please try again." });
   }
 });
 

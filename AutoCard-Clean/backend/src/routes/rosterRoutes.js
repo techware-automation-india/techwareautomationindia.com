@@ -89,19 +89,37 @@ router.get("/", requireAdminOrModulePermission("roster", "canView"), async (req,
   }
 });
 
-// GET /api/roster/meta — returns all employees, shifts, locations for dropdowns
+// GET /api/roster/meta — returns employees with shift+location, all shifts, locations
 router.get("/meta", requireAdminOrModulePermission("roster", "canView"), async (_req, res) => {
   console.log("📋 [GET /roster/meta] Request received, user:", _req.user?.id, "role:", _req.user?.role);
   try {
-    const [employees, shifts, locations] = await Promise.all([
+    const [allEmployees, shifts, locations] = await Promise.all([
       prisma.user.findMany({
         where: { role: "EMPLOYEE" },
-        select: { id: true, fullName: true, email: true, employeeProfile: { select: { id: true, employeeCode: true } } },
+        select: { 
+          id: true, 
+          fullName: true, 
+          email: true, 
+          employeeProfile: { 
+            select: { 
+              id: true, 
+              employeeCode: true,
+              shiftId: true,      // Check if shift assigned
+              locationId: true    // Check if location assigned
+            } 
+          } 
+        },
         orderBy: { fullName: "asc" },
       }),
       prisma.shift.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
       prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     ]);
+    
+    // Filter employees to only include those with shift AND location assigned
+    const employees = allEmployees.filter(emp => 
+      emp.employeeProfile?.shiftId && emp.employeeProfile?.locationId
+    );
+    
     res.json({ employees, shifts, locations });
   } catch (err) {
     console.error("Roster meta error:", err);

@@ -332,9 +332,12 @@ const Roster = () => {
               <label className="text-sm font-medium mb-1.5 block">Location</label>
               <select className={inputClass} value={form.locationId} onChange={e => setForm(p=>({...p, locationId: e.target.value}))}>
                 <option value="">No specific location</option>
-                {locations.map(l => (
-                  <option key={l.id} value={l.id}>{l.name}{l.city ? ` — ${l.city}` : ""}</option>
-                ))}
+                {locations
+                  .filter(l => l.name.toLowerCase() !== 'head office duty')
+                  .map(l => (
+                    <option key={l.id} value={l.id}>{l.name}{l.city ? ` — ${l.city}` : ""}</option>
+                  ))
+                }
               </select>
             </div>
             <div className="sm:col-span-2 lg:col-span-3">

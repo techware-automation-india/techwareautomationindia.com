@@ -8,11 +8,35 @@ const router = Router();
 // All routes require authentication
 router.use(requireAuth);
 
+const REGULAR_WORKING_HOURS = 8;
+const fitAttendanceNote = (note) => (note ? String(note).slice(0, 190) : note);
+
 const calculateWorkedHours = (checkIn, checkOut) => {
   if (!checkIn || !checkOut) return null;
-  const workedMs = new Date(checkOut).getTime() - new Date(checkIn).getTime();
+
+  const workedMs =
+    new Date(checkOut).getTime() - new Date(checkIn).getTime();
+
   if (workedMs < 0) return 0;
-  return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
+
+  return parseFloat(
+    (workedMs / (1000 * 60 * 60)).toFixed(2)
+  );
+};
+
+// Anything above 8 hours is overtime
+const calculateOvertimeHours = (workedHours) => {
+  if (workedHours == null) return 0;
+
+  const hours = Number(workedHours);
+
+  if (!Number.isFinite(hours) || hours <= REGULAR_WORKING_HOURS) {
+    return 0;
+  }
+
+  return parseFloat(
+    (hours - REGULAR_WORKING_HOURS).toFixed(2)
+  );
 };
 
 const parseLocationString = (location) => {
@@ -27,7 +51,7 @@ const parseLocationString = (location) => {
 
 const getLocationLabel = (targetLocation) => {
   if (!targetLocation) return "Assigned location";
-  return targetLocation.isDefault ? "Office" : targetLocation.name || "Assigned location";
+  return targetLocation.name || (targetLocation.isDefault ? "Office" : "Assigned location");
 };
 
 const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
@@ -177,20 +201,35 @@ router.get("/me", requireAuth, async (req, res) => {
       const key = formatDateKey(current);
       const attendance = attendanceByDate.get(key);
 
-      if (attendance) {
-        const status = attendance.status;
-        if (summary[status] !== undefined) summary[status] += 1;
-        populatedRecords.push({
-          id: attendance.id,
-          date: attendance.date,
-          checkIn: attendance.checkIn,
-          checkOut: attendance.checkOut,
-          status,
-          workedHours: attendance.workedHours ?? calculateWorkedHours(attendance.checkIn, attendance.checkOut),
-          note: attendance.note,
-        });
-        continue;
-      }
+     if (attendance) {
+  const status = attendance.status;
+
+  if (summary[status] !== undefined) {
+    summary[status] += 1;
+  }
+
+  const workedHours =
+    attendance.workedHours ??
+    calculateWorkedHours(
+      attendance.checkIn,
+      attendance.checkOut
+    );
+
+  const overtimeHours = calculateOvertimeHours(workedHours);
+
+  populatedRecords.push({
+    id: attendance.id,
+    date: attendance.date,
+    checkIn: attendance.checkIn,
+    checkOut: attendance.checkOut,
+    status,
+    workedHours,
+    overtimeHours,
+    note: attendance.note,
+  });
+
+  continue;
+}
 
       if (!isWorkingDay(current)) {
         continue;
@@ -431,7 +470,7 @@ router.post("/checkin", requireAuth, async (req, res) => {
         date: today,
         checkIn: now,
         status,
-        note,
+        note: fitAttendanceNote(note),
         checkInLatitude: coordinates.latitude,
         checkInLongitude: coordinates.longitude,
       },
@@ -601,7 +640,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
           checkOutLongitude: coordinates.longitude,
           workedHours,
           status: "PENDING_APPROVAL",
-          note: updatedNote,
+          note: fitAttendanceNote(updatedNote),
         },
       });
 
@@ -621,7 +660,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
         checkOutLongitude: coordinates.longitude,
         workedHours,
         status,
-        note: updatedNote,
+        note: fitAttendanceNote(updatedNote),
       },
     });
 
@@ -909,6 +948,10 @@ router.get("/register/weekly", async (req, res) => {
           status,
           checkIn,
           checkOut,
+          checkInLatitude: attendance?.checkInLatitude ?? null,
+          checkInLongitude: attendance?.checkInLongitude ?? null,
+          checkOutLatitude: attendance?.checkOutLatitude ?? null,
+          checkOutLongitude: attendance?.checkOutLongitude ?? null,
           workedHours,
           note,
         });
@@ -976,7 +1019,7 @@ router.post("/:id/approve", requireAdminOrModulePermission("attendance", "canEdi
       data: {
         workedHours,
         status: finalStatus,
-        note: record.note ? `${record.note} | Approved by admin` : "Approved by admin",
+        note: fitAttendanceNote(record.note ? `${record.note} | Approved by admin` : "Approved by admin"),
       },
     });
 
@@ -999,7 +1042,7 @@ router.post("/:id/reject", requireAdminOrModulePermission("attendance", "canEdit
       where: { id },
       data: {
         status: "ABSENT",
-        note: record.note ? `${record.note} | Rejected by admin` : "Rejected by admin",
+        note: fitAttendanceNote(record.note ? `${record.note} | Rejected by admin` : "Rejected by admin"),
       },
     });
 
@@ -1085,6 +1128,10 @@ router.get("/:employeeId", requireAdminOrModulePermission("attendance", "canView
           date: existing.date,
           checkIn: existing.checkIn,
           checkOut: existing.checkOut,
+          checkInLatitude: existing.checkInLatitude,
+          checkInLongitude: existing.checkInLongitude,
+          checkOutLatitude: existing.checkOutLatitude,
+          checkOutLongitude: existing.checkOutLongitude,
           status,
           workedHours: existing.workedHours ?? calculateWorkedHours(existing.checkIn, existing.checkOut),
           note: existing.note,

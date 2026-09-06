@@ -13,6 +13,64 @@ const reviewSchema = z.object({
   note: z.string().optional(),
 });
 
+const employeeRequestSchema = z.object({
+  type: z.enum(["GENERAL", "DOCUMENT", "EQUIPMENT", "CORRECTION", "OTHER"]).default("GENERAL"),
+  subject: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(5000).optional().or(z.literal("")),
+});
+
+async function getEmployeeProfile(userId) {
+  return prisma.employeeProfile.findUnique({ where: { userId } });
+}
+
+// Employee self-service request routes.
+router.get("/my", async (req, res) => {
+  if (req.user.role !== "EMPLOYEE") {
+    return res.status(403).json({ message: "Employee access required." });
+  }
+
+  try {
+    const employee = await getEmployeeProfile(req.user.id);
+    if (!employee) return res.status(404).json({ message: "Employee profile not found." });
+
+    const requests = await prisma.employeeRequest.findMany({
+      where: {
+        employeeId: employee.id,
+        type: { not: "ONBOARDING" },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ requests });
+  } catch (err) {
+    console.error("List employee requests error:", err);
+    res.status(500).json({ message: "Failed to load your requests." });
+  }
+});
+
+router.post("/my", async (req, res) => {
+  if (req.user.role !== "EMPLOYEE") {
+    return res.status(403).json({ message: "Employee access required." });
+  }
+
+  const parsed = employeeRequestSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ message: "Subject and valid request details are required." });
+  }
+
+  try {
+    const employee = await getEmployeeProfile(req.user.id);
+    if (!employee) return res.status(404).json({ message: "Employee profile not found." });
+
+    const request = await prisma.employeeRequest.create({
+      data: { ...parsed.data, employeeId: employee.id },
+    });
+    res.status(201).json({ request, message: "Request submitted successfully." });
+  } catch (err) {
+    console.error("Create employee request error:", err);
+    res.status(500).json({ message: "Failed to submit request." });
+  }
+});
+
 // GET /api/requests - list employee requests (newest first).
 router.get("/", requireAdminOrModulePermission("requests", "canView"), async (req, res) => {
   try {

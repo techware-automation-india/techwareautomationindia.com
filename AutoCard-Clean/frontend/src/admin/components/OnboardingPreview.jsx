@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   X, Loader2, User, Briefcase, FileText, Check,
   Mail, Phone, MapPin, Heart, CreditCard, GraduationCap, Calendar,
-  Globe, Droplet, Award, Building2, ExternalLink, Eye,
+  Globe, Droplet, Award, Building2, ExternalLink, Eye, Timer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPut } from "../../lib/api.js";
@@ -24,6 +24,13 @@ const fmtDate = (v) => {
 const fmtExp = (v) => {
   if (v === null || v === undefined || v === "") return null;
   return Number(v) === 0 ? "Fresher (No Experience)" : `${v} years`;
+};
+
+const fmtHours = (value) => {
+  const hours = Number(value);
+  if (!Number.isFinite(hours)) return "0h 0m";
+  const totalMinutes = Math.round(hours * 60);
+  return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
 };
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -143,6 +150,8 @@ const OnboardingPreview = ({
   const [saving, setSaving] = useState(false);
   const [locations, setLocations] = useState([]);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [overtimeData, setOvertimeData] = useState(null);
+  const [overtimeLoading, setOvertimeLoading] = useState(false);
 
   const isFromRequests = !!requestId;
 
@@ -177,6 +186,45 @@ const OnboardingPreview = ({
       setEditForm(profile);
     }
   }, [profile]);
+
+  useEffect(() => {
+    const employeeId = profile?.id;
+    if (!employeeId || isEditing) return;
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    let cancelled = false;
+
+    const loadOvertime = async () => {
+      setOvertimeLoading(true);
+      try {
+        const data = await apiGet(`/attendance/${employeeId}?year=${year}&month=${month}`);
+        if (!cancelled) {
+          const entries = (data.records || [])
+            .map((record) => {
+              const workedHours = Number(record.workedHours);
+              const overtimeHours = Number.isFinite(workedHours) ? Math.max(0, workedHours - 8) : 0;
+              return { ...record, workedHours, overtimeHours };
+            })
+            .filter((record) => record.overtimeHours > 0);
+
+          setOvertimeData({ year, month, entries });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setOvertimeData({ year, month, entries: [], error: err.message || "Failed to load overtime." });
+        }
+      } finally {
+        if (!cancelled) setOvertimeLoading(false);
+      }
+    };
+
+    loadOvertime();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, isEditing]);
 
   const loadLocations = async () => {
     setLocationLoading(true);
@@ -643,6 +691,76 @@ const OnboardingPreview = ({
                 </div>
               )}
             </Section>
+
+            {/* Overtime */}
+            <div className="rounded-xl border-2 border-border bg-gradient-to-br from-background to-orange-50/40 p-6">
+              <div className="flex items-start gap-3 mb-5 pb-4 border-b border-border/50">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center border-2 bg-orange-50 text-orange-600 border-orange-100 shrink-0">
+                  <Timer className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-display font-bold text-base">Overtime</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Current month hours above the standard 8-hour workday
+                  </p>
+                </div>
+                {overtimeData && (
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {new Date(overtimeData.year, overtimeData.month - 1).toLocaleString([], { month: "long", year: "numeric" })}
+                  </span>
+                )}
+              </div>
+
+              {overtimeLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading overtime...
+                </div>
+              ) : overtimeData?.error ? (
+                <p className="py-3 text-sm text-rose-600">{overtimeData.error}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                      <div className="text-xs font-medium uppercase tracking-wide text-orange-700">Total Overtime</div>
+                      <div className="mt-1 text-2xl font-bold text-orange-900">
+                        {fmtHours(overtimeData?.entries.reduce((total, record) => total + record.overtimeHours, 0))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-secondary/30 p-4">
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Overtime Days</div>
+                      <div className="mt-1 text-2xl font-bold text-foreground">{overtimeData?.entries.length || 0}</div>
+                    </div>
+                  </div>
+
+                  {overtimeData?.entries.length > 0 ? (
+                    <div className="overflow-x-auto rounded-xl border border-border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-3 font-medium">Date</th>
+                            <th className="px-4 py-3 font-medium">Worked</th>
+                            <th className="px-4 py-3 font-medium text-right">Overtime</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {overtimeData.entries.map((record) => (
+                            <tr key={record.id || record.date} className="border-t border-border">
+                              <td className="px-4 py-3 font-medium">{fmtDate(record.date) || "—"}</td>
+                              <td className="px-4 py-3 text-muted-foreground">{fmtHours(record.workedHours)}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-orange-700">{fmtHours(record.overtimeHours)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                      No overtime recorded this month.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             {/* Documents — all rendered as clickable links */}
             <Section icon={FileText} title="Documents & Identification" subtitle="Click any link to open the document" accent="primary">

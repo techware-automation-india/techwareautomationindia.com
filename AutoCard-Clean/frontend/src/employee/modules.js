@@ -50,6 +50,14 @@ const defaultModules = [
     description: "View your attendance history.",
     alwaysVisible: true,
   },
+  {
+    key: "requests",
+    label: "Requests",
+    path: "/employee/requests",
+    icon: FileText,
+    description: "Submit and track requests.",
+    alwaysVisible: true,
+  },
   // {
   //   key: "leave",
   //   label: "Leave",

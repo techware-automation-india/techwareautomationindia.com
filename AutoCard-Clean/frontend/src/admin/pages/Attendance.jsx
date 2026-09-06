@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clock, Loader2, ChevronLeft, ChevronRight, Users, X, CheckCircle2, AlertCircle, MapPin } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 
@@ -31,6 +32,44 @@ const fmtWorkedHours = (value) => {
   return `${h}h ${m}m`;
 };
 
+const formatAttendanceNote = (note) => {
+  if (!note) return "";
+  const hasUnassignedCheckIn = /Checkin(?:\s+from|\s+to)?\s+unassigned location/i.test(note);
+  const hasUnassignedCheckOut = /Checkout(?:\s+from)?\s+unassigned location/i.test(note);
+  const checkInMatch = note.match(/(?:^|\|)\s*Checkin:\s*([^|.]+?)(?:\s*\||$)/i);
+  const checkOutMatch = note.match(/(?:^|\|)\s*Checkout:\s*([^|.]+?)(?:\s*\||$)/i);
+
+  if (!hasUnassignedCheckIn && !hasUnassignedCheckOut && !checkInMatch && !checkOutMatch) return note;
+
+  const checkInLocation = hasUnassignedCheckIn
+    ? "Unassigned Location"
+    : checkInMatch?.[1]?.trim();
+  const checkOutLocation = hasUnassignedCheckOut
+    ? "Unassigned Location"
+    : checkOutMatch?.[1]?.trim();
+
+  if (!checkInLocation && !checkOutLocation) return note;
+  if (checkInLocation?.toLowerCase() === "head office" || checkOutLocation?.toLowerCase() === "head office") {
+    return "Location: Head Office";
+  }
+  if (checkInLocation && checkOutLocation && checkInLocation.toLowerCase() === checkOutLocation.toLowerCase()) {
+    return `Location: ${checkInLocation}`;
+  }
+
+  return [
+    checkInLocation && `Check In: ${checkInLocation}`,
+    checkOutLocation && `Check Out: ${checkOutLocation}`,
+  ].filter(Boolean).join("\n");
+};
+
+const extractSubmittedReason = (note) => {
+  if (!note) return "No reason provided.";
+  const reasonMatch = note.match(/Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.|$)/i);
+  return reasonMatch?.[1]?.trim() || note;
+};
+
+const hasSubmittedReason = (note) => /reason:/i.test(note || "");
+
 const fmtDateDMY = (value) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -48,6 +87,7 @@ const formatDateKey = (date) => {
 };
 
 const Attendance = () => {
+  const navigate = useNavigate();
   const today = new Date();
   const todayKey = formatDateKey(new Date());
   const [employees, setEmployees] = useState([]);
@@ -63,9 +103,10 @@ const Attendance = () => {
   const [showDetailedRecords, setShowDetailedRecords] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
-  const [loadingPendingApprovals, setLoadingPendingApprovals] = useState(false);
   const [mapModal, setMapModal] = useState(null); // null or { latitude, longitude, employee, checkIn }
   const [rejectModal, setRejectModal] = useState(null); // null or { recordId, employeeName, reason }
+  const [attendanceReasonModal, setAttendanceReasonModal] = useState(null);
+  const knownPendingIds = useRef(null);
   const isAllEmployees = selectedId === "all";
 
   const loadEmployees = async () => {
@@ -84,13 +125,25 @@ const Attendance = () => {
 
   const loadPendingApprovals = async () => {
     try {
-      setLoadingPendingApprovals(true);
       const res = await apiGet("/attendance/pending-approvals");
-      setPendingApprovals(res.pendingRecords || []);
+      const nextPending = res.pendingRecords || [];
+      const nextPendingIds = new Set(nextPending.map((record) => record.id));
+
+      if (knownPendingIds.current) {
+        const newRequest = nextPending.find((record) => !knownPendingIds.current.has(record.id));
+        if (newRequest) {
+          const employeeName = newRequest.employee?.user?.fullName || "An employee";
+          toast.warning("New attendance approval request", {
+            description: `${employeeName} checked in or out from an unassigned location.`,
+            duration: 6000,
+          });
+        }
+      }
+
+      knownPendingIds.current = nextPendingIds;
+      setPendingApprovals(nextPending);
     } catch (err) {
       console.error("Failed to load pending approvals:", err);
-    } finally {
-      setLoadingPendingApprovals(false);
     }
   };
 
@@ -124,19 +177,8 @@ const Attendance = () => {
     console.log("Extracted coordinates:", coords);
     
     if (coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)) {
-      const locationName =
-        record?.note?.match(/: (.*?)(?:\s*\(|$)/)?.[1]?.trim() ||
-        record?.note?.match(/to\s+(.+?)(?:\s*\(|\.|$)/)?.[1]?.trim() ||
-        "Unknown Location";
-
-      setMapModal({
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        employee: record.employee,
-        checkIn: record.checkIn || record.checkOut,
-        note: record.note,
-        locationName,
-      });
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`;
+      window.open(mapsUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
@@ -148,6 +190,15 @@ const Attendance = () => {
       await loadEmployees();
       await loadPendingApprovals();
     })();
+  }, []);
+
+  useEffect(() => {
+    const refreshPendingApprovals = () => {
+      loadPendingApprovals();
+    };
+
+    const intervalId = window.setInterval(refreshPendingApprovals, 10000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   // Fetch attendance whenever the selected employee or month changes.
@@ -285,8 +336,17 @@ const Attendance = () => {
     ? registerData?.summary || {}
     : data?.summary || {};
   const records = isAllEmployees ? registerData?.records || [] : data?.records || [];
+  const overtimeDays = records.filter((record) => Number(record.workedHours) > 8).length;
+  const overtimeMeta = {
+    label: "Overtime",
+    dot: "bg-orange-500",
+    cell: "bg-orange-50 border-orange-200 text-orange-700",
+  };
   const filteredRecords = selectedStatus
     ? records.filter((rec) => {
+        if (selectedStatus === "OVERTIME") {
+          return Number(rec.workedHours) > 8;
+        }
         // Do not show ABSENT records for today or future days (people may still arrive)
         if (selectedStatus === "ABSENT") {
           const recKey = formatDateKey(rec.date);
@@ -295,6 +355,7 @@ const Attendance = () => {
         return rec.status === selectedStatus;
       })
     : records;
+  const selectedStatusMeta = selectedStatus === "OVERTIME" ? overtimeMeta : statusMeta[selectedStatus];
 
   const registerStartDate = registerData?.startDate ? new Date(registerData.startDate) : null;
   const registerDates = registerStartDate
@@ -351,6 +412,9 @@ const Attendance = () => {
       await loadPendingApprovals();
       if (selectedId === "all") {
         await reloadRegister();
+      } else if (selectedId) {
+        const res = await apiGet(`/attendance/${selectedId}?year=${year}&month=${month}`);
+        setData(res);
       }
     } catch (err) {
       toast.error(err.message || "Failed to approve.");
@@ -365,6 +429,9 @@ const Attendance = () => {
       await loadPendingApprovals();
       if (selectedId === "all") {
         await reloadRegister();
+      } else if (selectedId) {
+        const res = await apiGet(`/attendance/${selectedId}?year=${year}&month=${month}`);
+        setData(res);
       }
     } catch (err) {
       toast.error(err.message || "Failed to reject.");
@@ -376,6 +443,23 @@ const Attendance = () => {
       recordId: record.id,
       employeeName: record.employee?.user?.fullName || record.employee?.fullName || "Employee",
       reason: record.note || "Unapproved location",
+    });
+  };
+
+  const openAttendanceReason = (record, employeeName) => {
+    setAttendanceReasonModal({
+      employeeName: employeeName || "Employee",
+      reason: extractSubmittedReason(record.note),
+      recordId: record.id,
+      date: record.date,
+      checkIn: record.checkIn,
+      checkOut: record.checkOut,
+      checkInLatitude: record.checkInLatitude,
+      checkInLongitude: record.checkInLongitude,
+      checkOutLatitude: record.checkOutLatitude,
+      checkOutLongitude: record.checkOutLongitude,
+      status: record.status,
+      statusLabel: statusMeta[record.status]?.label || record.status || "Awaiting Approval",
     });
   };
 
@@ -394,7 +478,7 @@ const Attendance = () => {
 
           <div>
             <h1 className="font-display text-2xl font-bold text-right">
-              {statusMeta[selectedStatus]?.label} Records
+              {selectedStatusMeta?.label} Records
             </h1>
             <p className="text-sm text-muted-foreground text-right">
               {monthNames[month - 1]} {year}
@@ -406,14 +490,14 @@ const Attendance = () => {
           <div className="px-6 py-4 border-b border-border bg-secondary/30">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="font-display text-lg font-semibold">{statusMeta[selectedStatus]?.label} Attendance</div>
+                <div className="font-display text-lg font-semibold">{selectedStatusMeta?.label} Attendance</div>
                 <div className="text-xs text-muted-foreground">
                   {filteredRecords.length} record{filteredRecords.length === 1 ? "" : "s"} found
                 </div>
               </div>
-              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusMeta[selectedStatus]?.cell}`}>
-                <span className={`w-2 h-2 rounded-full ${statusMeta[selectedStatus]?.dot}`} />
-                {statusMeta[selectedStatus]?.label}
+              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${selectedStatusMeta?.cell}`}>
+                <span className={`w-2 h-2 rounded-full ${selectedStatusMeta?.dot}`} />
+                {selectedStatusMeta?.label}
               </span>
             </div>
           </div>
@@ -506,7 +590,7 @@ const Attendance = () => {
               </>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-6">
-                No {statusMeta[selectedStatus].label.toLowerCase()} records for {monthNames[month - 1]} {year}.
+                No {selectedStatusMeta?.label.toLowerCase()} records for {monthNames[month - 1]} {year}.
               </p>
             )}
           </div>
@@ -537,98 +621,31 @@ const Attendance = () => {
         </div>
       </div>
 
-     
-
-      {/* Pending Approvals */}
-      {pendingApprovals.length > 0 && (
-        <div className="rounded-2xl bg-background border border-amber-200 card-shadow overflow-hidden">
-          {/* Header */}
-          <div className="border-b border-amber-200 bg-amber-50/50 px-6 py-3">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-700" />
-              <span className="font-semibold text-amber-900">Approval Requests ({pendingApprovals.length})</span>
-            </div>
+      <div className={`flex w-full items-center justify-between gap-4 rounded-2xl border-2 px-5 py-4 shadow-sm ${pendingApprovals.length > 0 ? "border-rose-300 bg-rose-50" : "border-blue-200 bg-blue-50"}`}>
+        <div className="flex items-center gap-3">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${pendingApprovals.length > 0 ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"}`}>
+            <AlertCircle className="h-5 w-5" />
           </div>
-
-          {/* Check-in Approvals */}
           <div>
-            <div className="px-6 py-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-display text-lg font-semibold text-amber-900">Approval Requests</div>
-                  <div className="text-xs text-amber-700">
-                    {pendingApprovals.length} record{pendingApprovals.length === 1 ? "" : "s"} awaiting approval
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Review location before approval
-                </span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm divide-y divide-border">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground bg-secondary/30">
-                      <th className="px-4 py-3">Employee</th>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Check In</th>
-                      <th className="px-4 py-3">Location Review</th>
-                      <th className="px-4 py-3">Reason</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {pendingApprovals.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-secondary/30 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-foreground">{rec.employee.user.fullName}</div>
-                          <div className="text-xs text-muted-foreground">{rec.employee.employeeCode}</div>
-                        </td>
-                        <td className="px-4 py-3">{fmtDateDMY(rec.date)}</td>
-                        <td className="px-4 py-3">{fmtTime(rec.checkIn) ?? "—"}</td>
-                        <td className="px-4 py-3 max-w-xs">
-                          <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
-                            {rec.note?.includes("unapproved location")
-                              ? rec.note.split("Pending")[0].trim().replace(/^Checkin to /, "")
-                              : "Map review required"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-sm">
-                          <div className="line-clamp-2">{rec.note || "—"}</div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => openLocationMap(rec)}
-                              className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium transition-colors flex items-center gap-1"
-                            >
-                              <MapPin className="h-3 w-3" />
-                              Review Map
-                            </button>
-                            <button
-                              onClick={() => approveRecord(rec.id)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-xs font-medium transition-colors"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => rejectRecord(rec.id, "Unapproved location")}
-                              className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-medium transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className={`font-display font-bold ${pendingApprovals.length > 0 ? "text-rose-900" : "text-blue-900"}`}>Awaiting Approval</div>
+            <div className={`text-xs ${pendingApprovals.length > 0 ? "text-rose-700" : "text-blue-700"}`}>
+              {pendingApprovals.length > 0
+                ? `${pendingApprovals.length} unassigned-location request${pendingApprovals.length === 1 ? "" : "s"} need review`
+                : "No unassigned-location requests"}
             </div>
           </div>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={() => navigate("/admin/attendance-requests")}
+          className={`rounded-lg px-3 py-2 text-xs font-bold text-white ${pendingApprovals.length > 0 ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"}`}
+        >
+          View requests
+          <span className={`ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] ${pendingApprovals.length > 0 ? "text-rose-700" : "text-blue-700"}`}>
+            {pendingApprovals.length}
+          </span>
+        </button>
+      </div>
 
       {/* Controls */}
       <div className="rounded-2xl bg-background border border-border card-shadow p-6">
@@ -714,24 +731,42 @@ const Attendance = () => {
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={() => handleStatusClick("OVERTIME")}
+                className="rounded-xl border border-orange-200 bg-orange-50/70 p-4 text-left transition-colors hover:bg-orange-100/70 focus:outline-none focus:ring-2 focus:ring-orange-300"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                  <span className="text-xs text-orange-700">Overtime Days</span>
+                </div>
+                <div className="font-display text-xl font-bold text-orange-900">
+                  {overtimeDays} {overtimeDays === 1 ? "day" : "days"}
+                </div>
+              </button>
             </div>
           )}
 
           {isAllEmployees ? (
           <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-secondary/30 flex items-center justify-between">
+            <div className="px-6 py-5 border-b border-border bg-gradient-to-r from-slate-50 to-white flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <div className="font-display text-lg font-semibold">Attendance Register</div>
-                <div className="text-xs text-muted-foreground">
-                  Weekly calendar: {fmtDateDMY(registerData?.startDate)} – {fmtDateDMY(registerData?.endDate)}
+                <div className="flex items-center gap-3">
+                  <div className="font-display text-lg font-bold text-slate-900">Team Attendance</div>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">
+                    All employees
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {fmtDateDMY(registerData?.startDate)} – {fmtDateDMY(registerData?.endDate)} · {registerEmployees.length} employee{registerEmployees.length === 1 ? "" : "s"}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-xs text-muted-foreground mr-2">Week:</label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mr-1">Week</label>
                 <select
                   value={registerStart || ""}
                   onChange={(e) => setRegisterStart(e.target.value || null)}
-                  className="px-3 py-1 rounded-lg text-sm border border-border bg-background"
+                  className="px-3 py-2 rounded-lg text-sm border border-border bg-background shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">This Week</option>
                   {computeMonthWeeks(year, month).map((w, i) => {
@@ -749,14 +784,19 @@ const Attendance = () => {
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm border-separate border-spacing-0">
                 <thead>
-                  <tr className="bg-secondary/20 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="sticky left-0 z-20 bg-secondary/20 border-r border-border px-4 py-3">Employee</th>
+                  <tr className="bg-slate-50/80 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="sticky left-0 z-20 bg-slate-50/95 border-r border-border px-5 py-4 font-display font-bold tracking-[0.08em]">Employee</th>
                     {registerDates.map((date) => {
                       const dateKey = formatDateKey(date);
+                      const isRegisterToday = dateKey === todayKey;
+                      const isRegisterWeekend = date.getUTCDay() === 0 || date.getUTCDay() === 6;
                       return (
-                        <th key={dateKey} className="px-4 py-3 min-w-[10rem]">
-                          <div className="font-medium text-sm text-slate-900">{weekdays[date.getUTCDay()]}</div>
-                          <div className="text-[11px] text-muted-foreground">{String(date.getUTCDate()).padStart(2, "0")}/{String(date.getUTCMonth() + 1).padStart(2, "0")}</div>
+                        <th key={dateKey} className={`px-5 py-4 min-w-[12rem] ${isRegisterToday ? "bg-primary/5" : isRegisterWeekend ? "bg-slate-100/60" : ""}`}>
+                          <div className="flex items-center gap-2">
+                            <div className={`font-display font-bold text-sm tracking-wide ${isRegisterWeekend ? "text-slate-400" : "text-slate-900"}`}>{weekdays[date.getUTCDay()]}</div>
+                            {isRegisterToday && <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary">Today</span>}
+                          </div>
+                          <div className="mt-1 font-display text-[11px] font-medium tracking-wide text-muted-foreground">{String(date.getUTCDate()).padStart(2, "0")}/{String(date.getUTCMonth() + 1).padStart(2, "0")}</div>
                         </th>
                       );
                     })}
@@ -765,15 +805,24 @@ const Attendance = () => {
                 <tbody>
                   {registerEmployees.length > 0 ? (
                     registerEmployees.map((emp) => (
-                      <tr key={emp.id} className="border-t border-border">
-                        <td className="sticky left-0 z-10 bg-background border-r border-border px-4 py-3 font-medium text-slate-900">
-                          <div>{emp.fullName}</div>
-                          {emp.employeeCode || emp.email ? (
-                            <div className="text-[11px] text-muted-foreground">{emp.employeeCode || emp.email}</div>
-                          ) : null}
+                      <tr key={emp.id} className="border-t border-border hover:bg-slate-50/60 transition-colors">
+                        <td className="sticky left-0 z-10 bg-background border-r border-border px-5 py-4 font-medium text-slate-900">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                              {emp.fullName.split(" ").map((name) => name[0]).join("").slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-display text-[15px] font-bold tracking-tight">{emp.fullName}</div>
+                              {emp.employeeCode || emp.email ? (
+                                <div className="mt-0.5 text-[11px] font-medium tracking-wide text-muted-foreground">{emp.employeeCode || emp.email}</div>
+                              ) : null}
+                            </div>
+                          </div>
                         </td>
                         {registerDates.map((date) => {
                           const dateKey = formatDateKey(date);
+                          const isRegisterToday = dateKey === todayKey;
+                          const isRegisterWeekend = date.getUTCDay() === 0 || date.getUTCDay() === 6;
                           let rec = attendanceByDateEmployee.get(`${dateKey}:${emp.id}`);
                           // Treat today's and future ABSENT as no record (user may still arrive)
                           if (rec && rec.status === "ABSENT" && dateKey >= todayKey) {
@@ -781,30 +830,45 @@ const Attendance = () => {
                           }
                           const meta = rec ? statusMeta[rec.status] : null;
                           return (
-                            <td key={dateKey} className="px-4 py-3 align-top border-l border-border bg-background">
+                            <td key={dateKey} className={`px-4 py-4 align-top border-l border-border ${isRegisterToday ? "bg-primary/[0.03]" : isRegisterWeekend ? "bg-slate-50/60" : "bg-background"}`}>
                               {rec ? (
-                                <div className="space-y-1 rounded-2xl border border-border bg-slate-50/70 p-3">
-                                  <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+                                <div className={`min-h-[155px] rounded-xl border p-3 ${meta?.cell || "border-border bg-slate-50/70"}`}>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-white/80 px-2 py-1 font-display text-[10px] font-bold tracking-wide text-slate-700 shadow-sm">
                                     <span className={`w-2 h-2 rounded-full ${meta?.dot}`} />
                                     {meta?.label || rec.status}
+                                    </div>
+                                    {rec.workedHours != null && Number(rec.workedHours) > 8 && (
+                                      <span className="shrink-0 text-[10px] font-bold text-orange-700">OT</span>
+                                    )}
                                   </div>
-                                  <div className="text-[11px] text-muted-foreground break-words">
-                                    {rec.checkIn ? `In ${fmtTime(rec.checkIn)}` : ""}
-                                    {rec.checkIn && rec.checkOut ? " · " : ""}
-                                    {rec.checkOut ? `Out ${fmtTime(rec.checkOut)}` : ""}
+                                  <div className="mt-2 space-y-1 text-sm leading-6 text-muted-foreground">
+                                    {rec.checkIn && <div className="flex justify-between gap-2"><span>Check in</span><span className="font-display font-bold text-emerald-700">{fmtTime(rec.checkIn)}</span></div>}
+                                    {rec.checkOut && <div className="flex justify-between gap-2"><span>Check out</span><span className="font-display font-bold text-rose-700">{fmtTime(rec.checkOut)}</span></div>}
                                   </div>
                                   {rec.note ? (
-                                    <div className="text-[11px] text-slate-500 break-words">{rec.note}</div>
+                                    <div className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-500" title={rec.note}>{formatAttendanceNote(rec.note)}</div>
                                   ) : null}
-                                  {rec.status === "PENDING_APPROVAL" ? (
-                                    <div className="flex items-center gap-2 mt-2">
-                                      <button onClick={() => approveRecord(rec.id)} className="px-2 py-1 text-xs rounded-md bg-emerald-100 text-emerald-700">Approve</button>
-                                      <button onClick={() => openRejectModal(rec)} className="px-2 py-1 text-xs rounded-md bg-rose-100 text-rose-700">Reject</button>
+                                  {hasSubmittedReason(rec.note) && (
+                                    <div className="mt-2 space-y-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAttendanceReason(rec, emp.fullName)}
+                                        className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 hover:underline"
+                                      >
+                                        View reason
+                                      </button>
+                                      {rec.status === "PENDING_APPROVAL" && (
+                                        <div className="flex items-center gap-1.5">
+                                          <button onClick={() => approveRecord(rec.id)} className="px-2 py-1 text-[10px] font-semibold rounded-md bg-emerald-100 text-emerald-700 hover:bg-emerald-200">Approve</button>
+                                          <button onClick={() => openRejectModal(rec)} className="px-2 py-1 text-[10px] font-semibold rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200">Reject</button>
+                                        </div>
+                                      )}
                                     </div>
-                                  ) : null}
+                                  )}
                                 </div>
                               ) : (
-                                <div className="rounded-2xl border border-border bg-slate-50/70 p-3 text-[11px] text-muted-foreground">No record</div>
+                                <div className="rounded-xl border border-dashed border-border bg-slate-50/50 px-2.5 py-3 text-[10px] text-muted-foreground">No record</div>
                               )}
                             </td>
                           );
@@ -824,57 +888,149 @@ const Attendance = () => {
           </div>
           ) : (
           /* Calendar */
-          <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {weekdays.map((w) => (
-                <div key={w} className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground py-1">
-                  {w}
+          <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
+            <div className="px-6 py-5 border-b border-border bg-gradient-to-r from-slate-50 to-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-display text-xl font-bold tracking-tight text-slate-900">Attendance Calendar</h2>
+                  <p className="font-display text-sm font-medium tracking-wide text-muted-foreground mt-1">{monthNames[month - 1]} {year}</p>
                 </div>
-              ))}
+
+                <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Present
+                  <span className="w-2 h-2 rounded-full bg-rose-500 ml-3" />
+                  Absent
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-7 gap-2">
+
+            <div className="overflow-x-auto">
+              <div className="min-w-[980px]">
+                <div className="grid grid-cols-7 border-b border-border bg-slate-50/80">
+                  {weekdays.map((w, index) => (
+                    <div
+                      key={w}
+                      className={`py-3 text-center font-display text-xs font-bold uppercase tracking-[0.12em] ${
+                        index === 0 || index === 6 ? "text-slate-400" : "text-slate-600"
+                      }`}
+                    >
+                      {w}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-px bg-border">
               {cells.map((day, idx) => {
-                if (day === null) return <div key={`blank-${idx}`} className="aspect-square" />;
+                if (day === null) {
+                  return <div key={`blank-${idx}`} className="min-h-[155px] bg-slate-50/50" />;
+                }
 
                 const cellDate = new Date(Date.UTC(year, month - 1, day));
                 const dateKey = formatDateKey(cellDate);
                 let rec = recordByDay[day];
-                // Hide today's and future ABSENT as no record
                 if (rec && rec.status === "ABSENT" && dateKey >= todayKey) rec = null;
                 const holidayName = holidayByDay[day];
                 const meta = rec ? statusMeta[rec.status] : holidayName ? statusMeta.HOLIDAY : null;
                 const isToday = dateKey === todayKey;
+                const dayOfWeek = cellDate.getUTCDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                 return (
                   <div
                     key={day}
-                    className={`aspect-square rounded-lg border p-1.5 flex flex-col ${
-                      meta ? meta.cell : "bg-background border-border"
-                    } ${isToday ? "ring-2 ring-primary" : ""}`}
-                    title={
-                      rec
-                        ? `${statusMeta[rec.status]?.label}${rec.checkIn ? ` · In ${fmtTime(rec.checkIn)}` : ""}${rec.checkOut ? ` · Out ${fmtTime(rec.checkOut)}` : ""}`
-                        : holidayName || ""
-                    }
+                    className={`min-h-[155px] bg-background p-4 transition-all hover:bg-slate-50 ${isWeekend ? "bg-slate-50/60" : ""} ${isToday ? "ring-2 ring-inset ring-primary z-10" : ""}`}
                   >
-                    <div className="text-xs font-semibold">{day}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className={`flex items-center justify-center w-8 h-8 rounded-lg font-display text-sm font-bold ${isToday ? "bg-primary text-primary-foreground shadow-sm" : isWeekend ? "text-slate-400" : "text-slate-800"}`}>
+                        {day}
+                      </div>
+                      {isToday && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide bg-primary/10 text-primary px-2 py-1 rounded-full">
+                          Today
+                        </span>
+                      )}
+                    </div>
+
                     {rec ? (
-                      <div className="mt-auto text-[10px] leading-tight">
-                        {(fmtTime(rec.checkIn) || fmtTime(rec.checkOut)) && (
-                          <div className="truncate">
-                            {fmtTime(rec.checkIn) ? `In ${fmtTime(rec.checkIn)}` : ""}
-                            {fmtTime(rec.checkIn) && fmtTime(rec.checkOut) ? " · " : ""}
-                            {fmtTime(rec.checkOut) ? `Out ${fmtTime(rec.checkOut)}` : ""}
+                      <div className="mt-3 space-y-2">
+                        <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-display text-[11px] font-bold tracking-wide ${meta?.cell}`}>
+                          <span className={`w-2 h-2 rounded-full ${meta?.dot}`} />
+                          {meta?.label || rec.status}
+                        </div>
+
+                        <div className="rounded-lg border border-border bg-white p-2.5 space-y-1.5">
+                          {rec.checkIn && (
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-[18px] text-muted-foreground">Check In</span>
+                              <span className="font-display text-[18px] font-bold text-emerald-700">{fmtTime(rec.checkIn)}</span>
+                            </div>
+                          )}
+                          {rec.checkOut && (
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-[18px] text-muted-foreground">Check Out</span>
+                              <span className="font-display text-[18px] font-bold text-rose-700">{fmtTime(rec.checkOut)}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {rec.workedHours != null && Number(rec.workedHours) > 8 && (
+                          <div className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 border border-orange-200 px-2.5 py-1 text-[11px] font-bold text-orange-700">
+                            <Clock className="h-3 w-3" />
+                            OT {fmtWorkedHours(Number(rec.workedHours) - 8)}
                           </div>
                         )}
-                        {rec.workedHours != null && <div className="truncate opacity-75">{fmtWorkedHours(rec.workedHours)}</div>}
+                        {rec.note && formatAttendanceNote(rec.note) && (
+                          <div className="whitespace-pre-line text-sm leading-5 text-slate-500" title={rec.note}>
+                            {formatAttendanceNote(rec.note)}
+                          </div>
+                        )}
+                        {hasSubmittedReason(rec.note) && (
+                          <div className="mt-2 space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => openAttendanceReason(rec, data?.employee?.fullName || "Employee")}
+                              className="text-sm font-semibold text-amber-700 hover:text-amber-900 hover:underline"
+                            >
+                              View reason
+                            </button>
+                            {rec.status === "PENDING_APPROVAL" && (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => approveRecord(rec.id)}
+                                  className="rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-200"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openRejectModal(rec)}
+                                  className="rounded-md bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-200"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ) : holidayName ? (
-                      <div className="mt-auto text-[10px] leading-tight truncate">{holidayName}</div>
-                    ) : null}
+                      <div className="mt-5">
+                        <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                          <span className="w-2 h-2 rounded-full bg-blue-500" />
+                          Holiday
+                        </div>
+                        <div className="mt-3 text-sm font-semibold text-blue-700">{holidayName}</div>
+                      </div>
+                    ) : (
+                      <div className="mt-8 text-center text-xs text-slate-400">No attendance</div>
+                    )}
                   </div>
                 );
               })}
+                </div>
+              </div>
             </div>
           </div>
           )}
@@ -890,6 +1046,119 @@ const Attendance = () => {
           </div>
 
         </>
+      )}
+
+      {/* Submitted Attendance Reason Modal */}
+      {attendanceReasonModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-amber-200 bg-amber-50 p-5">
+              <div>
+                <h3 className="font-display text-lg font-bold text-amber-900">
+                  {attendanceReasonModal.recordId ? "Attendance Request" : "Attendance Requests"}
+                </h3>
+                <p className="mt-1 text-sm text-amber-700">{attendanceReasonModal.employeeName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttendanceReasonModal(null)}
+                className="rounded-lg p-2 text-amber-700 transition-colors hover:bg-amber-100"
+                aria-label="Close attendance reason"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="text-xs text-muted-foreground">Date</div>
+                  <div className="mt-1 font-medium">{fmtDateDMY(attendanceReasonModal.date)}</div>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="mt-1 font-semibold text-amber-700">{attendanceReasonModal.statusLabel || attendanceReasonModal.status || "Awaiting Approval"}</div>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="text-xs text-muted-foreground">Check In</div>
+                  <div className="mt-1 font-medium">{fmtTime(attendanceReasonModal.checkIn) || "—"}</div>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="text-xs text-muted-foreground">Check Out</div>
+                  <div className="mt-1 font-medium">{fmtTime(attendanceReasonModal.checkOut) || "—"}</div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 text-sm leading-6 text-amber-950">
+                {attendanceReasonModal.reason}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) && Number.isFinite(Number(attendanceReasonModal.checkInLongitude)) ? (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    View Check-in Location
+                  </a>
+                ) : (
+                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-center text-xs text-muted-foreground">
+                    Check-in location unavailable
+                  </div>
+                )}
+                {Number.isFinite(Number(attendanceReasonModal.checkOutLatitude)) && Number.isFinite(Number(attendanceReasonModal.checkOutLongitude)) ? (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-700"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    View Check-out Location
+                  </a>
+                ) : (
+                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-center text-xs text-muted-foreground">
+                    Check-out location unavailable
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border bg-slate-50/60 p-5">
+              {attendanceReasonModal.recordId && attendanceReasonModal.status === "PENDING_APPROVAL" ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      approveRecord(attendanceReasonModal.recordId);
+                      setAttendanceReasonModal(null);
+                    }}
+                    className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const request = pendingApprovals.find((item) => item.id === attendanceReasonModal.recordId);
+                      setAttendanceReasonModal(null);
+                      if (request) openRejectModal(request);
+                    }}
+                    className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                  >
+                    Reject
+                  </button>
+                </div>
+              ) : <span />}
+              <button
+                type="button"
+                onClick={() => setAttendanceReasonModal(null)}
+                className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Reject Reason Modal */}

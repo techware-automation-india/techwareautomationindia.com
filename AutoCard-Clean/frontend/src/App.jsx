@@ -23,6 +23,7 @@ import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
 import AdminMarkAttendance from "./admin/pages/MarkAttendance.jsx";
 import Attendance from "./admin/pages/Attendance.jsx";
+import AttendanceRequests from "./admin/pages/AttendanceRequests.jsx";
 import Projects from "./admin/pages/Projects.jsx";
 import ProjectDetails from "./admin/pages/ProjectDetails.jsx";
 import Services from "./admin/pages/Services.jsx";
@@ -116,6 +117,7 @@ const AppRoutes = () => {
           {/* <Route path="holidays" element={<Holidays />} /> */}
           <Route path="mark-attendance" element={<AdminMarkAttendance />} />
           <Route path="attendance" element={<Attendance />} />
+          <Route path="attendance-requests" element={<AttendanceRequests />} />
           {/* <Route path="projects" element={<Projects />} /> */}
           {/* <Route path="project/:id" element={<ProjectDetails />} /> */}
           
@@ -129,13 +131,13 @@ const AppRoutes = () => {
           {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />
+          <Route path="requests" element={<EmployeeRequests />} />
           {/* <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} /> */}
           {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
           {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
           {/* <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} /> */}
           {/* CUSTOMER MANAGEMENT ROUTE COMMENTED OUT */}
           {/* <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} /> */}
-          {/* <Route path="requests" element={<RequireOnboarding><EmployeeRequests /></RequireOnboarding>} /> */}
           {/* <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} /> */}
           {/* <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} /> */}
          

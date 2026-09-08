@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -25,7 +25,7 @@ import servicesRouter from "./routes/services.js";
 import supportRouter from "./routes/support.js";
 
 const app = express();
-const PORT = process.env.PORT || 4000; // Use 4000 as fallback instead of 4001
+const PORT = process.env.PORT || 4000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -62,25 +62,30 @@ function startDatabaseHealthCheck() {
   }, HEALTH_CHECK_INTERVAL);
 }
 
+// ==================== CORS CONFIGURATION ====================
+// Parse allowed origins from environment variable (comma-separated)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://techwareautomationindia.vercel.app",
-  "https://techwareautomation.in",
-  "https://www.techwareautomation.in",
-  "https://techwareautomationindia.com",
-  "https://www.techwareautomationindia.com",
-  "https://techwareautomationindia.co.org",
-  "https://www.techwareautomationindia.co.org",
-  process.env.CLIENT_ORIGIN,
-  process.env.FRONTEND_URL,
-].filter(Boolean);
+console.log("🌐 Environment:", process.env.NODE_ENV || 'development');
+console.log("🌐 Allowed CORS origins:", allowedOrigins);
 
-// Pattern to match ALL Vercel deployments (including preview deployments with hashes)
+// Optional: Pattern matching for dynamic deployments
+const allowVercelPattern = process.env.ALLOW_VERCEL_PREVIEWS === "true";
+const allowHostingerPattern = process.env.ALLOW_HOSTINGER_SITES === "true";
+
 const vercelPattern = /^https:\/\/.*\.vercel\.app$/i;
 const hostingerPattern = /^https:\/\/.*\.hostinger\.site$/i;
 const hostingerWebPattern = /^https:\/\/.*\.hostingersite\.com$/i;
+
+if (allowVercelPattern) {
+  console.log("🌐 Vercel preview deployments: ENABLED");
+}
+if (allowHostingerPattern) {
+  console.log("🌐 Hostinger site deployments: ENABLED");
+}
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -94,14 +99,14 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow any Vercel deployment (production and preview)
-    if (vercelPattern.test(origin)) {
+    // Allow any Vercel deployment (production and preview) if enabled
+    if (allowVercelPattern && vercelPattern.test(origin)) {
       console.log("✅ CORS allowed Vercel:", origin);
       return callback(null, true);
     }
 
-    // Allow any Hostinger deployment
-    if (hostingerPattern.test(origin) || hostingerWebPattern.test(origin)) {
+    // Allow any Hostinger deployment if enabled
+    if (allowHostingerPattern && (hostingerPattern.test(origin) || hostingerWebPattern.test(origin))) {
       console.log("✅ CORS allowed Hostinger:", origin);
       return callback(null, true);
     }
@@ -120,7 +125,7 @@ app.use(cors(corsOptions));
 // Handle preflight requests explicitly
 app.options("*", cors(corsOptions));
 
-
+// ==================== MIDDLEWARE ====================
 const contactLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 100,
@@ -137,6 +142,7 @@ app.use("/api/contact", contactLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ==================== ROUTES ====================
 app.get("/", (_req, res) => {
   res.json({
     status: "OK",
@@ -154,7 +160,7 @@ if (process.env.VERCEL !== "1") {
   app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 }
 
-// Routes
+// API Routes
 app.use("/api/auth", authRouter);
 app.use("/api/employees", employeesRouter);
 // app.use("/api/customers", customersRouter); // CUSTOMER ROUTES COMMENTED OUT
@@ -172,7 +178,8 @@ app.use("/api/roster", rosterRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/services", servicesRouter);
 app.use("/api/support", supportRouter);
-// Health check - also verifies the database connection.
+
+// Health check
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "OK",
@@ -180,8 +187,8 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// ==================== SERVER STARTUP ====================
 // Only start the server if not in serverless environment (Vercel)
-// Hostinger/Render needs the server to start normally
 if (process.env.VERCEL !== "1") {
   const server = app.listen(PORT, "0.0.0.0", async () => {
     console.log(`🚀 Server running on port ${PORT}`);
@@ -222,5 +229,5 @@ if (process.env.VERCEL !== "1") {
 // Log database connection on startup (for serverless too)
 logDatabaseConnection();
 
-// Export for Vercel serverless (not used on Render)
+// Export for Vercel serverless
 export default app;

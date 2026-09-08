@@ -1,4 +1,4 @@
-# Dependencies
+﻿# Dependencies
 node_modules/
 server/node_modules/
 
@@ -9,9 +9,19 @@ build/
 
 # Environment variables (sensitive - never commit)
 .env
+.env.*
 .env.local
 .env.*.local
 server/.env
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# EXCEPT example files (these are safe to commit)
+!.env.example
+!backend/.env.example
+!frontend/.env.example
 
 # Logs
 logs/
@@ -40,6 +50,8 @@ Desktop.ini
 
 # Prisma
 server/node_modules/.prisma/
+prisma/dev.db
+prisma/prisma/dev.db
 
 # Lock files (keep package-lock.json, ignore others if unused)
 bun.lock
@@ -48,3 +60,23 @@ bun.lockb
 # Misc
 *.tsbuildinfo
 .cache/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Uploads (if any sensitive files)
+backend/uploads/
+uploads/
+
+# Documentation to keep in repo (DO NOT IGNORE)
+# All .md files should be committed
+# !*.md
+# !**/*.md

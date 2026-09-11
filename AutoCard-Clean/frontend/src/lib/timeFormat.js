@@ -39,6 +39,9 @@ export const formatTime12Hour = (time24) => {
  * @returns {string} Formatted time range (e.g., "9:00 AM – 5:00 PM")
  */
 export const formatTimeRange = (startTime, endTime, separator = " – ") => {
-  if (!startTime || !endTime) return "";
+  if (!startTime && !endTime) return "";
+  if (!startTime) return formatTime12Hour(endTime);
+  if (!endTime) return formatTime12Hour(startTime);
+
   return `${formatTime12Hour(startTime)}${separator}${formatTime12Hour(endTime)}`;
 };

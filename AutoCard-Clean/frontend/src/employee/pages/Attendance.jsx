@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useCallback } from "react";
 import {
   Clock,
@@ -20,8 +19,18 @@ import { apiGet } from "../../lib/api.js";
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 // Regular working hours per day
@@ -73,8 +82,6 @@ const getOvertimeHours = (workedHours) => {
 
   return hours - REGULAR_HOURS;
 };
-
-
 
 const fmtDate = (v) => {
   if (!v) return "—";
@@ -140,9 +147,7 @@ const StatCard = ({ icon: Icon, label, value, bg, text }) => (
         {value}
       </div>
 
-      <div className="text-xs text-muted-foreground mt-1">
-        {label}
-      </div>
+      <div className="text-xs text-muted-foreground mt-1">{label}</div>
     </div>
   </div>
 );
@@ -168,9 +173,7 @@ const Attendance = () => {
     setLoading(true);
 
     try {
-      const data = await apiGet(
-        `/attendance/me?year=${year}&month=${month}`
-      );
+      const data = await apiGet(`/attendance/me?year=${year}&month=${month}`);
 
       setRecords(data.records);
       setHolidays(data.holidays);
@@ -224,19 +227,19 @@ const Attendance = () => {
 
   // ── worked & overtime calculations ──
 
- const totalWorked = records.reduce(
-  (acc, r) => acc + getRegularHours(r.workedHours),
-  0
-);
+  const totalWorked = records.reduce(
+    (acc, r) => acc + getRegularHours(r.workedHours),
+    0,
+  );
 
- const totalOvertime = records.reduce(
-  (acc, r) => acc + getOvertimeHours(r.workedHours),
-  0
-);
+  const totalOvertime = records.reduce(
+    (acc, r) => acc + getOvertimeHours(r.workedHours),
+    0,
+  );
 
-const totalOvertimeDays = records.filter(
-  (r) => getOvertimeHours(r.workedHours) > 0
-).length;
+  const totalOvertimeDays = records.filter(
+    (r) => getOvertimeHours(r.workedHours) > 0,
+  ).length;
 
   const filteredRecords = selectedStatus
     ? records.filter((r) => r.status === selectedStatus)
@@ -251,7 +254,6 @@ const totalOvertimeDays = records.filter(
   if (selectedStatus) {
     return (
       <div className="space-y-6 max-w-5xl">
-
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <button
             type="button"
@@ -274,9 +276,7 @@ const totalOvertimeDays = records.filter(
         </div>
 
         <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-
           <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center justify-between gap-3">
-
             <div>
               <div className="font-display text-base font-semibold">
                 {STATUS_META[selectedStatus]?.label} Attendance
@@ -302,18 +302,15 @@ const totalOvertimeDays = records.filter(
           </div>
 
           <div className="overflow-x-auto">
-
             {filteredRecords.length === 0 ? (
               <div className="p-14 text-center">
                 <p className="text-sm text-muted-foreground">
-                  No{" "}
-                  {STATUS_META[selectedStatus].label.toLowerCase()} records
+                  No {STATUS_META[selectedStatus].label.toLowerCase()} records
                   for {MONTH_NAMES[month - 1]} {year}.
                 </p>
               </div>
             ) : (
               <table className="w-full text-sm">
-
                 <thead>
                   <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
                     <th className="px-5 py-3 font-medium">Date</th>
@@ -323,15 +320,14 @@ const totalOvertimeDays = records.filter(
                     <th className="px-5 py-3 font-medium">Worked</th>
                     <th className="px-5 py-3 font-medium">Overtime</th>
                     <th className="px-5 py-3 font-medium min-w-[300px]">
-  Note
-</th>
+                      Note
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {filteredRecords.map((r) => {
-                    const meta =
-                      STATUS_META[r.status] ?? STATUS_META.PRESENT;
+                    const meta = STATUS_META[r.status] ?? STATUS_META.PRESENT;
 
                     const overtime = getOvertimeHours(r.workedHours);
 
@@ -340,7 +336,6 @@ const totalOvertimeDays = records.filter(
                         key={r.id ?? `${r.date}-${r.status}-status`}
                         className="border-b border-border last:border-0 hover:bg-secondary/20 transition-colors"
                       >
-
                         <td className="px-5 py-3 font-medium whitespace-nowrap">
                           {fmtDate(r.date)}
                         </td>
@@ -372,307 +367,245 @@ const totalOvertimeDays = records.filter(
                         </td>
 
                         <td className="px-5 py-3 font-medium text-orange-600">
-                          {overtime > 0
-                            ? fmtWorkedHours(overtime)
-                            : "—"}
+                          {overtime > 0 ? fmtWorkedHours(overtime) : "—"}
                         </td>
 
                         <td className="px-5 py-3 min-w-[280px] max-w-[360px]">
-  {r.note ? (
-    <div className="space-y-1">
-      {r.note.split("|").map((note, index) => (
-        <div
-          key={index}
-          className="text-base font-medium text-slate-700 whitespace-normal break-words"
-        >
-          {note.trim()}
-        </div>
-      ))}
-    </div>
-  ) : (
-    <span className="text-base text-muted-foreground">
-      —
-    </span>
-  )}
-</td>
-
+                          {r.note ? (
+                            <div className="space-y-1">
+                              {r.note.split("|").map((note, index) => (
+                                <div
+                                  key={index}
+                                  className="text-base font-medium text-slate-700 whitespace-normal break-words"
+                                >
+                                  {note.trim()}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-base text-muted-foreground">
+                              —
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
-
               </table>
             )}
-
           </div>
         </div>
       </div>
     );
   }
   // ── overtime page ──
-if (showOvertime) {
-  const overtimeRecords = records
-    .map((r) => ({
-      ...r,
-      overtimeHours: getOvertimeHours(r.workedHours),
-    }))
-    .filter((r) => r.overtimeHours > 0);
+  if (showOvertime) {
+    const overtimeRecords = records
+      .map((r) => ({
+        ...r,
+        overtimeHours: getOvertimeHours(r.workedHours),
+      }))
+      .filter((r) => r.overtimeHours > 0);
 
-  return (
-    <div className="space-y-6 max-w-5xl">
+    return (
+      <div className="space-y-6 max-w-5xl">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowOvertime(false)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-secondary transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </button>
 
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="font-display text-2xl font-bold">Overtime</h1>
 
-        <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                Your overtime records
+              </p>
+            </div>
+          </div>
+
           <button
             type="button"
-            onClick={() => setShowOvertime(false)}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-secondary transition-colors"
+            onClick={load}
+            disabled={loading}
+            className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
           >
-            <ChevronLeft className="h-4 w-4" />
-            Back
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+
+        {/* Month */}
+        <div className="flex items-center justify-between rounded-2xl bg-background border border-border card-shadow px-5 py-3">
+          <button
+            onClick={prevMonth}
+            className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
+          >
+            <ChevronLeft className="h-5 w-5" />
           </button>
 
-          <div>
-            <h1 className="font-display text-2xl font-bold">
-              Overtime
-            </h1>
+          <div className="text-center">
+            <div className="font-display text-lg font-bold">
+              {MONTH_NAMES[month - 1]} {year}
+            </div>
 
-            <p className="text-sm text-muted-foreground">
-              Your overtime records
-            </p>
+            <div className="text-xs text-muted-foreground">
+              Overtime summary
+            </div>
           </div>
+
+          <button
+            onClick={nextMonth}
+            disabled={
+              year === today.getFullYear() && month === today.getMonth() + 1
+            }
+            className="p-1.5 rounded-lg hover:bg-secondary transition-colors disabled:opacity-30"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${
-              loading ? "animate-spin" : ""
-            }`}
+        {/* OT Summary */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <StatCard
+            icon={Clock3}
+            label="Total Overtime"
+            value={fmtWorkedHours(totalOvertime)}
+            bg="bg-orange-100"
+            text="text-orange-700"
           />
-        </button>
 
-      </div>
+          <StatCard
+            icon={CalendarDays}
+            label="OT Days"
+            value={overtimeRecords.length}
+            bg="bg-blue-100"
+            text="text-blue-700"
+          />
 
-      {/* Month */}
-      <div className="flex items-center justify-between rounded-2xl bg-background border border-border card-shadow px-5 py-3">
-
-        <button
-          onClick={prevMonth}
-          className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-
-        <div className="text-center">
-          <div className="font-display text-lg font-bold">
-            {MONTH_NAMES[month - 1]} {year}
-          </div>
-
-          <div className="text-xs text-muted-foreground">
-            Overtime summary
-          </div>
+          <StatCard
+            icon={TrendingUp}
+            label="Regular Hours"
+            value={`${REGULAR_HOURS} hrs/day`}
+            bg="bg-emerald-100"
+            text="text-emerald-700"
+          />
         </div>
 
-        <button
-          onClick={nextMonth}
-          disabled={
-            year === today.getFullYear() &&
-            month === today.getMonth() + 1
-          }
-          className="p-1.5 rounded-lg hover:bg-secondary transition-colors disabled:opacity-30"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
-
-      </div>
-
-      {/* OT Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-
-        <StatCard
-          icon={Clock3}
-          label="Total Overtime"
-          value={fmtWorkedHours(totalOvertime)}
-          bg="bg-orange-100"
-          text="text-orange-700"
-        />
-
-        <StatCard
-          icon={CalendarDays}
-          label="OT Days"
-          value={overtimeRecords.length}
-          bg="bg-blue-100"
-          text="text-blue-700"
-        />
-
-        <StatCard
-          icon={TrendingUp}
-          label="Regular Hours"
-          value={`${REGULAR_HOURS} hrs/day`}
-          bg="bg-emerald-100"
-          text="text-emerald-700"
-        />
-
-      </div>
-
-      {/* OT Records */}
-      <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-
-        <div className="p-5 border-b border-border">
-          <h2 className="font-display text-base font-semibold">
-            Overtime Records
-          </h2>
-
-          <p className="text-xs text-muted-foreground mt-1">
-            Hours worked beyond {REGULAR_HOURS} hours are counted as overtime.
-          </p>
-        </div>
-
-        {overtimeRecords.length === 0 ? (
-
-          <div className="p-14 text-center">
-            <Clock3 className="h-12 w-12 text-orange-200 mx-auto mb-3" />
-
-            <p className="text-sm font-medium">
-              No overtime records
-            </p>
+        {/* OT Records */}
+        <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
+          <div className="p-5 border-b border-border">
+            <h2 className="font-display text-base font-semibold">
+              Overtime Records
+            </h2>
 
             <p className="text-xs text-muted-foreground mt-1">
-              No overtime was recorded for this month.
+              Hours worked beyond {REGULAR_HOURS} hours are counted as overtime.
             </p>
           </div>
 
-        ) : (
+          {overtimeRecords.length === 0 ? (
+            <div className="p-14 text-center">
+              <Clock3 className="h-12 w-12 text-orange-200 mx-auto mb-3" />
 
-          <div className="overflow-x-auto">
+              <p className="text-sm font-medium">No overtime records</p>
 
-            <table className="w-full text-sm">
+              <p className="text-xs text-muted-foreground mt-1">
+                No overtime was recorded for this month.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                    <th className="px-5 py-3 font-medium">Date</th>
 
-              <thead>
-                <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                    <th className="px-5 py-3 font-medium">Check In</th>
 
-                  <th className="px-5 py-3 font-medium">
-                    Date
-                  </th>
+                    <th className="px-5 py-3 font-medium">Check Out</th>
 
-                  <th className="px-5 py-3 font-medium">
-                    Check In
-                  </th>
+                    <th className="px-5 py-3 font-medium">Worked</th>
 
-                  <th className="px-5 py-3 font-medium">
-                    Check Out
-                  </th>
-
-                  <th className="px-5 py-3 font-medium">
-                    Worked
-                  </th>
-
-                  <th className="px-5 py-3 font-medium">
-                    Overtime
-                  </th>
-
-                </tr>
-              </thead>
-
-              <tbody>
-
-                {overtimeRecords.map((r) => (
-
-                  <tr
-                    key={r.id ?? `${r.date}-${r.status}-overtime`}
-                    className="border-b border-border last:border-0 hover:bg-orange-50/50 transition-colors"
-                  >
-
-                    <td className="px-5 py-4 font-medium whitespace-nowrap">
-                      {fmtDate(r.date)}
-                    </td>
-
-                    <td className="px-5 py-4 whitespace-nowrap">
-                      <span className="flex items-center gap-1.5">
-                        <LogIn className="h-3.5 w-3.5 text-emerald-600" />
-                        {fmtTime(r.checkIn)}
-                      </span>
-                    </td>
-
-                    <td className="px-5 py-4 whitespace-nowrap">
-                      <span className="flex items-center gap-1.5">
-                        <LogOut className="h-3.5 w-3.5 text-rose-600" />
-                        {fmtTime(r.checkOut)}
-                      </span>
-                    </td>
-
-                    <td className="px-5 py-4 font-medium">
-                      {fmtWorkedHours(getRegularHours(r.workedHours))}
-                    </td>
-
-                    <td className="px-5 py-4">
-
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 text-orange-700 px-3 py-1.5 text-sm font-semibold">
-
-                        <Clock3 className="h-4 w-4" />
-
-                        {fmtWorkedHours(r.overtimeHours)}
-
-                      </span>
-
-                    </td>
-
+                    <th className="px-5 py-3 font-medium">Overtime</th>
                   </tr>
+                </thead>
 
-                ))}
+                <tbody>
+                  {overtimeRecords.map((r) => (
+                    <tr
+                      key={r.id ?? `${r.date}-${r.status}-overtime`}
+                      className="border-b border-border last:border-0 hover:bg-orange-50/50 transition-colors"
+                    >
+                      <td className="px-5 py-4 font-medium whitespace-nowrap">
+                        {fmtDate(r.date)}
+                      </td>
 
-              </tbody>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <LogIn className="h-3.5 w-3.5 text-emerald-600" />
+                          {fmtTime(r.checkIn)}
+                        </span>
+                      </td>
 
-            </table>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                          {fmtTime(r.checkOut)}
+                        </span>
+                      </td>
 
-          </div>
+                      <td className="px-5 py-4 font-medium">
+                        {fmtWorkedHours(getRegularHours(r.workedHours))}
+                      </td>
 
-        )}
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 text-orange-700 px-3 py-1.5 text-sm font-semibold">
+                          <Clock3 className="h-4 w-4" />
 
+                          {fmtWorkedHours(r.overtimeHours)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
-
-    </div>
-  );
-}
+    );
+  }
 
   // ── main page ──
 
   return (
     <div className="space-y-6 max-w-5xl">
-
       {/* Header */}
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
-
         <div className="flex items-center gap-4">
-
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <Clock className="h-6 w-6 text-primary" />
           </div>
 
           <div>
-            <h1 className="font-display text-2xl font-bold">
-              Attendance
-            </h1>
+            <h1 className="font-display text-2xl font-bold">Attendance</h1>
 
             <p className="text-sm text-muted-foreground">
               Your monthly attendance history.
             </p>
           </div>
-
         </div>
 
         <div className="flex items-center gap-2">
-
           <div className="flex rounded-lg border border-border overflow-hidden">
-
             {["table", "calendar"].map((v) => (
               <button
                 key={v}
@@ -686,7 +619,6 @@ if (showOvertime) {
                 {v}
               </button>
             ))}
-
           </div>
 
           <button
@@ -694,24 +626,16 @@ if (showOvertime) {
             disabled={loading}
             className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                loading ? "animate-spin" : ""
-              }`}
-            />
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
-
         </div>
       </div>
 
       {/* Attendance policy */}
 
-      
-
       {/* Month navigator */}
 
       <div className="flex items-center justify-between rounded-2xl bg-background border border-border card-shadow px-5 py-3">
-
         <button
           onClick={prevMonth}
           className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
@@ -720,7 +644,6 @@ if (showOvertime) {
         </button>
 
         <div className="text-center">
-
           <div className="font-display text-lg font-bold">
             {MONTH_NAMES[month - 1]} {year}
           </div>
@@ -729,26 +652,22 @@ if (showOvertime) {
             {records.length} record
             {records.length !== 1 ? "s" : ""} this month
           </div>
-
         </div>
 
         <button
           onClick={nextMonth}
           disabled={
-            year === today.getFullYear() &&
-            month === today.getMonth() + 1
+            year === today.getFullYear() && month === today.getMonth() + 1
           }
           className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30"
         >
           <ChevronRight className="h-5 w-5" />
         </button>
-
       </div>
 
       {/* Summary stat cards */}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-
         {[
           {
             key: "PRESENT",
@@ -782,7 +701,6 @@ if (showOvertime) {
             text: "text-indigo-700",
           },
         ].map(({ key, label, Icon, bg, text }) => {
-
           const isActive = selectedStatus === key;
 
           return (
@@ -808,36 +726,31 @@ if (showOvertime) {
         })}
 
         {/* Overtime Card */}
+        <button
+          type="button"
+          onClick={() => setShowOvertime(true)}
+          className="w-full text-left rounded-2xl bg-background border border-border card-shadow p-5 flex items-center gap-4 hover:bg-orange-50 hover:border-orange-300 transition-all cursor-pointer"
+        >
+          <div className="w-11 h-11 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+            <Clock3 className="h-5 w-5 text-orange-700" />
+          </div>
 
-       {/* Overtime Card */}
-<button
-  type="button"
-  onClick={() => setShowOvertime(true)}
-  className="w-full text-left rounded-2xl bg-background border border-border card-shadow p-5 flex items-center gap-4 hover:bg-orange-50 hover:border-orange-300 transition-all cursor-pointer"
->
-  <div className="w-11 h-11 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-    <Clock3 className="h-5 w-5 text-orange-700" />
-  </div>
+          <div>
+            <div className="font-display text-2xl font-bold leading-none">
+              {totalOvertimeDays}
+            </div>
 
-  <div>
-    <div className="font-display text-2xl font-bold leading-none">
-  {totalOvertimeDays}
-</div>
-
-<div className="text-xs text-muted-foreground mt-1">
-  Overtime Days
-</div>
-  </div>
-</button>
-
+            <div className="text-xs text-muted-foreground mt-1">
+              Overtime Days
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Worked hours card */}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
         <div className="rounded-2xl bg-background border border-border card-shadow px-5 py-4 flex items-center gap-4">
-
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
             <TrendingUp className="h-5 w-5 text-primary" />
           </div>
@@ -851,11 +764,9 @@ if (showOvertime) {
               Total worked hours this month
             </div>
           </div>
-
         </div>
 
         <div className="rounded-2xl bg-background border border-border card-shadow px-5 py-4 flex items-center gap-4">
-
           <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
             <Clock3 className="h-5 w-5 text-orange-700" />
           </div>
@@ -869,42 +780,31 @@ if (showOvertime) {
               Total overtime this month
             </div>
           </div>
-
         </div>
-
       </div>
 
       {/* Loading state */}
 
       {loading ? (
-
         <div className="rounded-2xl bg-background border border-border p-16 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-
       ) : view === "calendar" ? (
-
         /* Calendar view */
 
         <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-
           <div className="grid grid-cols-7 border-b border-border">
-
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-              (d) => (
-                <div
-                  key={d}
-                  className="py-2 text-center text-xs font-semibold text-muted-foreground bg-secondary/30"
-                >
-                  {d}
-                </div>
-              )
-            )}
-
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+              <div
+                key={d}
+                className="py-2 text-center text-xs font-semibold text-muted-foreground bg-secondary/30"
+              >
+                {d}
+              </div>
+            ))}
           </div>
 
           <div className="grid grid-cols-7">
-
             {Array.from({ length: firstDayOfWeek }).map((_, i) => (
               <div
                 key={`e${i}`}
@@ -912,11 +812,7 @@ if (showOvertime) {
               />
             ))}
 
-            {Array.from(
-              { length: daysInMonth },
-              (_, i) => i + 1
-            ).map((day) => {
-
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
               const r = recordByDay[day];
               const hol = holidayByDay[day];
 
@@ -928,29 +824,18 @@ if (showOvertime) {
               const meta = r
                 ? STATUS_META[r.status]
                 : hol
-                ? STATUS_META.HOLIDAY
-                : null;
+                  ? STATUS_META.HOLIDAY
+                  : null;
 
-              const overtime = r
-                ? getOvertimeHours(r.workedHours)
-                : 0;
+              const overtime = r ? getOvertimeHours(r.workedHours) : 0;
 
               return (
                 <div
                   key={day}
                   className={`h-16 border-r border-b border-border/40 p-1.5 flex flex-col relative transition-colors
-                    ${
-                      meta
-                        ? `${meta.cell} border`
-                        : "hover:bg-secondary/20"
-                    }
-                    ${
-                      isToday
-                        ? "ring-2 ring-inset ring-primary"
-                        : ""
-                    }`}
+                    ${meta ? `${meta.cell} border` : "hover:bg-secondary/20"}
+                    ${isToday ? "ring-2 ring-inset ring-primary" : ""}`}
                 >
-
                   <span
                     className={`text-xs font-bold leading-none ${
                       isToday ? "text-primary" : ""
@@ -979,17 +864,14 @@ if (showOvertime) {
                       {hol}
                     </span>
                   )}
-
                 </div>
               );
             })}
-
           </div>
 
           {/* Legend */}
 
           <div className="p-4 border-t border-border flex flex-wrap gap-3">
-
             {Object.entries(STATUS_META).map(([key, m]) => (
               <span
                 key={key}
@@ -1002,95 +884,57 @@ if (showOvertime) {
             <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium bg-orange-100 text-orange-700">
               Overtime
             </span>
-
           </div>
-
         </div>
-
       ) : (
-
         /* Table view */
 
         <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-
           <div className="p-5 border-b border-border">
-
             <h2 className="font-display text-base font-semibold">
               Daily Records
             </h2>
-
           </div>
 
           {records.length === 0 ? (
-
             <div className="p-14 text-center">
-
               <CalendarDays className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
 
               <p className="text-sm text-muted-foreground">
                 No attendance records for this month.
               </p>
-
             </div>
-
           ) : (
-
             <div className="overflow-x-auto">
-
               <table className="w-full text-sm">
-
                 <thead>
-
                   <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                    <th className="px-5 py-3 font-medium">Date</th>
 
-                    <th className="px-5 py-3 font-medium">
-                      Date
-                    </th>
+                    <th className="px-5 py-3 font-medium">Status</th>
 
-                    <th className="px-5 py-3 font-medium">
-                      Status
-                    </th>
+                    <th className="px-5 py-3 font-medium">Check In</th>
 
-                    <th className="px-5 py-3 font-medium">
-                      Check In
-                    </th>
+                    <th className="px-5 py-3 font-medium">Check Out</th>
 
-                    <th className="px-5 py-3 font-medium">
-                      Check Out
-                    </th>
+                    <th className="px-5 py-3 font-medium">Worked</th>
 
-                    <th className="px-5 py-3 font-medium">
-                      Worked
-                    </th>
+                    <th className="px-5 py-3 font-medium">Overtime</th>
 
-                    <th className="px-5 py-3 font-medium">
-                      Overtime
-                    </th>
-
-                    <th className="px-5 py-3 font-medium">
-                      Note
-                    </th>
-
+                    <th className="px-5 py-3 font-medium">Note</th>
                   </tr>
-
                 </thead>
 
                 <tbody>
-
                   {records.map((r) => {
+                    const meta = STATUS_META[r.status] ?? STATUS_META.PRESENT;
 
-                    const meta =
-                      STATUS_META[r.status] ??
-                      STATUS_META.PRESENT;
-
-                    const overtime =
-                      getOvertimeHours(r.workedHours);
+                    const overtime = getOvertimeHours(r.workedHours);
 
                     const isToday =
                       year === today.getFullYear() &&
                       month === today.getMonth() + 1 &&
-                      new Date(r.date).getUTCDate() ===
-                        today.getDate();
+                      new Date(r.date).getUTCDate() === today.getDate();
 
                     return (
                       <tr
@@ -1099,9 +943,7 @@ if (showOvertime) {
                           isToday ? "bg-primary/5" : ""
                         }`}
                       >
-
                         <td className="px-5 py-3 font-medium whitespace-nowrap">
-
                           {fmtDate(r.date)}
 
                           {isToday && (
@@ -1109,102 +951,76 @@ if (showOvertime) {
                               Today
                             </span>
                           )}
-
                         </td>
 
                         <td className="px-5 py-3">
-
                           <span
                             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
                           >
                             {meta.label}
                           </span>
-
                         </td>
 
                         <td className="px-5 py-3 whitespace-nowrap">
-
                           <span className="flex items-center gap-1.5">
-
                             <LogIn className="h-3.5 w-3.5 text-emerald-600" />
 
                             {fmtTime(r.checkIn)}
-
                           </span>
-
                         </td>
 
                         <td className="px-5 py-3 whitespace-nowrap">
-
                           <span className="flex items-center gap-1.5">
-
                             <LogOut className="h-3.5 w-3.5 text-rose-600" />
 
                             {fmtTime(r.checkOut)}
-
                           </span>
-
                         </td>
 
                         <td className="px-5 py-3 font-medium">
-
                           {fmtWorkedHours(getRegularHours(r.workedHours))}
-
                         </td>
 
                         <td className="px-5 py-3">
-
                           {overtime > 0 ? (
                             <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
                               <Clock3 className="h-3.5 w-3.5" />
                               {fmtWorkedHours(overtime)}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
+                          {r.note ? (
+                            <div className="space-y-1">
+                              {r.note.split("|").map((note, index) => (
+                                <div
+                                  key={index}
+                                  className="text-base font-medium text-slate-700 whitespace-nowrap"
+                                >
+                                  {note.trim()}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-base text-muted-foreground">
                               —
                             </span>
                           )}
-
                         </td>
-
-                       <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
-  {r.note ? (
-    <div className="space-y-1">
-      {r.note.split("|").map((note, index) => (
-        <div
-          key={index}
-          className="text-base font-medium text-slate-700 whitespace-nowrap"
-        >
-          {note.trim()}
-        </div>
-      ))}
-    </div>
-  ) : (
-    <span className="text-base text-muted-foreground">
-      —
-    </span>
-  )}
-</td>
-
                       </tr>
                     );
                   })}
-
                 </tbody>
-
               </table>
-
             </div>
-
           )}
-
         </div>
-
       )}
-
     </div>
   );
 };
 
 export default Attendance;
-

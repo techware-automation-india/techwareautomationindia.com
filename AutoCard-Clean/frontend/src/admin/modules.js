@@ -4,6 +4,7 @@ import {
   Users,
   Inbox,
   ClipboardList,
+  BadgeCheck,
   CalendarDays,
   Clock,
   FolderKanban,
@@ -44,6 +45,13 @@ export const adminModules = [
     path: "/admin/requests",
     icon: Inbox,
     description: "Review and act on incoming employee requests.",
+  },
+  {
+    key: "approvals",
+    label: "Approvals",
+    path: "/admin/approvals",
+    icon: BadgeCheck,
+    description: "Approve or reject pending employee requests.",
   },
   // {
   //   key: "leave-requests",

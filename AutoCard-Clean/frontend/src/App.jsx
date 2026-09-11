@@ -10,6 +10,8 @@ import UniversalLogin from "./pages/UniversalLogin.jsx";
 import Machines from "./pages/Machines.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
+import AdminProfile from "./admin/AdminProfile.jsx";
+import ChangePassword from "./admin/pages/ChangePassword.jsx";
 import AdminLayout from "./admin/AdminLayout.jsx";
 import Overview from "./admin/pages/Overview.jsx";
 import Employee from "./admin/pages/Employee.jsx";
@@ -17,7 +19,10 @@ import EmployeeList from "./admin/pages/EmployeeList.jsx";
 // CUSTOMER ADMIN PAGES COMMENTED OUT
 // import Customer from "./admin/pages/Customer.jsx";
 // import CustomerList from "./admin/pages/CustomerList.jsx";
-import Requests from "./admin/pages/Requests.jsx";
+import RequestsHome from "./admin/pages/RequestsHome.jsx";
+import AdminTrackRequests from "./admin/pages/AdminTrackRequests.jsx";
+import AdminForgotPunch from "./admin/pages/AdminForgotPunch.jsx";
+import Approvals from "./admin/pages/Approvals.jsx";
 import LeaveRequests from "./admin/pages/LeaveRequests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
@@ -33,6 +38,8 @@ import Roster from "./admin/pages/Roster.jsx";
 
 import EmployeeLayout from "./employee/EmployeeLayout.jsx";
 import EmployeeOverview from "./employee/pages/Overview.jsx";
+import EmployeeProfile from "./employee/EmployeeProfile.jsx";
+import EmployeeChangePassword from "./employee/pages/ChangePassword.jsx";
 import EmployeeOnboarding from "./employee/pages/Onboarding.jsx";
 import EmployeeMarkAttendance from "./employee/pages/MarkAttendance.jsx";
 import EmployeeAttendance from "./employee/pages/Attendance.jsx";
@@ -43,6 +50,8 @@ import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
 // CUSTOMER MANAGEMENT COMMENTED OUT
 // import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
 import EmployeeRequests from "./employee/pages/Requests.jsx";
+import AttendanceCorrection from "./employee/pages/AttendanceCorrection.jsx";
+import TrackRequests from "./employee/pages/TrackRequests.jsx";
 import EmployeeLeavePolicy from "./employee/pages/LeavePolicy.jsx";
 import EmployeeProjects from "./employee/pages/Projects.jsx";
 import EmployeeServices from "./employee/pages/Services.jsx";
@@ -66,7 +75,9 @@ const dashboardPrefixes = ["/admin", "/employee" /*, "/customer" */];
 const AppRoutes = () => {
   const location = useLocation();
   const [theme, setTheme] = useState(() => getPreferredTheme());
-  const isDashboardRoute = dashboardPrefixes.some((path) => location.pathname.startsWith(path));
+  const isDashboardRoute = dashboardPrefixes.some((path) =>
+    location.pathname.startsWith(path),
+  );
 
   useEffect(() => {
     if (isDashboardRoute) {
@@ -90,28 +101,37 @@ const AppRoutes = () => {
     };
 
     systemTheme.addEventListener("change", handleSystemThemeChange);
-    return () => systemTheme.removeEventListener("change", handleSystemThemeChange);
+    return () =>
+      systemTheme.removeEventListener("change", handleSystemThemeChange);
   }, [isDashboardRoute]);
 
   return (
     <>
       <ScrollToTop />
-      <Toaster position="top-right" theme={isDashboardRoute ? theme : "light"} richColors />
+      <Toaster
+        position="top-right"
+        theme={isDashboardRoute ? theme : "light"}
+        richColors
+      />
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/login" element={<UniversalLogin />} />
         <Route path="/login/:role" element={<Login />} />
-        
 
         <Route path="/admin" element={<AdminLayout />}>
+          <Route path="profile" element={<AdminProfile />} />
+          <Route path="change-password" element={<ChangePassword />} />
           <Route index element={<Overview />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
           {/* CUSTOMER ADMIN ROUTES COMMENTED OUT */}
           {/* <Route path="customer" element={<Customer />} /> */}
           {/* <Route path="customer-list" element={<CustomerList />} /> */}
-          <Route path="requests" element={<Requests />} />
+          <Route path="requests" element={<RequestsHome />} />
+          <Route path="requests/track" element={<AdminTrackRequests />} />
+          <Route path="requests/forgot-punch" element={<AdminForgotPunch />} />
+          <Route path="approvals" element={<Approvals />} />
           {/* <Route path="leave-requests" element={<LeaveRequests />} /> */}
           {/* <Route path="leave-policy" element={<LeavePolicy />} /> */}
           {/* <Route path="holidays" element={<Holidays />} /> */}
@@ -120,7 +140,7 @@ const AppRoutes = () => {
           <Route path="attendance-requests" element={<AttendanceRequests />} />
           {/* <Route path="projects" element={<Projects />} /> */}
           {/* <Route path="project/:id" element={<ProjectDetails />} /> */}
-          
+
           {/* <Route path="roles-access" element={<RolesAccess />} /> */}
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
@@ -129,10 +149,25 @@ const AppRoutes = () => {
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeOverview />} />
           {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
+          <Route path="profile" element={<EmployeeProfile />} />
+          <Route path="change-password" element={<EmployeeChangePassword />} />
+
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />
           <Route path="requests" element={<EmployeeRequests />} />
-          {/* <Route path="leave" element={<RequireOnboarding><EmployeeLeave /></RequireOnboarding>} /> */}
+          <Route path="requests/track" element={<TrackRequests />} />
+          <Route
+            path="requests/forgot-punch"
+            element={<AttendanceCorrection />}
+          />
+          <Route
+            path="leave"
+            element={
+              <RequireOnboarding>
+                <EmployeeLeave />
+              </RequireOnboarding>
+            }
+          />
           {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
           {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
           {/* <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} /> */}
@@ -140,7 +175,7 @@ const AppRoutes = () => {
           {/* <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} /> */}
           {/* <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} /> */}
           {/* <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} /> */}
-         
+
           {/* <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} /> */}
           {/* <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} /> */}
         </Route>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
+import { Menu, X, LogOut, ChevronLeft, User, ChevronDown } from "lucide-react";
 import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
@@ -8,6 +8,7 @@ import ThemeToggle from "../components/ThemeToggle.jsx";
 const AdminLayout = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const user = getAuthUser();
 
   // Redirect to login if not authenticated as admin — must be inside useEffect
@@ -29,23 +30,26 @@ const AdminLayout = () => {
   const sidebarContent = (
     <>
       <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/admin" className="font-display flex items-center gap-0">
-          <div className="flex flex-col justify-center">
-           <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
-  <span style={{ color: "#2A3791" }}>Techware</span>
-  
-</h1>
+        <Link to="/admin" className="flex items-center gap-3">
+          {/* Logo */}
+          <img
+            src="/techwareLogo.svg"
+            alt="Techware"
+            className="h-10 w-10 object-contain"
+          />
 
-<p
-  className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
-  style={{
-    letterSpacing: "0.28em",
-    lineHeight: 1.2,
-  }}
->
-  <span style={{ color: "#2A3791" }}>Automation </span>
-  <span style={{ color: "#339DE0" }}> INDIA</span>
-</p>
+          {/* App Name */}
+          <div className="flex flex-col">
+            <span className="text-[16px] font-bold leading-tight text-[#2A3791]">
+              Techware
+            </span>
+
+            <span className="text-[10px] font-semibold leading-tight text-[#2A3791]">
+              Management{" "}
+              <span className="text-[10px] font-semibold leading-tight text-[#339DE0]">
+                System
+              </span>
+            </span>
           </div>
         </Link>
       </div>
@@ -94,7 +98,10 @@ const AdminLayout = () => {
       {/* Mobile sidebar */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-foreground/40" onClick={() => setMobileOpen(false)} />
+          <div
+            className="absolute inset-0 bg-foreground/40"
+            onClick={() => setMobileOpen(false)}
+          />
           <aside className="relative flex flex-col w-64 bg-background border-r border-border">
             <button
               onClick={() => setMobileOpen(false)}
@@ -128,12 +135,83 @@ const AdminLayout = () => {
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-foreground">{user?.fullName || "Admin"}</div>
-              <div className="text-xs text-muted-foreground">{user?.email || ""}</div>
-            </div>
-            <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm">
-              {user?.fullName ? user.fullName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "AD"}
+
+            {/* Profile Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setProfileOpen((prev) => !prev)}
+                className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-secondary transition-colors"
+                aria-label="Open profile menu"
+              >
+                {/* Name & Email */}
+                <div className="text-right hidden sm:block">
+                  <div className="text-sm font-semibold text-foreground">
+                    {user?.fullName || "System Admin"}
+                  </div>
+
+                  <div className="text-xs text-muted-foreground">
+                    {user?.email || ""}
+                  </div>
+                </div>
+
+                {/* Avatar */}
+                <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm">
+                  {user?.fullName
+                    ? user.fullName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase()
+                        .slice(0, 2)
+                    : "AD"}
+                </div>
+
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${
+                    profileOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {/* Dropdown */}
+              {profileOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-background shadow-lg z-50 overflow-hidden">
+                  {/* User Info */}
+                  <div className="px-4 py-3 border-b border-border">
+                    <div className="text-sm font-semibold text-foreground">
+                      {user?.fullName || "System Admin"}
+                    </div>
+
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {user?.email || ""}
+                    </div>
+                  </div>
+
+                  {/* My Profile */}
+                  <Link
+                    to="/admin/profile"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-secondary transition-colors"
+                  >
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    My Profile
+                  </Link>
+
+                  {/* Logout */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/10 transition-colors border-t border-border"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>

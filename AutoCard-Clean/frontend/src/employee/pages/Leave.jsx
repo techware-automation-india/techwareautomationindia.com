@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  Plane, Loader2, RefreshCw, Plus, X, CalendarDays,
+  ArrowLeft, Plane, Loader2, RefreshCw, Plus, X, CalendarDays,
   CheckCircle2, Clock, XCircle, Ban, Send, AlertTriangle, Zap,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 
@@ -37,6 +38,7 @@ const inputClass =
 
 // ── component ─────────────────────────────────────────────────────────────────
 const Leave = () => {
+  const navigate = useNavigate();
   const [balances, setBalances]       = useState([]);
   const [leaveTypes, setLeaveTypes]   = useState([]);
   const [requests, setRequests]       = useState([]);
@@ -51,7 +53,7 @@ const Leave = () => {
     leaveTypeId: "",
     startDate: today(),
     endDate: today(),
-    reason: "",
+    comment: "",
   });
 
   const load = async () => {
@@ -82,14 +84,17 @@ const Leave = () => {
     if (form.endDate < form.startDate) { toast.error("End date must be on or after start date."); return; }
     setSubmitting(true);
     try {
-      const res = await apiPost("/leave/apply", form);
+      const res = await apiPost("/leave/apply", {
+        ...form,
+        reason: form.comment,
+      });
       if (res.autoApproved) {
         toast.success("Emergency leave applied and automatically approved!");
       } else {
         toast.success("Leave application submitted! Awaiting admin approval.");
       }
       setShowForm(false);
-      setForm({ leaveTypeId: "", startDate: today(), endDate: today(), reason: "" });
+      setForm({ leaveTypeId: "", startDate: today(), endDate: today(), comment: "" });
       refresh();
     } catch (err) {
       toast.error(err.message || "Failed to apply for leave.");
@@ -134,6 +139,14 @@ const Leave = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary"
+            aria-label="Back to requests"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <Plane className="h-6 w-6 text-primary" />
           </div>
@@ -241,6 +254,7 @@ const Leave = () => {
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border bg-secondary/30">
                   <th className="px-5 py-3 font-medium">Type</th>
+                  <th className="px-5 py-3 font-medium">Comment</th>
                   <th className="px-5 py-3 font-medium">From</th>
                   <th className="px-5 py-3 font-medium">To</th>
                   <th className="px-5 py-3 font-medium">Days</th>
@@ -254,7 +268,9 @@ const Leave = () => {
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
                     <td className="px-5 py-3 font-medium">
                       {r.leaveType?.name ?? "—"}
-                      <p className="text-xs text-muted-foreground font-normal">{r.reason || "—"}</p>
+                    </td>
+                    <td className="px-5 py-3 text-xs text-muted-foreground max-w-[220px]">
+                      <span className="block truncate" title={r.reason || ""}>{r.reason || "—"}</span>
                     </td>
                     <td className="px-5 py-3 whitespace-nowrap">{fmt(r.startDate)}</td>
                     <td className="px-5 py-3 whitespace-nowrap">{fmt(r.endDate)}</td>
@@ -393,16 +409,16 @@ const Leave = () => {
                 </div>
               </div>
 
-              {/* Reason */}
+              {/* Comment */}
               <div>
-                <label className="text-sm font-medium mb-1.5 block">Reason</label>
+                <label className="text-sm font-medium mb-1.5 block">Comment</label>
                 <textarea
                   className={inputClass + " resize-none"}
                   rows={3}
-                  value={form.reason}
-                  onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))}
+                  value={form.comment}
+                  onChange={(e) => setForm((p) => ({ ...p, comment: e.target.value }))}
                   maxLength={500}
-                  placeholder="Optional — briefly describe the reason for your leave"
+                  placeholder="Optional — add a comment for your leave request"
                 />
               </div>
 

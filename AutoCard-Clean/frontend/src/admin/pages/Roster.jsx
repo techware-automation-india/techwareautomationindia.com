@@ -129,14 +129,14 @@ const Roster = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (saving) return;
-    if (!form.employeeId || !form.fromDate || !form.toDate || !form.shiftId) {
-      toast.error("Employee, from date, to date and shift are required.");
+    if (!form.employeeId || !form.fromDate || !form.shiftId) {
+      toast.error("Employee, from date and shift are required.");
       return;
     }
     
     // Validate date range
     const from = new Date(form.fromDate);
-    const to = new Date(form.toDate);
+    const to = new Date(form.toDate || form.fromDate);
     if (to < from) {
       toast.error("To date must be after or equal to From date.");
       return;
@@ -316,8 +316,8 @@ const Roster = () => {
               <input type="date" className={inputClass} value={form.fromDate} onChange={e => setForm(p=>({...p, fromDate: e.target.value}))} required />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">To Date <span className="text-destructive">*</span></label>
-              <input type="date" className={inputClass} value={form.toDate} onChange={e => setForm(p=>({...p, toDate: e.target.value}))} required />
+              <label className="text-sm font-medium mb-1.5 block">To Date <span className="text-muted-foreground font-normal">(Optional)</span></label>
+              <input type="date" className={inputClass} value={form.toDate} min={form.fromDate || undefined} onChange={e => setForm(p=>({...p, toDate: e.target.value}))} />
             </div>
             <div>
               <label className="text-sm font-medium mb-1.5 block">Shift <span className="text-destructive">*</span></label>
@@ -452,7 +452,7 @@ const Roster = () => {
                         </span>
                       </td>
                       <td className="px-5 py-3 font-mono text-xs whitespace-nowrap">
-                        {e.shift ? formatTimeRange(e.shift.startTime, e.shift.endTime) : "—"}
+                        {e.shift ? formatTimeRange(e.shift?.startTime, e.shift?.endTime) : "—"}
                       </td>
                       <td className="px-5 py-3">{e.location?.name ?? "—"}</td>
                       <td className="px-5 py-3 text-muted-foreground max-w-[160px] truncate">{e.note || "—"}</td>

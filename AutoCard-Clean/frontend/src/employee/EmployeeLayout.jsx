@@ -1,6 +1,22 @@
 import { useState, useEffect } from "react";
-import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Menu, X, LogOut, ChevronLeft, ClipboardList, Clock } from "lucide-react";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
+import {
+  Menu,
+  X,
+  LogOut,
+  ChevronLeft,
+  ClipboardList,
+  Clock,
+  User,
+  ChevronDown,
+  
+} from "lucide-react";
 import { employeeModules, getModulesByPermissions } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import { apiGet } from "../lib/api.js";
@@ -12,6 +28,7 @@ const EmployeeLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [visibleModules, setVisibleModules] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
@@ -57,27 +74,31 @@ const EmployeeLayout = () => {
 
   const sidebarContent = (
     <>
-      <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/employee" className="font-display flex items-center gap-0">
-          <div className="flex flex-col justify-center">
-            <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
-  <span style={{ color: "#2A3791" }}>Tech</span>
-  <span style={{ color: "#2A3791" }}>ware</span>
-</h1>
+     <div className="h-16 flex items-center px-6 border-b border-border">
+        <Link to="/admin" className="flex items-center gap-3">
+          {/* Logo */}
+          <img
+            src="/techwareLogo.svg"
+            alt="Techware"
+            className="h-10 w-10 object-contain"
+          />
 
-<p
-  className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
-  style={{
-    letterSpacing: "0.28em",
-    lineHeight: 1.2,
-  }}
->
-  <span style={{ color: "#2A3791" }}>Automation </span>
-  <span style={{ color: "#339DE0" }}>INDIA</span>
-</p>
+          {/* App Name */}
+          <div className="flex flex-col">
+            <span className="text-[16px] font-bold leading-tight text-[#2A3791]">
+              Techware
+            </span>
+
+            <span className="text-[10px] font-semibold leading-tight text-[#2A3791]">
+              Management{" "}
+              <span className="text-[10px] font-semibold leading-tight text-[#339DE0]">
+                System
+              </span>
+            </span>
           </div>
         </Link>
       </div>
+
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {loadingPermissions ? (
@@ -89,7 +110,8 @@ const EmployeeLayout = () => {
             .filter(({ key }) => {
               // Hide non-onboarding modules if status is PENDING, but allow mark attendance.
               const isPending = user?.onboardingStatus === "PENDING";
-              const isOnboardingModule = key === "onboarding" || key === "overview";
+              const isOnboardingModule =
+                key === "onboarding" || key === "overview";
               const isMarkAttendance = key === "mark-attendance";
               return !isPending || isOnboardingModule || isMarkAttendance;
             })
@@ -135,7 +157,10 @@ const EmployeeLayout = () => {
       {/* Mobile sidebar */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-foreground/40" onClick={() => setMobileOpen(false)} />
+          <div
+            className="absolute inset-0 bg-foreground/40"
+            onClick={() => setMobileOpen(false)}
+          />
           <aside className="relative flex flex-col w-64 bg-background border-r border-border">
             <button
               onClick={() => setMobileOpen(false)}
@@ -169,19 +194,132 @@ const EmployeeLayout = () => {
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-foreground">{user?.fullName || "Employee"}</div>
-              <div className="text-xs text-muted-foreground">{user?.email || ""}</div>
-            </div>
-            <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
-              {user?.profileImage ? (
-                <img
-                  src={`${API_BASE}${user.profileImage}`}
-                  alt={user.fullName}
-                  className="w-full h-full object-cover"
+
+            <div className="relative">
+              {/* Profile Button */}
+              <button
+                type="button"
+                onClick={() => setProfileOpen((prev) => !prev)}
+                className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-secondary transition-colors"
+              >
+                {/* Name + Email */}
+                <div className="text-right hidden sm:block">
+                  <div className="text-sm font-semibold text-foreground">
+                    {user?.fullName || "Employee"}
+                  </div>
+
+                  <div className="text-xs text-muted-foreground">
+                    {user?.email || ""}
+                  </div>
+                </div>
+
+                {/* Avatar */}
+                <div className="w-9 h-9 rounded-full cta-gradient flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
+                  {user?.profileImage ? (
+                    <img
+                      src={`${API_BASE}${user.profileImage}`}
+                      alt={user.fullName || "Employee"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : user?.fullName ? (
+                    user.fullName
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()
+                      .slice(0, 2)
+                  ) : (
+                    "EM"
+                  )}
+                </div>
+
+                <ChevronDown
+                  className={`hidden sm:block w-4 h-4 text-muted-foreground transition-transform ${
+                    profileOpen ? "rotate-180" : ""
+                  }`}
                 />
-              ) : (
-                user?.fullName ? user.fullName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "EM"
+              </button>
+
+              {/* Dropdown */}
+              {profileOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-border bg-background shadow-xl z-50 overflow-hidden">
+                  {/* User Info */}
+                  <div className="px-4 py-4 border-b border-border">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full cta-gradient flex items-center justify-center text-white text-sm font-semibold overflow-hidden">
+                        {user?.profileImage ? (
+                          <img
+                            src={`${API_BASE}${user.profileImage}`}
+                            alt={user.fullName || "Employee"}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : user?.fullName ? (
+                          user.fullName
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()
+                            .slice(0, 2)
+                        ) : (
+                          "EM"
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {user?.fullName || "Employee"}
+                        </p>
+
+                        <p className="text-xs text-muted-foreground truncate">
+                          {user?.email || ""}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="inline-flex mt-3 px-2 py-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold tracking-wide">
+                      EMPLOYEE
+                    </span>
+                  </div>
+
+                  {/* Menu */}
+                  <div className="p-2">
+                    <Link
+                      to="/employee/profile"
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
+                        <User className="w-4 h-4 text-muted-foreground" />
+                      </div>
+
+                      <div>
+                        <p>My Profile</p>
+                        <p className="text-[11px] text-muted-foreground font-normal">
+                          View your account
+                        </p>
+                      </div>
+                    </Link>
+
+                   
+                  </div>
+
+                  {/* Logout */}
+                  <div className="p-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileOpen(false);
+                        handleLogout();
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
+                        <LogOut className="w-4 h-4" />
+                      </div>
+                      Logout
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -193,8 +331,12 @@ const EmployeeLayout = () => {
             <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
               <ClipboardList className="h-4 w-4 shrink-0" />
               <span>
-                <strong>Action Required:</strong> Please complete your onboarding form to access all features.{" "}
-                <Link to="/employee/onboarding" className="underline font-semibold hover:text-amber-800">
+                <strong>Action Required:</strong> Please complete your
+                onboarding form to access all features.{" "}
+                <Link
+                  to="/employee/onboarding"
+                  className="underline font-semibold hover:text-amber-800"
+                >
                   Complete Now
                 </Link>
               </span>
@@ -204,11 +346,12 @@ const EmployeeLayout = () => {
             <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
               <Clock className="h-4 w-4 shrink-0" />
               <span>
-                <strong>Pending Approval:</strong> Your onboarding form is under review by the admin.
+                <strong>Pending Approval:</strong> Your onboarding form is under
+                review by the admin.
               </span>
             </div>
           )}
-          
+
           <Outlet />
         </main>
       </div>

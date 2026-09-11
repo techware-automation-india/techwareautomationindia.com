@@ -40,6 +40,28 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/roster/my-notifications - latest roster assignments for the employee.
+router.get("/my-notifications", requireAuth, async (req, res) => {
+  try {
+    const profile = await prisma.employeeProfile.findUnique({ where: { userId: req.user.id } });
+    if (!profile) {
+      return res.status(404).json({ message: "Employee profile not found." });
+    }
+
+    const entries = await prisma.rosterEntry.findMany({
+      where: { employeeId: profile.id },
+      include: { shift: true, location: true },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    });
+
+    res.json({ entries });
+  } catch (err) {
+    console.error("Roster notifications error:", err);
+    res.status(500).json({ message: "Failed to load roster notifications." });
+  }
+});
+
 const rosterEntrySchema = z.object({
   employeeId: z.string().min(1, "Employee is required."),
   date:       z.string().min(1, "Date is required."),
@@ -115,10 +137,9 @@ router.get("/meta", requireAdminOrModulePermission("roster", "canView"), async (
       prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     ]);
     
-    // Filter employees to only include those with shift AND location assigned
-    const employees = allEmployees.filter(emp => 
-      emp.employeeProfile?.shiftId && emp.employeeProfile?.locationId
-    );
+    // Include every employee with a profile. Shift and location are selected
+    // for each roster entry and do not need to be preassigned on the profile.
+    const employees = allEmployees.filter((emp) => emp.employeeProfile);
     
     res.json({ employees, shifts, locations });
   } catch (err) {

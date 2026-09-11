@@ -116,9 +116,9 @@ router.get("/meta", requireAdminOrModulePermission("roster", "canView"), async (
     ]);
     
     // Filter employees to only include those with shift AND location assigned
-    const employees = allEmployees.filter(emp => 
-      emp.employeeProfile?.shiftId && emp.employeeProfile?.locationId
-    );
+   const employees = allEmployees.filter(
+  emp => emp.employeeProfile
+);
     
     res.json({ employees, shifts, locations });
   } catch (err) {

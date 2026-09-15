@@ -89,41 +89,63 @@ if (allowHostingerPattern) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests without Origin (Postman, server-to-server, mobile apps)
+    // Allow requests without Origin
     if (!origin) {
       return callback(null, true);
     }
 
-    // Check exact match first
+    // Exact origins
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    // Allow any Vercel deployment (production and preview) if enabled
+    // Vercel deployments
     if (allowVercelPattern && vercelPattern.test(origin)) {
       console.log("✅ CORS allowed Vercel:", origin);
       return callback(null, true);
     }
 
-    // Allow any Hostinger deployment if enabled
-    if (allowHostingerPattern && (hostingerPattern.test(origin) || hostingerWebPattern.test(origin))) {
+    // Hostinger deployments
+    if (
+      allowHostingerPattern &&
+      (hostingerPattern.test(origin) || hostingerWebPattern.test(origin))
+    ) {
       console.log("✅ CORS allowed Hostinger:", origin);
       return callback(null, true);
     }
 
     console.log("❌ CORS blocked origin:", origin);
-    return callback(null, false); // Don't throw error, just deny
+    return callback(null, false);
   },
+
   credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  exposedHeaders: ["Content-Length", "X-Request-Id"],
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+  ],
+
+  exposedHeaders: [
+    "Content-Length",
+    "X-Request-Id",
+  ],
+
   optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
-// Handle preflight requests explicitly
-app.options("*", cors(corsOptions));
+
+// ✅ Express 5 compatible
+app.options(/.*/, cors(corsOptions));
 
 // ==================== MIDDLEWARE ====================
 const contactLimiter = rateLimit({
@@ -227,7 +249,7 @@ if (process.env.VERCEL !== "1") {
 }
 
 // Log database connection on startup (for serverless too)
-logDatabaseConnection();
+
 
 // Export for Vercel serverless
 export default app;

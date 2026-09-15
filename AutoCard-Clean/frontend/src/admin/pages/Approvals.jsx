@@ -152,7 +152,7 @@ const Approvals = () => {
       const endpoint = approval.source === "LEAVE"
         ? `/leave/admin/${approval.id}/${decision}`
         : approval.source === "ATTENDANCE"
-          ? `/attendance/${approval.id}/${decision}`
+          ? `/attendance/${decision}/${approval.id}`
           : `/requests/${approval.id}/${decision}`;
 
       await apiPost(endpoint, approval.source === "LEAVE" ? { note: "" } : {});

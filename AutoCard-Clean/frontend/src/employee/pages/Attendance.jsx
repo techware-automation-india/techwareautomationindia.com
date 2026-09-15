@@ -790,100 +790,274 @@ const Attendance = () => {
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       ) : view === "calendar" ? (
-        /* Calendar view */
-
-        <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-border">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-              <div
-                key={d}
-                className="py-2 text-center text-xs font-semibold text-muted-foreground bg-secondary/30"
-              >
-                {d}
+        /* Redesigned calendar view */
+        <div className="space-y-4">
+          {/* Calendar toolbar */}
+          <div className="rounded-2xl bg-background border border-border card-shadow p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-5 w-5 text-primary" />
+                  <h2 className="font-display text-base font-semibold">
+                    Attendance Calendar
+                  </h2>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Daily attendance, working hours and overtime at a glance.
+                </p>
               </div>
-            ))}
-          </div>
 
-          <div className="grid grid-cols-7">
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <div
-                key={`e${i}`}
-                className="h-16 border-r border-b border-border/40 bg-secondary/10"
-              />
-            ))}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={prevMonth}
+                  className="h-9 w-9 rounded-lg border border-border bg-background flex items-center justify-center hover:bg-secondary transition-colors"
+                  title="Previous month"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
 
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-              const r = recordByDay[day];
-              const hol = holidayByDay[day];
+                <div className="min-w-[150px] rounded-lg border border-border bg-secondary/20 px-4 py-2 text-center">
+                  <div className="text-sm font-semibold">
+                    {MONTH_NAMES[month - 1]} {year}
+                  </div>
+                </div>
 
-              const isToday =
-                year === today.getFullYear() &&
-                month === today.getMonth() + 1 &&
-                day === today.getDate();
+                <button
+                  type="button"
+                  onClick={nextMonth}
+                  disabled={
+                    year === today.getFullYear() &&
+                    month === today.getMonth() + 1
+                  }
+                  className="h-9 w-9 rounded-lg border border-border bg-background flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Next month"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
 
-              const meta = r
-                ? STATUS_META[r.status]
-                : hol
-                  ? STATUS_META.HOLIDAY
-                  : null;
-
-              const overtime = r ? getOvertimeHours(r.workedHours) : 0;
-
-              return (
-                <div
-                  key={day}
-                  className={`h-16 border-r border-b border-border/40 p-1.5 flex flex-col relative transition-colors
-                    ${meta ? `${meta.cell} border` : "hover:bg-secondary/20"}
-                    ${isToday ? "ring-2 ring-inset ring-primary" : ""}`}
+            {/* Legend */}
+            <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-2">
+              {Object.entries(STATUS_META).map(([key, m]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleStatusClick(key)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                    selectedStatus === key
+                      ? `${m.bg} ${m.text} ring-2 ring-offset-1 ring-primary/30`
+                      : `${m.bg} ${m.text} hover:opacity-80`
+                  }`}
                 >
                   <span
-                    className={`text-xs font-bold leading-none ${
-                      isToday ? "text-primary" : ""
-                    }`}
-                  >
-                    {day}
-                  </span>
+                    className={`h-1.5 w-1.5 rounded-full ${m.bg.replace(
+                      "100",
+                      "500",
+                    )}`}
+                  />
+                  {m.label}
+                </button>
+              ))}
 
-                  {meta && (
-                    <span className="text-xs font-medium mt-auto leading-none">
-                      {meta.label}
-                    </span>
-                  )}
-
-                  {overtime > 0 && (
-                    <span className="text-[10px] font-semibold text-orange-700 mt-1">
-                      OT: {fmtWorkedHours(overtime)}
-                    </span>
-                  )}
-
-                  {hol && !r && (
-                    <span
-                      className="text-xs text-indigo-600 truncate leading-none"
-                      title={hol}
-                    >
-                      {hol}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 text-orange-700 px-2.5 py-1 text-[11px] font-semibold">
+                <Clock3 className="h-3 w-3" />
+                Overtime
+              </span>
+            </div>
           </div>
 
-          {/* Legend */}
+          {/* Calendar */}
+          <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
+            {/* Weekdays */}
+            <div className="grid grid-cols-7 border-b border-border bg-secondary/30">
+              {[
+                ["Sun", "Sunday"],
+                ["Mon", "Monday"],
+                ["Tue", "Tuesday"],
+                ["Wed", "Wednesday"],
+                ["Thu", "Thursday"],
+                ["Fri", "Friday"],
+                ["Sat", "Saturday"],
+              ].map(([shortDay, fullDay]) => (
+                <div
+                  key={shortDay}
+                  className="px-2 py-3 text-center border-r last:border-r-0 border-border/70"
+                >
+                  <span className="hidden sm:inline text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {fullDay}
+                  </span>
+                  <span className="sm:hidden text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {shortDay}
+                  </span>
+                </div>
+              ))}
+            </div>
 
-          <div className="p-4 border-t border-border flex flex-wrap gap-3">
-            {Object.entries(STATUS_META).map(([key, m]) => (
-              <span
-                key={key}
-                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${m.bg} ${m.text}`}
-              >
-                {m.label}
-              </span>
-            ))}
+            {/* Days */}
+            <div className="grid grid-cols-7">
+              {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                <div
+                  key={`empty-${i}`}
+                  className="min-h-[128px] border-r border-b border-border/50 bg-secondary/10"
+                />
+              ))}
 
-            <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium bg-orange-100 text-orange-700">
-              Overtime
-            </span>
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
+                (day) => {
+                  const r = recordByDay[day];
+                  const hol = holidayByDay[day];
+
+                  const isToday =
+                    year === today.getFullYear() &&
+                    month === today.getMonth() + 1 &&
+                    day === today.getDate();
+
+                  const meta = r
+                    ? STATUS_META[r.status] ?? STATUS_META.PRESENT
+                    : hol
+                      ? STATUS_META.HOLIDAY
+                      : null;
+
+                  const overtime = r
+                    ? getOvertimeHours(r.workedHours)
+                    : 0;
+
+                  return (
+                    <div
+                      key={day}
+                      className={`min-h-[128px] border-r border-b border-border/50 p-2.5 transition-all ${
+                        isToday
+                          ? "bg-primary/[0.04] ring-2 ring-inset ring-primary/60"
+                          : "hover:bg-secondary/20"
+                      }`}
+                    >
+                      {/* Date */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full text-xs font-bold ${
+                            isToday
+                              ? "bg-primary text-primary-foreground"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {day}
+                        </span>
+
+                        {isToday && (
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-primary">
+                            Today
+                          </span>
+                        )}
+                      </div>
+
+                      {meta ? (
+                        <div className="mt-2 space-y-2">
+                          {/* Status */}
+                          <div
+                            className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 ${meta.cell}`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${meta.bg.replace(
+                                "100",
+                                "500",
+                              )}`}
+                            />
+                            <span className="text-[10px] font-bold truncate">
+                              {meta.label}
+                            </span>
+                          </div>
+
+                          {r && (
+                            <>
+                              {/* In / Out */}
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1.5">
+                                  <div className="flex items-center gap-1 text-[9px] font-semibold text-emerald-700">
+                                    <LogIn className="h-3 w-3" />
+                                    IN
+                                  </div>
+                                  <div className="text-[10px] font-bold text-emerald-900 mt-0.5 truncate">
+                                    {fmtTime(r.checkIn)}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-lg bg-rose-50 border border-rose-100 px-2 py-1.5">
+                                  <div className="flex items-center gap-1 text-[9px] font-semibold text-rose-700">
+                                    <LogOut className="h-3 w-3" />
+                                    OUT
+                                  </div>
+                                  <div className="text-[10px] font-bold text-rose-900 mt-0.5 truncate">
+                                    {fmtTime(r.checkOut)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Hours */}
+                              <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/50 px-2 py-1.5">
+                                <div>
+                                  <div className="text-[8px] uppercase tracking-wide text-muted-foreground">
+                                    Worked
+                                  </div>
+                                  <div className="text-[10px] font-bold">
+                                    {fmtWorkedHours(
+                                      getRegularHours(r.workedHours),
+                                    )}
+                                  </div>
+                                </div>
+
+                                {overtime > 0 && (
+                                  <div className="text-right">
+                                    <div className="text-[8px] uppercase tracking-wide text-orange-600">
+                                      OT
+                                    </div>
+                                    <div className="text-[10px] font-bold text-orange-700">
+                                      {fmtWorkedHours(overtime)}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+
+                          {!r && hol && (
+                            <div
+                              className="rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-1.5 text-[10px] font-semibold text-indigo-700 truncate"
+                              title={hol}
+                            >
+                              {hol}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-7 text-center">
+                          <span className="text-[10px] text-muted-foreground/60">
+                            No record
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
+              )}
+            </div>
+
+            {/* Calendar footer */}
+            <div className="px-4 py-3 bg-secondary/20 border-t border-border">
+              <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-muted-foreground">
+                <span>
+                  {records.length} record{records.length !== 1 ? "s" : ""} in{" "}
+                  {MONTH_NAMES[month - 1]}
+                </span>
+                <span>
+                  {totalWorked.toFixed(1)} hrs worked
+                  {totalOvertime > 0
+                    ? ` • ${fmtWorkedHours(totalOvertime)} overtime`
+                    : ""}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       ) : (

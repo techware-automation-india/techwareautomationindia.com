@@ -115,8 +115,8 @@ const AdminLayout = () => {
       )}
 
       {/* Main content */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
-        <header className="h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30">
+      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden lg:ml-64 lg:max-w-[calc(100vw-16rem)] flex flex-col min-h-screen">
+        <header className="fixed top-0 left-0 right-0 lg:left-64 h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-8 z-30">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileOpen(true)}
@@ -216,7 +216,7 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8">
+        <main className="flex-1 min-w-0 overflow-x-hidden px-4 pb-4 pt-20 lg:px-8 lg:pb-8 lg:pt-24">
           <Outlet />
         </main>
       </div>

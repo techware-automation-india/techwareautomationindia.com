@@ -235,5 +235,28 @@ router.delete("/:id", requireAuth, requireAdminOrModulePermission("roster", "can
     res.status(500).json({ message: "Failed to delete entry." });
   }
 });
+// DELETE /api/roster/all — delete ALL roster entries
+router.delete(
+  "/all",
+  requireAuth,
+  requireAdminOrModulePermission("roster", "canDelete"),
+  async (req, res) => {
+    try {
+      const result = await prisma.rosterEntry.deleteMany({});
+
+      res.json({
+        count: result.count,
+        message: `${result.count} roster ${
+          result.count === 1 ? "entry" : "entries"
+        } deleted successfully.`,
+      });
+    } catch (err) {
+      console.error("Roster DELETE ALL error:", err);
+      res.status(500).json({
+        message: "Failed to delete all roster entries.",
+      });
+    }
+  },
+);
 
 export default router;

@@ -1,8 +1,19 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  CalendarRange, Loader2, RefreshCw, Plus, Trash2,
-  AlertTriangle, ChevronLeft, ChevronRight, Search,
-  Users, Clock, MapPin, X,
+  CalendarRange,
+  Loader2,
+  RefreshCw,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Search,
+  Users,
+  Clock,
+  MapPin,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiDelete } from "../../lib/api.js";
@@ -35,7 +46,14 @@ const toDateStr = (d) => {
 };
 
 // ── empty form ────────────────────────────────────────────────────────────────
-const emptyForm = { employeeId: "", fromDate: "", toDate: "", shiftId: "", locationId: "", note: "" };
+const emptyForm = {
+  employeeIds: [],
+  fromDate: "",
+  toDate: "",
+  shiftId: "",
+  locationId: "",
+  note: ""
+};
 
 // ── StatCard ──────────────────────────────────────────────────────────────────
 const StatCard = ({ icon: Icon, label, value, tone }) => {
@@ -73,6 +91,7 @@ const Roster = () => {
   const [employees, setEmployees] = useState([]);
   const [shifts,    setShifts]    = useState([]);
   const [locations, setLocations] = useState([]);
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
 
   // ui states
   const [loading,    setLoading]    = useState(true);
@@ -89,6 +108,7 @@ const Roster = () => {
   // delete
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting,     setDeleting]     = useState(false);
+  const [deletingAll,  setDeletingAll]  = useState(false);
 
   // ── load roster entries ──────────────────────────────────────────────────
   const loadRoster = useCallback(async () => {
@@ -129,43 +149,59 @@ const Roster = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (saving) return;
-    if (!form.employeeId || !form.fromDate || !form.shiftId) {
-      toast.error("Employee, from date and shift are required.");
+
+    if (!form.employeeIds?.length || !form.fromDate || !form.shiftId) {
+      toast.error("Please select at least one employee, from date and shift.");
       return;
     }
-    
-    // Validate date range
-    const from = new Date(form.fromDate);
-    const to = new Date(form.toDate || form.fromDate);
+
+    const from = new Date(`${form.fromDate}T00:00:00`);
+    const to = new Date(`${form.toDate || form.fromDate}T00:00:00`);
+
     if (to < from) {
       toast.error("To date must be after or equal to From date.");
       return;
     }
-    
+
     setSaving(true);
+
     try {
-      // Create roster entries for each day in the range
-      const promises = [];
+      const entries = [];
       const currentDate = new Date(from);
-      
+
       while (currentDate <= to) {
         const dateStr = toDateStr(currentDate);
-        const entryData = {
-          employeeId: form.employeeId,
-          date: dateStr,
-          shiftId: form.shiftId,
-          locationId: form.locationId || "",
-          note: form.note || "",
-        };
-        promises.push(apiPost("/roster", entryData));
+
+        for (const employeeId of form.employeeIds) {
+          entries.push({
+            employeeId,
+            date: dateStr,
+            shiftId: form.shiftId,
+            locationId: form.locationId || "",
+            note: form.note || "",
+          });
+        }
+
         currentDate.setDate(currentDate.getDate() + 1);
       }
-      
-      await Promise.all(promises);
-      
-      const daysCount = Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1;
-      toast.success(`${daysCount} roster ${daysCount === 1 ? 'entry' : 'entries'} created successfully.`);
+
+      await apiPost("/roster/bulk", { entries });
+
+      const daysCount =
+        Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1;
+      const employeeCount = form.employeeIds.length;
+      const totalEntries = employeeCount * daysCount;
+
+      toast.success(
+        `${totalEntries} roster ${
+          totalEntries === 1 ? "entry" : "entries"
+        } created for ${employeeCount} employee${
+          employeeCount === 1 ? "" : "s"
+        }.`
+      );
+
       setForm(emptyForm);
+      setEmployeeDropdownOpen(false);
       setShowForm(false);
       loadRoster();
     } catch (err) {
@@ -190,6 +226,37 @@ const Roster = () => {
       setDeleting(false);
     }
   };
+
+  // ── delete all visible roster entries ───────────────────────────────────
+ const deleteAllRoster = async () => {
+  if (deletingAll || deleting || entries.length === 0) return;
+
+  const confirmed = window.confirm(
+    `Delete ALL roster entries? This will permanently delete all roster data. This cannot be undone.`
+  );
+
+  if (!confirmed) return;
+
+  setDeletingAll(true);
+
+  try {
+    const result = await apiDelete("/roster/all");
+
+    toast.success(
+      result.message || "All roster entries deleted successfully."
+    );
+
+    setEntries([]);
+    setDeleteTarget(null);
+  } catch (err) {
+    toast.error(
+      err.message || "Failed to delete all roster entries."
+    );
+    await loadRoster();
+  } finally {
+    setDeletingAll(false);
+  }
+};
 
   // ── derived ──────────────────────────────────────────────────────────────
   const filteredEntries = entries.filter(e => {
@@ -239,6 +306,20 @@ const Roster = () => {
             className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
+          <button
+            onClick={deleteAllRoster}
+            disabled={deletingAll || deleting || entries.length === 0}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-destructive/30 text-destructive text-sm font-semibold hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title={entries.length ? `Delete all ${entries.length} loaded roster entries` : "No roster entries to delete"}
+          >
+            {deletingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            {deletingAll ? "Deleting…" : "Delete All"}
+          </button>
+
           <button onClick={() => setShowForm(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg cta-gradient text-white text-sm font-semibold hover:opacity-90 transition-opacity">
             <Plus className="h-4 w-4" /> Add Entry
@@ -269,18 +350,34 @@ const Roster = () => {
       </div>
 
       {/* ── Filters ── */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[220px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            placeholder="Search employee…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input
+            className={`${inputClass} pl-9`}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search employee…"
+          />
         </div>
-        <select className={inputClass + " flex-1 min-w-[180px] max-w-xs"}
-          value={filterEmp} onChange={e => setFilterEmp(e.target.value)}>
-          <option value="">All Employees</option>
-          {uniqueEmployees.map(([id, name]) => (
-            <option key={id} value={id}>{name}</option>
-          ))}
+
+        <select
+          className={`${inputClass} max-w-xs`}
+          value={filterEmp}
+          onChange={e => setFilterEmp(e.target.value)}
+        >
+          <option value="">All employees</option>
+          {employees.map(emp => {
+            const employeeId = emp.employeeProfile?.id ?? emp.id;
+            return (
+              <option key={employeeId} value={employeeId}>
+                {emp.fullName}
+                {emp.employeeProfile?.employeeCode
+                  ? ` (${emp.employeeProfile.employeeCode})`
+                  : ""}
+              </option>
+            );
+          })}
         </select>
       </div>
 
@@ -288,29 +385,132 @@ const Roster = () => {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Overlay - click to close */}
-          <div className="absolute inset-0 bg-foreground/50" onClick={() => { setShowForm(false); setForm(emptyForm); }} />
+          <div className="absolute inset-0 bg-foreground/50" onClick={() => { setShowForm(false); setForm(emptyForm); setEmployeeDropdownOpen(false); }} />
           
           {/* Form Card */}
           <div className="relative bg-background rounded-2xl border border-border shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-base font-semibold">Add Roster Entry</h2>
-              <button onClick={() => { setShowForm(false); setForm(emptyForm); }}
+              <button onClick={() => { setShowForm(false); setForm(emptyForm); setEmployeeDropdownOpen(false); }}
                 className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <form onSubmit={handleSave} className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Employee <span className="text-destructive">*</span></label>
-              <select className={inputClass} value={form.employeeId} onChange={e => setForm(p=>({...p, employeeId: e.target.value}))} required>
-                <option value="">Select employee…</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.employeeProfile?.id ?? emp.id}>
-                    {emp.fullName} {emp.employeeProfile?.employeeCode ? `(${emp.employeeProfile.employeeCode})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="relative">
+  <label className="text-sm font-medium mb-1.5 block">
+    Employees <span className="text-destructive">*</span>
+  </label>
+
+  {/* Dropdown button */}
+  <button
+    type="button"
+    onClick={() => setEmployeeDropdownOpen(v => !v)}
+    className={`${inputClass} flex items-center justify-between text-left`}
+  >
+    <span className="truncate">
+      {form.employeeIds?.length > 0
+        ? `${form.employeeIds.length} employee${
+            form.employeeIds.length > 1 ? "s" : ""
+          } selected`
+        : "Select employees…"}
+    </span>
+
+    <ChevronDown
+      className={`h-4 w-4 shrink-0 transition-transform ${
+        employeeDropdownOpen ? "rotate-180" : ""
+      }`}
+    />
+  </button>
+
+  {/* Checkbox dropdown */}
+  {employeeDropdownOpen && (
+    <div className="absolute z-50 mt-1 w-full rounded-xl border border-border bg-background shadow-xl overflow-hidden">
+
+      {/* Select All */}
+      <label className="flex items-center gap-3 px-4 py-3 border-b border-border cursor-pointer hover:bg-secondary/50">
+        <input
+          type="checkbox"
+          className="h-4 w-4"
+          checked={
+            employees.length > 0 &&
+            form.employeeIds?.length === employees.length
+          }
+          onChange={e => {
+            setForm(p => ({
+              ...p,
+              employeeIds: e.target.checked
+                ? employees.map(
+                    emp => emp.employeeProfile?.id ?? emp.id
+                  )
+                : [],
+            }));
+          }}
+        />
+
+        <span className="text-sm font-semibold">
+          Select All
+        </span>
+      </label>
+
+      {/* Employee list */}
+      <div className="max-h-64 overflow-y-auto">
+        {employees.map(emp => {
+          const employeeId =
+            emp.employeeProfile?.id ?? emp.id;
+
+          const isSelected =
+            form.employeeIds?.includes(employeeId);
+
+          return (
+            <label
+              key={employeeId}
+              className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-secondary/40"
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={isSelected}
+                onChange={e => {
+                  setForm(p => {
+                    const current = p.employeeIds || [];
+
+                    return {
+                      ...p,
+                      employeeIds: e.target.checked
+                        ? [...current, employeeId]
+                        : current.filter(
+                            id => id !== employeeId
+                          ),
+                    };
+                  });
+                }}
+              />
+
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">
+                  {emp.fullName}
+                </div>
+
+                {emp.employeeProfile?.employeeCode && (
+                  <div className="text-xs text-muted-foreground">
+                    {emp.employeeProfile.employeeCode}
+                  </div>
+                )}
+              </div>
+            </label>
+          );
+        })}
+      </div>
+
+      {/* Selected count */}
+      <div className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+        {form.employeeIds?.length || 0} employee
+        {(form.employeeIds?.length || 0) !== 1 ? "s" : ""} selected
+      </div>
+    </div>
+  )}
+</div>
             <div>
               <label className="text-sm font-medium mb-1.5 block">From Date <span className="text-destructive">*</span></label>
               <input type="date" className={inputClass} value={form.fromDate} onChange={e => setForm(p=>({...p, fromDate: e.target.value}))} required />
@@ -345,7 +545,7 @@ const Roster = () => {
               <input className={inputClass} value={form.note} onChange={e => setForm(p=>({...p, note: e.target.value}))} placeholder="Optional note" maxLength={300} />
             </div>
             <div className="sm:col-span-2 lg:col-span-3 flex justify-end gap-2">
-              <button type="button" onClick={() => { setShowForm(false); setForm(emptyForm); }}
+              <button type="button" onClick={() => { setShowForm(false); setForm(emptyForm); setEmployeeDropdownOpen(false); }}
                 className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-secondary transition-colors">
                 Cancel
               </button>

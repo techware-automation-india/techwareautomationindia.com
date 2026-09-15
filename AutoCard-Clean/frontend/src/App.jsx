@@ -120,8 +120,7 @@ const AppRoutes = () => {
         <Route path="/login/:role" element={<Login />} />
 
         <Route path="/admin" element={<AdminLayout />}>
-          <Route path="profile" element={<AdminProfile />} />
-          <Route path="change-password" element={<ChangePassword />} />
+        
           <Route index element={<Overview />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
@@ -149,8 +148,7 @@ const AppRoutes = () => {
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeOverview />} />
           {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
-          <Route path="profile" element={<EmployeeProfile />} />
-          <Route path="change-password" element={<EmployeeChangePassword />} />
+          
 
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />

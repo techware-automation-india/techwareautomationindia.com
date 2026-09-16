@@ -13,7 +13,6 @@ import {
   ChevronLeft,
   ClipboardList,
   Clock,
-  User,
   ChevronDown,
   
 } from "lucide-react";
@@ -281,27 +280,7 @@ const EmployeeLayout = () => {
                     </span>
                   </div>
 
-                  {/* Menu */}
-                  <div className="p-2">
-                    <Link
-                      to="/employee/profile"
-                      onClick={() => setProfileOpen(false)}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground hover:bg-secondary transition-colors"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
-                        <User className="w-4 h-4 text-muted-foreground" />
-                      </div>
-
-                      <div>
-                        <p>My Profile</p>
-                        <p className="text-[11px] text-muted-foreground font-normal">
-                          View your account
-                        </p>
-                      </div>
-                    </Link>
-
-                   
-                  </div>
+                  {/* My Profile route hidden/commented for employee panel. */}
 
                   {/* Logout */}
                   <div className="p-2 border-t border-border">

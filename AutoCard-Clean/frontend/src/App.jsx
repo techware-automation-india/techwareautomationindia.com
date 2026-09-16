@@ -10,7 +10,7 @@ import UniversalLogin from "./pages/UniversalLogin.jsx";
 import Machines from "./pages/Machines.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
-import AdminProfile from "./admin/AdminProfile.jsx";
+// import AdminProfile from "./admin/AdminProfile.jsx";
 import ChangePassword from "./admin/pages/ChangePassword.jsx";
 import AdminLayout from "./admin/AdminLayout.jsx";
 import Overview from "./admin/pages/Overview.jsx";
@@ -38,7 +38,7 @@ import Roster from "./admin/pages/Roster.jsx";
 
 import EmployeeLayout from "./employee/EmployeeLayout.jsx";
 import EmployeeOverview from "./employee/pages/Overview.jsx";
-import EmployeeProfile from "./employee/EmployeeProfile.jsx";
+// import EmployeeProfile from "./employee/EmployeeProfile.jsx";
 import EmployeeChangePassword from "./employee/pages/ChangePassword.jsx";
 import EmployeeOnboarding from "./employee/pages/Onboarding.jsx";
 import EmployeeMarkAttendance from "./employee/pages/MarkAttendance.jsx";

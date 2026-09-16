@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, LogOut, ChevronLeft, User, ChevronDown } from "lucide-react";
+import { Menu, X, LogOut, ChevronLeft, ChevronDown } from "lucide-react";
 import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
@@ -188,15 +188,7 @@ const AdminLayout = () => {
                     </div>
                   </div>
 
-                  {/* My Profile */}
-                  <Link
-                    to="/admin/profile"
-                    onClick={() => setProfileOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-secondary transition-colors"
-                  >
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    My Profile
-                  </Link>
+                  {/* My Profile route hidden/commented for admin panel. */}
 
                   {/* Logout */}
                   <button

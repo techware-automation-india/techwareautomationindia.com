@@ -32,84 +32,228 @@ const TrackRequests = ({ isAdmin = false }) => {
   const [loadError, setLoadError] = useState("");
 
   const loadRequests = async () => {
-    setLoading(true);
-    setLoadError("");
-    try {
-      const results = await Promise.allSettled([
-        apiGet("/requests/my"),
-        apiGet("/leave/my"),
-        apiGet("/attendance/my-requests"),
-      ]);
-      const requestResult = results[0];
-      const leaveResult = results[1];
-      const attendanceResult = results[2];
-      const employeeRequests = requestResult.status === "fulfilled"
+  setLoading(true);
+  setLoadError("");
+
+  try {
+    // ============================================================
+    // ADMIN
+    // ============================================================
+    // Admin must NOT call:
+    // /requests/my
+    // /leave/my
+    // /attendance/my-requests
+    //
+    // Admin uses only:
+    // GET /api/requests
+    // ============================================================
+
+    if (isAdmin) {
+      const result = await apiGet("/requests");
+
+      console.log("ADMIN TRACK REQUESTS:", result);
+
+      const adminRequests = result.requests || [];
+
+      setRequests(
+        adminRequests.sort(
+          (first, second) =>
+            new Date(second.createdAt || 0) -
+            new Date(first.createdAt || 0)
+        )
+      );
+
+      return;
+    }
+
+    // ============================================================
+    // EMPLOYEE
+    // ============================================================
+
+    const results = await Promise.allSettled([
+      apiGet("/requests/my"),
+      apiGet("/leave/my"),
+      apiGet("/attendance/my-requests"),
+    ]);
+
+    const requestResult = results[0];
+    const leaveResult = results[1];
+    const attendanceResult = results[2];
+
+    // ------------------------------------------------------------
+    // GENERAL / FORGOT PUNCH REQUESTS
+    // ------------------------------------------------------------
+
+    const employeeRequests =
+      requestResult.status === "fulfilled"
         ? requestResult.value.requests || []
         : [];
 
-      if (isAdmin) {
-        setRequests(employeeRequests.sort(
-          (first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
-        ));
-        return;
-      }
+    // ------------------------------------------------------------
+    // LEAVE REQUESTS
+    // ------------------------------------------------------------
 
-      const leaveRequests = leaveResult.status === "fulfilled"
-        ? (leaveResult.value.requests || []).map((request) => ({
-        id: `leave-${request.id}`,
-        type: "LEAVE",
-        subject: `${request.leaveType?.name || "Leave"} request`,
-        status: request.status,
-        createdAt: request.createdAt,
-        description: `${new Date(request.startDate).toLocaleDateString()} – ${new Date(request.endDate).toLocaleDateString()} · ${request.totalDays} day(s)${request.reason ? `\nReason: ${request.reason}` : ""}`,
-        reviewNote: request.reviewNote,
-        }))
-        : [];
-      const attendanceRequests = attendanceResult.status === "fulfilled"
-        ? (attendanceResult.value.records || []).map((request) => ({
-          id: `attendance-${request.id}`,
-          type: "ATTENDANCE",
-          subject: "Attendance location approval",
-          status: request.status === "PENDING_APPROVAL"
-            ? "PENDING"
-            : request.note?.includes("Approved by admin")
-              ? "APPROVED"
-              : "REJECTED",
-          createdAt: request.createdAt || request.date,
-          description: request.note || "Check-in or check-out from an unassigned location.",
-        }))
-        : [];
-      setRequests([...employeeRequests, ...leaveRequests, ...attendanceRequests].sort(
-        (first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
-      ));
+    const leaveRequests =
+      leaveResult.status === "fulfilled"
+        ? (leaveResult.value.requests || []).map(
+            (request) => ({
+              id: `leave-${request.id}`,
 
-      const failedServices = results
-        .map((result, index) => ({ result, label: ["general requests", "leave requests", "attendance requests"][index] }))
-        .filter(({ result }) => result.status === "rejected");
-      const unauthorizedResult = failedServices.find(({ result }) => result.reason?.status === 401);
-      if (unauthorizedResult) {
-        clearAuth();
-        navigate("/login", { replace: true });
-        return;
-      }
-      if (failedServices.length > 0) {
-        const failedLabels = failedServices.map(({ label }) => label).join(", ");
-        const message = `Unable to load ${failedLabels}.`;
-        setLoadError(message);
-        toast.error(message);
-      }
-    } catch (err) {
-      if (err.status === 401) {
-        clearAuth();
-        navigate("/login", { replace: true });
-        return;
-      }
-      setLoadError(err.message || "Failed to load requests.");
-      toast.error(err.message || "Failed to load requests.");
-    } finally {
-      setLoading(false);
+              type: "LEAVE",
+
+              subject: `${
+                request.leaveType?.name || "Leave"
+              } request`,
+
+              status: request.status,
+
+              createdAt: request.createdAt,
+
+              description:
+                `${new Date(
+                  request.startDate
+                ).toLocaleDateString()} – ` +
+                `${new Date(
+                  request.endDate
+                ).toLocaleDateString()} · ` +
+                `${request.totalDays} day(s)` +
+                (request.reason
+                  ? `\nReason: ${request.reason}`
+                  : ""),
+
+              reviewNote: request.reviewNote,
+            })
+          )
+        : [];
+
+    // ------------------------------------------------------------
+    // ATTENDANCE REQUESTS
+    // ------------------------------------------------------------
+
+    const attendanceRequests =
+      attendanceResult.status === "fulfilled"
+        ? (attendanceResult.value.records || []).map(
+            (request) => ({
+              id: `attendance-${request.id}`,
+
+              type: "ATTENDANCE",
+
+              subject:
+                "Attendance location approval",
+
+              status:
+                request.status ===
+                "PENDING_APPROVAL"
+                  ? "PENDING"
+                  : request.note?.includes(
+                      "Approved by admin"
+                    )
+                    ? "APPROVED"
+                    : "REJECTED",
+
+              createdAt:
+                request.createdAt ||
+                request.date,
+
+              description:
+                request.note ||
+                "Check-in or check-out from an unassigned location.",
+            })
+          )
+        : [];
+
+    // ------------------------------------------------------------
+    // COMBINE EMPLOYEE REQUESTS
+    // ------------------------------------------------------------
+
+    setRequests(
+      [
+        ...employeeRequests,
+        ...leaveRequests,
+        ...attendanceRequests,
+      ].sort(
+        (first, second) =>
+          new Date(second.createdAt || 0) -
+          new Date(first.createdAt || 0)
+      )
+    );
+
+    // ------------------------------------------------------------
+    // AUTH ERROR
+    // ------------------------------------------------------------
+
+    const failedServices = results
+      .map((result, index) => ({
+        result,
+        label: [
+          "general requests",
+          "leave requests",
+          "attendance requests",
+        ][index],
+      }))
+      .filter(
+        ({ result }) =>
+          result.status === "rejected"
+      );
+
+    const unauthorizedResult =
+      failedServices.find(
+        ({ result }) =>
+          result.reason?.status === 401
+      );
+
+    if (unauthorizedResult) {
+      clearAuth();
+
+      navigate("/login", {
+        replace: true,
+      });
+
+      return;
     }
-  };
+
+    if (failedServices.length > 0) {
+      const failedLabels =
+        failedServices
+          .map(({ label }) => label)
+          .join(", ");
+
+      const message =
+        `Unable to load ${failedLabels}.`;
+
+      setLoadError(message);
+
+      toast.error(message);
+    }
+  } catch (err) {
+    console.error(
+      "Track Requests error:",
+      err
+    );
+
+    if (err.status === 401) {
+      clearAuth();
+
+      navigate("/login", {
+        replace: true,
+      });
+
+      return;
+    }
+
+    setLoadError(
+      err.message ||
+        "Failed to load requests."
+    );
+
+    toast.error(
+      err.message ||
+        "Failed to load requests."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     loadRequests();

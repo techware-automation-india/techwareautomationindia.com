@@ -45,13 +45,12 @@ const employeeRequestSchema = z.object({
 
 /*
 |--------------------------------------------------------------------------
-| PARSE FORGOT PUNCH
+| PARSE FORGOT PUNCH REQUEST
 |--------------------------------------------------------------------------
 |
 | Expected frontend description:
 |
-| Forgot Punch request for Check In on
-| 2026-09-10 at check in 10:42.
+| Forgot Punch request for Check In on 2026-09-10 at check in 10:42.
 |
 | reason
 |
@@ -75,7 +74,9 @@ function parseCorrectionRequest(description) {
     return null;
   }
 
-  const readableDescription = description.slice(0, markerIndex).trim();
+  const readableDescription = description
+    .slice(0, markerIndex)
+    .trim();
 
   /*
    * Extract reason.
@@ -119,7 +120,6 @@ function parseCorrectionRequest(description) {
     };
   } catch (error) {
     console.error("Failed to parse correction:", error);
-
     return null;
   }
 }
@@ -135,7 +135,10 @@ function getDateKey(value) {
     return null;
   }
 
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
     return value;
   }
 
@@ -152,23 +155,36 @@ function getDateKey(value) {
 |--------------------------------------------------------------------------
 | PRISMA SAFE ATTENDANCE DATE RANGE
 |--------------------------------------------------------------------------
+|
+| Attendance dates are based on IST.
+|
+| 00:00 IST = previous day 18:30 UTC
+|
+|--------------------------------------------------------------------------
 */
 
 function getAttendanceDayRange(value) {
   const dateText = getDateKey(value);
 
-  if (!dateText || !/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+  if (
+    !dateText ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(dateText)
+  ) {
     return null;
   }
 
-  // Attendance dates are based on India Standard Time (IST).
-  // 00:00 IST = previous day 18:30 UTC.
+  const start = new Date(
+    `${dateText}T00:00:00.000+05:30`,
+  );
 
-  const start = new Date(`${dateText}T00:00:00.000+05:30`);
+  const end = new Date(
+    `${dateText}T23:59:59.999+05:30`,
+  );
 
-  const end = new Date(`${dateText}T23:59:59.999+05:30`);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime())
+  ) {
     return null;
   }
 
@@ -183,6 +199,7 @@ function getAttendanceDayRange(value) {
 | TIME → DATE
 |--------------------------------------------------------------------------
 */
+
 function timeToDate(dateText, timeText) {
   if (!dateText || !timeText) {
     return null;
@@ -196,7 +213,9 @@ function timeToDate(dateText, timeText) {
     return null;
   }
 
-  const [hours, minutes] = timeText.split(":").map(Number);
+  const [hours, minutes] = timeText
+    .split(":")
+    .map(Number);
 
   if (
     Number.isNaN(hours) ||
@@ -209,7 +228,9 @@ function timeToDate(dateText, timeText) {
     return null;
   }
 
-  const result = new Date(`${dateText}T${timeText}:00+05:30`);
+  const result = new Date(
+    `${dateText}T${timeText}:00+05:30`,
+  );
 
   if (Number.isNaN(result.getTime())) {
     return null;
@@ -229,21 +250,33 @@ function calculateWorkedHours(checkIn, checkOut) {
     return null;
   }
 
-  const start = checkIn instanceof Date ? checkIn : new Date(checkIn);
+  const start =
+    checkIn instanceof Date
+      ? checkIn
+      : new Date(checkIn);
 
-  const end = checkOut instanceof Date ? checkOut : new Date(checkOut);
+  const end =
+    checkOut instanceof Date
+      ? checkOut
+      : new Date(checkOut);
 
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime())
+  ) {
     return null;
   }
 
-  const difference = end.getTime() - start.getTime();
+  const difference =
+    end.getTime() - start.getTime();
 
   if (difference <= 0) {
     return null;
   }
 
-  return Number((difference / 3600000).toFixed(2));
+  return Number(
+    (difference / 3600000).toFixed(2),
+  );
 }
 
 /*
@@ -253,7 +286,10 @@ function calculateWorkedHours(checkIn, checkOut) {
 */
 
 function punchIncludes(punchType, punch) {
-  return punchType === "both" || punchType === punch;
+  return (
+    punchType === "both" ||
+    punchType === punch
+  );
 }
 
 /*
@@ -281,7 +317,8 @@ async function getEmployeeProfile(userId) {
 */
 
 function formatCorrectionNotification(description) {
-  const correction = parseCorrectionRequest(description);
+  const correction =
+    parseCorrectionRequest(description);
 
   if (!correction) {
     return null;
@@ -311,12 +348,13 @@ function formatCorrectionNotification(description) {
 |
 | GET /api/requests/my
 |
+| ONLY EMPLOYEE
+|
 |--------------------------------------------------------------------------
 */
 
 router.get("/my", async (req, res) => {
   console.log("📥 GET /api/requests/my");
-
   console.log("👤 Auth user:", req.user);
 
   try {
@@ -326,34 +364,19 @@ router.get("/my", async (req, res) => {
       });
     }
 
-    if (req.user.role !== "EMPLOYEE" && req.user.role !== "ADMIN") {
+    /*
+     * IMPORTANT:
+     * Only employees can access /my.
+     */
+    if (req.user.role !== "EMPLOYEE") {
       return res.status(403).json({
-        message: "Employee or Admin access required.",
+        message: "Only employees can view their requests.",
         role: req.user.role,
       });
     }
 
-    let employee = await getEmployeeProfile(req.user.id);
-
-    if (!employee && req.user.role === "ADMIN") {
-      const user = await prisma.user.findUnique({
-        where: { id: req.user.id },
-      });
-
-      if (user) {
-        const nameParts = (user.fullName || "Admin").trim().split(/\s+/);
-        employee = await prisma.employeeProfile.create({
-          data: {
-            userId: req.user.id,
-            employeeCode: `ADMIN-${Date.now()}`,
-            onboardingStatus: "APPROVED",
-            firstName: nameParts[0] || "Admin",
-            lastName: nameParts.slice(1).join(" ") || "",
-            jobTitle: "Administrator",
-          },
-        });
-      }
-    }
+    const employee =
+      await getEmployeeProfile(req.user.id);
 
     if (!employee) {
       return res.status(404).json({
@@ -361,24 +384,30 @@ router.get("/my", async (req, res) => {
       });
     }
 
-    const requests = await prisma.employeeRequest.findMany({
-      where: {
-        employeeId: employee.id,
-      },
+    const requests =
+      await prisma.employeeRequest.findMany({
+        where: {
+          employeeId: employee.id,
+        },
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
 
     return res.json({
       requests,
     });
   } catch (error) {
-    console.error("❌ GET /requests/my:", error);
+    console.error(
+      "❌ GET /requests/my:",
+      error,
+    );
 
     return res.status(500).json({
-      message: error?.message || "Failed to load your requests.",
+      message:
+        error?.message ||
+        "Failed to load your requests.",
     });
   }
 });
@@ -390,18 +419,16 @@ router.get("/my", async (req, res) => {
 |
 | POST /api/requests/my
 |
+| ONLY EMPLOYEE
+|
 |--------------------------------------------------------------------------
 */
 
 router.post("/my", async (req, res) => {
   console.log("======================================");
-
   console.log("📥 POST /api/requests/my");
-
   console.log("👤 USER:", req.user);
-
   console.log("📦 BODY:", req.body);
-
   console.log("======================================");
 
   try {
@@ -411,46 +438,50 @@ router.post("/my", async (req, res) => {
       });
     }
 
-    if (req.user.role !== "EMPLOYEE" && req.user.role !== "ADMIN") {
+    /*
+     * IMPORTANT:
+     * ADMIN CANNOT CREATE REQUESTS HERE.
+     */
+    if (req.user.role !== "EMPLOYEE") {
       return res.status(403).json({
-        message: "Employee or Admin access required.",
+        message: "Only employees can create requests.",
         role: req.user.role,
       });
     }
 
-    const parsed = employeeRequestSchema.safeParse(req.body || {});
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATE REQUEST
+    |--------------------------------------------------------------------------
+    */
+
+    const parsed =
+      employeeRequestSchema.safeParse(
+        req.body || {},
+      );
 
     if (!parsed.success) {
-      console.log("❌ Validation error:", parsed.error.flatten());
+      console.log(
+        "❌ Validation error:",
+        parsed.error.flatten(),
+      );
 
       return res.status(400).json({
-        message: "Subject and valid request details are required.",
+        message:
+          "Subject and valid request details are required.",
 
         errors: parsed.error.flatten(),
       });
     }
 
-    let employee = await getEmployeeProfile(req.user.id);
+    /*
+    |--------------------------------------------------------------------------
+    | EMPLOYEE PROFILE
+    |--------------------------------------------------------------------------
+    */
 
-    if (!employee && req.user.role === "ADMIN") {
-      const user = await prisma.user.findUnique({
-        where: { id: req.user.id },
-      });
-
-      if (user) {
-        const nameParts = (user.fullName || "Admin").trim().split(/\s+/);
-        employee = await prisma.employeeProfile.create({
-          data: {
-            userId: req.user.id,
-            employeeCode: `ADMIN-${Date.now()}`,
-            onboardingStatus: "APPROVED",
-            firstName: nameParts[0] || "Admin",
-            lastName: nameParts.slice(1).join(" ") || "",
-            jobTitle: "Administrator",
-          },
-        });
-      }
-    }
+    const employee =
+      await getEmployeeProfile(req.user.id);
 
     if (!employee) {
       return res.status(404).json({
@@ -458,12 +489,24 @@ router.post("/my", async (req, res) => {
       });
     }
 
-    console.log("✅ Employee:", employee.id);
+    console.log(
+      "✅ Employee:",
+      employee.id,
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PARSE CORRECTION
+    |--------------------------------------------------------------------------
+    */
 
     let correction = null;
 
     if (parsed.data.type === "CORRECTION") {
-      correction = parseCorrectionRequest(parsed.data.description);
+      correction =
+        parseCorrectionRequest(
+          parsed.data.description,
+        );
 
       if (!correction) {
         return res.status(400).json({
@@ -473,123 +516,244 @@ router.post("/my", async (req, res) => {
 
       if (!correction.date) {
         return res.status(400).json({
-          message: "Attendance date is required.",
+          message:
+            "Attendance date is required.",
         });
       }
 
-      if (!["check-in", "check-out", "both"].includes(correction.punchType)) {
+      if (
+        ![
+          "check-in",
+          "check-out",
+          "both",
+        ].includes(correction.punchType)
+      ) {
         return res.status(400).json({
           message: "Invalid punch type.",
         });
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | CHECK IN TIME
+      |--------------------------------------------------------------------------
+      */
+
       if (correction.checkInTime) {
-        const checkIn = timeToDate(correction.date, correction.checkInTime);
+        const checkIn = timeToDate(
+          correction.date,
+          correction.checkInTime,
+        );
 
         if (!checkIn) {
           return res.status(400).json({
-            message: "Invalid Check In time.",
+            message:
+              "Invalid Check In time.",
           });
         }
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | CHECK OUT TIME
+      |--------------------------------------------------------------------------
+      */
+
       if (correction.checkOutTime) {
-        const checkOut = timeToDate(correction.date, correction.checkOutTime);
+        const checkOut = timeToDate(
+          correction.date,
+          correction.checkOutTime,
+        );
 
         if (!checkOut) {
           return res.status(400).json({
-            message: "Invalid Check Out time.",
+            message:
+              "Invalid Check Out time.",
           });
         }
       }
 
-      if (correction.checkInTime && correction.checkOutTime) {
-        const checkIn = timeToDate(correction.date, correction.checkInTime);
+      /*
+      |--------------------------------------------------------------------------
+      | CHECK TIME ORDER
+      |--------------------------------------------------------------------------
+      */
 
-        const checkOut = timeToDate(correction.date, correction.checkOutTime);
+      if (
+        correction.checkInTime &&
+        correction.checkOutTime
+      ) {
+        const checkIn = timeToDate(
+          correction.date,
+          correction.checkInTime,
+        );
 
-        if (checkIn && checkOut && checkOut.getTime() <= checkIn.getTime()) {
+        const checkOut = timeToDate(
+          correction.date,
+          correction.checkOutTime,
+        );
+
+        if (
+          checkIn &&
+          checkOut &&
+          checkOut.getTime() <=
+            checkIn.getTime()
+        ) {
           return res.status(400).json({
-            message: "Check Out time must be later than Check In time.",
+            message:
+              "Check Out time must be later than Check In time.",
           });
         }
       }
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | CHECK EXISTING ATTENDANCE
+    |--------------------------------------------------------------------------
+    |
+    | Pending request does NOT change attendance.
+    |
+    */
+
     if (correction) {
-      const requestedDate = getDateKey(correction.date);
-      const attendanceRange = getAttendanceDayRange(requestedDate);
-      const attendance = attendanceRange
-        ? await prisma.attendance.findFirst({
-            where: {
-              employeeId: employee.id,
-              date: {
-                gte: attendanceRange.start,
-                lt: new Date(attendanceRange.end.getTime() + 1),
+      const requestedDate =
+        getDateKey(correction.date);
+
+      const attendanceRange =
+        getAttendanceDayRange(
+          requestedDate,
+        );
+
+      const attendance =
+        attendanceRange
+          ? await prisma.attendance.findFirst({
+              where: {
+                employeeId: employee.id,
+
+                date: {
+                  gte: attendanceRange.start,
+
+                  lt: new Date(
+                    attendanceRange.end.getTime() +
+                      1,
+                  ),
+                },
               },
-            },
-            select: { checkIn: true, checkOut: true },
-          })
-        : null;
 
-      const requestsCheckIn = punchIncludes(correction.punchType, "check-in");
-      const requestsCheckOut = punchIncludes(correction.punchType, "check-out");
+              select: {
+                checkIn: true,
+                checkOut: true,
+              },
+            })
+          : null;
 
-      if (requestsCheckIn && attendance?.checkIn) {
+      const requestsCheckIn =
+        punchIncludes(
+          correction.punchType,
+          "check-in",
+        );
+
+      const requestsCheckOut =
+        punchIncludes(
+          correction.punchType,
+          "check-out",
+        );
+
+      if (
+        requestsCheckIn &&
+        attendance?.checkIn
+      ) {
         return res.status(409).json({
-          message: "Check In is already completed for this date.",
+          message:
+            "Check In is already completed for this date.",
         });
       }
 
-      if (requestsCheckOut && attendance?.checkOut) {
+      if (
+        requestsCheckOut &&
+        attendance?.checkOut
+      ) {
         return res.status(409).json({
-          message: "Check Out is already completed for this date.",
+          message:
+            "Check Out is already completed for this date.",
         });
       }
     }
 
     /*
-      |--------------------------------------------------------------------------
-      | DUPLICATE CHECK
-      |--------------------------------------------------------------------------
-      */
+    |--------------------------------------------------------------------------
+    | DUPLICATE CHECK
+    |--------------------------------------------------------------------------
+    */
 
     if (correction) {
-      const existingRequests = await prisma.employeeRequest.findMany({
-        where: {
-          employeeId: employee.id,
+      const existingRequests =
+        await prisma.employeeRequest.findMany({
+          where: {
+            employeeId: employee.id,
 
-          type: "CORRECTION",
+            type: "CORRECTION",
 
-          status: {
-            in: ["PENDING", "APPROVED"],
+            status: {
+              in: [
+                "PENDING",
+                "APPROVED",
+              ],
+            },
           },
-        },
 
-        select: {
-          id: true,
-          description: true,
-          status: true,
-        },
-      });
+          select: {
+            id: true,
+            description: true,
+            status: true,
+          },
+        });
 
-      const requestedDate = getDateKey(correction.date);
+      const requestedDate =
+        getDateKey(correction.date);
 
-      const duplicate = existingRequests.find((existing) => {
-        const existingCorrection = parseCorrectionRequest(existing.description);
+      const duplicate =
+        existingRequests.find(
+          (existing) => {
+            const existingCorrection =
+              parseCorrectionRequest(
+                existing.description,
+              );
 
-        if (!existingCorrection) {
-          return false;
-        }
+            if (!existingCorrection) {
+              return false;
+            }
 
-        return (
-          getDateKey(existingCorrection.date) === requestedDate &&
-          ((punchIncludes(existingCorrection.punchType, "check-in") &&
-            punchIncludes(correction.punchType, "check-in")) ||
-            (punchIncludes(existingCorrection.punchType, "check-out") &&
-              punchIncludes(correction.punchType, "check-out")))
+            return (
+              getDateKey(
+                existingCorrection.date,
+              ) === requestedDate &&
+              (
+                (
+                  punchIncludes(
+                    existingCorrection.punchType,
+                    "check-in",
+                  ) &&
+                  punchIncludes(
+                    correction.punchType,
+                    "check-in",
+                  )
+                ) ||
+                (
+                  punchIncludes(
+                    existingCorrection.punchType,
+                    "check-out",
+                  ) &&
+                  punchIncludes(
+                    correction.punchType,
+                    "check-out",
+                  )
+                )
+              )
+            );
+          },
         );
-      });
 
       if (duplicate) {
         return res.status(409).json({
@@ -604,44 +768,55 @@ router.post("/my", async (req, res) => {
     }
 
     /*
-      |--------------------------------------------------------------------------
-      | CREATE REQUEST
-      |--------------------------------------------------------------------------
-      |
-      | IMPORTANT:
-      | DO NOT CHANGE ATTENDANCE HERE.
-      |
-      | Pending request must NOT change
-      | the employee's attendance.
-      |
-      */
+    |--------------------------------------------------------------------------
+    | CREATE REQUEST
+    |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | DO NOT CHANGE ATTENDANCE HERE.
+    |
+    | Attendance is changed only after ADMIN approval.
+    |
+    */
 
-    const createdRequest = await prisma.employeeRequest.create({
-      data: {
-        employeeId: employee.id,
+    const createdRequest =
+      await prisma.employeeRequest.create({
+        data: {
+          employeeId: employee.id,
 
-        type: parsed.data.type,
+          type: parsed.data.type,
 
-        subject: parsed.data.subject,
+          subject: parsed.data.subject,
 
-        description: parsed.data.description || "",
+          description:
+            parsed.data.description || "",
 
-        status: "PENDING",
-      },
-    });
+          status: "PENDING",
+        },
+      });
 
-    console.log("✅ REQUEST CREATED:", createdRequest.id);
+    console.log(
+      "✅ REQUEST CREATED:",
+      createdRequest.id,
+    );
 
     return res.status(201).json({
-      message: "Request submitted successfully.",
+      message:
+        "Request submitted successfully.",
 
       request: createdRequest,
     });
   } catch (error) {
-    console.error("❌ CREATE REQUEST ERROR:", error);
+    console.error(
+      "❌ CREATE REQUEST ERROR:",
+      error,
+    );
 
     return res.status(500).json({
-      message: error?.message || "Failed to submit request.",
+      message:
+        error?.message ||
+        "Failed to submit request.",
     });
   }
 });
@@ -650,11 +825,20 @@ router.post("/my", async (req, res) => {
 |--------------------------------------------------------------------------
 | ADMIN - GET ALL REQUESTS
 |--------------------------------------------------------------------------
+|
+| GET /api/requests
+|
+| ADMIN ONLY / MODULE PERMISSION
+|
+|--------------------------------------------------------------------------
 */
 
 router.get(
   "/",
-  requireAdminOrModulePermission("requests", "canView"),
+  requireAdminOrModulePermission(
+    "requests",
+    "canView",
+  ),
 
   async (req, res) => {
     try {
@@ -662,78 +846,110 @@ router.get(
 
       const where = {};
 
-      if (status && ["PENDING", "APPROVED", "REJECTED"].includes(status)) {
+      if (
+        status &&
+        [
+          "PENDING",
+          "APPROVED",
+          "REJECTED",
+        ].includes(status)
+      ) {
         where.status = status;
       }
 
-      const requests = await prisma.employeeRequest.findMany({
-        where,
+      const requests =
+        await prisma.employeeRequest.findMany({
+          where,
 
-        include: {
-          employee: {
-            include: {
-              user: {
-                select: {
-                  fullName: true,
-                  email: true,
+          include: {
+            employee: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    email: true,
+                  },
                 },
               },
             },
           },
-        },
 
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
-
-      const result = requests.map((request) => {
-        const notification =
-          request.type === "CORRECTION"
-            ? formatCorrectionNotification(request.description)
-            : null;
-
-        return {
-          id: request.id,
-
-          type: request.type,
-
-          subject: notification?.subject || request.subject,
-
-          description: notification ? null : request.description,
-
-          notification,
-
-          status: request.status,
-
-          reviewNote: request.reviewNote,
-
-          reviewedAt: request.reviewedAt,
-
-          createdAt: request.createdAt,
-
-          employee: {
-            id: request.employee.id,
-
-            employeeCode: request.employee.employeeCode,
-
-            fullName: request.employee.user?.fullName || "Unknown Employee",
-
-            email: request.employee.user?.email || "",
-
-            onboardingStatus: request.employee.onboardingStatus,
+          orderBy: {
+            createdAt: "desc",
           },
-        };
-      });
+        });
+
+      const result = requests.map(
+        (request) => {
+          const notification =
+            request.type === "CORRECTION"
+              ? formatCorrectionNotification(
+                  request.description,
+                )
+              : null;
+
+          return {
+            id: request.id,
+
+            type: request.type,
+
+            subject:
+              notification?.subject ||
+              request.subject,
+
+            description: notification
+              ? null
+              : request.description,
+
+            notification,
+
+            status: request.status,
+
+            reviewNote:
+              request.reviewNote,
+
+            reviewedAt:
+              request.reviewedAt,
+
+            createdAt:
+              request.createdAt,
+
+            employee: {
+              id: request.employee.id,
+
+              employeeCode:
+                request.employee
+                  .employeeCode,
+
+              fullName:
+                request.employee.user
+                  ?.fullName ||
+                "Unknown Employee",
+
+              email:
+                request.employee.user
+                  ?.email || "",
+
+              onboardingStatus:
+                request.employee
+                  .onboardingStatus,
+            },
+          };
+        },
+      );
 
       return res.json({
         requests: result,
       });
     } catch (error) {
-      console.error("❌ GET /requests:", error);
+      console.error(
+        "❌ GET /requests:",
+        error,
+      );
 
       return res.status(500).json({
-        message: "Failed to load requests.",
+        message:
+          "Failed to load requests.",
       });
     }
   },
@@ -743,32 +959,40 @@ router.get(
 |--------------------------------------------------------------------------
 | ADMIN - EMPLOYEE PROFILE
 |--------------------------------------------------------------------------
+|
+| GET /api/requests/:id/profile
+|
+|--------------------------------------------------------------------------
 */
 
 router.get(
   "/:id/profile",
-  requireAdminOrModulePermission("requests", "canView"),
+  requireAdminOrModulePermission(
+    "requests",
+    "canView",
+  ),
 
   async (req, res) => {
     try {
-      const request = await prisma.employeeRequest.findUnique({
-        where: {
-          id: req.params.id,
-        },
+      const request =
+        await prisma.employeeRequest.findUnique({
+          where: {
+            id: req.params.id,
+          },
 
-        include: {
-          employee: {
-            include: {
-              user: {
-                select: {
-                  fullName: true,
-                  email: true,
+          include: {
+            employee: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    email: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
+        });
 
       if (!request) {
         return res.status(404).json({
@@ -777,7 +1001,8 @@ router.get(
       }
 
       return res.json({
-        profile: request.employee,
+        profile:
+          request.employee,
 
         request: {
           id: request.id,
@@ -788,10 +1013,14 @@ router.get(
         },
       });
     } catch (error) {
-      console.error("❌ GET REQUEST PROFILE:", error);
+      console.error(
+        "❌ GET REQUEST PROFILE:",
+        error,
+      );
 
       return res.status(500).json({
-        message: "Failed to load profile.",
+        message:
+          "Failed to load profile.",
       });
     }
   },
@@ -803,25 +1032,43 @@ router.get(
 |--------------------------------------------------------------------------
 */
 
-async function reviewRequest(req, res, decision) {
+async function reviewRequest(
+  req,
+  res,
+  decision,
+) {
   try {
-    const parsed = reviewSchema.safeParse(req.body || {});
+    const parsed =
+      reviewSchema.safeParse(
+        req.body || {},
+      );
 
     if (!parsed.success) {
       return res.status(400).json({
-        message: "Invalid review data.",
+        message:
+          "Invalid review data.",
       });
     }
 
-    const note = parsed.data.note?.trim() || null;
+    const note =
+      parsed.data.note?.trim() ||
+      null;
 
-    const requestId = req.params.id;
+    const requestId =
+      req.params.id;
 
-    const request = await prisma.employeeRequest.findUnique({
-      where: {
-        id: requestId,
-      },
-    });
+    /*
+    |--------------------------------------------------------------------------
+    | FIND REQUEST
+    |--------------------------------------------------------------------------
+    */
+
+    const request =
+      await prisma.employeeRequest.findUnique({
+        where: {
+          id: requestId,
+        },
+      });
 
     if (!request) {
       return res.status(404).json({
@@ -829,9 +1076,16 @@ async function reviewRequest(req, res, decision) {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | ONLY PENDING REQUESTS
+    |--------------------------------------------------------------------------
+    */
+
     if (request.status !== "PENDING") {
       return res.status(400).json({
-        message: "This request has already been reviewed.",
+        message:
+          "This request has already been reviewed.",
       });
     }
 
@@ -841,31 +1095,39 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     |
     | IMPORTANT:
-    | NEVER delete or modify existing attendance.
+    |
+    | Never modify existing attendance.
     |
     */
 
     if (decision === "reject") {
-      const updatedRequest = await prisma.employeeRequest.update({
-        where: {
-          id: requestId,
-        },
+      const updatedRequest =
+        await prisma.employeeRequest.update({
+          where: {
+            id: requestId,
+          },
 
-        data: {
-          status: "REJECTED",
+          data: {
+            status: "REJECTED",
 
-          reviewNote: note || "Forgot Punch request rejected.",
+            reviewNote:
+              note ||
+              "Forgot Punch request rejected.",
 
-          reviewedById: req.user.id,
+            reviewedById:
+              req.user.id,
 
-          reviewedAt: new Date(),
-        },
-      });
+            reviewedAt:
+              new Date(),
+          },
+        });
 
       return res.json({
-        message: "Request rejected. Existing attendance was preserved.",
+        message:
+          "Request rejected. Existing attendance was preserved.",
 
-        request: updatedRequest,
+        request:
+          updatedRequest,
       });
     }
 
@@ -877,7 +1139,9 @@ async function reviewRequest(req, res, decision) {
 
     const correction =
       request.type === "CORRECTION"
-        ? parseCorrectionRequest(request.description)
+        ? parseCorrectionRequest(
+            request.description,
+          )
         : null;
 
     /*
@@ -887,26 +1151,33 @@ async function reviewRequest(req, res, decision) {
     */
 
     if (!correction) {
-      const updatedRequest = await prisma.employeeRequest.update({
-        where: {
-          id: requestId,
-        },
+      const updatedRequest =
+        await prisma.employeeRequest.update({
+          where: {
+            id: requestId,
+          },
 
-        data: {
-          status: "APPROVED",
+          data: {
+            status: "APPROVED",
 
-          reviewNote: note || "Request approved.",
+            reviewNote:
+              note ||
+              "Request approved.",
 
-          reviewedById: req.user.id,
+            reviewedById:
+              req.user.id,
 
-          reviewedAt: new Date(),
-        },
-      });
+            reviewedAt:
+              new Date(),
+          },
+        });
 
       return res.json({
-        message: "Request approved.",
+        message:
+          "Request approved.",
 
-        request: updatedRequest,
+        request:
+          updatedRequest,
       });
     }
 
@@ -916,19 +1187,27 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    const dateKey = getDateKey(correction.date);
+    const dateKey =
+      getDateKey(
+        correction.date,
+      );
 
     if (!dateKey) {
       return res.status(400).json({
-        message: "Invalid attendance date.",
+        message:
+          "Invalid attendance date.",
       });
     }
 
-    const attendanceRange = getAttendanceDayRange(dateKey);
+    const attendanceRange =
+      getAttendanceDayRange(
+        dateKey,
+      );
 
     if (!attendanceRange) {
       return res.status(400).json({
-        message: "Invalid attendance date range.",
+        message:
+          "Invalid attendance date range.",
       });
     }
 
@@ -938,23 +1217,39 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    const requestedCheckIn = correction.checkInTime
-      ? timeToDate(dateKey, correction.checkInTime)
-      : null;
+    const requestedCheckIn =
+      correction.checkInTime
+        ? timeToDate(
+            dateKey,
+            correction.checkInTime,
+          )
+        : null;
 
-    const requestedCheckOut = correction.checkOutTime
-      ? timeToDate(dateKey, correction.checkOutTime)
-      : null;
+    const requestedCheckOut =
+      correction.checkOutTime
+        ? timeToDate(
+            dateKey,
+            correction.checkOutTime,
+          )
+        : null;
 
-    if (correction.checkInTime && !requestedCheckIn) {
+    if (
+      correction.checkInTime &&
+      !requestedCheckIn
+    ) {
       return res.status(400).json({
-        message: "Invalid Check In time.",
+        message:
+          "Invalid Check In time.",
       });
     }
 
-    if (correction.checkOutTime && !requestedCheckOut) {
+    if (
+      correction.checkOutTime &&
+      !requestedCheckOut
+    ) {
       return res.status(400).json({
-        message: "Invalid Check Out time.",
+        message:
+          "Invalid Check Out time.",
       });
     }
 
@@ -964,21 +1259,25 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    const attendance = await prisma.attendance.findFirst({
-      where: {
-        employeeId: request.employeeId,
+    const attendance =
+      await prisma.attendance.findFirst({
+        where: {
+          employeeId:
+            request.employeeId,
 
-        date: {
-          gte: attendanceRange.start,
+          date: {
+            gte:
+              attendanceRange.start,
 
-          lt: attendanceRange.end,
+            lt:
+              attendanceRange.end,
+          },
         },
-      },
 
-      orderBy: {
-        date: "asc",
-      },
-    });
+        orderBy: {
+          date: "asc",
+        },
+      });
 
     /*
     |--------------------------------------------------------------------------
@@ -986,9 +1285,13 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    let finalCheckIn = attendance?.checkIn || null;
+    let finalCheckIn =
+      attendance?.checkIn ||
+      null;
 
-    let finalCheckOut = attendance?.checkOut || null;
+    let finalCheckOut =
+      attendance?.checkOut ||
+      null;
 
     /*
     |--------------------------------------------------------------------------
@@ -997,11 +1300,14 @@ async function reviewRequest(req, res, decision) {
     */
 
     if (
-      correction.punchType === "check-in" ||
-      correction.punchType === "both"
+      correction.punchType ===
+        "check-in" ||
+      correction.punchType ===
+        "both"
     ) {
       if (requestedCheckIn) {
-        finalCheckIn = requestedCheckIn;
+        finalCheckIn =
+          requestedCheckIn;
       }
     }
 
@@ -1012,11 +1318,14 @@ async function reviewRequest(req, res, decision) {
     */
 
     if (
-      correction.punchType === "check-out" ||
-      correction.punchType === "both"
+      correction.punchType ===
+        "check-out" ||
+      correction.punchType ===
+        "both"
     ) {
       if (requestedCheckOut) {
-        finalCheckOut = requestedCheckOut;
+        finalCheckOut =
+          requestedCheckOut;
       }
     }
 
@@ -1026,10 +1335,17 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    if (finalCheckIn && finalCheckOut) {
-      if (finalCheckOut.getTime() <= finalCheckIn.getTime()) {
+    if (
+      finalCheckIn &&
+      finalCheckOut
+    ) {
+      if (
+        finalCheckOut.getTime() <=
+        finalCheckIn.getTime()
+      ) {
         return res.status(400).json({
-          message: "Check Out must be later than Check In.",
+          message:
+            "Check Out must be later than Check In.",
         });
       }
     }
@@ -1040,7 +1356,11 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    const workedHours = calculateWorkedHours(finalCheckIn, finalCheckOut);
+    const workedHours =
+      calculateWorkedHours(
+        finalCheckIn,
+        finalCheckOut,
+      );
 
     /*
     |--------------------------------------------------------------------------
@@ -1048,83 +1368,127 @@ async function reviewRequest(req, res, decision) {
     |--------------------------------------------------------------------------
     */
 
-    const result = await prisma.$transaction(async (transaction) => {
-      let updatedAttendance;
+    const result =
+      await prisma.$transaction(
+        async (transaction) => {
+          let updatedAttendance;
 
-      /*
+          /*
+          |--------------------------------------------------------------------------
           | EXISTING ATTENDANCE
+          |--------------------------------------------------------------------------
           */
 
-      if (attendance) {
-        updatedAttendance = await transaction.attendance.update({
-          where: {
-            id: attendance.id,
-          },
+          if (attendance) {
+            updatedAttendance =
+              await transaction.attendance.update(
+                {
+                  where: {
+                    id: attendance.id,
+                  },
 
-          data: {
-            checkIn: finalCheckIn,
+                  data: {
+                    checkIn:
+                      finalCheckIn,
 
-            checkOut: finalCheckOut,
+                    checkOut:
+                      finalCheckOut,
 
-            workedHours,
+                    workedHours,
 
-            status: "PRESENT",
+                    status:
+                      "PRESENT",
 
-            note: [attendance.note || "", "Forgot Punch approved.", note || ""]
-              .filter(Boolean)
-              .join(" "),
-          },
-        });
-      } else {
-        /*
-          | NO ATTENDANCE
-          */
-        updatedAttendance = await transaction.attendance.create({
-          data: {
-            employeeId: request.employeeId,
+                    note: [
+                      attendance.note ||
+                        "",
 
-            date: attendanceRange.start,
+                      "Forgot Punch approved.",
 
-            checkIn: finalCheckIn,
+                      note || "",
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                  },
+                },
+              );
+          } else {
+            /*
+            |--------------------------------------------------------------------------
+            | NO ATTENDANCE
+            |--------------------------------------------------------------------------
+            */
 
-            checkOut: finalCheckOut,
+            updatedAttendance =
+              await transaction.attendance.create(
+                {
+                  data: {
+                    employeeId:
+                      request.employeeId,
 
-            workedHours,
+                    date:
+                      attendanceRange.start,
 
-            status: "PRESENT",
+                    checkIn:
+                      finalCheckIn,
 
-            note: ["Forgot Punch approved.", note || ""]
-              .filter(Boolean)
-              .join(" "),
-          },
-        });
-      }
+                    checkOut:
+                      finalCheckOut,
 
-      /*
+                    workedHours,
+
+                    status:
+                      "PRESENT",
+
+                    note: [
+                      "Forgot Punch approved.",
+
+                      note || "",
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                  },
+                },
+              );
+          }
+
+          /*
+          |--------------------------------------------------------------------------
           | UPDATE REQUEST
+          |--------------------------------------------------------------------------
           */
 
-      const updatedRequest = await transaction.employeeRequest.update({
-        where: {
-          id: requestId,
+          const updatedRequest =
+            await transaction.employeeRequest.update(
+              {
+                where: {
+                  id: requestId,
+                },
+
+                data: {
+                  status:
+                    "APPROVED",
+
+                  reviewNote:
+                    note ||
+                    "Forgot Punch request approved.",
+
+                  reviewedById:
+                    req.user.id,
+
+                  reviewedAt:
+                    new Date(),
+                },
+              },
+            );
+
+          return {
+            updatedRequest,
+
+            updatedAttendance,
+          };
         },
-
-        data: {
-          status: "APPROVED",
-
-          reviewNote: note || "Forgot Punch request approved.",
-
-          reviewedById: req.user.id,
-
-          reviewedAt: new Date(),
-        },
-      });
-
-      return {
-        updatedRequest,
-        updatedAttendance,
-      };
-    });
+      );
 
     /*
     |--------------------------------------------------------------------------
@@ -1133,29 +1497,44 @@ async function reviewRequest(req, res, decision) {
     */
 
     return res.json({
-      message: "Forgot Punch approved and attendance updated successfully.",
+      message:
+        "Forgot Punch approved and attendance updated successfully.",
 
-      request: result.updatedRequest,
+      request:
+        result.updatedRequest,
 
       attendance: {
-        id: result.updatedAttendance.id,
+        id:
+          result.updatedAttendance.id,
 
-        date: result.updatedAttendance.date,
+        date:
+          result.updatedAttendance.date,
 
-        checkIn: result.updatedAttendance.checkIn,
+        checkIn:
+          result.updatedAttendance.checkIn,
 
-        checkOut: result.updatedAttendance.checkOut,
+        checkOut:
+          result.updatedAttendance.checkOut,
 
-        workedHours: result.updatedAttendance.workedHours,
+        workedHours:
+          result.updatedAttendance
+            .workedHours,
 
-        status: result.updatedAttendance.status,
+        status:
+          result.updatedAttendance
+            .status,
       },
     });
   } catch (error) {
-    console.error("❌ REVIEW REQUEST ERROR:", error);
+    console.error(
+      "❌ REVIEW REQUEST ERROR:",
+      error,
+    );
 
     return res.status(500).json({
-      message: error?.message || "Failed to review request.",
+      message:
+        error?.message ||
+        "Failed to review request.",
     });
   }
 }
@@ -1164,26 +1543,52 @@ async function reviewRequest(req, res, decision) {
 |--------------------------------------------------------------------------
 | ADMIN - APPROVE
 |--------------------------------------------------------------------------
+|
+| POST /api/requests/:id/approve
+|
+|--------------------------------------------------------------------------
 */
 
 router.post(
   "/:id/approve",
-  requireAdminOrModulePermission("requests", "canEdit"),
 
-  (req, res) => reviewRequest(req, res, "approve"),
+  requireAdminOrModulePermission(
+    "requests",
+    "canEdit",
+  ),
+
+  (req, res) =>
+    reviewRequest(
+      req,
+      res,
+      "approve",
+    ),
 );
 
 /*
 |--------------------------------------------------------------------------
 | ADMIN - REJECT
 |--------------------------------------------------------------------------
+|
+| POST /api/requests/:id/reject
+|
+|--------------------------------------------------------------------------
 */
 
 router.post(
   "/:id/reject",
-  requireAdminOrModulePermission("requests", "canEdit"),
 
-  (req, res) => reviewRequest(req, res, "reject"),
+  requireAdminOrModulePermission(
+    "requests",
+    "canEdit",
+  ),
+
+  (req, res) =>
+    reviewRequest(
+      req,
+      res,
+      "reject",
+    ),
 );
 
 /*

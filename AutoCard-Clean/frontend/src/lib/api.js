@@ -1,4 +1,11 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4001";
+const DEFAULT_API_BASE = import.meta.env.PROD
+  ? "https://techwareautomationindia-backend.onrender.com"
+  : "http://localhost:4001";
+
+const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE).replace(
+  /\/+$/,
+  "",
+);
 
 const TOKEN_KEY = "authToken";
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft, ChevronDown } from "lucide-react";
 import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
@@ -7,6 +7,7 @@ import ThemeToggle from "../components/ThemeToggle.jsx";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const user = getAuthUser();
@@ -55,24 +56,61 @@ const AdminLayout = () => {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {adminModules.map(({ key, label, path, icon: Icon }) => (
-          <NavLink
-            key={key}
-            to={path}
-            end={path === "/admin"}
-            onClick={() => setMobileOpen(false)}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`
-            }
-          >
-            <Icon className="h-4.5 w-4.5 shrink-0" />
-            {label}
-          </NavLink>
-        ))}
+        {adminModules.map(({ key, label, path, icon: Icon, children }) => {
+          const isSectionActive =
+            path === "/admin"
+              ? location.pathname === "/admin"
+              : location.pathname === path ||
+                location.pathname.startsWith(`${path}/`);
+
+          return (
+            <div key={key} className="space-y-1">
+              <NavLink
+                to={path}
+                end={path === "/admin"}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive || isSectionActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  }`
+                }
+              >
+                <Icon className="h-4.5 w-4.5 shrink-0" />
+                <span className="flex-1">{label}</span>
+                {children?.length ? (
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${
+                      isSectionActive ? "rotate-180" : ""
+                    }`}
+                  />
+                ) : null}
+              </NavLink>
+
+              {children?.length && isSectionActive && (
+                <div className="ml-4 space-y-1 border-l border-border pl-3">
+                  {children.map((child) => (
+                    <NavLink
+                      key={child.key}
+                      to={child.path}
+                      onClick={() => setMobileOpen(false)}
+                      className={({ isActive }) =>
+                        `block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? "bg-secondary text-foreground"
+                            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        }`
+                      }
+                    >
+                      {child.label}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="p-3 border-t border-border">

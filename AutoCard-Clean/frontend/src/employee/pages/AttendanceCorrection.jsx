@@ -3,6 +3,7 @@ import { ArrowLeft, CalendarDays, Send } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiPost } from "../../lib/api.js";
+import { getAuthUser } from "../../lib/auth.js";
 
 const getIndiaNow = () => {
   const now = new Date();
@@ -40,6 +41,8 @@ const AttendanceCorrection = ({ correctionType }) => {
   const [checkOutTime, setCheckOutTime] = useState(indiaNow.time);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const authUser = getAuthUser();
+  const isAdmin = authUser?.role === "ADMIN";
 
   useEffect(() => {
     const refreshIndiaNow = () => {
@@ -77,12 +80,17 @@ const AttendanceCorrection = ({ correctionType }) => {
               ? checkOutTime
               : time,
       };
-      await apiPost("/requests/my", {
+      const result = await apiPost("/requests/my", {
         type: "CORRECTION",
         subject: `${label} - ${punchLabel}`,
         description: `${label} request for ${punchLabel} on ${date} at ${punchType === "both" ? `check-in ${time} and check-out ${checkOutTime}` : `${punchLabel.toLowerCase()} ${time}`}.\n\n${reason.trim()}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
       });
-      toast.success(`${label} request submitted.`);
+      toast.success(
+        result.message ||
+          (isAdmin
+            ? `${label} applied successfully.`
+            : `${label} request submitted.`),
+      );
       setReason("");
     } catch (err) {
       toast.error(err.message || "Failed to submit request.");
@@ -108,7 +116,9 @@ const AttendanceCorrection = ({ correctionType }) => {
         <div>
           <h1 className="font-display text-2xl font-bold">{label}</h1>
           <p className="text-sm text-muted-foreground">
-            Submit an attendance correction request for admin review.
+            {isAdmin
+              ? "Apply your attendance correction directly."
+              : "Submit an attendance correction request for admin review."}
           </p>
         </div>
       </div>
@@ -192,7 +202,11 @@ const AttendanceCorrection = ({ correctionType }) => {
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
         >
           <Send className="h-4 w-4" />
-          {submitting ? "Submitting..." : "Submit Request"}
+          {submitting
+            ? "Submitting..."
+            : isAdmin
+              ? "Apply Correction"
+              : "Submit Request"}
         </button>
       </form>
     </div>

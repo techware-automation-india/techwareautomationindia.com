@@ -32,6 +32,25 @@ export const adminModules = [
     icon: UserPlus,
     description: "Create and manage employee records.",
   },
+  {
+    key: "requests",
+    label: "Requests",
+    path: "/admin/requests",
+    icon: Inbox,
+    description: "Review employee requests and attendance corrections.",
+    children: [
+      {
+        key: "requests-track",
+        label: "Track Requests",
+        path: "/admin/requests/track",
+      },
+      {
+        key: "requests-forgot-punch",
+        label: "Forgot Punch",
+        path: "/admin/requests/forgot-punch",
+      },
+    ],
+  },
   // {
   //   key: "customer",
   //   label: "Customer",
@@ -39,13 +58,7 @@ export const adminModules = [
   //   icon: Users,
   //   description: "Create and manage customer records.",
   // },
-  {
-    key: "requests",
-    label: "Requests",
-    path: "/admin/requests",
-    icon: Inbox,
-    description: "Review and act on incoming employee requests.",
-  },
+
   {
     key: "approvals",
     label: "Approvals",

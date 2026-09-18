@@ -292,6 +292,211 @@ function punchIncludes(punchType, punch) {
   );
 }
 
+async function applyForgotPunchCorrection({
+  transaction,
+  employeeId,
+  correction,
+  requestId,
+  reviewerId,
+  approvalNote,
+}) {
+  const dateKey =
+    getDateKey(
+      correction.date,
+    );
+
+  if (!dateKey) {
+    throw new Error(
+      "Invalid attendance date.",
+    );
+  }
+
+  const attendanceRange =
+    getAttendanceDayRange(
+      dateKey,
+    );
+
+  if (!attendanceRange) {
+    throw new Error(
+      "Invalid attendance date range.",
+    );
+  }
+
+  const requestedCheckIn =
+    correction.checkInTime
+      ? timeToDate(
+          dateKey,
+          correction.checkInTime,
+        )
+      : null;
+
+  const requestedCheckOut =
+    correction.checkOutTime
+      ? timeToDate(
+          dateKey,
+          correction.checkOutTime,
+        )
+      : null;
+
+  if (
+    correction.checkInTime &&
+    !requestedCheckIn
+  ) {
+    throw new Error(
+      "Invalid Check In time.",
+    );
+  }
+
+  if (
+    correction.checkOutTime &&
+    !requestedCheckOut
+  ) {
+    throw new Error(
+      "Invalid Check Out time.",
+    );
+  }
+
+  const attendance =
+    await transaction.attendance.findFirst({
+      where: {
+        employeeId,
+
+        date: {
+          gte: attendanceRange.start,
+
+          lt: attendanceRange.end,
+        },
+      },
+
+      orderBy: {
+        date: "asc",
+      },
+    });
+
+  let finalCheckIn =
+    attendance?.checkIn ||
+    null;
+
+  let finalCheckOut =
+    attendance?.checkOut ||
+    null;
+
+  if (
+    punchIncludes(
+      correction.punchType,
+      "check-in",
+    ) &&
+    requestedCheckIn
+  ) {
+    finalCheckIn =
+      requestedCheckIn;
+  }
+
+  if (
+    punchIncludes(
+      correction.punchType,
+      "check-out",
+    ) &&
+    requestedCheckOut
+  ) {
+    finalCheckOut =
+      requestedCheckOut;
+  }
+
+  if (
+    finalCheckIn &&
+    finalCheckOut &&
+    finalCheckOut.getTime() <=
+      finalCheckIn.getTime()
+  ) {
+    throw new Error(
+      "Check Out must be later than Check In.",
+    );
+  }
+
+  const workedHours =
+    calculateWorkedHours(
+      finalCheckIn,
+      finalCheckOut,
+    );
+
+  const noteParts = [
+    attendance?.note || "",
+    approvalNote,
+  ].filter(Boolean);
+
+  const updatedAttendance =
+    attendance
+      ? await transaction.attendance.update({
+          where: {
+            id: attendance.id,
+          },
+
+          data: {
+            checkIn: finalCheckIn,
+
+            checkOut: finalCheckOut,
+
+            workedHours,
+
+            status: "PRESENT",
+
+            note:
+              noteParts.join(" "),
+          },
+        })
+      : await transaction.attendance.create({
+          data: {
+            employeeId,
+
+            date:
+              attendanceRange.start,
+
+            checkIn:
+              finalCheckIn,
+
+            checkOut:
+              finalCheckOut,
+
+            workedHours,
+
+            status:
+              "PRESENT",
+
+            note:
+              approvalNote,
+          },
+        });
+
+  const updatedRequest =
+    requestId
+      ? await transaction.employeeRequest.update({
+          where: {
+            id: requestId,
+          },
+
+          data: {
+            status:
+              "APPROVED",
+
+            reviewNote:
+              approvalNote,
+
+            reviewedById:
+              reviewerId,
+
+            reviewedAt:
+              new Date(),
+          },
+        })
+      : null;
+
+  return {
+    updatedAttendance,
+    updatedRequest,
+  };
+}
+
 /*
 |--------------------------------------------------------------------------
 | EMPLOYEE PROFILE
@@ -438,13 +643,13 @@ router.post("/my", async (req, res) => {
       });
     }
 
-    /*
-     * IMPORTANT:
-     * ADMIN CANNOT CREATE REQUESTS HERE.
-     */
-    if (req.user.role !== "EMPLOYEE") {
+    if (
+      req.user.role !== "EMPLOYEE" &&
+      req.user.role !== "ADMIN"
+    ) {
       return res.status(403).json({
-        message: "Only employees can create requests.",
+        message:
+          "Only employees or admins can create requests.",
         role: req.user.role,
       });
     }
@@ -474,14 +679,56 @@ router.post("/my", async (req, res) => {
       });
     }
 
+    if (
+      req.user.role === "ADMIN" &&
+      parsed.data.type !== "CORRECTION"
+    ) {
+      return res.status(403).json({
+        message:
+          "Admins can only use this endpoint for Forgot Punch corrections.",
+      });
+    }
+
     /*
     |--------------------------------------------------------------------------
     | EMPLOYEE PROFILE
     |--------------------------------------------------------------------------
     */
 
-    const employee =
+    let employee =
       await getEmployeeProfile(req.user.id);
+
+    if (
+      !employee &&
+      req.user.role === "ADMIN"
+    ) {
+      const user =
+        await prisma.user.findUnique({
+          where: {
+            id: req.user.id,
+          },
+        });
+
+      if (user) {
+        employee =
+          await prisma.employeeProfile.create({
+            data: {
+              userId: req.user.id,
+              employeeCode: `ADMIN-${Date.now()}`,
+              onboardingStatus: "APPROVED",
+              firstName:
+                user.fullName?.split(" ")[0] ||
+                "Admin",
+              lastName:
+                user.fullName
+                  ?.split(" ")
+                  .slice(1)
+                  .join(" ") || "",
+              jobTitle: "Administrator",
+            },
+          });
+      }
+    }
 
     if (!employee) {
       return res.status(404).json({
@@ -779,6 +1026,79 @@ router.post("/my", async (req, res) => {
     | Attendance is changed only after ADMIN approval.
     |
     */
+
+    if (
+      req.user.role === "ADMIN" &&
+      correction
+    ) {
+      const result =
+        await prisma.$transaction(
+          async (transaction) => {
+            const createdRequest =
+              await transaction.employeeRequest.create({
+                data: {
+                  employeeId:
+                    employee.id,
+
+                  type:
+                    parsed.data.type,
+
+                  subject:
+                    parsed.data.subject,
+
+                  description:
+                    parsed.data.description || "",
+
+                  status:
+                    "APPROVED",
+
+                  reviewNote:
+                    "Admin Forgot Punch applied directly.",
+
+                  reviewedById:
+                    req.user.id,
+
+                  reviewedAt:
+                    new Date(),
+                },
+              });
+
+            const applied =
+              await applyForgotPunchCorrection({
+                transaction,
+                employeeId:
+                  employee.id,
+                correction,
+                requestId:
+                  createdRequest.id,
+                reviewerId:
+                  req.user.id,
+                approvalNote:
+                  "Admin Forgot Punch applied directly.",
+              });
+
+            return {
+              request:
+                applied.updatedRequest ||
+                createdRequest,
+
+              attendance:
+                applied.updatedAttendance,
+            };
+          },
+        );
+
+      return res.status(201).json({
+        message:
+          "Admin Forgot Punch applied successfully.",
+
+        request:
+          result.request,
+
+        attendance:
+          result.attendance,
+      });
+    }
 
     const createdRequest =
       await prisma.employeeRequest.create({

@@ -3614,7 +3614,7 @@ router.get(
 
       res.status(500).json({
         message:
-          "Failed to load attendance.",
+          "failed to load attendance.",
       });
     }
   },

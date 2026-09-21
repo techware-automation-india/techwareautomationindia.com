@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   MapPin,
+  Printer,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -74,6 +75,15 @@ const fmtWorkedHours = (value) => {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}h ${m}m`;
+};
+
+const fmtOvertimeHours = (record, isHoliday = false) => {
+  if (!record) return null;
+  const workedHours = Number(record.workedHours);
+  if (Number.isNaN(workedHours)) return null;
+  const overtimeHours = isHoliday ? workedHours : workedHours - 8;
+  if (overtimeHours <= 0) return null;
+  return fmtWorkedHours(overtimeHours);
 };
 
 const cleanAttendanceNote = (note) => {
@@ -826,6 +836,132 @@ const Attendance = () => {
         record.status ||
         "Awaiting Approval",
     });
+  };
+
+  const printLocationCodeGuide = () => {
+    const printWindow = window.open("", "_blank", "width=760,height=720");
+
+    if (!printWindow) {
+      toast.error("Please allow pop-ups to print the location guide.");
+      return;
+    }
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Location Code Guide</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 32px;
+              color: #0f172a;
+              font-family: Arial, sans-serif;
+              line-height: 1.45;
+            }
+            h1 {
+              margin: 0 0 4px;
+              font-size: 22px;
+            }
+            .subtitle {
+              margin: 0 0 24px;
+              color: #475569;
+              font-size: 13px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 13px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 10px 12px;
+              text-align: left;
+              vertical-align: top;
+            }
+            th {
+              background: #f1f5f9;
+              font-size: 11px;
+              letter-spacing: 0.08em;
+              text-transform: uppercase;
+            }
+            .code {
+              display: inline-block;
+              min-width: 44px;
+              border-radius: 4px;
+              padding: 3px 7px;
+              text-align: center;
+              font-weight: 700;
+            }
+            .office { background: #dcfce7; color: #047857; }
+            .assign { background: #dbeafe; color: #1d4ed8; }
+            .unassigned { background: #ffedd5; color: #c2410c; }
+            .combo { font-weight: 700; }
+            @media print {
+              body { padding: 18mm; }
+              button { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Location Code Guide</h1>
+          <p class="subtitle">Use these codes to read employee check-in and check-out locations in the attendance calendar.</p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="code office">O</span></td>
+                <td>Office or Head Office location.</td>
+              </tr>
+              <tr>
+                <td><span class="code assign">A</span></td>
+                <td>Assigned employee location.</td>
+              </tr>
+              <tr>
+                <td><span class="code unassigned">UL</span></td>
+                <td>Unassigned or unapproved location.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h1 style="margin-top: 28px; font-size: 18px;">Common Combinations</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Combination</th>
+                <th>Check In</th>
+                <th>Check Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="combo">UL O</td><td>Unassigned</td><td>Office</td></tr>
+              <tr><td class="combo">O UL</td><td>Office</td><td>Unassigned</td></tr>
+              <tr><td class="combo">O O</td><td>Office</td><td>Office</td></tr>
+              <tr><td class="combo">A A</td><td>Assigned Location</td><td>Assigned Location</td></tr>
+              <tr><td class="combo">A O</td><td>Assigned Location</td><td>Office</td></tr>
+              <tr><td class="combo">O A</td><td>Office</td><td>Assigned Location</td></tr>
+              <tr><td class="combo">A UL</td><td>Assigned Location</td><td>Unassigned</td></tr>
+              <tr><td class="combo">UL A</td><td>Unassigned</td><td>Assigned Location</td></tr>
+            </tbody>
+          </table>
+
+          <script>
+            window.onload = () => {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   if (selectedStatus) {
@@ -1659,8 +1795,11 @@ const Attendance = () => {
 
               {/* Location code explanation */}
               <div className="mx-4 sm:mx-5 mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-700">
-                  Location Code Guide
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-700">
+                    Location Code Guide
+                  </div>
+                  
                 </div>
 
                 <div className="grid gap-1.5 text-[10px] leading-tight text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
@@ -1850,9 +1989,7 @@ const Attendance = () => {
                           <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-blue-50 px-3 py-3 text-center text-xs font-bold text-blue-700 shadow-sm">
                             Holiday
                           </th>
-                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-slate-50 px-3 py-3 text-center text-xs font-bold text-slate-700 shadow-sm">
-                            Total
-                          </th>
+                       \
                         </>
                       )}
                     </tr>
@@ -2151,11 +2288,7 @@ const Attendance = () => {
                                       {monthSummary.holiday}
                                     </span>
                                   </td>
-                                  <td className="border-b border-border bg-slate-50/70 px-3 py-2 text-center">
-                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm font-bold text-slate-700">
-                                      {monthSummary.total}
-                                    </span>
-                                  </td>
+                                  
                                 </>
                               );
                             })()}
@@ -2194,24 +2327,38 @@ const Attendance = () => {
             </div>
           ) : (
             /* Calendar */
-            <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-              <div className="px-6 py-5 border-b border-border bg-gradient-to-r from-slate-50 to-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-display text-xl font-bold tracking-tight text-slate-900">
-                      Attendance Calendar
+            <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+              <div className="border-b border-slate-300 bg-white px-4 py-3 sm:px-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h2
+                      className="truncate text-lg font-bold text-slate-900"
+                      title={
+                        data?.employee?.fullName ||
+                        employees.find((emp) => emp.id === selectedId)
+                          ?.fullName ||
+                        "Employee"
+                      }
+                    >
+                      {data?.employee?.fullName ||
+                        employees.find((emp) => emp.id === selectedId)
+                          ?.fullName ||
+                        "Employee"}
                     </h2>
-                    <p className="font-display text-sm font-medium tracking-wide text-muted-foreground mt-1">
-                      {monthNames[month - 1]} {year}
-                      {selectedWeek ? ` · Week ${selectedWeek}` : ""}
+                    <p className="mt-0.5 text-sm font-semibold text-slate-600">
+                      Employee Attendance
                     </p>
                   </div>
 
-                  <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    Present
-                    <span className="w-2 h-2 rounded-full bg-rose-500 ml-3" />
-                    Absent
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-bold text-slate-900">
+                      {monthNames[month - 1]} {year}
+                    </div>
+                    {selectedWeek && (
+                      <div className="mt-0.5 text-xs font-semibold text-primary">
+                        Week {selectedWeek}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2497,273 +2644,208 @@ const Attendance = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="min-w-[980px]">
-                    <div className="grid grid-cols-7 border-b border-border bg-slate-50/80">
-                      {weekdays.map((w, index) => (
+                  <div className="min-w-[900px]">
+                    <div className="grid grid-cols-7 border-b border-slate-300 bg-slate-50">
+                      {weekdays.map((w) => (
                         <div
                           key={w}
-                          className={`py-3 text-center font-display text-xs font-bold uppercase tracking-[0.12em] ${
-                            index === 0 || index === 6
-                              ? "text-slate-400"
-                              : "text-slate-600"
-                          }`}
+                          className="border-r border-slate-300 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-slate-600 last:border-r-0"
                         >
                           {w}
                         </div>
                       ))}
                     </div>
 
-                    <div
-                      className={`grid gap-px bg-border ${
-                        selectedDay ? "grid-cols-1" : "grid-cols-7"
-                      }`}
-                    >
-                      {(selectedDay ? [selectedDay] : calendarCells).map(
-                        (day, idx) => {
-                          if (day === null) {
-                            return (
-                              <div
-                                key={`blank-${idx}`}
-                                className="min-h-[155px] bg-slate-50/50"
-                              />
-                            );
-                          }
-
-                          const cellDate = new Date(
-                            Date.UTC(year, month - 1, day),
-                          );
-                          const dateKey = formatDateKey(cellDate);
-                          let rec = recordByDay[day];
-                          if (
-                            rec &&
-                            rec.status === "ABSENT" &&
-                            dateKey >= todayKey
-                          )
-                            rec = null;
-                          const holidayName = holidayByDay[day];
-                          const meta = rec
-                            ? statusMeta[rec.status]
-                            : holidayName
-                              ? statusMeta.HOLIDAY
-                              : null;
-                          const isToday = dateKey === todayKey;
-                          const dayOfWeek = cellDate.getUTCDay();
-                          const dayLabel = weekdays[dayOfWeek].toUpperCase();
-                          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
+                    <div className="grid grid-cols-7 gap-px bg-slate-300">
+                      {calendarCells.map((day, idx) => {
+                        if (day === null) {
                           return (
                             <div
-                              key={day}
-                              className={`min-h-[155px] bg-background p-4 transition-all hover:bg-slate-50 ${isWeekend ? "bg-slate-50/60" : ""} ${isToday ? "ring-2 ring-inset ring-primary z-10" : ""}`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <span
-                                  className={`font-display text-2xl font-bold tracking-tight ${
-                                    dayLabel === "SAT"
-                                      ? "text-black"
-                                      : isToday
-                                        ? "text-primary"
-                                        : "text-slate-700"
-                                  }`}
-                                >
-                                  {String(day).padStart(2, "0")}
+                              key={`blank-${idx}`}
+                              className="min-h-[158px] bg-slate-50"
+                            />
+                          );
+                        }
+
+                        const cellDate = new Date(
+                          Date.UTC(year, month - 1, day),
+                        );
+                        const dateKey = formatDateKey(cellDate);
+                        let rec = recordByDay[day];
+                        if (
+                          rec &&
+                          rec.status === "ABSENT" &&
+                          dateKey >= todayKey
+                        ) {
+                          rec = null;
+                        }
+                        const holidayName = holidayByDay[day];
+                        const isToday = dateKey === todayKey;
+                        const isHolidayCell =
+                          Boolean(holidayName) || rec?.status === "HOLIDAY";
+                        const meta = rec
+                          ? statusMeta[rec.status]
+                          : holidayName
+                            ? statusMeta.HOLIDAY
+                            : null;
+                        const overtimeText = fmtOvertimeHours(
+                          rec,
+                          Boolean(holidayName),
+                        );
+                        const checkInLocationCode = getCalendarLocationCode(
+                          rec?.note,
+                          "check-in",
+                        );
+                        const checkOutLocationCode = getCalendarLocationCode(
+                          rec?.note,
+                          "check-out",
+                        );
+                        const attendanceNote = rec
+                          ? formatAttendanceNote(rec.note)
+                          : "";
+
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => setSelectedDate(dateKey)}
+                            className={`min-h-[158px] bg-white p-3 text-left align-top transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
+                              isToday ? "ring-2 ring-inset ring-primary" : ""
+                            } ${isHolidayCell && !isWorkedRecord(rec) ? "bg-blue-50/60" : ""}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span
+                                className={`text-base font-bold ${
+                                  isToday ? "text-primary" : "text-slate-900"
+                                }`}
+                              >
+                                {day}
+                              </span>
+                              {isToday && (
+                                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary">
+                                  Today
                                 </span>
-                                {isToday && (
-                                  <span className="text-xs font-bold uppercase tracking-wide bg-primary/10 text-primary px-2 py-1 rounded-full">
-                                    Today
+                              )}
+                            </div>
+
+                            {rec ? (
+                              <div className="mt-2 space-y-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`h-3 w-3 rounded-full ${meta?.dot || "bg-slate-400"}`}
+                                  />
+                                  <span
+                                    className={`text-xs font-bold ${
+                                      rec.status === "ABSENT"
+                                        ? "text-rose-700"
+                                        : rec.status === "ON_LEAVE"
+                                          ? "text-violet-700"
+                                          : rec.status === "HOLIDAY"
+                                            ? "text-blue-700"
+                                            : rec.status ===
+                                                "PENDING_APPROVAL"
+                                              ? "text-amber-700"
+                                              : "text-emerald-700"
+                                    }`}
+                                  >
+                                    {meta?.label || rec.status}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1 text-xs font-semibold text-slate-700">
+                                  {(rec.checkIn || checkInLocationCode) && (
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-slate-500">
+                                        In
+                                      </span>
+                                      <span className="flex items-center gap-1 text-emerald-700">
+                                        {fmtTime(rec.checkIn) || "-"}
+                                        {checkInLocationCode && (
+                                          <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                            {checkInLocationCode}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {(rec.checkOut || checkOutLocationCode) && (
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-slate-500">
+                                        Out
+                                      </span>
+                                      <span className="flex items-center gap-1 text-rose-700">
+                                        {fmtTime(rec.checkOut) || "-"}
+                                        {checkOutLocationCode && (
+                                          <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                            {checkOutLocationCode}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {rec.workedHours != null && (
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-slate-500">
+                                        Hours
+                                      </span>
+                                      <span className="text-primary">
+                                        {fmtWorkedHours(rec.workedHours)}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {overtimeText && (
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-orange-700">
+                                        OT
+                                      </span>
+                                      <span className="text-orange-700">
+                                        {overtimeText}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {attendanceNote && (
+                                  <div
+                                    className="line-clamp-2 border-t border-slate-100 pt-1 text-[10px] leading-4 text-slate-500"
+                                    title={attendanceNote}
+                                  >
+                                    {attendanceNote}
+                                  </div>
+                                )}
+
+                                {hasSubmittedReason(rec.note) && (
+                                  <span className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                                    Reason
                                   </span>
                                 )}
                               </div>
-
-                              {rec ? (
-                                <div className="mt-3 space-y-2">
-                                  <div
-                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-display text-[11px] font-bold tracking-wide ${meta?.cell}`}
-                                  >
-                                    <span
-                                      className={`w-2 h-2 rounded-full ${meta?.dot}`}
-                                    />
-                                    {meta?.label || rec.status}
-                                  </div>
-
-                                  <div className="rounded-lg border border-border bg-white p-2.5 space-y-1.5">
-                                    {rec.checkIn && (
-                                      <div className="flex items-center justify-between gap-2 text-xs">
-                                        <span className="text-[18px] text-muted-foreground">
-                                          Check In
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-display text-[18px] font-bold text-emerald-700">
-                                            {fmtTime(rec.checkIn)}
-                                          </span>
-                                          {getCalendarLocationCode(
-                                            rec.note,
-                                            "check-in",
-                                          ) && (
-                                            <span
-                                              title={
-                                                getCalendarLocationCode(
-                                                  rec.note,
-                                                  "check-in",
-                                                ) === "A"
-                                                  ? "Check In: A = Assign Location"
-                                                  : getCalendarLocationCode(
-                                                        rec.note,
-                                                        "check-in",
-                                                      ) === "UL"
-                                                    ? "Check In: UL = Unassigned Location"
-                                                    : "Check In: O = Office"
-                                              }
-                                              className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${
-                                                getCalendarLocationCode(
-                                                  rec.note,
-                                                  "check-in",
-                                                ) === "A"
-                                                  ? "border-blue-300 bg-blue-100 text-blue-700"
-                                                  : getCalendarLocationCode(
-                                                        rec.note,
-                                                        "check-in",
-                                                      ) === "UL"
-                                                    ? "border-orange-300 bg-orange-100 text-orange-700"
-                                                    : "border-emerald-300 bg-emerald-100 text-emerald-700"
-                                              }`}
-                                            >
-                                              {getCalendarLocationCode(
-                                                rec.note,
-                                                "check-in",
-                                              )}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {rec.checkOut && (
-                                      <div className="flex items-center justify-between gap-2 text-xs">
-                                        <span className="text-[18px] text-muted-foreground">
-                                          Check Out
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-display text-[18px] font-bold text-rose-700">
-                                            {fmtTime(rec.checkOut)}
-                                          </span>
-                                          {getCalendarLocationCode(
-                                            rec.note,
-                                            "check-out",
-                                          ) && (
-                                            <span
-                                              title={
-                                                getCalendarLocationCode(
-                                                  rec.note,
-                                                  "check-out",
-                                                ) === "A"
-                                                  ? "Check Out: A = Assign Location"
-                                                  : getCalendarLocationCode(
-                                                        rec.note,
-                                                        "check-out",
-                                                      ) === "UL"
-                                                    ? "Check Out: UL = Unassigned Location"
-                                                    : "Check Out: O = Office"
-                                              }
-                                              className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${
-                                                getCalendarLocationCode(
-                                                  rec.note,
-                                                  "check-out",
-                                                ) === "A"
-                                                  ? "border-blue-300 bg-blue-100 text-blue-700"
-                                                  : getCalendarLocationCode(
-                                                        rec.note,
-                                                        "check-out",
-                                                      ) === "UL"
-                                                    ? "border-orange-300 bg-orange-100 text-orange-700"
-                                                    : "border-emerald-300 bg-emerald-100 text-emerald-700"
-                                              }`}
-                                            >
-                                              {getCalendarLocationCode(
-                                                rec.note,
-                                                "check-out",
-                                              )}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {rec.workedHours != null && (
-                                    <div className="space-y-1">
-                                      {/* Working Hours */}
-                                      <div className="flex items-center justify-between gap-2 text-xs border-t border-border pt-1.5">
-                                        <span className="text-[18px] text-muted-foreground">
-                                          Working Hours
-                                        </span>
-
-                                        <span className="font-display text-[18px] font-bold text-primary">
-                                          {fmtWorkedHours(rec.workedHours)}
-                                        </span>
-                                      </div>
-
-                                      {/* Overtime - only if more than 8 hours */}
-                                      {Number(rec.workedHours) > 8 && (
-                                        <div className="flex items-center justify-between gap-2 text-xs">
-                                          <span className="text-[18px] font-semibold text-orange-700">
-                                            Overtime
-                                          </span>
-
-                                          <span className="font-display text-[18px] font-bold text-orange-700">
-                                            {fmtWorkedHours(
-                                              Number(rec.workedHours) - 8,
-                                            )}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                  {rec.note &&
-                                    formatAttendanceNote(rec.note) && (
-                                      <div
-                                        className="whitespace-pre-line text-sm leading-5 text-slate-500"
-                                        title={rec.note}
-                                      >
-                                        {formatAttendanceNote(rec.note)}
-                                      </div>
-                                    )}
-                                  {hasSubmittedReason(rec.note) && (
-                                    <div className="mt-2 space-y-2">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openAttendanceReason(
-                                            rec,
-                                            data?.employee?.fullName ||
-                                              "Employee",
-                                          )
-                                        }
-                                        className="text-sm font-semibold text-amber-700 hover:text-amber-900 hover:underline"
-                                      >
-                                        View Reason
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : holidayName ? (
-                                <div className="mt-5">
-                                  <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                            ) : holidayName ? (
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="h-3 w-3 rounded-full bg-blue-500" />
+                                  <span className="text-xs font-bold text-blue-700">
                                     Holiday
-                                  </div>
-                                  <div className="mt-3 text-sm font-semibold text-blue-700">
-                                    {holidayName}
-                                  </div>
+                                  </span>
                                 </div>
-                              ) : (
-                                <div className="mt-8 text-center text-xs text-slate-400">
-                                  No attendance
+                                <div
+                                  className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                  title={holidayName}
+                                >
+                                  {holidayName}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        },
-                      )}
+                              </div>
+                            ) : (
+                              <div className="mt-9 text-center text-xs font-medium text-slate-400">
+                                No attendance
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

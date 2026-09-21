@@ -239,7 +239,7 @@ if (process.env.VERCEL !== "1") {
     await prisma.$disconnect();
     
     server.close(() => {
-      console.log("Server stopped.");
+      console.log("Server Stopped.");
       process.exit(0);
     });
   };

@@ -5,6 +5,25 @@ This document explains how admin attendance works with Mark Attendance (GPS) and
 
 ---
 
+## Admin Privileges
+
+### ✅ No Location Restrictions
+- Admin can mark attendance from anywhere (office, assigned location, or outside)
+- No distance validation applied
+- No target location check required
+- GPS coordinates are still saved for record-keeping
+
+### ✅ No Approval Required
+- All admin attendance is automatically set to **PRESENT** status
+- No pending approval state
+- Immediate confirmation
+
+### ✅ Consistent Behavior Across Modules
+- **Mark Attendance (GPS)**: Direct PRESENT status, no location check
+- **Forgot Punch**: Direct PRESENT status, no approval workflow
+
+---
+
 ## Scenarios
 
 ### ✅ Scenario 1: Admin checks in TODAY via Mark Attendance (GPS)

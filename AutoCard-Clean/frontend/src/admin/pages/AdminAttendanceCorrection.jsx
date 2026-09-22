@@ -245,8 +245,14 @@ const AdminAttendanceCorrection = () => {
     } catch (error) {
       console.error("Attendance correction error:", error);
 
-      // Show specific error message from backend
-      const errorMessage = error?.message || "Failed to update attendance.";
+      // Extract error message safely
+      let errorMessage = "Failed to update attendance.";
+      
+      if (error && typeof error === 'object') {
+        errorMessage = error.message || error.error || error.msg || errorMessage;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
       
       // Check if it's a duplicate punch error
       if (errorMessage.includes("already exists")) {

@@ -710,6 +710,74 @@ const LocationsPanel = () => {
               />
             </div>
             <div className="sm:col-span-2">
+              <label className="text-sm font-medium mb-1.5 block">
+                Latitude, Longitude
+              </label>
+
+              <div className="flex gap-2">
+                <input
+                  className={inputClass}
+                  value={
+                    form.latitude || form.longitude
+                      ? `${form.latitude}, ${form.longitude}`
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    const [latitude = "", longitude = ""] = value
+                      .split(",")
+                      .map((v) => v.trim());
+
+                    setForm((p) => ({
+                      ...p,
+                      latitude,
+                      longitude,
+                    }));
+                  }}
+                  placeholder="e.g. 28.6139, 77.2090"
+                  maxLength={45}
+                />
+
+                <button
+                  type="button"
+                  disabled={!form.latitude || !form.longitude}
+                  onClick={() => {
+                    const latitude = Number(form.latitude);
+                    const longitude = Number(form.longitude);
+
+                    if (
+                      !Number.isFinite(latitude) ||
+                      !Number.isFinite(longitude)
+                    ) {
+                      toast.error("Please enter valid coordinates.");
+                      return;
+                    }
+
+                    if (latitude < -90 || latitude > 90) {
+                      toast.error("Latitude must be between -90 and 90.");
+                      return;
+                    }
+
+                    if (longitude < -180 || longitude > 180) {
+                      toast.error("Longitude must be between -180 and 180.");
+                      return;
+                    }
+
+                    window.open(
+                      `https://www.google.com/maps?q=${latitude},${longitude}`,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  <MapPin className="h-4 w-4" />
+                  View Map
+                </button>
+              </div>
+            </div>
+            <div className="sm:col-span-2">
   <label className="text-sm font-medium mb-1.5 block">
     Latitude, Longitude
   </label>
@@ -816,20 +884,21 @@ const LocationsPanel = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-secondary/30 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-5 py-3 text-left">Name</th>
-                  <th className="px-5 py-3 text-left">Address</th>
-                  <th className="px-5 py-3 text-left">City</th>
-                  <th className="px-5 py-3 text-left">State</th>
-                  <th className="px-5 py-3 text-left">Country</th>
-                  <th className="px-5 py-3 text-left">Latitude</th>
-                  <th className="px-5 py-3 text-left">Longitude</th>
-                  <th className="px-5 py-3 text-left">Radius</th>
-                  <th className="px-5 py-3 text-center">Default</th>
-                  <th className="px-5 py-3 text-center">Status</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
+  <tr>
+    <th className="px-5 py-3 text-left">Name</th>
+    <th className="px-5 py-3 text-left">Address</th>
+    <th className="px-5 py-3 text-left">City</th>
+    <th className="px-5 py-3 text-left">State</th>
+    <th className="px-5 py-3 text-left">Country</th>
+    <th className="px-5 py-3 text-left">Latitude</th>
+    <th className="px-5 py-3 text-left">Longitude</th>
+    <th className="px-5 py-3 text-left">Radius</th>
+    <th className="px-5 py-3 text-center">Default</th>
+    <th className="px-5 py-3 text-center">Status</th>
+    <th className="px-5 py-3 text-center">View Map</th>
+    <th className="px-5 py-3 text-right">Actions</th>
+  </tr>
+</thead>
               <tbody className="divide-y divide-border">
                 {locations.map((l) => (
                   <tr
@@ -868,8 +937,32 @@ const LocationsPanel = () => {
                         {l.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>
+                    <td className="px-5 py-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (l.latitude == null || l.longitude == null) {
+                            toast.error("Latitude and Longitude are not available.");
+                            return;
+                          }
+
+                          window.open(
+                            `https://www.google.com/maps?q=${l.latitude},${l.longitude}`,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
+                        }}
+                        disabled={l.latitude == null || l.longitude == null}
+                        className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="View Map"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        View Map
+                      </button>
+                    </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Edit */}
                         <button
                           onClick={() => startEdit(l)}
                           className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors"
@@ -877,6 +970,8 @@ const LocationsPanel = () => {
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
+
+                        {/* Delete */}
                         <button
                           onClick={() => setDeleteTarget(l)}
                           className="p-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors"

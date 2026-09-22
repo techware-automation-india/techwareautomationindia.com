@@ -225,7 +225,7 @@ model CustomerProfile {
 model Department {
   id          String   @id @default(uuid())
   name        String   @unique
-  description String?
+  description String? @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -306,7 +306,8 @@ model Attendance {
   checkOut    DateTime?
   status      AttendanceStatus @default(PRESENT)
   workedHours Float?
-  note        String?
+  overtimeHours Float?         // Overtime hours (hours worked beyond 8)
+  note        String?          @db.Text
   checkInLatitude   Float?  // GPS latitude where employee checked in
   checkInLongitude  Float?  // GPS longitude where employee checked in
   checkOutLatitude  Float?  // GPS latitude where employee checked out
@@ -419,10 +420,9 @@ model EmployeeRequest {
   employee    EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   type        RequestType     @default(GENERAL)
   subject     String
-  description String?
+  description String?         @db.Text
   status      RequestStatus   @default(PENDING)
 
-  // Admin review.
   reviewedById String?
   reviewedBy   User?     @relation("RequestReviewer", fields: [reviewedById], references: [id])
   reviewNote   String?
@@ -435,7 +435,6 @@ model EmployeeRequest {
   @@index([status])
   @@map("employee_requests")
 }
-
 // ===========================================================================
 // PROJECTS
 // ===========================================================================

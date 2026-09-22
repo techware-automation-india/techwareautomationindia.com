@@ -72,7 +72,7 @@ const UniversalLogin = () => {
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg mb-4">
               <ShieldCheck className="h-8 w-8 text-white" />
             </div>
-            <h1 className="font-display text-2xl font-bold">Welcome Back</h1>
+            <h1 className="font-display text-2xl font-bold">Techware Management System</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Sign in to access your dashboard
             </p>

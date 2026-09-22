@@ -15,7 +15,10 @@ const Projects = () => {
             Project management interface will be displayed here.
           </p>
           <p className="text-sm text-muted-foreground mt-2">
-            You have {permissions.canView && 'View'}{permissions.canCreate && ', Create'}{permissions.canEdit && ', Edit'}{permissions.canDelete && ', Delete'} permissions.
+            You have {permissions.canView && "View"}
+            {permissions.canCreate && ", Create"}
+            {permissions.canEdit && ", Edit"}
+            {permissions.canDelete && ", Delete"} permissions.
           </p>
         </div>
       )}

@@ -107,7 +107,7 @@ const LeaveRequests = () => {
                   <div className="text-sm text-muted-foreground mt-1">
                     {fmt(r.startDate)} – {fmt(r.endDate)} · {r.totalDays} day(s)
                   </div>
-                  {r.reason && <p className="text-sm text-muted-foreground mt-2">Reason: {r.reason}</p>}
+                  {r.reason && <p className="text-sm text-muted-foreground mt-2">Comment: {r.reason}</p>}
                   {r.reviewNote && <p className="text-sm text-muted-foreground mt-1">Note: {r.reviewNote}</p>}
                 </div>
 

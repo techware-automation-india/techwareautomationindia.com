@@ -40,6 +40,28 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/roster/my-notifications - latest roster assignments for the employee.
+router.get("/my-notifications", requireAuth, async (req, res) => {
+  try {
+    const profile = await prisma.employeeProfile.findUnique({ where: { userId: req.user.id } });
+    if (!profile) {
+      return res.status(404).json({ message: "Employee profile not found." });
+    }
+
+    const entries = await prisma.rosterEntry.findMany({
+      where: { employeeId: profile.id },
+      include: { shift: true, location: true },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    });
+
+    res.json({ entries });
+  } catch (err) {
+    console.error("Roster notifications error:", err);
+    res.status(500).json({ message: "Failed to load roster notifications." });
+  }
+});
+
 const rosterEntrySchema = z.object({
   employeeId: z.string().min(1, "Employee is required."),
   date:       z.string().min(1, "Date is required."),
@@ -115,10 +137,9 @@ router.get("/meta", requireAdminOrModulePermission("roster", "canView"), async (
       prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     ]);
     
-    // Filter employees to only include those with shift AND location assigned
-   const employees = allEmployees.filter(
-  emp => emp.employeeProfile
-);
+    // Include every employee with a profile. Shift and location are selected
+    // for each roster entry and do not need to be preassigned on the profile.
+    const employees = allEmployees.filter((emp) => emp.employeeProfile);
     
     res.json({ employees, shifts, locations });
   } catch (err) {
@@ -202,6 +223,31 @@ router.post("/bulk", requireAuth, requireAdminOrModulePermission("roster", "canC
     res.status(500).json({ message: "Failed to save roster entries." });
   }
 });
+
+// DELETE /api/roster/bulk-delete — delete ALL roster entries
+// Using /bulk-delete instead of /all to avoid route conflict with /:id
+router.delete(
+  "/bulk-delete",
+  requireAuth,
+  requireAdminOrModulePermission("roster", "canDelete"),
+  async (req, res) => {
+    try {
+      const result = await prisma.rosterEntry.deleteMany({});
+
+      res.json({
+        count: result.count,
+        message: `${result.count} roster ${
+          result.count === 1 ? "entry" : "entries"
+        } deleted successfully.`,
+      });
+    } catch (err) {
+      console.error("Roster DELETE ALL error:", err);
+      res.status(500).json({
+        message: "Failed to delete all roster entries.",
+      });
+    }
+  },
+);
 
 // DELETE /api/roster/:id
 router.delete("/:id", requireAuth, requireAdminOrModulePermission("roster", "canDelete"), async (req, res) => {

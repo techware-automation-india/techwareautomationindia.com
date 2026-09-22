@@ -1,25 +1,71 @@
-import { useEffect, useState } from "react";
-import { Clock, Loader2, ChevronLeft, ChevronRight, Users, X, CheckCircle2, AlertCircle, MapPin } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Clock,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  Users,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  MapPin,
+  Printer,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 
 // Visual styling per attendance status.
 const statusMeta = {
-  PRESENT: { label: "Present", dot: "bg-emerald-500", cell: "bg-emerald-50 border-emerald-200 text-emerald-700" },
-  ABSENT: { label: "Absent", dot: "bg-rose-500", cell: "bg-rose-50 border-rose-200 text-rose-700" },
-  ON_LEAVE: { label: "On Leave", dot: "bg-violet-500", cell: "bg-violet-50 border-violet-200 text-violet-700" },
-  HOLIDAY: { label: "Holiday", dot: "bg-blue-500", cell: "bg-blue-50 border-blue-200 text-blue-700" },
-  PENDING_APPROVAL: { label: "Awaiting Approval", dot: "bg-amber-500", cell: "bg-amber-50 border-amber-200 text-amber-700" },
+  PRESENT: {
+    label: "Present",
+    dot: "bg-emerald-500",
+    cell: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  },
+  ABSENT: {
+    label: "Absent",
+    dot: "bg-rose-500",
+    cell: "bg-rose-50 border-rose-200 text-rose-700",
+  },
+  ON_LEAVE: {
+    label: "On Leave",
+    dot: "bg-violet-500",
+    cell: "bg-violet-50 border-violet-200 text-violet-700",
+  },
+  HOLIDAY: {
+    label: "Holiday",
+    dot: "bg-blue-500",
+    cell: "bg-blue-50 border-blue-200 text-blue-700",
+  },
+  PENDING_APPROVAL: {
+    label: "Awaiting Approval",
+    dot: "bg-amber-500",
+    cell: "bg-amber-50 border-amber-200 text-amber-700",
+  },
 };
 
 const monthNames = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const fmtTime = (v) =>
-  v ? new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+  v
+    ? new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
 
 const fmtWorkedHours = (value) => {
   if (value == null) return "—";
@@ -29,6 +75,147 @@ const fmtWorkedHours = (value) => {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}h ${m}m`;
+};
+
+const fmtOvertimeHours = (record, isHoliday = false) => {
+  if (!record) return null;
+  const workedHours = Number(record.workedHours);
+  if (Number.isNaN(workedHours)) return null;
+  const overtimeHours = isHoliday ? workedHours : workedHours - 8;
+  if (overtimeHours <= 0) return null;
+  return fmtWorkedHours(overtimeHours);
+};
+
+const cleanAttendanceNote = (note) => {
+  if (!note) return "";
+
+  return (
+    String(note)
+      // Remove UUID / Request ID inside parentheses
+      .replace(
+        /\s*\([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\)/gi,
+        "",
+      )
+      .replace(/\s{2,}/g, " ")
+      .trim()
+  );
+};
+
+const formatAttendanceNote = (note) => {
+  if (!note) return "";
+
+  // First remove Request IDs
+  const cleanedNote = cleanAttendanceNote(note);
+
+  const hasUnassignedCheckIn =
+    /Checkin(?:\s+from|\s+to)?\s+unassigned location/i.test(cleanedNote);
+
+  const hasUnassignedCheckOut =
+    /Checkout(?:\s+from)?\s+unassigned location/i.test(cleanedNote);
+
+  const checkInMatch = cleanedNote.match(
+    /(?:^|\|)\s*Checkin:\s*([^|.]+?)(?:\s*\||$)/i,
+  );
+
+  const checkOutMatch = cleanedNote.match(
+    /(?:^|\|)\s*Checkout:\s*([^|.]+?)(?:\s*\||$)/i,
+  );
+
+  if (
+    !hasUnassignedCheckIn &&
+    !hasUnassignedCheckOut &&
+    !checkInMatch &&
+    !checkOutMatch
+  ) {
+    return cleanedNote;
+  }
+
+  const checkInLocation = hasUnassignedCheckIn
+    ? "Unassigned Location"
+    : checkInMatch?.[1]?.trim();
+
+  const checkOutLocation = hasUnassignedCheckOut
+    ? "Unassigned Location"
+    : checkOutMatch?.[1]?.trim();
+
+  if (!checkInLocation && !checkOutLocation) {
+    return cleanedNote;
+  }
+
+  if (
+    checkInLocation?.toLowerCase() === "head office" ||
+    checkOutLocation?.toLowerCase() === "head office"
+  ) {
+    return "Location: Head Office";
+  }
+
+  if (
+    checkInLocation &&
+    checkOutLocation &&
+    checkInLocation.toLowerCase() === checkOutLocation.toLowerCase()
+  ) {
+    return `Location: ${checkInLocation}`;
+  }
+
+  return [
+    checkInLocation && `Check In: ${checkInLocation}`,
+    checkOutLocation && `Check Out: ${checkOutLocation}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
+const extractSubmittedReason = (note) => {
+  if (!note) return "No reason provided.";
+
+  const cleanedNote = cleanAttendanceNote(note);
+
+  const reasonMatch = cleanedNote.match(
+    /Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.|$)/i,
+  );
+
+  return reasonMatch?.[1]?.trim() || cleanedNote;
+};
+
+const hasSubmittedReason = (note) => /reason:/i.test(note || "");
+
+const getCalendarLocationCode = (note, type) => {
+  if (!note) return null;
+
+  const cleanedNote = cleanAttendanceNote(note);
+  const isCheckIn = type === "check-in";
+
+  // Unassigned / unapproved locations are always UL.
+  const unassignedPattern = isCheckIn
+    ? /Checkin(?:\s+from|\s+to)?:?\s*unassigned location/i
+    : /Checkout(?:\s+from)?:?\s*unassigned location/i;
+
+  const unapprovedPattern = isCheckIn
+    ? /Checkin\s+to\s+unapproved\s+location/i
+    : /Checkout\s+(?:from|to)\s+unapproved\s+location/i;
+
+  if (
+    unassignedPattern.test(cleanedNote) ||
+    unapprovedPattern.test(cleanedNote)
+  ) {
+    return "UL";
+  }
+
+  const locationMatch = isCheckIn
+    ? cleanedNote.match(/(?:^|\|)\s*Checkin:\s*([^|.]+?)(?:\s*\||$)/i)
+    : cleanedNote.match(/(?:^|\|)\s*Checkout:\s*([^|.]+?)(?:\s*\||$)/i);
+
+  if (!locationMatch?.[1]) return null;
+
+  const locationName = locationMatch[1].trim();
+
+  // Head Office / Office = O.
+  if (/^(head office|office)$/i.test(locationName)) {
+    return "O";
+  }
+
+  // Any named non-office location recorded as the employee's location = Assign.
+  return "A";
 };
 
 const fmtDateDMY = (value) => {
@@ -47,26 +234,118 @@ const formatDateKey = (date) => {
   return d.toISOString().slice(0, 10);
 };
 
+// Split the selected month into fixed date ranges:
+// Week 1 = 01-07, Week 2 = 08-14, Week 3 = 15-21,
+// Week 4 = 22-28, Week 5 = 29-end of month.
+// This keeps Month and Week filters independent and prevents
+// dates from the previous/next month appearing in the week list.
+const computeMonthWeeks = (year, month) => {
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const weeks = [];
+
+  for (let startDay = 1; startDay <= daysInMonth; startDay += 7) {
+    const endDay = Math.min(startDay + 6, daysInMonth);
+
+    weeks.push({
+      start: new Date(Date.UTC(year, month - 1, startDay)),
+      end: new Date(Date.UTC(year, month - 1, endDay)),
+    });
+  }
+
+  return weeks;
+};
+
+const getCurrentWeekIndex = (year, month) => {
+  const today = new Date();
+  const todayYear = today.getFullYear();
+  const todayMonth = today.getMonth() + 1;
+  const todayDay = today.getDate();
+
+  // Only auto-select a week when the requested month is the current month.
+  if (year !== todayYear || month !== todayMonth) return "";
+
+  return String(Math.floor((todayDay - 1) / 7) + 1);
+};
+
+const getRegisterWindow = (y, m, weekValue) => {
+  const monthStart = new Date(Date.UTC(y, m - 1, 1));
+  const monthEnd = new Date(Date.UTC(y, m, 0));
+  const daysInMonth = monthEnd.getUTCDate();
+
+  if (weekValue) {
+    const week = computeMonthWeeks(y, m)[Number(weekValue) - 1];
+    if (week) {
+      // Fetch only the selected month's week range.
+      // The last week can contain fewer than 7 days.
+      const days =
+        Math.round((week.end.getTime() - week.start.getTime()) / 86400000) + 1;
+
+      return {
+        start: formatDateKey(week.start),
+        days,
+      };
+    }
+  }
+
+  // No week selected = complete selected month.
+  return {
+    start: formatDateKey(monthStart),
+    days: daysInMonth,
+  };
+};
+
 const Attendance = () => {
+  const navigate = useNavigate();
   const today = new Date();
   const todayKey = formatDateKey(new Date());
   const [employees, setEmployees] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [selectedId, setSelectedId] = useState("all");
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [data, setData] = useState(null);
+  const [selectedWeek, setSelectedWeek] = useState(() =>
+    getCurrentWeekIndex(new Date().getFullYear(), new Date().getMonth() + 1),
+  );
+  const [selectedDate, setSelectedDate] = useState("");
   const [registerData, setRegisterData] = useState(null);
   const [loadingData, setLoadingData] = useState(false);
-  const [registerStart, setRegisterStart] = useState(null); // ISO date key for weekly register start (YYYY-MM-DD)
   const [showDetailedRecords, setShowDetailedRecords] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
-  const [loadingPendingApprovals, setLoadingPendingApprovals] = useState(false);
   const [mapModal, setMapModal] = useState(null); // null or { latitude, longitude, employee, checkIn }
   const [rejectModal, setRejectModal] = useState(null); // null or { recordId, employeeName, reason }
+  const [attendanceReasonModal, setAttendanceReasonModal] = useState(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [calendarZoom, setCalendarZoom] = useState(60);
+  const knownPendingIds = useRef(null);
   const isAllEmployees = selectedId === "all";
+
+  useEffect(() => {
+    const handleScroll = () => setShowScrollTop(window.scrollY > 420);
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest(".employee-dropdown-container")) {
+        setShowEmployeeDropdown(false);
+        setEmployeeSearch("");
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const loadEmployees = async () => {
     try {
@@ -84,13 +363,28 @@ const Attendance = () => {
 
   const loadPendingApprovals = async () => {
     try {
-      setLoadingPendingApprovals(true);
       const res = await apiGet("/attendance/pending-approvals");
-      setPendingApprovals(res.pendingRecords || []);
+      const nextPending = res.pendingRecords || [];
+      const nextPendingIds = new Set(nextPending.map((record) => record.id));
+
+      if (knownPendingIds.current) {
+        const newRequest = nextPending.find(
+          (record) => !knownPendingIds.current.has(record.id),
+        );
+        if (newRequest) {
+          const employeeName =
+            newRequest.employee?.user?.fullName || "An employee";
+          toast.warning("New attendance approval request", {
+            description: `${employeeName} checked in or out from an unassigned location.`,
+            duration: 6000,
+          });
+        }
+      }
+
+      knownPendingIds.current = nextPendingIds;
+      setPendingApprovals(nextPending);
     } catch (err) {
       console.error("Failed to load pending approvals:", err);
-    } finally {
-      setLoadingPendingApprovals(false);
     }
   };
 
@@ -103,7 +397,9 @@ const Attendance = () => {
 
     if (!record?.note) return null;
 
-    const coordMatch = record.note.match(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/);
+    const coordMatch = record.note.match(
+      /(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/,
+    );
     if (coordMatch) {
       const latitude = Number(coordMatch[1]);
       const longitude = Number(coordMatch[2]);
@@ -119,24 +415,17 @@ const Attendance = () => {
     console.log("Opening map for record:", record);
     console.log("checkInLatitude:", record?.checkInLatitude);
     console.log("checkInLongitude:", record?.checkInLongitude);
-    
+
     const coords = extractCoordinatesFromNote(record);
     console.log("Extracted coordinates:", coords);
-    
-    if (coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)) {
-      const locationName =
-        record?.note?.match(/: (.*?)(?:\s*\(|$)/)?.[1]?.trim() ||
-        record?.note?.match(/to\s+(.+?)(?:\s*\(|\.|$)/)?.[1]?.trim() ||
-        "Unknown Location";
 
-      setMapModal({
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        employee: record.employee,
-        checkIn: record.checkIn || record.checkOut,
-        note: record.note,
-        locationName,
-      });
+    if (
+      coords &&
+      Number.isFinite(coords.latitude) &&
+      Number.isFinite(coords.longitude)
+    ) {
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`;
+      window.open(mapsUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
@@ -150,9 +439,21 @@ const Attendance = () => {
     })();
   }, []);
 
-  // Fetch attendance whenever the selected employee or month changes.
+  useEffect(() => {
+    const refreshPendingApprovals = () => {
+      loadPendingApprovals();
+    };
+
+    const intervalId = window.setInterval(refreshPendingApprovals, 10000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  // Fetch attendance whenever the employee, month, year, or Week filter changes.
+  // All Employees uses the selected month by default and only the selected
+  // 1-7 / 8-14 / ... week when a Week filter is active.
   useEffect(() => {
     let active = true;
+
     (async () => {
       if (!selectedId) {
         setData(null);
@@ -162,17 +463,24 @@ const Attendance = () => {
       }
 
       setLoadingData(true);
+
       try {
         if (selectedId === "all") {
-          const startParam = registerStart ? `&start=${registerStart}` : "";
-          const res = await apiGet(`/attendance/register/weekly?days=7${startParam}`);
+          const { start, days } = getRegisterWindow(year, month, selectedWeek);
+          const res = await apiGet(
+            `/attendance/register/weekly?days=${days}&start=${start}`,
+          );
+
           if (active) {
             setRegisterData(res);
             setData(null);
             setShowDetailedRecords(false);
           }
         } else {
-          const res = await apiGet(`/attendance/${selectedId}?year=${year}&month=${month}`);
+          const res = await apiGet(
+            `/attendance/${selectedId}?year=${year}&month=${month}`,
+          );
+
           if (active) {
             setData(res);
             setRegisterData(null);
@@ -190,32 +498,11 @@ const Attendance = () => {
         if (active) setLoadingData(false);
       }
     })();
+
     return () => {
       active = false;
     };
-  }, [selectedId, year, month]);
-  // Include registerStart in effect so changing week reloads the register
-  useEffect(() => {
-    // trigger reload when viewing all employees and registerStart changes
-    if (selectedId === "all") {
-      // force re-fetch by toggling selectedId briefly
-      (async () => {
-        setLoadingData(true);
-        try {
-          const startParam = registerStart ? `&start=${registerStart}` : "";
-          const res = await apiGet(`/attendance/register/weekly?days=7${startParam}`);
-          setRegisterData(res);
-          setData(null);
-          setShowDetailedRecords(false);
-        } catch (err) {
-          toast.error(err.message || "Failed to load attendance.");
-          setRegisterData(null);
-        } finally {
-          setLoadingData(false);
-        }
-      })();
-    }
-  }, [registerStart]);
+  }, [selectedId, year, month, selectedWeek]);
 
   const changeMonth = (delta) => {
     let m = month + delta;
@@ -227,36 +514,76 @@ const Attendance = () => {
       m = 1;
       y += 1;
     }
+    setSelectedDate("");
+    setSelectedWeek("");
     setMonth(m);
     setYear(y);
   };
 
   const computeLastWeekStartKey = () => {
     const now = new Date();
-    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const startOfThisWeek = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate() - todayUtc.getUTCDay()));
-    const lastWeekStart = new Date(Date.UTC(startOfThisWeek.getUTCFullYear(), startOfThisWeek.getUTCMonth(), startOfThisWeek.getUTCDate() - 7));
+    const todayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const startOfThisWeek = new Date(
+      Date.UTC(
+        todayUtc.getUTCFullYear(),
+        todayUtc.getUTCMonth(),
+        todayUtc.getUTCDate() - todayUtc.getUTCDay(),
+      ),
+    );
+    const lastWeekStart = new Date(
+      Date.UTC(
+        startOfThisWeek.getUTCFullYear(),
+        startOfThisWeek.getUTCMonth(),
+        startOfThisWeek.getUTCDate() - 7,
+      ),
+    );
     return formatDateKey(lastWeekStart);
   };
 
-  const computeMonthWeeks = (y, m) => {
-    // Split the selected month into week buckets: 1-7, 8-14, 15-21, 22-28, 29-end
-    const firstDay = new Date(Date.UTC(y, m - 1, 1));
-    const lastDay = new Date(Date.UTC(y, m, 0));
-    const weeks = [];
-    for (let startDay = 1; startDay <= lastDay.getUTCDate(); startDay += 7) {
-      const start = new Date(Date.UTC(y, m - 1, startDay));
-      const endDay = Math.min(startDay + 6, lastDay.getUTCDate());
-      const end = new Date(Date.UTC(y, m - 1, endDay));
-      weeks.push({ start, end });
-    }
-    return weeks;
-  };
+  // Calendar grid cells: leading blanks + days of month.
+  // Define this BEFORE the optional week calendar so it is initialized
+  // before calendarCells can reference it.
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  // Reset the selected register week when month/year changes so dropdown shows weeks for that month
-  useEffect(() => {
-    setRegisterStart(null);
-  }, [month, year]);
+  // Calendar days shown when an employee + Week filter is selected.
+  // Week 1 = days 1-7, Week 2 = 8-14, etc.
+  const selectedWeekCalendarDays = selectedWeek
+    ? (() => {
+        const weeks = computeMonthWeeks(year, month);
+        const week = weeks[Number(selectedWeek) - 1];
+        if (!week) return [];
+
+        const days = [];
+        for (
+          let day = week.start.getUTCDate();
+          day <= week.end.getUTCDate();
+          day += 1
+        ) {
+          days.push(day);
+        }
+
+        return days;
+      })()
+    : [];
+
+  const calendarCells = selectedWeek
+    ? [
+        ...Array(
+          selectedWeekCalendarDays.length
+            ? new Date(
+                Date.UTC(year, month - 1, selectedWeekCalendarDays[0]),
+              ).getUTCDay()
+            : 0,
+        ).fill(null),
+        ...selectedWeekCalendarDays,
+      ]
+    : cells;
 
   // Build a map of day-of-month -> record for quick lookup.
   const recordByDay = {};
@@ -274,19 +601,56 @@ const Attendance = () => {
     }
   }
 
-  // Calendar grid cells: leading blanks + days of month.
-  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const cells = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const selectedDay =
+    selectedDate && selectedId !== "all"
+      ? Number(selectedDate.slice(8, 10))
+      : null;
+
+  const selectedRecord = selectedDay ? recordByDay[selectedDay] : null;
+  const selectedHolidayName = selectedDay ? holidayByDay[selectedDay] : null;
 
   const summary = isAllEmployees
     ? registerData?.summary || {}
     : data?.summary || {};
-  const records = isAllEmployees ? registerData?.records || [] : data?.records || [];
+  const records = isAllEmployees
+    ? registerData?.records || []
+    : data?.records || [];
+  const isHolidayDate = (date) => {
+    const dateKey = formatDateKey(date);
+    const holidays = isAllEmployees
+      ? registerData?.holidays || []
+      : data?.holidays || [];
+
+    return holidays.some((h) => formatDateKey(new Date(h.date)) === dateKey);
+  };
+
+  const isWorkedRecord = (record) =>
+    Boolean(record?.checkIn || record?.checkOut) ||
+    Number(record?.workedHours) > 0;
+
+  const isOvertimeRecord = (record) => {
+    if (!record) return false;
+
+    // On a holiday, every hour worked is overtime.
+    if (isHolidayDate(record.date)) {
+      return isWorkedRecord(record);
+    }
+
+    // On a normal working day, overtime starts after 8 hours.
+    return Number(record.workedHours) > 8;
+  };
+
+  const overtimeDays = records.filter(isOvertimeRecord).length;
+  const overtimeMeta = {
+    label: "Overtime",
+    dot: "bg-orange-500",
+    cell: "bg-orange-50 border-orange-200 text-orange-700",
+  };
   const filteredRecords = selectedStatus
     ? records.filter((rec) => {
+        if (selectedStatus === "OVERTIME") {
+          return isOvertimeRecord(rec);
+        }
         // Do not show ABSENT records for today or future days (people may still arrive)
         if (selectedStatus === "ABSENT") {
           const recKey = formatDateKey(rec.date);
@@ -295,36 +659,96 @@ const Attendance = () => {
         return rec.status === selectedStatus;
       })
     : records;
+  const selectedStatusMeta =
+    selectedStatus === "OVERTIME" ? overtimeMeta : statusMeta[selectedStatus];
 
-  const registerStartDate = registerData?.startDate ? new Date(registerData.startDate) : null;
+  const registerStartDate = registerData?.startDate
+    ? new Date(registerData.startDate)
+    : null;
   const registerDates = registerStartDate
     ? Array.from({ length: registerData.days ?? 7 }, (_, index) => {
-        return new Date(Date.UTC(
-          registerStartDate.getUTCFullYear(),
-          registerStartDate.getUTCMonth(),
-          registerStartDate.getUTCDate() + index,
-        ));
+        return new Date(
+          Date.UTC(
+            registerStartDate.getUTCFullYear(),
+            registerStartDate.getUTCMonth(),
+            registerStartDate.getUTCDate() + index,
+          ),
+        );
       })
     : [];
 
-  const registerEmployeeMap = new Map();
-  if (registerData?.records?.length) {
-    for (const rec of registerData.records) {
-      if (!registerEmployeeMap.has(rec.employeeId)) {
-        registerEmployeeMap.set(rec.employeeId, {
-          id: rec.employeeId,
-          fullName: rec.fullName,
-          employeeCode: rec.employeeCode,
-          email: rec.email,
-        });
-      }
-    }
-  }
-  const registerEmployees = Array.from(registerEmployeeMap.values());
+  // All Employees + Date = show only the selected date.
+  // Without a date, Team Attendance shows the full selected month.
+  const visibleRegisterDates =
+    isAllEmployees && selectedDate
+      ? registerDates.filter((date) => formatDateKey(date) === selectedDate)
+      : registerDates;
+
+  // Keep every employee visible even when there is no attendance record
+  // for the selected month/week.
+  const registerEmployees = employees;
 
   const attendanceByDateEmployee = new Map(
-    (registerData?.records || []).map((rec) => [`${formatDateKey(new Date(rec.date))}:${rec.employeeId}`, rec]),
+    (registerData?.records || []).map((rec) => [
+      `${formatDateKey(new Date(rec.date))}:${rec.employeeId}`,
+      rec,
+    ]),
   );
+
+  // Monthly summary for the All Employees view.
+  const getEmployeeMonthSummary = (emp) => {
+    let present = 0;
+    let absent = 0;
+    let leave = 0;
+    let holiday = 0;
+
+    const holidays = registerData?.holidays || [];
+
+    visibleRegisterDates.forEach((date) => {
+      const dateKey = formatDateKey(date);
+      let rec = attendanceByDateEmployee.get(`${dateKey}:${emp.id}`);
+
+      // Do not count today's/future ABSENT records.
+      if (rec && rec.status === "ABSENT" && dateKey >= todayKey) {
+        rec = null;
+      }
+
+      const isHoliday = holidays.some(
+        (h) => formatDateKey(new Date(h.date)) === dateKey,
+      );
+
+      if (rec?.status === "ON_LEAVE") {
+        leave += 1;
+      } else if (rec?.status === "ABSENT") {
+        absent += 1;
+      } else if (isHoliday && !isWorkedRecord(rec)) {
+        holiday += 1;
+      } else if (
+        rec &&
+        (isWorkedRecord(rec) ||
+          rec.status === "PRESENT" ||
+          rec.status === "PENDING_APPROVAL")
+      ) {
+        present += 1;
+      }
+    });
+
+    return {
+      present,
+      absent,
+      leave,
+      holiday,
+      total: present + absent + leave + holiday,
+    };
+  };
+
+  const handleEmployeeChange = (id) => {
+    setSelectedId(id);
+    setSelectedDate("");
+    setSelectedWeek("");
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
+  };
 
   const handleStatusClick = (key) => {
     setSelectedStatus((prev) => (prev === key ? null : key));
@@ -334,8 +758,10 @@ const Attendance = () => {
   const reloadRegister = async () => {
     try {
       setLoadingData(true);
-      const startParam = registerStart ? `&start=${registerStart}` : "";
-      const res = await apiGet(`/attendance/register/weekly?days=7${startParam}`);
+      const { start, days } = getRegisterWindow(year, month, selectedWeek);
+      const res = await apiGet(
+        `/attendance/register/weekly?days=${days}&start=${start}`,
+      );
       setRegisterData(res);
     } catch (err) {
       toast.error(err.message || "Failed to reload register.");
@@ -351,6 +777,11 @@ const Attendance = () => {
       await loadPendingApprovals();
       if (selectedId === "all") {
         await reloadRegister();
+      } else if (selectedId) {
+        const res = await apiGet(
+          `/attendance/${selectedId}?year=${year}&month=${month}`,
+        );
+        setData(res);
       }
     } catch (err) {
       toast.error(err.message || "Failed to approve.");
@@ -365,6 +796,11 @@ const Attendance = () => {
       await loadPendingApprovals();
       if (selectedId === "all") {
         await reloadRegister();
+      } else if (selectedId) {
+        const res = await apiGet(
+          `/attendance/${selectedId}?year=${year}&month=${month}`,
+        );
+        setData(res);
       }
     } catch (err) {
       toast.error(err.message || "Failed to reject.");
@@ -374,9 +810,158 @@ const Attendance = () => {
   const openRejectModal = (record) => {
     setRejectModal({
       recordId: record.id,
-      employeeName: record.employee?.user?.fullName || record.employee?.fullName || "Employee",
+      employeeName:
+        record.employee?.user?.fullName ||
+        record.employee?.fullName ||
+        "Employee",
       reason: record.note || "Unapproved location",
     });
+  };
+
+  const openAttendanceReason = (record, employeeName) => {
+    setAttendanceReasonModal({
+      employeeName: employeeName || "Employee",
+      reason: extractSubmittedReason(record.note),
+      recordId: record.id,
+      date: record.date,
+      checkIn: record.checkIn,
+      checkOut: record.checkOut,
+      checkInLatitude: record.checkInLatitude,
+      checkInLongitude: record.checkInLongitude,
+      checkOutLatitude: record.checkOutLatitude,
+      checkOutLongitude: record.checkOutLongitude,
+      status: record.status,
+      statusLabel:
+        statusMeta[record.status]?.label ||
+        record.status ||
+        "Awaiting Approval",
+    });
+  };
+
+  const printLocationCodeGuide = () => {
+    const printWindow = window.open("", "_blank", "width=760,height=720");
+
+    if (!printWindow) {
+      toast.error("Please allow pop-ups to print the location guide.");
+      return;
+    }
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Location Code Guide</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 32px;
+              color: #0f172a;
+              font-family: Arial, sans-serif;
+              line-height: 1.45;
+            }
+            h1 {
+              margin: 0 0 4px;
+              font-size: 22px;
+            }
+            .subtitle {
+              margin: 0 0 24px;
+              color: #475569;
+              font-size: 13px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 13px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 10px 12px;
+              text-align: left;
+              vertical-align: top;
+            }
+            th {
+              background: #f1f5f9;
+              font-size: 11px;
+              letter-spacing: 0.08em;
+              text-transform: uppercase;
+            }
+            .code {
+              display: inline-block;
+              min-width: 44px;
+              border-radius: 4px;
+              padding: 3px 7px;
+              text-align: center;
+              font-weight: 700;
+            }
+            .office { background: #dcfce7; color: #047857; }
+            .assign { background: #dbeafe; color: #1d4ed8; }
+            .unassigned { background: #ffedd5; color: #c2410c; }
+            .combo { font-weight: 700; }
+            @media print {
+              body { padding: 18mm; }
+              button { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Location Code Guide</h1>
+          <p class="subtitle">Use these codes to read employee check-in and check-out locations in the attendance calendar.</p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="code office">O</span></td>
+                <td>Office or Head Office location.</td>
+              </tr>
+              <tr>
+                <td><span class="code assign">A</span></td>
+                <td>Assigned employee location.</td>
+              </tr>
+              <tr>
+                <td><span class="code unassigned">UL</span></td>
+                <td>Unassigned or unapproved location.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h1 style="margin-top: 28px; font-size: 18px;">Common Combinations</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Combination</th>
+                <th>Check In</th>
+                <th>Check Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="combo">UL O</td><td>Unassigned</td><td>Office</td></tr>
+              <tr><td class="combo">O UL</td><td>Office</td><td>Unassigned</td></tr>
+              <tr><td class="combo">O O</td><td>Office</td><td>Office</td></tr>
+              <tr><td class="combo">A A</td><td>Assigned Location</td><td>Assigned Location</td></tr>
+              <tr><td class="combo">A O</td><td>Assigned Location</td><td>Office</td></tr>
+              <tr><td class="combo">O A</td><td>Office</td><td>Assigned Location</td></tr>
+              <tr><td class="combo">A UL</td><td>Assigned Location</td><td>Unassigned</td></tr>
+              <tr><td class="combo">UL A</td><td>Unassigned</td><td>Assigned Location</td></tr>
+            </tbody>
+          </table>
+
+          <script>
+            window.onload = () => {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   if (selectedStatus) {
@@ -394,7 +979,7 @@ const Attendance = () => {
 
           <div>
             <h1 className="font-display text-2xl font-bold text-right">
-              {statusMeta[selectedStatus]?.label} Records
+              {selectedStatusMeta?.label} Records
             </h1>
             <p className="text-sm text-muted-foreground text-right">
               {monthNames[month - 1]} {year}
@@ -406,14 +991,21 @@ const Attendance = () => {
           <div className="px-6 py-4 border-b border-border bg-secondary/30">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="font-display text-lg font-semibold">{statusMeta[selectedStatus]?.label} Attendance</div>
+                <div className="font-display text-lg font-semibold">
+                  {selectedStatusMeta?.label} Attendance
+                </div>
                 <div className="text-xs text-muted-foreground">
-                  {filteredRecords.length} record{filteredRecords.length === 1 ? "" : "s"} found
+                  {filteredRecords.length} record
+                  {filteredRecords.length === 1 ? "" : "s"} found
                 </div>
               </div>
-              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusMeta[selectedStatus]?.cell}`}>
-                <span className={`w-2 h-2 rounded-full ${statusMeta[selectedStatus]?.dot}`} />
-                {statusMeta[selectedStatus]?.label}
+              <span
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${selectedStatusMeta?.cell}`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${selectedStatusMeta?.dot}`}
+                />
+                {selectedStatusMeta?.label}
               </span>
             </div>
           </div>
@@ -431,17 +1023,22 @@ const Attendance = () => {
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                              <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-800">
                                 <span className="w-2 h-2 rounded-full bg-amber-500" />
-                                Awaiting Approval
                               </span>
-                              <span className="text-xs text-muted-foreground">{rec.employee?.user?.fullName || rec.employee?.fullName || "Employee"}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {rec.employee?.user?.fullName ||
+                                  rec.employee?.fullName ||
+                                  "Employee"}
+                              </span>
                             </div>
                             <div className="text-sm text-amber-900">
-                              <span className="font-semibold">Date:</span> {fmtDateDMY(rec.date)}
+                              <span className="font-semibold">Date:</span>{" "}
+                              {fmtDateDMY(rec.date)}
                             </div>
                             <div className="text-sm text-amber-900">
-                              <span className="font-semibold">Check-in:</span> {fmtTime(rec.checkIn) ?? "—"}
+                              <span className="font-semibold">Check-in:</span>{" "}
+                              {fmtTime(rec.checkIn) ?? "—"}
                             </div>
                             <div className="rounded-lg border border-amber-200 bg-white/70 p-3 text-sm text-amber-900">
                               <div className="font-semibold mb-1">Reason</div>
@@ -467,7 +1064,12 @@ const Attendance = () => {
                             </button>
                             <button
                               type="button"
-                              onClick={() => rejectRecord(rec.id, rec.note || "Unapproved location")}
+                              onClick={() =>
+                                rejectRecord(
+                                  rec.id,
+                                  rec.note || "Unapproved location",
+                                )
+                              }
                               className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors"
                             >
                               Reject
@@ -492,13 +1094,26 @@ const Attendance = () => {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredRecords.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-secondary/50 transition-colors">
+                      <tr
+                        key={rec.id}
+                        className="hover:bg-secondary/50 transition-colors"
+                      >
                         <td className="py-3 pr-4">{fmtDateDMY(rec.date)}</td>
-                        <td className="py-3 pr-4">{statusMeta[rec.status]?.label || rec.status}</td>
-                        <td className="py-3 pr-4">{fmtTime(rec.checkIn) ?? "—"}</td>
-                        <td className="py-3 pr-4">{fmtTime(rec.checkOut) ?? "—"}</td>
-                        <td className="py-3 pr-4">{fmtWorkedHours(rec.workedHours)}</td>
-                        <td className="py-3 pr-4 max-w-xl truncate">{rec.note || "—"}</td>
+                        <td className="py-3 pr-4">
+                          {statusMeta[rec.status]?.label || rec.status}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {fmtTime(rec.checkIn) ?? "—"}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {fmtTime(rec.checkOut) ?? "—"}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {fmtWorkedHours(rec.workedHours)}
+                        </td>
+                        <td className="py-3 pr-4 max-w-xl truncate">
+                          {rec.note || "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -506,7 +1121,8 @@ const Attendance = () => {
               </>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-6">
-                No {statusMeta[selectedStatus].label.toLowerCase()} records for {monthNames[month - 1]} {year}.
+                No {selectedStatusMeta?.label.toLowerCase()} records for{" "}
+                {monthNames[month - 1]} {year}.
               </p>
             )}
           </div>
@@ -515,7 +1131,10 @@ const Attendance = () => {
         {/* Legend */}
         <div className="flex flex-wrap gap-4">
           {Object.entries(statusMeta).map(([key, meta]) => (
-            <div key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div
+              key={key}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
               <span className={`w-3 h-3 rounded-full ${meta.dot}`} />
               {meta.label}
             </div>
@@ -533,145 +1152,288 @@ const Attendance = () => {
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold">Attendance</h1>
-          <p className="text-sm text-muted-foreground">View employee attendance logs in a calendar.</p>
+          <p className="text-sm text-muted-foreground">
+            View employee attendance logs in a calendar.
+          </p>
         </div>
       </div>
 
-     
+      {/* Controls */}
+      {!isAllEmployees && (
+        <div className="sticky top-[72px] z-[100] overflow-visible rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200 shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+            <div className="flex flex-wrap items-start gap-3">
+              {/* 1. Select Employee */}
+              <div className="relative employee-dropdown-container w-full sm:w-[300px] sm:min-w-[300px] max-w-full shrink-0">
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Select Employee
+                </label>
 
-      {/* Pending Approvals */}
-      {pendingApprovals.length > 0 && (
-        <div className="rounded-2xl bg-background border border-amber-200 card-shadow overflow-hidden">
-          {/* Header */}
-          <div className="border-b border-amber-200 bg-amber-50/50 px-6 py-3">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-700" />
-              <span className="font-semibold text-amber-900">Approval Requests ({pendingApprovals.length})</span>
-            </div>
-          </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={
+                      showEmployeeDropdown
+                        ? employeeSearch
+                        : selectedId === "all"
+                          ? "All Employees"
+                          : employees.find((emp) => emp.id === selectedId)
+                              ?.fullName || ""
+                    }
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+                    }}
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                    placeholder={
+                      loadingEmployees
+                        ? "Loading employees..."
+                        : "Search employee..."
+                    }
+                    disabled={loadingEmployees}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 pr-10 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                  />
 
-          {/* Check-in Approvals */}
-          <div>
-            <div className="px-6 py-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-display text-lg font-semibold text-amber-900">Approval Requests</div>
-                  <div className="text-xs text-amber-700">
-                    {pendingApprovals.length} record{pendingApprovals.length === 1 ? "" : "s"} awaiting approval
-                  </div>
+                  {/* Dropdown Arrow */}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowEmployeeDropdown((prev) => !prev)}
+                    disabled={loadingEmployees}
+                    className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
+                    aria-label="Toggle employee dropdown"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${
+                        showEmployeeDropdown ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
                 </div>
-                <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Review location before approval
-                </span>
+
+                {showEmployeeDropdown && !loadingEmployees && (
+                  <div className="absolute left-0 right-0 top-full z-[200] mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        handleEmployeeChange("all");
+                      }}
+                      className={`w-full px-4 py-2.5 text-left text-sm hover:bg-secondary ${
+                        selectedId === "all" ? "bg-primary/5" : ""
+                      }`}
+                    >
+                      All Employees
+                    </button>
+
+                    {employees
+                      .filter((emp) => {
+                        const search = employeeSearch.trim().toLowerCase();
+
+                        if (!search) return true;
+
+                        return (
+                          emp.fullName?.toLowerCase().includes(search) ||
+                          emp.employeeCode?.toLowerCase().includes(search)
+                        );
+                      })
+                      .map((emp) => (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            handleEmployeeChange(emp.id);
+                          }}
+                          className={`w-full border-t border-border px-4 py-2.5 text-left text-sm hover:bg-secondary ${
+                            selectedId === emp.id ? "bg-primary/5" : ""
+                          }`}
+                        >
+                          <div className="font-semibold">{emp.fullName}</div>
+
+                          <div className="text-xs text-muted-foreground">
+                            {emp.employeeCode || "No employee code"}
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm divide-y divide-border">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground bg-secondary/30">
-                      <th className="px-4 py-3">Employee</th>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Check In</th>
-                      <th className="px-4 py-3">Location Review</th>
-                      <th className="px-4 py-3">Reason</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {pendingApprovals.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-secondary/30 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-foreground">{rec.employee.user.fullName}</div>
-                          <div className="text-xs text-muted-foreground">{rec.employee.employeeCode}</div>
-                        </td>
-                        <td className="px-4 py-3">{fmtDateDMY(rec.date)}</td>
-                        <td className="px-4 py-3">{fmtTime(rec.checkIn) ?? "—"}</td>
-                        <td className="px-4 py-3 max-w-xs">
-                          <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
-                            {rec.note?.includes("unapproved location")
-                              ? rec.note.split("Pending")[0].trim().replace(/^Checkin to /, "")
-                              : "Map review required"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-sm">
-                          <div className="line-clamp-2">{rec.note || "—"}</div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => openLocationMap(rec)}
-                              className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium transition-colors flex items-center gap-1"
-                            >
-                              <MapPin className="h-3 w-3" />
-                              Review Map
-                            </button>
-                            <button
-                              onClick={() => approveRecord(rec.id)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-xs font-medium transition-colors"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => rejectRecord(rec.id, "Unapproved location")}
-                              className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-medium transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* 4. Select Date */}
+              <div className="min-w-[160px]">
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Date
+                </label>
+
+                <input
+                  type="date"
+                  value={selectedDate}
+                  max={todayKey}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedDate(value);
+                    setSelectedWeek("");
+
+                    if (value) {
+                      const selectedDateObj = new Date(`${value}T00:00:00`);
+
+                      const selectedYear = selectedDateObj.getFullYear();
+                      const selectedMonth = selectedDateObj.getMonth() + 1;
+
+                      setYear(selectedYear);
+                      setMonth(selectedMonth);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                />
+              </div>
+
+              {/* 2. Select Month */}
+              <div className="min-w-[150px]">
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Month
+                </label>
+                <select
+                  value={month}
+                  onChange={(e) => {
+                    const nextMonth = Number(e.target.value);
+                    setSelectedDate("");
+                    // Selecting a month shows the complete month in All Employees view.
+                    setSelectedWeek("");
+                    setMonth(nextMonth);
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                >
+                  {monthNames.map((name, index) => {
+                    const optionMonth = index + 1;
+                    const disabled =
+                      year === today.getFullYear() &&
+                      optionMonth > today.getMonth() + 1;
+
+                    return (
+                      <option
+                        key={optionMonth}
+                        value={optionMonth}
+                        disabled={disabled}
+                      >
+                        {name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* 3. Select Year */}
+              <div className="min-w-[110px]">
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Year
+                </label>
+                <select
+                  value={year}
+                  onChange={(e) => {
+                    const selectedYear = Number(e.target.value);
+                    setSelectedDate("");
+                    // Keep the complete month view when the year changes.
+                    setSelectedWeek("");
+                    setYear(selectedYear);
+
+                    if (
+                      selectedYear === today.getFullYear() &&
+                      month > today.getMonth() + 1
+                    ) {
+                      setMonth(today.getMonth() + 1);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                >
+                  {Array.from(
+                    { length: today.getFullYear() - 2020 + 1 },
+                    (_, index) => today.getFullYear() - index,
+                  ).map((optionYear) => (
+                    <option key={optionYear} value={optionYear}>
+                      {optionYear}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Select Week */}
+              <div className="min-w-[150px]">
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Week
+                </label>
+
+                <select
+                  value={selectedWeek}
+                  onChange={(e) => {
+                    setSelectedWeek(e.target.value);
+                    setSelectedDate("");
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                >
+                  <option value="">Select Week</option>
+
+                  {computeMonthWeeks(year, month).map((week, index) => {
+                    const weekNumber = index + 1;
+
+                    return (
+                      <option key={weekNumber} value={weekNumber}>
+                        {weekNumber}
+                        {weekNumber === 1
+                          ? "st"
+                          : weekNumber === 2
+                            ? "nd"
+                            : weekNumber === 3
+                              ? "rd"
+                              : "th"}{" "}
+                        Week ({String(week.start.getUTCDate()).padStart(2, "0")}
+                        /{String(week.start.getUTCMonth() + 1).padStart(2, "0")}
+                        -{String(week.end.getUTCDate()).padStart(2, "0")}/
+                        {String(week.end.getUTCMonth() + 1).padStart(2, "0")})
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Controls */}
-      <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-          <div className="flex-1">
-            <label className="text-sm font-medium mb-1.5 block">Select Employee</label>
-            <select
-              className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-              disabled={loadingEmployees}
-            >
-              <option value="all">View All Employees</option>
-              <option value="">{loadingEmployees ? "Loading employees..." : "Choose an employee..."}</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.fullName} ({emp.employeeCode})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => changeMonth(-1)}
-              className="w-10 h-10 rounded-lg border border-border flex items-center justify-center hover:bg-secondary transition-colors"
-              aria-label="Previous month"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <div className="min-w-[160px] text-center font-display font-semibold">
-              {monthNames[month - 1]} {year}
+      {/* Selected employee / calendar context */}
+      {!isAllEmployees && selectedId && (
+        <div className="-mt-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                  Employee Attendance
+                </div>
+                <div className="truncate text-sm font-bold text-slate-800">
+                  {employees.find((emp) => emp.id === selectedId)?.fullName ||
+                    "Selected Employee"}
+                </div>
+              </div>
             </div>
-            <button
-              onClick={() => changeMonth(1)}
-              className="w-10 h-10 rounded-lg border border-border flex items-center justify-center hover:bg-secondary transition-colors"
-              aria-label="Next month"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-600">
+                {monthNames[month - 1]} {year}
+              </span>
+              <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
+                {selectedDate
+                  ? "Selected Date"
+                  : selectedWeek
+                    ? `Week ${selectedWeek}`
+                    : "Full Month"}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Empty state */}
       {!selectedId ? (
@@ -679,14 +1441,18 @@ const Attendance = () => {
           <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center mb-4">
             <Users className="h-7 w-7 text-muted-foreground" />
           </div>
-          <h2 className="font-display text-lg font-semibold mb-1">Select an employee</h2>
+          <h2 className="font-display text-lg font-semibold mb-1">
+            Select an employee
+          </h2>
           <p className="text-sm text-muted-foreground max-w-md">
-            Choose an employee above to view their attendance calendar for the selected month.
+            Choose an employee above to view their attendance calendar for the
+            selected month.
           </p>
         </div>
       ) : loadingData ? (
         <div className="p-12 flex items-center justify-center text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading attendance...
+          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading
+          attendance...
         </div>
       ) : (
         <>
@@ -707,189 +1473,1592 @@ const Attendance = () => {
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`w-2.5 h-2.5 rounded-full ${meta.dot}`} />
-                      <span className="text-xs text-muted-foreground">{meta.label}</span>
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${meta.dot}`}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {meta.label}
+                      </span>
                     </div>
-                    <div className="font-display text-xl font-bold">{summary[key] || 0}</div>
+                    <div className="font-display text-xl font-bold">
+                      {summary[key] || 0}
+                    </div>
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={() => handleStatusClick("OVERTIME")}
+                className="rounded-xl border border-orange-200 bg-orange-50/70 p-4 text-left transition-colors hover:bg-orange-100/70 focus:outline-none focus:ring-2 focus:ring-orange-300"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                  <span className="text-xs text-orange-700">Overtime Days</span>
+                </div>
+                <div className="font-display text-xl font-bold text-orange-900">
+                  {overtimeDays} {overtimeDays === 1 ? "day" : "days"}
+                </div>
+              </button>
             </div>
           )}
 
           {isAllEmployees ? (
-          <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-secondary/30 flex items-center justify-between">
-              <div>
-                <div className="font-display text-lg font-semibold">Attendance Register</div>
-                <div className="text-xs text-muted-foreground">
-                  Weekly calendar: {fmtDateDMY(registerData?.startDate)} – {fmtDateDMY(registerData?.endDate)}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-muted-foreground mr-2">Week:</label>
-                <select
-                  value={registerStart || ""}
-                  onChange={(e) => setRegisterStart(e.target.value || null)}
-                  className="px-3 py-1 rounded-lg text-sm border border-border bg-background"
-                >
-                  <option value="">This Week</option>
-                  {computeMonthWeeks(year, month).map((w, i) => {
-                    const key = formatDateKey(w.start);
-                    return (
-                      <option key={key} value={key}>
-                        {`${i + 1}${["th","st","nd","rd"][((i+1)%10)] || "th"} week — ${String(w.start.getUTCDate()).padStart(2,'0')}/${String(w.start.getUTCMonth()+1).padStart(2,'0')} - ${String(Math.min(w.end.getUTCDate(), new Date(year, month, 0).getUTCDate()).toString()).padStart(2,'0')}/${String(w.end.getUTCMonth()+1).padStart(2,'0')}`}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-[0_10px_35px_rgba(15,23,42,0.07)] overflow-visible">
+              {/* Filters inside Team Attendance for All Employees */}
+              <div className="sticky top-[72px] z-[100] overflow-visible rounded-2xl bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                  <div className="flex flex-wrap items-start gap-3">
+                    {/* 1. Select Employee */}
+                    {/* 1. Select Employee */}
+                    <div className="relative employee-dropdown-container w-full sm:w-[300px] sm:min-w-[300px] max-w-full shrink-0">
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                        Select Employee
+                      </label>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm border-separate border-spacing-0">
-                <thead>
-                  <tr className="bg-secondary/20 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="sticky left-0 z-20 bg-secondary/20 border-r border-border px-4 py-3">Employee</th>
-                    {registerDates.map((date) => {
-                      const dateKey = formatDateKey(date);
-                      return (
-                        <th key={dateKey} className="px-4 py-3 min-w-[10rem]">
-                          <div className="font-medium text-sm text-slate-900">{weekdays[date.getUTCDay()]}</div>
-                          <div className="text-[11px] text-muted-foreground">{String(date.getUTCDate()).padStart(2, "0")}/{String(date.getUTCMonth() + 1).padStart(2, "0")}</div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {registerEmployees.length > 0 ? (
-                    registerEmployees.map((emp) => (
-                      <tr key={emp.id} className="border-t border-border">
-                        <td className="sticky left-0 z-10 bg-background border-r border-border px-4 py-3 font-medium text-slate-900">
-                          <div>{emp.fullName}</div>
-                          {emp.employeeCode || emp.email ? (
-                            <div className="text-[11px] text-muted-foreground">{emp.employeeCode || emp.email}</div>
-                          ) : null}
-                        </td>
-                        {registerDates.map((date) => {
-                          const dateKey = formatDateKey(date);
-                          let rec = attendanceByDateEmployee.get(`${dateKey}:${emp.id}`);
-                          // Treat today's and future ABSENT as no record (user may still arrive)
-                          if (rec && rec.status === "ABSENT" && dateKey >= todayKey) {
-                            rec = null;
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={
+                            showEmployeeDropdown
+                              ? employeeSearch
+                              : selectedId === "all"
+                                ? "All Employees"
+                                : employees.find((emp) => emp.id === selectedId)
+                                    ?.fullName || ""
                           }
-                          const meta = rec ? statusMeta[rec.status] : null;
-                          return (
-                            <td key={dateKey} className="px-4 py-3 align-top border-l border-border bg-background">
-                              {rec ? (
-                                <div className="space-y-1 rounded-2xl border border-border bg-slate-50/70 p-3">
-                                  <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
-                                    <span className={`w-2 h-2 rounded-full ${meta?.dot}`} />
-                                    {meta?.label || rec.status}
-                                  </div>
-                                  <div className="text-[11px] text-muted-foreground break-words">
-                                    {rec.checkIn ? `In ${fmtTime(rec.checkIn)}` : ""}
-                                    {rec.checkIn && rec.checkOut ? " · " : ""}
-                                    {rec.checkOut ? `Out ${fmtTime(rec.checkOut)}` : ""}
-                                  </div>
-                                  {rec.note ? (
-                                    <div className="text-[11px] text-slate-500 break-words">{rec.note}</div>
-                                  ) : null}
-                                  {rec.status === "PENDING_APPROVAL" ? (
-                                    <div className="flex items-center gap-2 mt-2">
-                                      <button onClick={() => approveRecord(rec.id)} className="px-2 py-1 text-xs rounded-md bg-emerald-100 text-emerald-700">Approve</button>
-                                      <button onClick={() => openRejectModal(rec)} className="px-2 py-1 text-xs rounded-md bg-rose-100 text-rose-700">Reject</button>
-                                    </div>
-                                  ) : null}
+                          onChange={(e) => {
+                            setEmployeeSearch(e.target.value);
+                            setShowEmployeeDropdown(true);
+                          }}
+                          onFocus={() => setShowEmployeeDropdown(true)}
+                          placeholder={
+                            loadingEmployees
+                              ? "Loading employees..."
+                              : "Search employee..."
+                          }
+                          disabled={loadingEmployees}
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 pr-10 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                        />
+
+                        {/* Dropdown Arrow */}
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() =>
+                            setShowEmployeeDropdown((prev) => !prev)
+                          }
+                          disabled={loadingEmployees}
+                          className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
+                          aria-label="Toggle employee dropdown"
+                        >
+                          <ChevronDown
+                            className={`h-4 w-4 transition-transform ${
+                              showEmployeeDropdown ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {showEmployeeDropdown && !loadingEmployees && (
+                        <div className="absolute left-0 right-0 top-full z-[200] mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              handleEmployeeChange("all");
+                            }}
+                            className={`w-full px-4 py-2.5 text-left text-sm hover:bg-secondary ${
+                              selectedId === "all" ? "bg-primary/5" : ""
+                            }`}
+                          >
+                            All Employees
+                          </button>
+
+                          {employees
+                            .filter((emp) => {
+                              const search = employeeSearch
+                                .trim()
+                                .toLowerCase();
+
+                              if (!search) return true;
+
+                              return (
+                                emp.fullName?.toLowerCase().includes(search) ||
+                                emp.employeeCode?.toLowerCase().includes(search)
+                              );
+                            })
+                            .map((emp) => (
+                              <button
+                                key={emp.id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  handleEmployeeChange(emp.id);
+                                }}
+                                className={`w-full border-t border-border px-4 py-2.5 text-left text-sm hover:bg-secondary ${
+                                  selectedId === emp.id ? "bg-primary/5" : ""
+                                }`}
+                              >
+                                <div className="font-semibold">
+                                  {emp.fullName}
                                 </div>
-                              ) : (
-                                <div className="rounded-2xl border border-border bg-slate-50/70 p-3 text-[11px] text-muted-foreground">No record</div>
-                              )}
-                            </td>
+
+                                <div className="text-xs text-muted-foreground">
+                                  {emp.employeeCode || "No employee code"}
+                                </div>
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 4. Select Date */}
+                    <div className="min-w-[160px]">
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                        Date
+                      </label>
+
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        max={todayKey}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setSelectedDate(value);
+                          setSelectedWeek("");
+
+                          if (value) {
+                            const selectedDateObj = new Date(
+                              `${value}T00:00:00`,
+                            );
+
+                            const selectedYear = selectedDateObj.getFullYear();
+                            const selectedMonth =
+                              selectedDateObj.getMonth() + 1;
+
+                            setYear(selectedYear);
+                            setMonth(selectedMonth);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                      />
+                    </div>
+
+                    {/* 2. Select Month */}
+                    <div className="min-w-[150px]">
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                        Month
+                      </label>
+                      <select
+                        value={month}
+                        onChange={(e) => {
+                          const nextMonth = Number(e.target.value);
+                          setSelectedDate("");
+                          // Month filter shows the complete selected month.
+                          setSelectedWeek("");
+                          setMonth(nextMonth);
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                      >
+                        {monthNames.map((name, index) => {
+                          const optionMonth = index + 1;
+                          const disabled =
+                            year === today.getFullYear() &&
+                            optionMonth > today.getMonth() + 1;
+
+                          return (
+                            <option
+                              key={optionMonth}
+                              value={optionMonth}
+                              disabled={disabled}
+                            >
+                              {name}
+                            </option>
                           );
                         })}
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={registerDates.length + 1} className="px-6 py-10 text-center text-sm text-muted-foreground">
-                        No attendance records found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          ) : (
-          /* Calendar */
-          <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {weekdays.map((w) => (
-                <div key={w} className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground py-1">
-                  {w}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-2">
-              {cells.map((day, idx) => {
-                if (day === null) return <div key={`blank-${idx}`} className="aspect-square" />;
+                      </select>
+                    </div>
 
-                const cellDate = new Date(Date.UTC(year, month - 1, day));
-                const dateKey = formatDateKey(cellDate);
-                let rec = recordByDay[day];
-                // Hide today's and future ABSENT as no record
-                if (rec && rec.status === "ABSENT" && dateKey >= todayKey) rec = null;
-                const holidayName = holidayByDay[day];
-                const meta = rec ? statusMeta[rec.status] : holidayName ? statusMeta.HOLIDAY : null;
-                const isToday = dateKey === todayKey;
+                    {/* 3. Select Year */}
+                    <div className="min-w-[110px]">
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                        Year
+                      </label>
+                      <select
+                        value={year}
+                        onChange={(e) => {
+                          const selectedYear = Number(e.target.value);
+                          setSelectedDate("");
+                          // Year filter shows the complete selected month.
+                          setSelectedWeek("");
+                          setYear(selectedYear);
 
-                return (
-                  <div
-                    key={day}
-                    className={`aspect-square rounded-lg border p-1.5 flex flex-col ${
-                      meta ? meta.cell : "bg-background border-border"
-                    } ${isToday ? "ring-2 ring-primary" : ""}`}
-                    title={
-                      rec
-                        ? `${statusMeta[rec.status]?.label}${rec.checkIn ? ` · In ${fmtTime(rec.checkIn)}` : ""}${rec.checkOut ? ` · Out ${fmtTime(rec.checkOut)}` : ""}`
-                        : holidayName || ""
-                    }
-                  >
-                    <div className="text-xs font-semibold">{day}</div>
-                    {rec ? (
-                      <div className="mt-auto text-[10px] leading-tight">
-                        {(fmtTime(rec.checkIn) || fmtTime(rec.checkOut)) && (
-                          <div className="truncate">
-                            {fmtTime(rec.checkIn) ? `In ${fmtTime(rec.checkIn)}` : ""}
-                            {fmtTime(rec.checkIn) && fmtTime(rec.checkOut) ? " · " : ""}
-                            {fmtTime(rec.checkOut) ? `Out ${fmtTime(rec.checkOut)}` : ""}
-                          </div>
-                        )}
-                        {rec.workedHours != null && <div className="truncate opacity-75">{fmtWorkedHours(rec.workedHours)}</div>}
-                      </div>
-                    ) : holidayName ? (
-                      <div className="mt-auto text-[10px] leading-tight truncate">{holidayName}</div>
-                    ) : null}
+                          if (
+                            selectedYear === today.getFullYear() &&
+                            month > today.getMonth() + 1
+                          ) {
+                            setMonth(today.getMonth() + 1);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                      >
+                        {Array.from(
+                          { length: today.getFullYear() - 2020 + 1 },
+                          (_, index) => today.getFullYear() - index,
+                        ).map((optionYear) => (
+                          <option key={optionYear} value={optionYear}>
+                            {optionYear}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 5. Select Week */}
+                    <div className="min-w-[150px]">
+                      <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                        Week
+                      </label>
+
+                      <select
+                        value={selectedWeek}
+                        onChange={(e) => {
+                          setSelectedWeek(e.target.value);
+                          setSelectedDate("");
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                      >
+                        <option value="">Select Week</option>
+
+                        {computeMonthWeeks(year, month).map((week, index) => (
+                          <option key={index} value={index + 1}>
+                            {index + 1}
+                            {index === 0
+                              ? "st"
+                              : index === 1
+                                ? "nd"
+                                : index === 2
+                                  ? "rd"
+                                  : "th"}{" "}
+                            Week (
+                            {String(week.start.getUTCDate()).padStart(2, "0")}/
+                            {String(week.start.getUTCMonth() + 1).padStart(
+                              2,
+                              "0",
+                            )}
+                            -{String(week.end.getUTCDate()).padStart(2, "0")}/
+                            {String(week.end.getUTCMonth() + 1).padStart(
+                              2,
+                              "0",
+                            )}
+                            )
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                );
-              })}
+                </div>
+              </div>
+
+              {/* Selected employee / calendar context */}
+              <div className="mx-4 sm:mx-5 mb-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3 shadow-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        Calendar View
+                      </div>
+                      <div className="truncate text-sm font-bold text-slate-800">
+                        {selectedId === "all"
+                          ? "All Employees"
+                          : employees.find((emp) => emp.id === selectedId)
+                              ?.fullName || "Selected Employee"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+                    <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                      {monthNames[month - 1]} {year}
+                    </span>
+                    <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
+                      {selectedDate
+                        ? "Selected Date"
+                        : selectedWeek
+                          ? `Week ${selectedWeek}`
+                          : "Full Month"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Location code explanation */}
+              <div className="mx-4 sm:mx-5 mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-700">
+                    Location Code Guide
+                  </div>
+                  
+                </div>
+
+                <div className="grid gap-1.5 text-[10px] leading-tight text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-md border border-orange-200 bg-white px-2 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                        UL O
+                      </span>
+                      <span>Check In: Unassigned · Check Out: Office</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                        O UL
+                      </span>
+                      <span>Check In: Office · Check Out: Unassigned</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-emerald-200 bg-white px-2 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <span className="rounded bg-emerald-100 px-1 py-0.5 font-bold text-emerald-700">
+                        O O
+                      </span>
+                      <span>Check In: Office · Check Out: Office</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="rounded bg-blue-100 px-1 py-0.5 font-bold text-blue-700">
+                        A A
+                      </span>
+                      <span>Check In & Check Out: Assign Location</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-blue-200 bg-white px-2 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <span className="rounded bg-blue-100 px-1 py-0.5 font-bold text-blue-700">
+                        A O
+                      </span>
+                      <span>Check In: Assign · Check Out: Office</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="rounded bg-blue-100 px-1 py-0.5 font-bold text-blue-700">
+                        O A
+                      </span>
+                      <span>Check In: Office · Check Out: Assign</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-orange-200 bg-white px-2 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                        A UL
+                      </span>
+                      <span>Check In: Assign · Check Out: Unassigned</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                        UL A
+                      </span>
+                      <span>Check In: Unassigned · Check Out: Assign</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Calendar Zoom */}
+              <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    Calendar Zoom
+                  </span>
+                  <span className="min-w-[48px] rounded-full bg-primary/10 px-2.5 py-1 text-center text-xs font-bold text-primary">
+                    {calendarZoom}%
+                  </span>
+                </div>
+                <div className="flex w-full max-w-md items-center gap-3">
+                  <span className="text-xs font-semibold text-slate-500">
+                    60%
+                  </span>
+                  <input
+                    type="range"
+                    min="60"
+                    max="100"
+                    step="5"
+                    value={calendarZoom}
+                    onChange={(e) => setCalendarZoom(Number(e.target.value))}
+                    className="h-2 w-full cursor-pointer accent-primary"
+                    aria-label="Calendar zoom"
+                  />
+                  <span className="text-xs font-semibold text-slate-500">
+                    100%
+                  </span>
+                </div>
+              </div>
+
+              {/* Calendar / employee matrix */}
+              <div className="relative max-h-[calc(81vh-230px)] min-h-[340px] overflow-auto overscroll-contain rounded-b-2xl">
+                <table
+                  className="min-w-[1485px] w-full border-separate border-spacing-0 text-sm"
+                  style={{ zoom: `${calendarZoom}%` }}
+                >
+                  <thead>
+                    <tr>
+                      <th
+                        className="sticky left-0 top-0 z-[70]
+    w-[200px] min-w-[200px] max-w-[200px]
+    h-[60px] min-h-[60px]
+    border-r border-b border-border
+    bg-white px-5 py-3.5
+    text-left shadow-sm"
+                      >
+                        <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                          Employee
+                        </div>
+
+                        <div className="mt-1 text-xs font-semibold text-slate-700">
+                          {selectedDate
+                            ? "Selected date attendance"
+                            : selectedWeek
+                              ? "Weekly attendance"
+                              : "Monthly attendance"}
+                        </div>
+                      </th>
+
+                      {visibleRegisterDates.map((date) => {
+                        const dateKey = formatDateKey(date);
+                        const isRegisterToday = dateKey === todayKey;
+                        const isRegisterWeekend =
+                          date.getUTCDay() === 0 || date.getUTCDay() === 6;
+
+                        return (
+                          <th
+                            key={dateKey}
+                            className={`sticky top-0 z-[60] min-w-[165px] border-b border-border px-2.5 py-3 text-center shadow-sm will-change-transform ${
+                              isRegisterToday
+                                ? "bg-primary/10"
+                                : isRegisterWeekend
+                                  ? "bg-slate-100"
+                                  : "bg-white"
+                            }`}
+                          >
+                            <div
+                              className={`text-[13.3px] font-bold uppercase tracking-wide ${
+                                date.getUTCDay() === 6
+                                  ? "text-black"
+                                  : isRegisterWeekend
+                                    ? "text-slate-400"
+                                    : "text-slate-700"
+                              }`}
+                            >
+                              {weekdays[date.getUTCDay()]}
+                            </div>
+                            <div
+                              className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full font-display text-[17.1px] font-bold ${
+                                date.getUTCDay() === 6
+                                  ? "text-black"
+                                  : isRegisterToday
+                                    ? "bg-primary text-white shadow-sm"
+                                    : "text-slate-900"
+                              }`}
+                            >
+                              {String(date.getUTCDate()).padStart(2, "0")}
+                            </div>
+                            <div className="mt-1 text-[11.4px] font-medium text-muted-foreground">
+                              {String(date.getUTCMonth() + 1).padStart(2, "0")}/
+                              {date.getUTCFullYear()}
+                            </div>
+                            {isRegisterToday && (
+                              <div className="mt-1.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                                Today
+                              </div>
+                            )}
+                          </th>
+                        );
+                      })}
+
+                      {isAllEmployees && !selectedDate && !selectedWeek && (
+                        <>
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-l border-b border-border bg-emerald-50 px-3 py-3 text-center text-xs font-bold text-emerald-700 shadow-sm">
+                            Present
+                          </th>
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-rose-50 px-3 py-3 text-center text-xs font-bold text-rose-700 shadow-sm">
+                            Absent
+                          </th>
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-violet-50 px-3 py-3 text-center text-xs font-bold text-violet-700 shadow-sm">
+                            Leave
+                          </th>
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-blue-50 px-3 py-3 text-center text-xs font-bold text-blue-700 shadow-sm">
+                            Holiday
+                          </th>
+                       \
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {registerEmployees.length > 0 ? (
+                      registerEmployees.map((emp) => (
+                        <tr key={emp.id} className="group">
+                          <td className="sticky left-0 z-[40] border-r border-b border-border bg-white px-5 py-3.5 shadow-[2px_0_4px_rgba(0,0,0,0.04)] transition-colors group-hover:bg-slate-50">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary ring-4 ring-primary/5">
+                                {emp.fullName
+                                  .split(" ")
+                                  .map((name) => name[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-slate-900"
+                                  title={emp.fullName}
+                                >
+                                  {emp.fullName}
+                                </div>
+
+                                {(emp.employeeCode || emp.email) && (
+                                  <div
+                                    className="mt-0.5 truncate text-[13px] font-medium text-muted-foreground"
+                                    title={emp.employeeCode || emp.email}
+                                  >
+                                    {emp.employeeCode || emp.email}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {visibleRegisterDates.map((date) => {
+                            const dateKey = formatDateKey(date);
+                            const isRegisterToday = dateKey === todayKey;
+                            const isRegisterWeekend =
+                              date.getUTCDay() === 0 || date.getUTCDay() === 6;
+                            let rec = attendanceByDateEmployee.get(
+                              `${dateKey}:${emp.id}`,
+                            );
+
+                            if (
+                              rec &&
+                              rec.status === "ABSENT" &&
+                              dateKey >= todayKey
+                            )
+                              rec = null;
+
+                            const holidayName = registerData?.holidays?.find(
+                              (h) =>
+                                formatDateKey(new Date(h.date)) === dateKey,
+                            )?.name;
+
+                            const isHoliday =
+                              Boolean(holidayName) || rec?.status === "HOLIDAY";
+                            const isAbsent = rec?.status === "ABSENT";
+
+                            const meta = rec ? statusMeta[rec.status] : null;
+                            const cleanedNote = cleanAttendanceNote(
+                              rec?.note || "",
+                            );
+                            const checkInLocationCode = getCalendarLocationCode(
+                              rec?.note,
+                              "check-in",
+                            );
+                            const checkOutLocationCode =
+                              getCalendarLocationCode(rec?.note, "check-out");
+                            const checkInUnassigned =
+                              checkInLocationCode === "UL";
+                            const checkOutUnassigned =
+                              checkOutLocationCode === "UL";
+                            const huException =
+                              checkInLocationCode !== "UL" &&
+                              checkOutLocationCode === "UL";
+                            const uhException =
+                              checkInLocationCode === "UL" &&
+                              checkOutLocationCode !== "UL";
+                            const ulException =
+                              checkInLocationCode === "UL" &&
+                              checkOutLocationCode === "UL";
+
+                            return (
+                              <td
+                                key={dateKey}
+                                className={`border-l border-b border-border px-2 py-2 align-top ${
+                                  isRegisterToday
+                                    ? "bg-primary/[0.025]"
+                                    : isRegisterWeekend
+                                      ? "bg-slate-50/70"
+                                      : "bg-white"
+                                }`}
+                              >
+                                {isHoliday && !isWorkedRecord(rec) ? (
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-blue-200 bg-blue-50">
+                                    <div className="text-lg font-bold text-blue-700">
+                                      Holiday
+                                    </div>
+                                  </div>
+                                ) : isAbsent ? (
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-rose-200 bg-rose-50">
+                                    <div className="text-center">
+                                      <div className="text-lg font-bold text-rose-700">
+                                        Absent
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : rec ? (
+                                  <div
+                                    className={`relative rounded-xl border p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+                                      /Checkout.*unassigned location/i.test(
+                                        rec.note || "",
+                                      )
+                                        ? "border-orange-300 bg-orange-50"
+                                        : meta?.cell ||
+                                          "border-border bg-slate-50"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-white/80 px-2 py-1 text-xs font-bold text-slate-700 shadow-sm">
+                                        <span
+                                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta?.dot || "bg-slate-400"}`}
+                                        />
+                                        <span className="truncate">
+                                          {meta?.label || rec.status}
+                                        </span>
+                                      </span>
+
+                                      {isHoliday && (
+                                        <span className="rounded-md border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                                          Holiday
+                                        </span>
+                                      )}
+
+                                      <div className="flex shrink-0 gap-1">
+                                        {checkInLocationCode && (
+                                          <span
+                                            title={
+                                              checkInLocationCode === "UL"
+                                                ? "Check In: UL = Unassigned Location"
+                                                : checkInLocationCode === "A"
+                                                  ? "Check In: A = Assign Location"
+                                                  : "Check In: O = Office"
+                                            }
+                                            className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${
+                                              checkInLocationCode === "UL"
+                                                ? "border-orange-300 bg-orange-100 text-orange-700"
+                                                : checkInLocationCode === "A"
+                                                  ? "border-blue-300 bg-blue-100 text-blue-700"
+                                                  : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                            }`}
+                                          >
+                                            {checkInLocationCode}
+                                          </span>
+                                        )}
+
+                                        {checkOutLocationCode && (
+                                          <span
+                                            title={
+                                              checkOutLocationCode === "UL"
+                                                ? "Check Out: UL = Unassigned Location"
+                                                : checkOutLocationCode === "A"
+                                                  ? "Check Out: A = Assign Location"
+                                                  : "Check Out: O = Office"
+                                            }
+                                            className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${
+                                              checkOutLocationCode === "UL"
+                                                ? "border-orange-300 bg-orange-100 text-orange-700"
+                                                : checkOutLocationCode === "A"
+                                                  ? "border-blue-300 bg-blue-100 text-blue-700"
+                                                  : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                            }`}
+                                          >
+                                            {checkOutLocationCode}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                      <div className="rounded-lg bg-white/75 px-2 py-1.5">
+                                        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                          Check In
+                                        </div>
+                                        <div className="mt-0.5 text-base font-bold text-emerald-700">
+                                          {rec.checkIn
+                                            ? fmtTime(rec.checkIn)
+                                            : "—"}
+                                        </div>
+                                      </div>
+                                      <div className="rounded-lg bg-white/75 px-2 py-1.5">
+                                        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                          Check Out
+                                        </div>
+                                        <div className="mt-0.5 text-base font-bold text-rose-700">
+                                          {rec.checkOut
+                                            ? fmtTime(rec.checkOut)
+                                            : "—"}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {rec.workedHours != null && (
+                                      <div className="mt-2 flex items-center justify-between border-t border-black/5 pt-2">
+                                        <span className="text-[11.4px] font-bold text-muted-foreground">
+                                          Working Hours
+                                        </span>
+                                        <span className="font-display text-[15.2px] font-bold text-primary">
+                                          {fmtWorkedHours(rec.workedHours)}
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {((isHoliday && isWorkedRecord(rec)) ||
+                                      Number(rec.workedHours) > 8) && (
+                                      <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-orange-200 bg-orange-100/95 px-2 py-1 shadow-sm">
+                                        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700">
+                                          OT
+                                        </span>
+
+                                        <span className="text-[11px] font-bold text-orange-700">
+                                          {fmtWorkedHours(
+                                            isHoliday
+                                              ? Number(rec.workedHours)
+                                              : Number(rec.workedHours) - 8,
+                                          )}
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {hasSubmittedReason(rec.note) && (
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openAttendanceReason(
+                                              rec,
+                                              emp.fullName,
+                                            )
+                                          }
+                                          className="rounded-md bg-amber-50 px-2 py-1 text-[8px] font-semibold text-amber-700 hover:bg-amber-100"
+                                        >
+                                          View Reason
+                                        </button>
+                                        {/* Approve / Reject actions are intentionally hidden from the calendar. */}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60">
+                                    <div className="text-center">
+                                      <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">
+                                        —
+                                      </div>
+                                      <div className="mt-1 text-[8px] font-medium text-muted-foreground">
+                                        No record
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          {isAllEmployees &&
+                            !selectedDate &&
+                            !selectedWeek &&
+                            (() => {
+                              const monthSummary = getEmployeeMonthSummary(emp);
+
+                              return (
+                                <>
+                                  <td className="border-l border-b border-border bg-emerald-50/60 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-emerald-100 px-2.5 py-1.5 text-sm font-bold text-emerald-700">
+                                      {monthSummary.present}
+                                    </span>
+                                  </td>
+                                  <td className="border-b border-border bg-rose-50/60 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-rose-100 px-2.5 py-1.5 text-sm font-bold text-rose-700">
+                                      {monthSummary.absent}
+                                    </span>
+                                  </td>
+                                  <td className="border-b border-border bg-violet-50/60 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-violet-100 px-2.5 py-1.5 text-sm font-bold text-violet-700">
+                                      {monthSummary.leave}
+                                    </span>
+                                  </td>
+                                  <td className="border-b border-border bg-blue-50/60 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-blue-100 px-2.5 py-1.5 text-sm font-bold text-blue-700">
+                                      {monthSummary.holiday}
+                                    </span>
+                                  </td>
+                                  
+                                </>
+                              );
+                            })()}
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={
+                            registerDates.length +
+                            1 +
+                            (isAllEmployees && !selectedDate && !selectedWeek
+                              ? 5
+                              : 0)
+                          }
+                          className="px-6 py-14 text-center"
+                        >
+                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                            <Users className="h-5 w-5 text-slate-400" />
+                          </div>
+                          <div className="mt-3 text-sm font-semibold text-slate-700">
+                            No attendance records found
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            There are no employee attendance records for this
+                            selected period.
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer */}
             </div>
-          </div>
+          ) : (
+            /* Calendar */
+            <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+              <div className="border-b border-slate-300 bg-white px-4 py-3 sm:px-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h2
+                      className="truncate text-lg font-bold text-slate-900"
+                      title={
+                        data?.employee?.fullName ||
+                        employees.find((emp) => emp.id === selectedId)
+                          ?.fullName ||
+                        "Employee"
+                      }
+                    >
+                      {data?.employee?.fullName ||
+                        employees.find((emp) => emp.id === selectedId)
+                          ?.fullName ||
+                        "Employee"}
+                    </h2>
+                    <p className="mt-0.5 text-sm font-semibold text-slate-600">
+                      Employee Attendance
+                    </p>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-bold text-slate-900">
+                      {monthNames[month - 1]} {year}
+                    </div>
+                    {selectedWeek && (
+                      <div className="mt-0.5 text-xs font-semibold text-primary">
+                        Week {selectedWeek}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[650px] overflow-auto">
+                {selectedDay ? (
+                  <div className="p-4 sm:p-5 bg-slate-50/40">
+                    {/* Selected day — styled like the All Employees attendance row */}
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <div className="grid lg:grid-cols-[260px_1fr]">
+                        {/* Employee column */}
+                        <div className="border-b border-slate-200 bg-slate-50/80 p-5 lg:border-b-0 lg:border-r">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                              {(
+                                data?.employee?.fullName ||
+                                employees.find((emp) => emp.id === selectedId)
+                                  ?.fullName ||
+                                "E"
+                              )
+                                .slice(0, 2)
+                                .toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                                Employee
+                              </div>
+                              <div className="truncate text-base font-bold text-slate-800">
+                                {data?.employee?.fullName ||
+                                  employees.find((emp) => emp.id === selectedId)
+                                    ?.fullName ||
+                                  "Employee"}
+                              </div>
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                {employees.find((emp) => emp.id === selectedId)
+                                  ?.employeeCode || "Employee attendance"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 border-t border-slate-200 pt-4">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                              Selected Date
+                            </div>
+                            <div className="mt-1 text-lg font-bold text-slate-800">
+                              {fmtDateDMY(selectedDate)}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {monthNames[month - 1]} {year}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Attendance column */}
+                        <div className="p-4 sm:p-5">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                              Daily Attendance
+                            </div>
+                            {selectedRecord ? (
+                              <span
+                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${
+                                  statusMeta[selectedRecord.status]?.cell ||
+                                  "bg-slate-100 text-slate-700"
+                                }`}
+                              >
+                                <span
+                                  className={`h-2 w-2 rounded-full ${
+                                    statusMeta[selectedRecord.status]?.dot ||
+                                    "bg-slate-400"
+                                  }`}
+                                />
+                                {statusMeta[selectedRecord.status]?.label ||
+                                  selectedRecord.status}
+                              </span>
+                            ) : selectedHolidayName ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                                Holiday
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700">
+                                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                No Attendance
+                              </span>
+                            )}
+                          </div>
+
+                          {selectedRecord ? (
+                            selectedRecord.status === "ABSENT" ? (
+                              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-center">
+                                <div className="text-base font-bold text-rose-700">
+                                  Absent
+                                </div>
+                                <div className="mt-1 text-xs text-rose-600">
+                                  No attendance was recorded for this date.
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                      Check In
+                                    </div>
+                                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                                      <span className="text-base font-bold text-emerald-700">
+                                        {fmtTime(selectedRecord.checkIn) || "—"}
+                                      </span>
+                                      {getCalendarLocationCode(
+                                        selectedRecord.note,
+                                        "check-in",
+                                      ) && (
+                                        <span
+                                          className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+                                            getCalendarLocationCode(
+                                              selectedRecord.note,
+                                              "check-in",
+                                            ) === "A"
+                                              ? "border-blue-300 bg-blue-100 text-blue-700"
+                                              : getCalendarLocationCode(
+                                                    selectedRecord.note,
+                                                    "check-in",
+                                                  ) === "UL"
+                                                ? "border-orange-300 bg-orange-100 text-orange-700"
+                                                : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                          }`}
+                                        >
+                                          {getCalendarLocationCode(
+                                            selectedRecord.note,
+                                            "check-in",
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                      Check Out
+                                    </div>
+                                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                                      <span className="text-base font-bold text-rose-700">
+                                        {fmtTime(selectedRecord.checkOut) ||
+                                          "—"}
+                                      </span>
+                                      {getCalendarLocationCode(
+                                        selectedRecord.note,
+                                        "check-out",
+                                      ) && (
+                                        <span
+                                          className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+                                            getCalendarLocationCode(
+                                              selectedRecord.note,
+                                              "check-out",
+                                            ) === "A"
+                                              ? "border-blue-300 bg-blue-100 text-blue-700"
+                                              : getCalendarLocationCode(
+                                                    selectedRecord.note,
+                                                    "check-out",
+                                                  ) === "UL"
+                                                ? "border-orange-300 bg-orange-100 text-orange-700"
+                                                : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                          }`}
+                                        >
+                                          {getCalendarLocationCode(
+                                            selectedRecord.note,
+                                            "check-out",
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                      Working Hours
+                                    </div>
+                                    <div className="mt-1.5 text-base font-bold text-primary">
+                                      {fmtWorkedHours(
+                                        selectedRecord.workedHours,
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-orange-600">
+                                      Overtime
+                                    </div>
+                                    <div className="mt-1.5 text-base font-bold text-orange-700">
+                                      {isHolidayDate(selectedRecord.date)
+                                        ? isWorkedRecord(selectedRecord)
+                                          ? fmtWorkedHours(
+                                              selectedRecord.workedHours,
+                                            )
+                                          : "—"
+                                        : Number(selectedRecord.workedHours) > 8
+                                          ? fmtWorkedHours(
+                                              Number(
+                                                selectedRecord.workedHours,
+                                              ) - 8,
+                                            )
+                                          : "—"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {(selectedHolidayName ||
+                                  (selectedRecord.note &&
+                                    formatAttendanceNote(
+                                      selectedRecord.note,
+                                    ))) && (
+                                  <div className="grid gap-3 md:grid-cols-2">
+                                    {selectedHolidayName && (
+                                      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
+                                        <div className="text-[10px] font-bold uppercase tracking-wide text-blue-600">
+                                          Holiday
+                                        </div>
+                                        <div className="mt-1 text-sm font-semibold text-blue-900">
+                                          {selectedHolidayName}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {selectedRecord.note &&
+                                      formatAttendanceNote(
+                                        selectedRecord.note,
+                                      ) && (
+                                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                            Attendance Note
+                                          </div>
+                                          <div className="mt-1 whitespace-pre-line text-xs leading-5 text-slate-600">
+                                            {formatAttendanceNote(
+                                              selectedRecord.note,
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                  </div>
+                                )}
+
+                                {hasSubmittedReason(selectedRecord.note) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openAttendanceReason(
+                                        selectedRecord,
+                                        data?.employee?.fullName ||
+                                          employees.find(
+                                            (emp) => emp.id === selectedId,
+                                          )?.fullName ||
+                                          "Employee",
+                                      )
+                                    }
+                                    className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                                  >
+                                    View attendance reason
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          ) : selectedHolidayName ? (
+                            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-6 text-center">
+                              <div className="text-base font-bold text-blue-700">
+                                Holiday
+                              </div>
+                              <div className="mt-1 text-xs font-medium text-blue-600">
+                                {selectedHolidayName}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                              <div className="text-base font-bold text-slate-600">
+                                No attendance record
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400">
+                                No attendance was recorded for this date.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="min-w-[900px]">
+                    <div className="grid grid-cols-7 border-b border-slate-300 bg-slate-50">
+                      {weekdays.map((w) => (
+                        <div
+                          key={w}
+                          className="border-r border-slate-300 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-slate-600 last:border-r-0"
+                        >
+                          {w}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-px bg-slate-300">
+                      {calendarCells.map((day, idx) => {
+                        if (day === null) {
+                          return (
+                            <div
+                              key={`blank-${idx}`}
+                              className="min-h-[158px] bg-slate-50"
+                            />
+                          );
+                        }
+
+                        const cellDate = new Date(
+                          Date.UTC(year, month - 1, day),
+                        );
+                        const dateKey = formatDateKey(cellDate);
+                        let rec = recordByDay[day];
+                        if (
+                          rec &&
+                          rec.status === "ABSENT" &&
+                          dateKey >= todayKey
+                        ) {
+                          rec = null;
+                        }
+                        const holidayName = holidayByDay[day];
+                        
+                        // Check if it's Sunday (0 = Sunday)
+                        const isSunday = cellDate.getUTCDay() === 0;
+                        
+                        const isToday = dateKey === todayKey;
+                        const isHolidayCell =
+                          Boolean(holidayName) || rec?.status === "HOLIDAY" || (isSunday && !rec);
+                        const meta = rec
+                          ? statusMeta[rec.status]
+                          : holidayName
+                            ? statusMeta.HOLIDAY
+                            : isSunday
+                              ? statusMeta.HOLIDAY
+                              : null;
+                        const overtimeText = fmtOvertimeHours(
+                          rec,
+                          Boolean(holidayName),
+                        );
+                        const checkInLocationCode = getCalendarLocationCode(
+                          rec?.note,
+                          "check-in",
+                        );
+                        const checkOutLocationCode = getCalendarLocationCode(
+                          rec?.note,
+                          "check-out",
+                        );
+                        const attendanceNote = rec
+                          ? formatAttendanceNote(rec.note)
+                          : "";
+
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => setSelectedDate(dateKey)}
+                            className={`min-h-[158px] bg-white p-3 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
+                              isToday ? "ring-2 ring-inset ring-primary" : ""
+                            } ${isHolidayCell && !isWorkedRecord(rec) ? "bg-blue-50/60" : ""}`}
+                          >
+                            {/* Fixed Layout Container */}
+                            <div className="flex flex-col h-full">
+                              {/* Date and Status Row - Fixed at top */}
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <span
+                                  className={`text-base font-bold leading-none ${
+                                    isToday ? "text-primary" : "text-slate-900"
+                                  }`}
+                                >
+                                  {day}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  {isToday && (
+                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary leading-none">
+                                      Today
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Content Area - Fixed height and position */}
+                              <div className="flex-1">
+                                {rec ? (
+                                  <div className="space-y-1.5">
+                                    {/* Status Badge */}
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`h-3 w-3 rounded-full ${meta?.dot || "bg-slate-400"}`}
+                                      />
+                                      <span
+                                        className={`text-xs font-bold ${
+                                          rec.status === "ABSENT"
+                                            ? "text-rose-700"
+                                            : rec.status === "ON_LEAVE"
+                                              ? "text-violet-700"
+                                              : rec.status === "HOLIDAY"
+                                                ? "text-blue-700"
+                                                : rec.status ===
+                                                    "PENDING_APPROVAL"
+                                                  ? "text-amber-700"
+                                                  : "text-emerald-700"
+                                        }`}
+                                      >
+                                        {meta?.label || rec.status}
+                                      </span>
+                                    </div>
+
+                                    {/* Time and Hours Grid - Fixed height container */}
+                                    <div className="space-y-1 text-xs font-semibold text-slate-700 min-h-[60px]">
+                                      {(rec.checkIn || checkInLocationCode) && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-slate-500">
+                                            In
+                                          </span>
+                                          <span className="flex items-center justify-end gap-1 text-emerald-700">
+                                            {fmtTime(rec.checkIn) || "-"}
+                                            {checkInLocationCode && (
+                                              <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                                {checkInLocationCode}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {(rec.checkOut || checkOutLocationCode) && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-slate-500">
+                                            Out
+                                          </span>
+                                          <span className="flex items-center justify-end gap-1 text-rose-700">
+                                            {fmtTime(rec.checkOut) || "-"}
+                                            {checkOutLocationCode && (
+                                              <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                                {checkOutLocationCode}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {rec.workedHours != null && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-slate-500">
+                                            Hours
+                                          </span>
+                                          <span className="text-right text-primary">
+                                            {fmtWorkedHours(rec.workedHours)}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {overtimeText && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-orange-700">
+                                            OT
+                                          </span>
+                                          <span className="text-right text-orange-700">
+                                            {overtimeText}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {attendanceNote && (
+                                      <div
+                                        className="line-clamp-2 border-t border-slate-100 pt-1 text-[10px] leading-4 text-slate-500"
+                                        title={attendanceNote}
+                                      >
+                                        {attendanceNote}
+                                      </div>
+                                    )}
+
+                                    {hasSubmittedReason(rec.note) && (
+                                      <span className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                                        Reason
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : holidayName ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="h-3 w-3 rounded-full bg-blue-500" />
+                                      <span className="text-xs font-bold text-blue-700">
+                                        Holiday
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                      title={holidayName}
+                                    >
+                                      {holidayName}
+                                    </div>
+                                  </div>
+                                ) : isSunday ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="h-3 w-3 rounded-full bg-blue-500" />
+                                      <span className="text-xs font-bold text-blue-700">
+                                        Holiday
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                    >
+                                      Sunday
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mt-9 text-center text-xs font-medium text-slate-400">
+                                    No attendance
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Legend */}
           <div className="flex flex-wrap gap-4">
             {Object.entries(statusMeta).map(([key, meta]) => (
-              <div key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div
+                key={key}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
                 <span className={`w-3 h-3 rounded-full ${meta.dot}`} />
                 {meta.label}
               </div>
             ))}
           </div>
-
         </>
+      )}
+
+      {/* Submitted Attendance Reason Modal */}
+      {attendanceReasonModal && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAttendanceReasonModal(null);
+          }}
+        >
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            {/* Header */}
+            <div className="relative border-b border-slate-200 bg-gradient-to-r from-amber-50 via-white to-slate-50 px-6 py-5">
+              <div className="flex items-start gap-3 pr-10">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-slate-900"
+                    title={attendanceReasonModal.employeeName}
+                  >
+                    {attendanceReasonModal.employeeName}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAttendanceReasonModal(null)}
+                className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+                aria-label="Close attendance reason"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Details */}
+            <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+              <div className="mb-5 grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Date
+                  </div>
+                  <div className="mt-1.5 text-[15px] font-bold text-slate-800">
+                    {fmtDateDMY(attendanceReasonModal.date)}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-600">
+                    Status
+                  </div>
+                  <div className="mt-1.5 inline-flex items-center gap-1.5 text-[15px] font-bold text-amber-800">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    {attendanceReasonModal.statusLabel ||
+                      attendanceReasonModal.status ||
+                      ""}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Check In
+                  </div>
+                  <div className="mt-1.5 text-[15px] font-bold text-slate-800">
+                    {fmtTime(attendanceReasonModal.checkIn) || "—"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Check Out
+                  </div>
+                  <div className="mt-1.5 text-[15px] font-bold text-slate-800">
+                    {fmtTime(attendanceReasonModal.checkOut) || "—"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Submitted reason */}
+              <div className="mb-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-base font-bold text-slate-900">
+                    Submitted Reason
+                  </h4>
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                    Review
+                  </span>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                  <p className="whitespace-pre-wrap text-[16px] leading-7 text-slate-700">
+                    {attendanceReasonModal.reason || "No reason provided."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Locations */}
+              <div>
+                <div className="mb-2 text-base font-bold text-slate-900">
+                  Attendance Location
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {Number.isFinite(
+                    Number(attendanceReasonModal.checkInLatitude),
+                  ) &&
+                  Number.isFinite(
+                    Number(attendanceReasonModal.checkInLongitude),
+                  ) ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-[15px] font-bold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                    >
+                      <MapPin className="h-4 w-4 transition group-hover:scale-110" />
+                      View Check-in
+                    </a>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-[13px] font-medium text-slate-500">
+                      Check-in location unavailable
+                    </div>
+                  )}
+
+                  {Number.isFinite(
+                    Number(attendanceReasonModal.checkOutLatitude),
+                  ) &&
+                  Number.isFinite(
+                    Number(attendanceReasonModal.checkOutLongitude),
+                  ) ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[15px] font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                    >
+                      <MapPin className="h-4 w-4 transition group-hover:scale-110" />
+                      View Check-out
+                    </a>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-[13px] font-medium text-slate-500">
+                      Check-out location unavailable
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-6 py-3">
+              <button
+                type="button"
+                onClick={() => setAttendanceReasonModal(null)}
+                className="rounded-xl bg-slate-900 px-5 py-2.5 text-[15px] font-bold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Reject Reason Modal */}
@@ -897,8 +3066,12 @@ const Attendance = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
             <div className="border-b border-border bg-rose-50 p-5">
-              <h3 className="text-lg font-semibold text-rose-900">Reject Attendance</h3>
-              <p className="text-sm text-rose-700 mt-1">{rejectModal.employeeName}</p>
+              <h3 className="text-lg font-semibold text-rose-900">
+                Reject Attendance
+              </h3>
+              <p className="text-sm text-rose-700 mt-1">
+                {rejectModal.employeeName}
+              </p>
             </div>
 
             <div className="p-5 space-y-4">
@@ -906,7 +3079,12 @@ const Attendance = () => {
                 Admin comment
                 <textarea
                   value={rejectModal.reason}
-                  onChange={(e) => setRejectModal((prev) => ({ ...prev, reason: e.target.value }))}
+                  onChange={(e) =>
+                    setRejectModal((prev) => ({
+                      ...prev,
+                      reason: e.target.value,
+                    }))
+                  }
                   rows={4}
                   placeholder="Add a reason for rejection..."
                   className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-rose-400 focus:outline-none"
@@ -924,7 +3102,12 @@ const Attendance = () => {
               </button>
               <button
                 type="button"
-                onClick={() => rejectRecord(rejectModal.recordId, rejectModal.reason.trim() || "Unapproved location")}
+                onClick={() =>
+                  rejectRecord(
+                    rejectModal.recordId,
+                    rejectModal.reason.trim() || "Unapproved location",
+                  )
+                }
                 className="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-sm font-medium"
               >
                 Reject
@@ -941,8 +3124,12 @@ const Attendance = () => {
             {/* Header */}
             <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-cyan-50 border-b border-blue-100 p-6 flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-semibold text-foreground">Check-in Location Verification</h3>
-                <p className="text-sm text-muted-foreground mt-1">{mapModal.employee?.user?.fullName}</p>
+                <h3 className="text-xl font-semibold text-foreground">
+                  Check-in Location Verification
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {mapModal.employee?.user?.fullName}
+                </p>
               </div>
               <button
                 onClick={() => setMapModal(null)}
@@ -956,39 +3143,59 @@ const Attendance = () => {
             <div className="p-6 space-y-6">
               {/* Check-in Details */}
               <div className="space-y-3">
-                <h4 className="font-semibold text-foreground">Check-in Details</h4>
+                <h4 className="font-semibold text-foreground">
+                  Check-in Details
+                </h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="bg-slate-50 rounded-lg p-3">
                     <div className="text-muted-foreground">Date & Time</div>
                     <div className="font-medium mt-1">
-                      {mapModal.checkIn ? new Date(mapModal.checkIn).toLocaleString() : "N/A"}
+                      {mapModal.checkIn
+                        ? new Date(mapModal.checkIn).toLocaleString()
+                        : "N/A"}
                     </div>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3">
                     <div className="text-muted-foreground">Location Name</div>
-                    <div className="font-medium mt-1">{mapModal.locationName || "Unknown"}</div>
+                    <div className="font-medium mt-1">
+                      {mapModal.locationName || "Unknown"}
+                    </div>
                   </div>
                   <div className="col-span-2 bg-amber-50 rounded-lg p-3 border border-amber-200">
-                    <div className="text-muted-foreground text-xs">Approval Note</div>
-                    <div className="text-sm mt-1 text-amber-900">{mapModal.note}</div>
+                    <div className="text-muted-foreground text-xs">
+                      Approval Note
+                    </div>
+                    <div className="text-sm mt-1 text-amber-900">
+                      {mapModal.note}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Map Container */}
               <div className="space-y-3">
-                <h4 className="font-semibold text-foreground">Location on Map</h4>
+                <h4 className="font-semibold text-foreground">
+                  Location on Map
+                </h4>
                 <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border border-blue-100 p-4">
                   {mapModal.latitude && mapModal.longitude ? (
                     <div className="space-y-3">
                       <div className="bg-white rounded-lg p-4 space-y-2 border border-blue-200">
                         <div className="text-sm">
-                          <span className="text-muted-foreground">Latitude:</span>
-                          <span className="font-mono ml-2 font-semibold">{mapModal.latitude.toFixed(6)}</span>
+                          <span className="text-muted-foreground">
+                            Latitude:
+                          </span>
+                          <span className="font-mono ml-2 font-semibold">
+                            {mapModal.latitude.toFixed(6)}
+                          </span>
                         </div>
                         <div className="text-sm">
-                          <span className="text-muted-foreground">Longitude:</span>
-                          <span className="font-mono ml-2 font-semibold">{mapModal.longitude.toFixed(6)}</span>
+                          <span className="text-muted-foreground">
+                            Longitude:
+                          </span>
+                          <span className="font-mono ml-2 font-semibold">
+                            {mapModal.longitude.toFixed(6)}
+                          </span>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -1002,7 +3209,9 @@ const Attendance = () => {
                         </a>
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(`${mapModal.latitude},${mapModal.longitude}`);
+                            navigator.clipboard.writeText(
+                              `${mapModal.latitude},${mapModal.longitude}`,
+                            );
                             toast.success("Coordinates copied to clipboard!");
                           }}
                           className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 text-sm font-medium transition-colors"
@@ -1023,9 +3232,17 @@ const Attendance = () => {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
                 <div className="font-semibold mb-2">How to Verify</div>
                 <ul className="space-y-1 text-xs">
-                  <li>✓ Click "View on Google Maps" to see the exact location where the employee checked in</li>
-                  <li>✓ Compare this location with the assigned/default location</li>
-                  <li>✓ Verify the distance and context (travel time, valid reason, etc.)</li>
+                  <li>
+                    ✓ Click "View on Google Maps" to see the exact location
+                    where the employee checked in
+                  </li>
+                  <li>
+                    ✓ Compare this location with the assigned/default location
+                  </li>
+                  <li>
+                    ✓ Verify the distance and context (travel time, valid
+                    reason, etc.)
+                  </li>
                   <li>✓ Click Approve or Reject based on your review</li>
                 </ul>
               </div>
@@ -1044,6 +3261,17 @@ const Attendance = () => {
         </div>
       )}
 
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-6 right-6 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/40"
+          aria-label="Scroll to top"
+          title="Scroll to top"
+        >
+          <ChevronUp className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 };

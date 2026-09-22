@@ -114,7 +114,7 @@ const Overview = () => {
         <div>
           <h1 className="font-display text-2xl font-bold">Customer Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Welcome back! Here's an overview of your projects and activities.
+        Here's an overview of your projects and activities.
           </p>
         </div>
         <Link

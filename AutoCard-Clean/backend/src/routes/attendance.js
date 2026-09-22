@@ -759,7 +759,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     }
 
     // --------------------------------------------------
-    // WORKED HOURS
+    // WORKED HOURS & OVERTIME
     // --------------------------------------------------
 
     if (finalCheckIn && finalCheckOut) {
@@ -768,8 +768,11 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
           finalCheckIn,
           finalCheckOut
         );
+      updates.overtimeHours = 
+        calculateOvertimeHours(updates.workedHours);
     } else {
       updates.workedHours = null;
+      updates.overtimeHours = null;
     }
 
     // --------------------------------------------------
@@ -1421,10 +1424,11 @@ router.post("/checkout", requireAuth, async (req, res) => {
       }
 
       // ------------------------------------------------------
-      // CALCULATE WORKED HOURS
+      // CALCULATE WORKED HOURS & OVERTIME
       // ------------------------------------------------------
 
       const workedHours = calculateWorkedHours(record.checkIn, now);
+      const overtimeHours = calculateOvertimeHours(workedHours);
 
       // ------------------------------------------------------
       // UPDATE ADMIN ATTENDANCE
@@ -1443,6 +1447,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
           checkOutLongitude: coordinates.longitude,
 
           workedHours,
+
+          overtimeHours,
 
           status: "PRESENT",
 
@@ -1654,10 +1660,11 @@ router.post("/checkout", requireAuth, async (req, res) => {
       : Infinity;
 
     // --------------------------------------------------------
-    // WORKED HOURS
+    // WORKED HOURS & OVERTIME
     // --------------------------------------------------------
 
     const workedHours = calculateWorkedHours(record.checkIn, now);
+    const overtimeHours = calculateOvertimeHours(workedHours);
 
     const isOutside = !!comparisonLocation && distance > allowedRadius;
 
@@ -1693,6 +1700,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
           checkOutLongitude: coordinates.longitude,
 
           workedHours,
+
+          overtimeHours,
 
           status: "PENDING_APPROVAL",
 
@@ -1736,6 +1745,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
         checkOutLongitude: coordinates.longitude,
 
         workedHours,
+
+        overtimeHours,
 
         status,
 

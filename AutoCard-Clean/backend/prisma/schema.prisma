@@ -306,6 +306,7 @@ model Attendance {
   checkOut    DateTime?
   status      AttendanceStatus @default(PRESENT)
   workedHours Float?
+  overtimeHours Float?         // Overtime hours (hours worked beyond 8)
   note        String?          @db.Text
   checkInLatitude   Float?  // GPS latitude where employee checked in
   checkInLongitude  Float?  // GPS longitude where employee checked in

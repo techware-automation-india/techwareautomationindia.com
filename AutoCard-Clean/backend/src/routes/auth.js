@@ -87,7 +87,6 @@ router.post("/login", async (req, res) => {
       user = await prisma.user.findFirst({
         where: { 
           email: normalizedEmail
-          }
         },
         include: { employeeProfile: true, customerProfile: true },
       });

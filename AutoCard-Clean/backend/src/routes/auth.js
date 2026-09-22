@@ -41,14 +41,22 @@ router.post("/login", async (req, res) => {
 
   const { email, password, role } = parsed.data;
   const expectedRole = role ? roleMap[role] : null; // null means universal login
+  
+  // Normalize email/username to lowercase for case-insensitive comparison
+  const normalizedEmail = email.toLowerCase().trim();
 
   try {
     let user;
     
-    // For employees, use username (employee code) only
+    // For employees, use username (employee code) only - case insensitive
     if (role === "employee") {
       const employeeProfile = await prisma.employeeProfile.findFirst({
-        where: { employeeCode: email },
+        where: { 
+          employeeCode: {
+            equals: normalizedEmail,
+            mode: 'insensitive'
+          }
+        },
         include: { user: { include: { employeeProfile: true, customerProfile: true } } },
       });
       
@@ -56,16 +64,26 @@ router.post("/login", async (req, res) => {
         user = employeeProfile.user;
       }
     } else if (!role) {
-      // Universal login - try email first, then employee code
-      user = await prisma.user.findUnique({
-        where: { email },
+      // Universal login - try email first (case insensitive), then employee code
+      user = await prisma.user.findFirst({
+        where: { 
+          email: {
+            equals: normalizedEmail,
+            mode: 'insensitive'
+          }
+        },
         include: { employeeProfile: true, customerProfile: true },
       });
       
-      // If not found by email, try to find employee by employee code
+      // If not found by email, try to find employee by employee code (case insensitive)
       if (!user) {
         const employeeProfile = await prisma.employeeProfile.findFirst({
-          where: { employeeCode: email },
+          where: { 
+            employeeCode: {
+              equals: normalizedEmail,
+              mode: 'insensitive'
+            }
+          },
           include: { user: { include: { employeeProfile: true, customerProfile: true } } },
         });
         
@@ -74,9 +92,14 @@ router.post("/login", async (req, res) => {
         }
       }
     } else {
-      // For admin and customer, use email only
-      user = await prisma.user.findUnique({
-        where: { email },
+      // For admin and customer, use email only - case insensitive
+      user = await prisma.user.findFirst({
+        where: { 
+          email: {
+            equals: normalizedEmail,
+            mode: 'insensitive'
+          }
+        },
         include: { employeeProfile: true, customerProfile: true },
       });
     }

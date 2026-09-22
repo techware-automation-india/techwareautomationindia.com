@@ -40,6 +40,10 @@ const AdminAttendanceCorrection = () => {
 
   const [reason, setReason] = useState("");
 
+  const [checkInLocation, setCheckInLocation] = useState("");
+
+  const [checkOutLocation, setCheckOutLocation] = useState("");
+
   const [submitting, setSubmitting] = useState(false);
 
   // ---------------------------------------------
@@ -216,6 +220,27 @@ const AdminAttendanceCorrection = () => {
     // API payload
     // -------------------------------------------
 
+    // Build location text based on punch type
+    let locationText = "";
+    if (punchType === "check-in" && checkInLocation.trim()) {
+      locationText = `\n\nCheck-In Location: ${checkInLocation.trim()}`;
+    } else if (punchType === "check-out" && checkOutLocation.trim()) {
+      locationText = `\n\nCheck-Out Location: ${checkOutLocation.trim()}`;
+    } else if (punchType === "both") {
+      if (checkInLocation.trim() || checkOutLocation.trim()) {
+        locationText = "\n\n";
+        if (checkInLocation.trim()) {
+          locationText += `Check-In Location: ${checkInLocation.trim()}`;
+        }
+        if (checkOutLocation.trim()) {
+          if (checkInLocation.trim()) locationText += "\n";
+          locationText += `Check-Out Location: ${checkOutLocation.trim()}`;
+        }
+      }
+    }
+    
+    const fullReason = `${reason.trim()}${locationText}`;
+
     const correctionData = {
       date,
       punchType,
@@ -224,7 +249,7 @@ const AdminAttendanceCorrection = () => {
 
       checkOutTime: punchType === "check-in" ? null : checkOutTime,
 
-      reason: reason.trim(),
+      reason: fullReason,
     };
 
     setSubmitting(true);
@@ -238,6 +263,8 @@ const AdminAttendanceCorrection = () => {
       toast.success(response?.message || "Attendance updated successfully.");
 
       setReason("");
+      setCheckInLocation("");
+      setCheckOutLocation("");
 
       setTimeout(() => {
         navigate(-1);
@@ -358,6 +385,38 @@ const AdminAttendanceCorrection = () => {
               onChange={handleCheckOutTimeChange}
               className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
             />
+          </label>
+        )}
+
+        {/* Location Fields - Show based on punch type */}
+        
+        {(punchType === "check-in" || punchType === "both") && (
+          <label className="block text-sm font-medium">
+            Check-In Location
+            <input
+              type="text"
+              value={checkInLocation}
+              onChange={(event) => setCheckInLocation(event.target.value)}
+              maxLength={200}
+              placeholder="Location at check-in time (e.g., 'Client Site, Delhi' or 'Office')"
+              className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Optional: Where the employee was at check-in</p>
+          </label>
+        )}
+        
+        {(punchType === "check-out" || punchType === "both") && (
+          <label className="block text-sm font-medium">
+            Check-Out Location
+            <input
+              type="text"
+              value={checkOutLocation}
+              onChange={(event) => setCheckOutLocation(event.target.value)}
+              maxLength={200}
+              placeholder="Location at check-out time (e.g., 'Home' or 'Remote - Mumbai')"
+              className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Optional: Where the employee was at check-out</p>
           </label>
         )}
 

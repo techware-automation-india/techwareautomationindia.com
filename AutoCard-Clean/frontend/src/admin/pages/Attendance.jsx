@@ -2680,14 +2680,20 @@ const Attendance = () => {
                           rec = null;
                         }
                         const holidayName = holidayByDay[day];
+                        
+                        // Check if it's Sunday (0 = Sunday)
+                        const isSunday = cellDate.getUTCDay() === 0;
+                        
                         const isToday = dateKey === todayKey;
                         const isHolidayCell =
-                          Boolean(holidayName) || rec?.status === "HOLIDAY";
+                          Boolean(holidayName) || rec?.status === "HOLIDAY" || (isSunday && !rec);
                         const meta = rec
                           ? statusMeta[rec.status]
                           : holidayName
                             ? statusMeta.HOLIDAY
-                            : null;
+                            : isSunday
+                              ? statusMeta.HOLIDAY
+                              : null;
                         const overtimeText = fmtOvertimeHours(
                           rec,
                           Boolean(holidayName),
@@ -2709,140 +2715,165 @@ const Attendance = () => {
                             key={day}
                             type="button"
                             onClick={() => setSelectedDate(dateKey)}
-                            className={`min-h-[158px] bg-white p-3 text-left align-top transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
+                            className={`min-h-[158px] bg-white p-3 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
                               isToday ? "ring-2 ring-inset ring-primary" : ""
                             } ${isHolidayCell && !isWorkedRecord(rec) ? "bg-blue-50/60" : ""}`}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <span
-                                className={`text-base font-bold ${
-                                  isToday ? "text-primary" : "text-slate-900"
-                                }`}
-                              >
-                                {day}
-                              </span>
-                              {isToday && (
-                                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary">
-                                  Today
+                            {/* Fixed Layout Container */}
+                            <div className="flex flex-col h-full">
+                              {/* Date and Status Row - Fixed at top */}
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <span
+                                  className={`text-base font-bold leading-none ${
+                                    isToday ? "text-primary" : "text-slate-900"
+                                  }`}
+                                >
+                                  {day}
                                 </span>
-                              )}
-                            </div>
-
-                            {rec ? (
-                              <div className="mt-2 space-y-1.5">
-                                <div className="flex items-center gap-1.5">
-                                  <span
-                                    className={`h-3 w-3 rounded-full ${meta?.dot || "bg-slate-400"}`}
-                                  />
-                                  <span
-                                    className={`text-xs font-bold ${
-                                      rec.status === "ABSENT"
-                                        ? "text-rose-700"
-                                        : rec.status === "ON_LEAVE"
-                                          ? "text-violet-700"
-                                          : rec.status === "HOLIDAY"
-                                            ? "text-blue-700"
-                                            : rec.status ===
-                                                "PENDING_APPROVAL"
-                                              ? "text-amber-700"
-                                              : "text-emerald-700"
-                                    }`}
-                                  >
-                                    {meta?.label || rec.status}
-                                  </span>
-                                </div>
-
-                                <div className="space-y-1 text-xs font-semibold text-slate-700">
-                                  {(rec.checkIn || checkInLocationCode) && (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-slate-500">
-                                        In
-                                      </span>
-                                      <span className="flex items-center gap-1 text-emerald-700">
-                                        {fmtTime(rec.checkIn) || "-"}
-                                        {checkInLocationCode && (
-                                          <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
-                                            {checkInLocationCode}
-                                          </span>
-                                        )}
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {(rec.checkOut || checkOutLocationCode) && (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-slate-500">
-                                        Out
-                                      </span>
-                                      <span className="flex items-center gap-1 text-rose-700">
-                                        {fmtTime(rec.checkOut) || "-"}
-                                        {checkOutLocationCode && (
-                                          <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
-                                            {checkOutLocationCode}
-                                          </span>
-                                        )}
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {rec.workedHours != null && (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-slate-500">
-                                        Hours
-                                      </span>
-                                      <span className="text-primary">
-                                        {fmtWorkedHours(rec.workedHours)}
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {overtimeText && (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-orange-700">
-                                        OT
-                                      </span>
-                                      <span className="text-orange-700">
-                                        {overtimeText}
-                                      </span>
-                                    </div>
+                                <div className="flex items-center gap-2">
+                                  {isToday && (
+                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary leading-none">
+                                      Today
+                                    </span>
                                   )}
                                 </div>
+                              </div>
 
-                                {attendanceNote && (
-                                  <div
-                                    className="line-clamp-2 border-t border-slate-100 pt-1 text-[10px] leading-4 text-slate-500"
-                                    title={attendanceNote}
-                                  >
-                                    {attendanceNote}
+                              {/* Content Area - Fixed height and position */}
+                              <div className="flex-1">
+                                {rec ? (
+                                  <div className="space-y-1.5">
+                                    {/* Status Badge */}
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`h-3 w-3 rounded-full ${meta?.dot || "bg-slate-400"}`}
+                                      />
+                                      <span
+                                        className={`text-xs font-bold ${
+                                          rec.status === "ABSENT"
+                                            ? "text-rose-700"
+                                            : rec.status === "ON_LEAVE"
+                                              ? "text-violet-700"
+                                              : rec.status === "HOLIDAY"
+                                                ? "text-blue-700"
+                                                : rec.status ===
+                                                    "PENDING_APPROVAL"
+                                                  ? "text-amber-700"
+                                                  : "text-emerald-700"
+                                        }`}
+                                      >
+                                        {meta?.label || rec.status}
+                                      </span>
+                                    </div>
+
+                                    {/* Time and Hours Grid - Fixed height container */}
+                                    <div className="space-y-1 text-xs font-semibold text-slate-700 min-h-[60px]">
+                                      {(rec.checkIn || checkInLocationCode) && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-slate-500">
+                                            In
+                                          </span>
+                                          <span className="flex items-center justify-end gap-1 text-emerald-700">
+                                            {fmtTime(rec.checkIn) || "-"}
+                                            {checkInLocationCode && (
+                                              <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                                {checkInLocationCode}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {(rec.checkOut || checkOutLocationCode) && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-slate-500">
+                                            Out
+                                          </span>
+                                          <span className="flex items-center justify-end gap-1 text-rose-700">
+                                            {fmtTime(rec.checkOut) || "-"}
+                                            {checkOutLocationCode && (
+                                              <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                                {checkOutLocationCode}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {rec.workedHours != null && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-slate-500">
+                                            Hours
+                                          </span>
+                                          <span className="text-right text-primary">
+                                            {fmtWorkedHours(rec.workedHours)}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {overtimeText && (
+                                        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
+                                          <span className="text-orange-700">
+                                            OT
+                                          </span>
+                                          <span className="text-right text-orange-700">
+                                            {overtimeText}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {attendanceNote && (
+                                      <div
+                                        className="line-clamp-2 border-t border-slate-100 pt-1 text-[10px] leading-4 text-slate-500"
+                                        title={attendanceNote}
+                                      >
+                                        {attendanceNote}
+                                      </div>
+                                    )}
+
+                                    {hasSubmittedReason(rec.note) && (
+                                      <span className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                                        Reason
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : holidayName ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="h-3 w-3 rounded-full bg-blue-500" />
+                                      <span className="text-xs font-bold text-blue-700">
+                                        Holiday
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                      title={holidayName}
+                                    >
+                                      {holidayName}
+                                    </div>
+                                  </div>
+                                ) : isSunday ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="h-3 w-3 rounded-full bg-blue-500" />
+                                      <span className="text-xs font-bold text-blue-700">
+                                        Holiday
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                    >
+                                      Sunday
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mt-9 text-center text-xs font-medium text-slate-400">
+                                    No attendance
                                   </div>
                                 )}
-
-                                {hasSubmittedReason(rec.note) && (
-                                  <span className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
-                                    Reason
-                                  </span>
-                                )}
                               </div>
-                            ) : holidayName ? (
-                              <div className="mt-3 space-y-2">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="h-3 w-3 rounded-full bg-blue-500" />
-                                  <span className="text-xs font-bold text-blue-700">
-                                    Holiday
-                                  </span>
-                                </div>
-                                <div
-                                  className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
-                                  title={holidayName}
-                                >
-                                  {holidayName}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="mt-9 text-center text-xs font-medium text-slate-400">
-                                No attendance
-                              </div>
-                            )}
+                            </div>
                           </button>
                         );
                       })}

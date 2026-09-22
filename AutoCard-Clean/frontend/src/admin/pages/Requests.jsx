@@ -95,6 +95,26 @@ const openAttendanceMap = (request) => {
   window.open(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`, "_blank", "noopener,noreferrer");
 };
 
+const openCheckInMap = (request) => {
+  const latitude = Number(request.checkInLatitude);
+  const longitude = Number(request.checkInLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    toast.error("Check-in location coordinates are not available.");
+    return;
+  }
+  window.open(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`, "_blank", "noopener,noreferrer");
+};
+
+const openCheckOutMap = (request) => {
+  const latitude = Number(request.checkOutLatitude);
+  const longitude = Number(request.checkOutLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    toast.error("Check-out location coordinates are not available.");
+    return;
+  }
+  window.open(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`, "_blank", "noopener,noreferrer");
+};
+
 const Requests = ({
   employeePermissions,
   isEmployeeView = false,
@@ -106,9 +126,15 @@ const Requests = ({
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState(null);
   const [previewId, setPreviewId] = useState(null);
+  
+  // Set default filters to current month/year
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const currentYear = now.getFullYear();
+  
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [monthFilter, setMonthFilter] = useState("ALL");
-  const [yearFilter, setYearFilter] = useState("ALL");
+  const [monthFilter, setMonthFilter] = useState(String(currentMonth));
+  const [yearFilter, setYearFilter] = useState(String(currentYear));
   const [search, setSearch] = useState("");
   const [reasonRequest, setReasonRequest] = useState(null);
   const canReview = !isEmployeeView || employeePermissions?.canEdit === true;
@@ -503,12 +529,28 @@ const loadRequests = async () => {
                     {r.status === "PENDING" ? (
                       <>
                         {r.type === "ATTENDANCE" && (
-                          <button
-                            onClick={() => openAttendanceMap(r)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2.5 text-sm font-semibold transition hover:bg-secondary"
-                          >
-                            <MapPin className="h-4 w-4" /> Map
-                          </button>
+                          <>
+                            {/* Check-in Map Button */}
+                            {r.checkInLatitude != null && r.checkInLongitude != null && (
+                              <button
+                                onClick={() => openCheckInMap(r)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                title="View check-in location"
+                              >
+                                <MapPin className="h-4 w-4" /> Check-in
+                              </button>
+                            )}
+                            {/* Check-out Map Button */}
+                            {r.checkOutLatitude != null && r.checkOutLongitude != null && (
+                              <button
+                                onClick={() => openCheckOutMap(r)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                title="View check-out location"
+                              >
+                                <MapPin className="h-4 w-4" /> Check-out
+                              </button>
+                            )}
+                          </>
                         )}
                         {r.type === "ONBOARDING" && (
                           <button

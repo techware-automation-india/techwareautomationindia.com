@@ -21,12 +21,13 @@ import EmployeeList from "./admin/pages/EmployeeList.jsx";
 // import CustomerList from "./admin/pages/CustomerList.jsx";
 import RequestsHome from "./admin/pages/RequestsHome.jsx";
 import AdminTrackRequests from "./admin/pages/AdminTrackRequests.jsx";
-import AdminForgotPunch from "./admin/pages/AdminForgotPunch.jsx";
+import AdminAttendanceCorrection from "./admin/pages/AdminAttendanceCorrection.jsx";
 import Approvals from "./admin/pages/Approvals.jsx";
 import LeaveRequests from "./admin/pages/LeaveRequests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
 import AdminMarkAttendance from "./admin/pages/MarkAttendance.jsx";
+
 import Attendance from "./admin/pages/Attendance.jsx";
 import AttendanceRequests from "./admin/pages/AttendanceRequests.jsx";
 import Projects from "./admin/pages/Projects.jsx";
@@ -120,7 +121,6 @@ const AppRoutes = () => {
         <Route path="/login/:role" element={<Login />} />
 
         <Route path="/admin" element={<AdminLayout />}>
-        
           <Route index element={<Overview />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
@@ -129,7 +129,10 @@ const AppRoutes = () => {
           {/* <Route path="customer-list" element={<CustomerList />} /> */}
           <Route path="requests" element={<RequestsHome />} />
           <Route path="requests/track" element={<AdminTrackRequests />} />
-          <Route path="requests/forgot-punch" element={<AdminForgotPunch />} />
+          <Route
+            path="requests/forgot-punch"
+            element={<AdminAttendanceCorrection />}
+          />
           <Route path="approvals" element={<Approvals />} />
           {/* <Route path="leave-requests" element={<LeaveRequests />} /> */}
           {/* <Route path="leave-policy" element={<LeavePolicy />} /> */}
@@ -148,7 +151,6 @@ const AppRoutes = () => {
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeOverview />} />
           {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
-          
 
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />

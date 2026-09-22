@@ -73,9 +73,12 @@ console.log("🌐 Environment:", process.env.NODE_ENV || 'development');
 console.log("🌐 Allowed CORS origins:", allowedOrigins);
 
 // Optional: Pattern matching for dynamic deployments
-// Handle both string "true" and boolean true
-const allowVercelPattern = process.env.ALLOW_VERCEL_PREVIEWS === "true" || process.env.ALLOW_VERCEL_PREVIEWS === true;
-const allowHostingerPattern = process.env.ALLOW_HOSTINGER_SITES === "true" || process.env.ALLOW_HOSTINGER_SITES === true;
+// Handle both string "true" and boolean true, trim whitespace
+const allowVercelPreviewsValue = (process.env.ALLOW_VERCEL_PREVIEWS || "").toString().trim().toLowerCase();
+const allowHostingerValue = (process.env.ALLOW_HOSTINGER_SITES || "").toString().trim().toLowerCase();
+
+const allowVercelPattern = allowVercelPreviewsValue === "true";
+const allowHostingerPattern = allowHostingerValue === "true";
 
 // Updated regex to match all Vercel deployment URLs including previews
 // This pattern matches: https://anything.vercel.app (including hyphens, numbers, letters)
@@ -83,7 +86,7 @@ const vercelPattern = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/i;
 const hostingerPattern = /^https:\/\/.*\.hostinger\.site$/i;
 const hostingerWebPattern = /^https:\/\/.*\.hostingersite\.com$/i;
 
-console.log("🔍 ALLOW_VERCEL_PREVIEWS env value:", process.env.ALLOW_VERCEL_PREVIEWS, "type:", typeof process.env.ALLOW_VERCEL_PREVIEWS);
+console.log("🔍 ALLOW_VERCEL_PREVIEWS env value:", JSON.stringify(process.env.ALLOW_VERCEL_PREVIEWS), "→ trimmed:", JSON.stringify(allowVercelPreviewsValue));
 console.log("🔍 allowVercelPattern boolean:", allowVercelPattern);
 
 if (allowVercelPattern) {

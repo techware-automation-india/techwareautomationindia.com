@@ -73,52 +73,60 @@ console.log("🌐 Environment:", process.env.NODE_ENV || 'development');
 console.log("🌐 Allowed CORS origins:", allowedOrigins);
 
 // Optional: Pattern matching for dynamic deployments
-const allowVercelPattern = process.env.ALLOW_VERCEL_PREVIEWS === "true";
-const allowHostingerPattern = process.env.ALLOW_HOSTINGER_SITES === "true";
+// Handle both string "true" and boolean true
+const allowVercelPattern = process.env.ALLOW_VERCEL_PREVIEWS === "true" || process.env.ALLOW_VERCEL_PREVIEWS === true;
+const allowHostingerPattern = process.env.ALLOW_HOSTINGER_SITES === "true" || process.env.ALLOW_HOSTINGER_SITES === true;
 
 // Updated regex to match all Vercel deployment URLs including previews
+// This pattern matches: https://anything.vercel.app (including hyphens, numbers, letters)
 const vercelPattern = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/i;
 const hostingerPattern = /^https:\/\/.*\.hostinger\.site$/i;
 const hostingerWebPattern = /^https:\/\/.*\.hostingersite\.com$/i;
 
-console.log("🔍 ALLOW_VERCEL_PREVIEWS env value:", process.env.ALLOW_VERCEL_PREVIEWS);
+console.log("🔍 ALLOW_VERCEL_PREVIEWS env value:", process.env.ALLOW_VERCEL_PREVIEWS, "type:", typeof process.env.ALLOW_VERCEL_PREVIEWS);
 console.log("🔍 allowVercelPattern boolean:", allowVercelPattern);
 
 if (allowVercelPattern) {
-  console.log("🌐 Vercel preview deployments: ENABLED");
+  console.log("🌐 Vercel preview deployments: ENABLED ✅");
 }
 if (allowHostingerPattern) {
-  console.log("🌐 Hostinger site deployments: ENABLED");
+  console.log("🌐 Hostinger site deployments: ENABLED ✅");
 }
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests without Origin
+    // Allow requests without Origin (like Postman, curl, etc.)
     if (!origin) {
+      console.log("✅ CORS allowed: No origin header (direct request)");
       return callback(null, true);
     }
 
-    // Exact origins
+    // Exact origins match
     if (allowedOrigins.includes(origin)) {
+      console.log("✅ CORS allowed (exact match):", origin);
       return callback(null, true);
     }
 
-    // Vercel deployments
+    // Vercel deployments pattern matching
     if (allowVercelPattern && vercelPattern.test(origin)) {
-      console.log("✅ CORS allowed Vercel:", origin);
+      console.log("✅ CORS allowed (Vercel pattern):", origin);
       return callback(null, true);
     }
 
-    // Hostinger deployments
+    // Hostinger deployments pattern matching
     if (
       allowHostingerPattern &&
       (hostingerPattern.test(origin) || hostingerWebPattern.test(origin))
     ) {
-      console.log("✅ CORS allowed Hostinger:", origin);
+      console.log("✅ CORS allowed (Hostinger pattern):", origin);
       return callback(null, true);
     }
 
-    console.log("❌ CORS blocked origin:", origin);
+    // Blocked - log detailed information
+    console.log("❌ CORS BLOCKED:", origin);
+    console.log("   - allowVercelPattern:", allowVercelPattern);
+    console.log("   - vercelPattern.test(origin):", vercelPattern.test(origin));
+    console.log("   - Is in allowedOrigins:", allowedOrigins.includes(origin));
     return callback(null, false);
   },
 

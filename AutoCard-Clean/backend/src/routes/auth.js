@@ -48,14 +48,11 @@ router.post("/login", async (req, res) => {
   try {
     let user;
     
-    // For employees, use username (employee code) only - case insensitive
+    // For employees, use username (employee code) only - case insensitive (MySQL compatible)
     if (role === "employee") {
       const employeeProfile = await prisma.employeeProfile.findFirst({
         where: { 
-          employeeCode: {
-            equals: normalizedEmail,
-            mode: 'insensitive'
-          }
+          employeeCode: normalizedEmail
         },
         include: { user: { include: { employeeProfile: true, customerProfile: true } } },
       });
@@ -67,10 +64,7 @@ router.post("/login", async (req, res) => {
       // Universal login - try email first (case insensitive), then employee code
       user = await prisma.user.findFirst({
         where: { 
-          email: {
-            equals: normalizedEmail,
-            mode: 'insensitive'
-          }
+          email: normalizedEmail
         },
         include: { employeeProfile: true, customerProfile: true },
       });
@@ -79,10 +73,7 @@ router.post("/login", async (req, res) => {
       if (!user) {
         const employeeProfile = await prisma.employeeProfile.findFirst({
           where: { 
-            employeeCode: {
-              equals: normalizedEmail,
-              mode: 'insensitive'
-            }
+            employeeCode: normalizedEmail
           },
           include: { user: { include: { employeeProfile: true, customerProfile: true } } },
         });
@@ -95,9 +86,7 @@ router.post("/login", async (req, res) => {
       // For admin and customer, use email only - case insensitive
       user = await prisma.user.findFirst({
         where: { 
-          email: {
-            equals: normalizedEmail,
-            mode: 'insensitive'
+          email: normalizedEmail
           }
         },
         include: { employeeProfile: true, customerProfile: true },

@@ -76,9 +76,13 @@ console.log("🌐 Allowed CORS origins:", allowedOrigins);
 const allowVercelPattern = process.env.ALLOW_VERCEL_PREVIEWS === "true";
 const allowHostingerPattern = process.env.ALLOW_HOSTINGER_SITES === "true";
 
-const vercelPattern = /^https:\/\/.*\.vercel\.app$/i;
+// Updated regex to match all Vercel deployment URLs including previews
+const vercelPattern = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/i;
 const hostingerPattern = /^https:\/\/.*\.hostinger\.site$/i;
 const hostingerWebPattern = /^https:\/\/.*\.hostingersite\.com$/i;
+
+console.log("🔍 ALLOW_VERCEL_PREVIEWS env value:", process.env.ALLOW_VERCEL_PREVIEWS);
+console.log("🔍 allowVercelPattern boolean:", allowVercelPattern);
 
 if (allowVercelPattern) {
   console.log("🌐 Vercel preview deployments: ENABLED");

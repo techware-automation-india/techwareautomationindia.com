@@ -1,44 +1,45 @@
-﻿{
-    "name":  "techware-automation-server",
-    "version":  "1.0.0",
-    "private":  true,
-    "type":  "module",
-    "description":  "Backend API for Techware Automation India",
-    "main":  "src/index.js",
-    "engines":  {
-                    "node":  "\u003e=18.0.0 \u003c19 || \u003e=20.0.0",
-                    "npm":  "\u003e=9.0.0"
-                },
-    "scripts":  {
-                    "dev":  "nodemon src/index.js",
-                    "start":  "node src/index.js",
-                    "prisma:generate":  "prisma generate",
-                    "prisma:migrate":  "prisma migrate dev",
-                    "prisma:studio":  "prisma studio",
-                    "db:seed":  "node prisma/seed.js",
-                    "deploy":  "npx prisma generate \u0026\u0026 npx prisma db push --accept-data-loss \u0026\u0026 node prisma/seed.js",
-                    "postinstall":  "prisma generate"
-                },
-    "prisma":  {
-                   "seed":  "node prisma/seed.js"
-               },
-    "dependencies":  {
-                         "@prisma/client":  "^6.19.3",
-                         "bcryptjs":  "^2.4.3",
-                         "cors":  "^2.8.5",
-                         "dotenv":  "^16.4.5",
-                         "express":  "^4.19.2",
-                         "express-rate-limit":  "^7.4.0",
-                         "jsonwebtoken":  "^9.0.2",
-                         "multer":  "^1.4.5-lts.1",
-                         "mysql2":  "^3.11.0",
-                         "node-cron":  "^4.6.0",
-                         "nodemailer":  "^9.1.1",
-                         "uuid":  "^11.1.1",
-                         "zod":  "^3.23.8"
-                     },
-    "devDependencies":  {
-                            "nodemon":  "^3.1.4",
-                            "prisma":  "^6.19.3"
-                        }
+{
+  "name": "techware-automation-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend API for Techware Automation India",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18.0.0 <19 || >=20.0.0",
+    "npm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "db:seed": "node prisma/seed.js",
+    "db:seed:roles": "node prisma/seed-roles.js",
+    "deploy": "npx prisma generate && npx prisma db push --accept-data-loss && node prisma/seed.js",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.11.0",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.1.1",
+    "uuid": "^11.1.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4",
+    "prisma": "^6.19.3"
+  }
 }

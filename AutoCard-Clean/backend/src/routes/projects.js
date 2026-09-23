@@ -1,8 +1,8 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -54,7 +54,7 @@ const createCommentSchema = z.object({
 // ============================================================================
 
 // GET /api/projects - List all projects
-router.get("/", requireAdminOrModulePermission("projects", "canView"), async (req, res) => {
+router.get("/", checkRolePermission("overview"), async (req, res) => {
   try {
     const { status, isArchived, customerId } = req.query;
 
@@ -166,7 +166,7 @@ router.get("/", requireAdminOrModulePermission("projects", "canView"), async (re
 });
 
 // GET /api/projects/:id - Get single project with details
-router.get("/:id", requireAdminOrModulePermission("projects", "canView"), async (req, res) => {
+router.get("/:id", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -219,7 +219,7 @@ router.get("/:id", requireAdminOrModulePermission("projects", "canView"), async 
 });
 
 // POST /api/projects - Create new project
-router.post("/", requireAdminOrModulePermission("projects", "canCreate"), async (req, res) => {
+router.post("/", checkRolePermission("overview"), async (req, res) => {
   try {
     const parsed = createProjectSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -318,7 +318,7 @@ router.post("/", requireAdminOrModulePermission("projects", "canCreate"), async 
 });
 
 // PUT /api/projects/:id - Update project
-router.put("/:id", requireAdminOrModulePermission("projects", "canEdit"), async (req, res) => {
+router.put("/:id", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
     const parsed = updateProjectSchema.safeParse(req.body);
@@ -381,7 +381,7 @@ router.put("/:id", requireAdminOrModulePermission("projects", "canEdit"), async 
 });
 
 // DELETE /api/projects/:id - Delete project
-router.delete("/:id", requireAdminOrModulePermission("projects", "canDelete"), async (req, res) => {
+router.delete("/:id", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -400,7 +400,7 @@ router.delete("/:id", requireAdminOrModulePermission("projects", "canDelete"), a
 });
 
 // PATCH /api/projects/:id/archive - Archive/Unarchive project
-router.patch("/:id/archive", requireAdminOrModulePermission("projects", "canEdit"), async (req, res) => {
+router.patch("/:id/archive", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
     const { isArchived } = req.body;
@@ -431,7 +431,7 @@ router.patch("/:id/archive", requireAdminOrModulePermission("projects", "canEdit
 // ============================================================================
 
 // GET /api/projects/:id/tasks - Get all tasks for a project
-router.get("/:id/tasks", requireAdminOrModulePermission("projects", "canView"), async (req, res) => {
+router.get("/:id/tasks", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -448,7 +448,7 @@ router.get("/:id/tasks", requireAdminOrModulePermission("projects", "canView"), 
 });
 
 // POST /api/projects/:id/tasks - Create new task
-router.post("/:id/tasks", requireAdminOrModulePermission("projects", "canCreate"), async (req, res) => {
+router.post("/:id/tasks", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
     const parsed = createTaskSchema.safeParse(req.body);
@@ -483,7 +483,7 @@ router.post("/:id/tasks", requireAdminOrModulePermission("projects", "canCreate"
 });
 
 // PUT /api/projects/:projectId/tasks/:taskId - Update task
-router.put("/:projectId/tasks/:taskId", requireAdminOrModulePermission("projects", "canEdit"), async (req, res) => {
+router.put("/:projectId/tasks/:taskId", checkRolePermission("overview"), async (req, res) => {
   try {
     const { taskId } = req.params;
     const parsed = updateTaskSchema.safeParse(req.body);
@@ -509,7 +509,7 @@ router.put("/:projectId/tasks/:taskId", requireAdminOrModulePermission("projects
 });
 
 // DELETE /api/projects/:projectId/tasks/:taskId - Delete task
-router.delete("/:projectId/tasks/:taskId", requireAdminOrModulePermission("projects", "canDelete"), async (req, res) => {
+router.delete("/:projectId/tasks/:taskId", checkRolePermission("overview"), async (req, res) => {
   try {
     const { taskId } = req.params;
 
@@ -527,7 +527,7 @@ router.delete("/:projectId/tasks/:taskId", requireAdminOrModulePermission("proje
 // ============================================================================
 
 // POST /api/projects/:id/team - Add team member
-router.post("/:id/team", requireAdminOrModulePermission("projects", "canEdit"), async (req, res) => {
+router.post("/:id/team", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
     const { employeeId, roleOnProject } = req.body;
@@ -574,7 +574,7 @@ router.post("/:id/team", requireAdminOrModulePermission("projects", "canEdit"), 
 });
 
 // DELETE /api/projects/:id/team/:assignmentId - Remove team member
-router.delete("/:id/team/:assignmentId", requireAdminOrModulePermission("projects", "canEdit"), async (req, res) => {
+router.delete("/:id/team/:assignmentId", checkRolePermission("overview"), async (req, res) => {
   try {
     const { assignmentId } = req.params;
 
@@ -594,7 +594,7 @@ router.delete("/:id/team/:assignmentId", requireAdminOrModulePermission("project
 // ============================================================================
 
 // POST /api/projects/:id/comments - Add comment
-router.post("/:id/comments", requireAdminOrModulePermission("projects", "canView"), async (req, res) => {
+router.post("/:id/comments", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
     const parsed = createCommentSchema.safeParse(req.body);
@@ -619,7 +619,7 @@ router.post("/:id/comments", requireAdminOrModulePermission("projects", "canView
 });
 
 // DELETE /api/projects/:id/comments/:commentId - Delete comment
-router.delete("/:id/comments/:commentId", requireAdminOrModulePermission("projects", "canDelete"), async (req, res) => {
+router.delete("/:id/comments/:commentId", checkRolePermission("overview"), async (req, res) => {
   try {
     const { commentId } = req.params;
 

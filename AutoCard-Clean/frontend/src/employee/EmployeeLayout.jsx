@@ -75,7 +75,7 @@ const EmployeeLayout = () => {
   const sidebarContent = (
     <>
      <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/admin" className="flex items-center gap-3">
+        <Link to="/employee" className="flex items-center gap-3">
           {/* Logo */}
           <img
             src="/techwareLogo.svg"

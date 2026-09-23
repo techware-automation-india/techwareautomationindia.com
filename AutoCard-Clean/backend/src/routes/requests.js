@@ -1,9 +1,9 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -180,7 +180,7 @@ function getAttendanceDayRange(value) {
 
 /*
 |--------------------------------------------------------------------------
-| TIME → DATE
+| TIME â†’ DATE
 |--------------------------------------------------------------------------
 */
 function timeToDate(dateText, timeText) {
@@ -315,9 +315,9 @@ function formatCorrectionNotification(description) {
 */
 
 router.get("/my", async (req, res) => {
-  console.log("📥 GET /api/requests/my");
+  console.log("ðŸ“¥ GET /api/requests/my");
 
-  console.log("👤 Auth user:", req.user);
+  console.log("ðŸ‘¤ Auth user:", req.user);
 
   try {
     if (!req.user) {
@@ -375,7 +375,7 @@ router.get("/my", async (req, res) => {
       requests,
     });
   } catch (error) {
-    console.error("❌ GET /requests/my:", error);
+    console.error("âŒ GET /requests/my:", error);
 
     return res.status(500).json({
       message: error?.message || "Failed to load your requests.",
@@ -396,11 +396,11 @@ router.get("/my", async (req, res) => {
 router.post("/my", async (req, res) => {
   console.log("======================================");
 
-  console.log("📥 POST /api/requests/my");
+  console.log("ðŸ“¥ POST /api/requests/my");
 
-  console.log("👤 USER:", req.user);
+  console.log("ðŸ‘¤ USER:", req.user);
 
-  console.log("📦 BODY:", req.body);
+  console.log("ðŸ“¦ BODY:", req.body);
 
   console.log("======================================");
 
@@ -421,7 +421,7 @@ router.post("/my", async (req, res) => {
     const parsed = employeeRequestSchema.safeParse(req.body || {});
 
     if (!parsed.success) {
-      console.log("❌ Validation error:", parsed.error.flatten());
+      console.log("âŒ Validation error:", parsed.error.flatten());
 
       return res.status(400).json({
         message: "Subject and valid request details are required.",
@@ -458,7 +458,7 @@ router.post("/my", async (req, res) => {
       });
     }
 
-    console.log("✅ Employee:", employee.id);
+    console.log("âœ… Employee:", employee.id);
 
     let correction = null;
 
@@ -630,7 +630,7 @@ router.post("/my", async (req, res) => {
       },
     });
 
-    console.log("✅ REQUEST CREATED:", createdRequest.id);
+    console.log("âœ… REQUEST CREATED:", createdRequest.id);
 
     return res.status(201).json({
       message: "Request submitted successfully.",
@@ -638,7 +638,7 @@ router.post("/my", async (req, res) => {
       request: createdRequest,
     });
   } catch (error) {
-    console.error("❌ CREATE REQUEST ERROR:", error);
+    console.error("âŒ CREATE REQUEST ERROR:", error);
 
     return res.status(500).json({
       message: error?.message || "Failed to submit request.",
@@ -654,7 +654,7 @@ router.post("/my", async (req, res) => {
 
 router.get(
   "/",
-  requireAdminOrModulePermission("requests", "canView"),
+  checkRolePermission("requests"),
 
   async (req, res) => {
     try {
@@ -730,7 +730,7 @@ router.get(
         requests: result,
       });
     } catch (error) {
-      console.error("❌ GET /requests:", error);
+      console.error("âŒ GET /requests:", error);
 
       return res.status(500).json({
         message: "Failed to load requests.",
@@ -747,7 +747,7 @@ router.get(
 
 router.get(
   "/:id/profile",
-  requireAdminOrModulePermission("requests", "canView"),
+  checkRolePermission("requests"),
 
   async (req, res) => {
     try {
@@ -788,7 +788,7 @@ router.get(
         },
       });
     } catch (error) {
-      console.error("❌ GET REQUEST PROFILE:", error);
+      console.error("âŒ GET REQUEST PROFILE:", error);
 
       return res.status(500).json({
         message: "Failed to load profile.",
@@ -1152,7 +1152,7 @@ async function reviewRequest(req, res, decision) {
       },
     });
   } catch (error) {
-    console.error("❌ REVIEW REQUEST ERROR:", error);
+    console.error("âŒ REVIEW REQUEST ERROR:", error);
 
     return res.status(500).json({
       message: error?.message || "Failed to review request.",
@@ -1168,7 +1168,7 @@ async function reviewRequest(req, res, decision) {
 
 router.post(
   "/:id/approve",
-  requireAdminOrModulePermission("requests", "canEdit"),
+  checkRolePermission("requests"),
 
   (req, res) => reviewRequest(req, res, "approve"),
 );
@@ -1181,7 +1181,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-  requireAdminOrModulePermission("requests", "canEdit"),
+  checkRolePermission("requests"),
 
   (req, res) => reviewRequest(req, res, "reject"),
 );

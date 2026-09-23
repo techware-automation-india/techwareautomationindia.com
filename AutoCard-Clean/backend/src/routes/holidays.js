@@ -1,8 +1,8 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -42,7 +42,7 @@ const updateHolidaySchema = z.object({
 
 // GET /api/holidays - List all holidays (authenticated users)
 router.get("/", requireAuth, async (req, res) => {
-  console.log("📥 [GET /api/holidays] Request received");
+  console.log("ðŸ“¥ [GET /api/holidays] Request received");
   
   try {
     const { fiscalYear } = req.query;
@@ -64,7 +64,7 @@ router.get("/", requireAuth, async (req, res) => {
           date: "asc",
         },
       });
-      console.log(`✅ [GET /api/holidays] Found ${holidays.length} holidays for fiscal year ${year}`);
+      console.log(`âœ… [GET /api/holidays] Found ${holidays.length} holidays for fiscal year ${year}`);
     } else {
       // Get all holidays
       holidays = await prisma.holiday.findMany({
@@ -72,24 +72,24 @@ router.get("/", requireAuth, async (req, res) => {
           date: "asc",
         },
       });
-      console.log(`✅ [GET /api/holidays] Found ${holidays.length} total holidays`);
+      console.log(`âœ… [GET /api/holidays] Found ${holidays.length} total holidays`);
     }
 
     res.json({ holidays });
   } catch (err) {
-    console.error("❌ [GET /api/holidays] Error:", err);
+    console.error("âŒ [GET /api/holidays] Error:", err);
     res.status(500).json({ message: "Failed to load holidays." });
   }
 });
 
 // POST /api/holidays - Create a new holiday (Admin or with permission)
-router.post("/", requireAdminOrModulePermission("holidays", "canCreate"), async (req, res) => {
-  console.log("📥 [POST /api/holidays] Request received:", JSON.stringify(req.body, null, 2));
+router.post("/", checkRolePermission("attendance"), async (req, res) => {
+  console.log("ðŸ“¥ [POST /api/holidays] Request received:", JSON.stringify(req.body, null, 2));
   
   const parsed = createHolidaySchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    console.log("❌ [POST /api/holidays] Validation failed:", firstError.message);
+    console.log("âŒ [POST /api/holidays] Validation failed:", firstError.message);
     return res.status(400).json({ message: firstError.message });
   }
 
@@ -119,23 +119,23 @@ router.post("/", requireAdminOrModulePermission("holidays", "canCreate"), async 
       },
     });
 
-    console.log(`✅ [POST /api/holidays] Holiday created: ${name} on ${date}`);
+    console.log(`âœ… [POST /api/holidays] Holiday created: ${name} on ${date}`);
     res.status(201).json({ holiday });
   } catch (err) {
-    console.error("❌ [POST /api/holidays] Error:", err);
+    console.error("âŒ [POST /api/holidays] Error:", err);
     res.status(500).json({ message: "Failed to create holiday." });
   }
 });
 
 // PUT /api/holidays/:id - Update a holiday (Admin or with permission)
-router.put("/:id", requireAdminOrModulePermission("holidays", "canEdit"), async (req, res) => {
+router.put("/:id", checkRolePermission("attendance"), async (req, res) => {
   const { id } = req.params;
-  console.log(`📥 [PUT /api/holidays/${id}] Request received:`, JSON.stringify(req.body, null, 2));
+  console.log(`ðŸ“¥ [PUT /api/holidays/${id}] Request received:`, JSON.stringify(req.body, null, 2));
   
   const parsed = updateHolidaySchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    console.log(`❌ [PUT /api/holidays/${id}] Validation failed:`, firstError.message);
+    console.log(`âŒ [PUT /api/holidays/${id}] Validation failed:`, firstError.message);
     return res.status(400).json({ message: firstError.message });
   }
 
@@ -150,10 +150,10 @@ router.put("/:id", requireAdminOrModulePermission("holidays", "canEdit"), async 
       data: updateData,
     });
     
-    console.log(`✅ [PUT /api/holidays/${id}] Holiday updated successfully`);
+    console.log(`âœ… [PUT /api/holidays/${id}] Holiday updated successfully`);
     res.json({ holiday });
   } catch (err) {
-    console.error(`❌ [PUT /api/holidays/${id}] Error:`, err);
+    console.error(`âŒ [PUT /api/holidays/${id}] Error:`, err);
     if (err.code === "P2025") {
       return res.status(404).json({ message: "Holiday not found." });
     }
@@ -162,19 +162,19 @@ router.put("/:id", requireAdminOrModulePermission("holidays", "canEdit"), async 
 });
 
 // DELETE /api/holidays/:id - Delete a holiday (Admin or with permission)
-router.delete("/:id", requireAdminOrModulePermission("holidays", "canDelete"), async (req, res) => {
+router.delete("/:id", checkRolePermission("attendance"), async (req, res) => {
   const { id } = req.params;
-  console.log(`📥 [DELETE /api/holidays/${id}] Request received`);
+  console.log(`ðŸ“¥ [DELETE /api/holidays/${id}] Request received`);
   
   try {
     await prisma.holiday.delete({
       where: { id },
     });
     
-    console.log(`✅ [DELETE /api/holidays/${id}] Holiday deleted successfully`);
+    console.log(`âœ… [DELETE /api/holidays/${id}] Holiday deleted successfully`);
     res.json({ message: "Holiday deleted successfully." });
   } catch (err) {
-    console.error(`❌ [DELETE /api/holidays/${id}] Error:`, err);
+    console.error(`âŒ [DELETE /api/holidays/${id}] Error:`, err);
     if (err.code === "P2025") {
       return res.status(404).json({ message: "Holiday not found." });
     }
@@ -195,7 +195,7 @@ router.get("/fiscal-year", requireAuth, async (_req, res) => {
       endDate,
     });
   } catch (err) {
-    console.error("❌ [GET /api/holidays/fiscal-year] Error:", err);
+    console.error("âŒ [GET /api/holidays/fiscal-year] Error:", err);
     res.status(500).json({ message: "Failed to get fiscal year info." });
   }
 });

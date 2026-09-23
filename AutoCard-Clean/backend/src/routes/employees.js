@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 import { sendWelcomeEmail } from "../utils/emailService.js";
 
 const router = Router();
@@ -25,7 +25,7 @@ const createEmployeeSchema = z.object({
 
 router.get(
   "/",
-  requireAdminOrModulePermission("employee", "canView"),
+  checkRolePermission("employee"),
   async (_req, res) => {
     try {
       const employees = await prisma.user.findMany({
@@ -64,7 +64,7 @@ router.get(
 
 router.post(
   "/",
-  requireAdminOrModulePermission("employee", "canCreate"),
+  checkRolePermission("employee"),
   async (req, res) => {
     const parsed = createEmployeeSchema.safeParse(req.body);
 
@@ -218,7 +218,7 @@ router.post(
 
 router.delete(
   "/:id",
-  requireAdminOrModulePermission("employee", "canDelete"),
+  checkRolePermission("employee"),
   async (req, res) => {
     const { id } = req.params;
 

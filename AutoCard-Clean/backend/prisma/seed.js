@@ -18,7 +18,86 @@ const seedUsers = [
   { email: "customer@techware.com", fullName: "Sample Customer", role: "CUSTOMER", password: "customer123" },
 ];
 
+/**
+ * Seed default roles with their module access.
+ * Requirements fulfilled: 1.4, 1.5, 1.6, 1.7, 16.4
+ */
+async function seedDefaultRoles() {
+  console.log("\n=== Seeding Default Roles ===");
+  
+  const defaultRoles = [
+    {
+      name: "Admin",
+      isDefault: true,
+      modules: [
+        "overview",
+        "employee",
+        "requests",
+        "approvals",
+        "mark-attendance",
+        "attendance",
+        "roles-access",
+        "shift-location",
+        "roster"
+      ]
+    },
+    {
+      name: "Employee",
+      isDefault: true,
+      modules: [
+        "overview",
+        "mark-attendance",
+        "attendance",
+        "requests"
+      ]
+    },
+    {
+      name: "Customer",
+      isDefault: true,
+      modules: [
+        "overview"
+      ]
+    }
+  ];
+
+  for (const roleData of defaultRoles) {
+    // Upsert the role (create if doesn't exist, update if exists)
+    const role = await prisma.roleTable.upsert({
+      where: { name: roleData.name },
+      update: { isDefault: roleData.isDefault },
+      create: {
+        name: roleData.name,
+        isDefault: roleData.isDefault,
+      },
+    });
+
+    console.log(`Seeded role: ${role.name} (id: ${role.id})`);
+
+    // Remove existing module associations for this role to ensure clean state
+    await prisma.roleModule.deleteMany({
+      where: { roleId: role.id },
+    });
+
+    // Create new module associations
+    for (const moduleKey of roleData.modules) {
+      await prisma.roleModule.create({
+        data: {
+          roleId: role.id,
+          moduleKey: moduleKey,
+        },
+      });
+    }
+
+    console.log(`  ✓ Configured ${roleData.modules.length} modules for ${role.name}`);
+  }
+
+  console.log("Default roles seeding completed!\n");
+}
+
 async function main() {
+  // 0. Seed default roles FIRST (before any user-related seeds)
+  await seedDefaultRoles();
+
   // 1. Seed default shifts
   const defaultShifts = [
     {
@@ -60,7 +139,6 @@ async function main() {
     city: "Mumbai",
     state: "Maharashtra",
     country: "India",
-    postalCode: "400001",
     isActive: true
   };
 

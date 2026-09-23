@@ -1,9 +1,9 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 import { sendCustomerWelcomeEmail, sendPasswordResetEmail } from "../utils/emailService.js";
 
 const router = Router();
@@ -53,8 +53,8 @@ const createCustomerSchema = z.object({
 });
 
 // GET /api/customers - list all customers with their profile.
-router.get("/", requireAdminOrModulePermission("customer", "canView"), async (_req, res) => {
-  console.log("📥 [GET /api/customers] Request received");
+router.get("/", checkRolePermission("employee"), async (_req, res) => {
+  console.log("ðŸ“¥ [GET /api/customers] Request received");
   try {
     const customers = await prisma.user.findMany({
       where: { role: "CUSTOMER" },
@@ -62,7 +62,7 @@ router.get("/", requireAdminOrModulePermission("customer", "canView"), async (_r
       orderBy: { createdAt: "desc" },
     });
 
-    console.log(`✅ [GET /api/customers] Found ${customers.length} customers`);
+    console.log(`âœ… [GET /api/customers] Found ${customers.length} customers`);
 
     const result = customers.map((u) => ({
       id: u.id,
@@ -77,22 +77,22 @@ router.get("/", requireAdminOrModulePermission("customer", "canView"), async (_r
       createdAt: u.createdAt,
     }));
 
-    console.log("📤 [GET /api/customers] Sending response");
+    console.log("ðŸ“¤ [GET /api/customers] Sending response");
     res.json({ customers: result });
   } catch (err) {
-    console.error("❌ [GET /api/customers] Error:", err);
+    console.error("âŒ [GET /api/customers] Error:", err);
     res.status(500).json({ message: "Failed to load customers." });
   }
 });
 
 // POST /api/customers - create a customer account + profile.
-router.post("/", requireAdminOrModulePermission("customer", "canCreate"), async (req, res) => {
-  console.log("📥 [POST /api/customers] Request received:", JSON.stringify(req.body, null, 2));
+router.post("/", checkRolePermission("employee"), async (req, res) => {
+  console.log("ðŸ“¥ [POST /api/customers] Request received:", JSON.stringify(req.body, null, 2));
   
   const parsed = createCustomerSchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    console.log("❌ [POST /api/customers] Validation failed:", firstError.message);
+    console.log("âŒ [POST /api/customers] Validation failed:", firstError.message);
     return res.status(400).json({ 
       message: firstError.message,
       field: firstError.path[0],
@@ -104,13 +104,13 @@ router.post("/", requireAdminOrModulePermission("customer", "canCreate"), async 
   }
 
   const { fullName, email, password, companyName, phone, address, city, country } = parsed.data;
-  console.log(`✅ [POST /api/customers] Validation passed. Creating customer: ${fullName} (${companyName || 'No Company'})`);
+  console.log(`âœ… [POST /api/customers] Validation passed. Creating customer: ${fullName} (${companyName || 'No Company'})`);
 
   try {
     // Guard against duplicate email.
     const existingEmail = await prisma.user.findUnique({ where: { email } });
     if (existingEmail) {
-      console.log(`❌ [POST /api/customers] Email already exists: ${email}`);
+      console.log(`âŒ [POST /api/customers] Email already exists: ${email}`);
       return res.status(409).json({ 
         message: "An account with this email already exists.",
         field: "email"
@@ -139,7 +139,7 @@ router.post("/", requireAdminOrModulePermission("customer", "canCreate"), async 
       include: { customerProfile: true },
     });
 
-    console.log(`✅ [POST /api/customers] Customer created successfully:`, {
+    console.log(`âœ… [POST /api/customers] Customer created successfully:`, {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
@@ -148,16 +148,16 @@ router.post("/", requireAdminOrModulePermission("customer", "canCreate"), async 
 
     // Send welcome email with login credentials
     try {
-      console.log(`📧 [POST /api/customers] Sending welcome email to: ${email}`);
+      console.log(`ðŸ“§ [POST /api/customers] Sending welcome email to: ${email}`);
       await sendCustomerWelcomeEmail({
         customerEmail: email,
         customerName: fullName,
         companyName: companyName || null,
         password: password, // Send plain text password in email
       });
-      console.log(`✅ [POST /api/customers] Welcome email sent successfully to: ${email}`);
+      console.log(`âœ… [POST /api/customers] Welcome email sent successfully to: ${email}`);
     } catch (emailError) {
-      console.error(`⚠️ [POST /api/customers] Failed to send welcome email to ${email}:`, emailError);
+      console.error(`âš ï¸ [POST /api/customers] Failed to send welcome email to ${email}:`, emailError);
       // Don't fail the customer creation if email fails
       // Customer is created, but email wasn't sent
     }
@@ -175,15 +175,15 @@ router.post("/", requireAdminOrModulePermission("customer", "canCreate"), async 
       },
     });
   } catch (err) {
-    console.error("❌ [POST /api/customers] Error:", err);
+    console.error("âŒ [POST /api/customers] Error:", err);
     res.status(500).json({ message: "Failed to create customer. Please try again." });
   }
 });
 
 // PUT /api/customers/:id - update customer profile.
-router.put("/:id", requireAdminOrModulePermission("customer", "canEdit"), async (req, res) => {
+router.put("/:id", checkRolePermission("employee"), async (req, res) => {
   const { id } = req.params;
-  console.log(`📥 [PUT /api/customers/${id}] Request received:`, JSON.stringify(req.body, null, 2));
+  console.log(`ðŸ“¥ [PUT /api/customers/${id}] Request received:`, JSON.stringify(req.body, null, 2));
 
   const updateSchema = z.object({
     fullName: z.string().min(3).max(120).optional(),
@@ -197,7 +197,7 @@ router.put("/:id", requireAdminOrModulePermission("customer", "canEdit"), async 
 
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
-    console.log(`❌ [PUT /api/customers/${id}] Validation failed:`, parsed.error.issues[0].message);
+    console.log(`âŒ [PUT /api/customers/${id}] Validation failed:`, parsed.error.issues[0].message);
     return res.status(400).json({ message: parsed.error.issues[0].message });
   }
 
@@ -208,7 +208,7 @@ router.put("/:id", requireAdminOrModulePermission("customer", "canEdit"), async 
     });
 
     if (!user || user.role !== "CUSTOMER") {
-      console.log(`❌ [PUT /api/customers/${id}] Customer not found`);
+      console.log(`âŒ [PUT /api/customers/${id}] Customer not found`);
       return res.status(404).json({ message: "Customer not found." });
     }
 
@@ -227,7 +227,7 @@ router.put("/:id", requireAdminOrModulePermission("customer", "canEdit"), async 
       include: { customerProfile: true },
     });
 
-    console.log(`✅ [PUT /api/customers/${id}] Customer updated successfully`);
+    console.log(`âœ… [PUT /api/customers/${id}] Customer updated successfully`);
     res.json({
       customer: {
         id: updated.id,
@@ -242,38 +242,38 @@ router.put("/:id", requireAdminOrModulePermission("customer", "canEdit"), async 
       },
     });
   } catch (err) {
-    console.error(`❌ [PUT /api/customers/${id}] Error:`, err);
+    console.error(`âŒ [PUT /api/customers/${id}] Error:`, err);
     res.status(500).json({ message: "Failed to update customer." });
   }
 });
 
 // DELETE /api/customers/:id - remove a customer account.
-router.delete("/:id", requireAdminOrModulePermission("customer", "canDelete"), async (req, res) => {
+router.delete("/:id", checkRolePermission("employee"), async (req, res) => {
   const { id } = req.params;
-  console.log(`📥 [DELETE /api/customers/${id}] Request received`);
+  console.log(`ðŸ“¥ [DELETE /api/customers/${id}] Request received`);
   
   try {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user || user.role !== "CUSTOMER") {
-      console.log(`❌ [DELETE /api/customers/${id}] Customer not found`);
+      console.log(`âŒ [DELETE /api/customers/${id}] Customer not found`);
       return res.status(404).json({ message: "Customer not found." });
     }
 
-    console.log(`🗑️ [DELETE /api/customers/${id}] Deleting customer: ${user.fullName}`);
+    console.log(`ðŸ—‘ï¸ [DELETE /api/customers/${id}] Deleting customer: ${user.fullName}`);
     await prisma.user.delete({ where: { id } });
     
-    console.log(`✅ [DELETE /api/customers/${id}] Customer deleted successfully`);
+    console.log(`âœ… [DELETE /api/customers/${id}] Customer deleted successfully`);
     res.json({ message: "Customer deleted." });
   } catch (err) {
-    console.error(`❌ [DELETE /api/customers/${id}] Error:`, err);
+    console.error(`âŒ [DELETE /api/customers/${id}] Error:`, err);
     res.status(500).json({ message: "Failed to delete customer." });
   }
 });
 
 // POST /api/customers/:id/reset-password - reset customer password.
-router.post("/:id/reset-password", requireAdminOrModulePermission("customer", "canEdit"), async (req, res) => {
+router.post("/:id/reset-password", checkRolePermission("employee"), async (req, res) => {
   const { id } = req.params;
-  console.log(`📥 [POST /api/customers/${id}/reset-password] Request received`);
+  console.log(`ðŸ“¥ [POST /api/customers/${id}/reset-password] Request received`);
 
   const passwordSchema = z.object({
     password: z
@@ -295,7 +295,7 @@ router.post("/:id/reset-password", requireAdminOrModulePermission("customer", "c
   const parsed = passwordSchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    console.log(`❌ [POST /api/customers/${id}/reset-password] Validation failed:`, firstError.message);
+    console.log(`âŒ [POST /api/customers/${id}/reset-password] Validation failed:`, firstError.message);
     return res.status(400).json({ 
       message: firstError.message,
       field: "password"
@@ -311,7 +311,7 @@ router.post("/:id/reset-password", requireAdminOrModulePermission("customer", "c
     });
     
     if (!user || user.role !== "CUSTOMER") {
-      console.log(`❌ [POST /api/customers/${id}/reset-password] Customer not found`);
+      console.log(`âŒ [POST /api/customers/${id}/reset-password] Customer not found`);
       return res.status(404).json({ message: "Customer not found." });
     }
 
@@ -322,27 +322,27 @@ router.post("/:id/reset-password", requireAdminOrModulePermission("customer", "c
       data: { passwordHash },
     });
 
-    console.log(`✅ [POST /api/customers/${id}/reset-password] Password reset successfully for: ${user.email}`);
+    console.log(`âœ… [POST /api/customers/${id}/reset-password] Password reset successfully for: ${user.email}`);
 
     // Send password reset email
     try {
-      console.log(`📧 [POST /api/customers/${id}/reset-password] Sending password reset email to: ${user.email}`);
+      console.log(`ðŸ“§ [POST /api/customers/${id}/reset-password] Sending password reset email to: ${user.email}`);
       await sendPasswordResetEmail({
         customerEmail: user.email,
         customerName: user.fullName,
         companyName: user.customerProfile?.companyName || null,
         password: password, // Send plain text password in email
       });
-      console.log(`✅ [POST /api/customers/${id}/reset-password] Password reset email sent successfully to: ${user.email}`);
+      console.log(`âœ… [POST /api/customers/${id}/reset-password] Password reset email sent successfully to: ${user.email}`);
     } catch (emailError) {
-      console.error(`⚠️ [POST /api/customers/${id}/reset-password] Failed to send password reset email to ${user.email}:`, emailError);
+      console.error(`âš ï¸ [POST /api/customers/${id}/reset-password] Failed to send password reset email to ${user.email}:`, emailError);
       // Don't fail the password reset if email fails
       // Password is reset, but email wasn't sent
     }
 
     res.json({ message: "Password reset successfully." });
   } catch (err) {
-    console.error(`❌ [POST /api/customers/${id}/reset-password] Error:`, err);
+    console.error(`âŒ [POST /api/customers/${id}/reset-password] Error:`, err);
     res.status(500).json({ message: "Failed to reset password." });
   }
 });

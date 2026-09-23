@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -224,20 +224,10 @@ router.post("/bulk", requireAuth, checkRolePermission("roster"), async (req, res
   }
 });
 
-// DELETE /api/roster/:id
-router.delete("/:id", requireAuth, checkRolePermission("roster"), async (req, res) => {
-  try {
-    await prisma.rosterEntry.delete({ where: { id: req.params.id } });
-    res.json({ message: "Roster entry deleted." });
-  } catch (err) {
-    if (err.code === "P2025") return res.status(404).json({ message: "Entry not found." });
-    console.error("Roster DELETE error:", err);
-    res.status(500).json({ message: "Failed to delete entry." });
-  }
-});
-// DELETE /api/roster/all â€” delete ALL roster entries
+// DELETE /api/roster/bulk-delete — delete ALL roster entries
+// Using /bulk-delete instead of /all to avoid route conflict with /:id
 router.delete(
-  "/all",
+  "/bulk-delete",
   requireAuth,
   checkRolePermission("roster"),
   async (req, res) => {
@@ -258,5 +248,17 @@ router.delete(
     }
   },
 );
+
+// DELETE /api/roster/:id
+router.delete("/:id", requireAuth, checkRolePermission("roster"), async (req, res) => {
+  try {
+    await prisma.rosterEntry.delete({ where: { id: req.params.id } });
+    res.json({ message: "Roster entry deleted." });
+  } catch (err) {
+    if (err.code === "P2025") return res.status(404).json({ message: "Entry not found." });
+    console.error("Roster DELETE error:", err);
+    res.status(500).json({ message: "Failed to delete entry." });
+  }
+});
 
 export default router;

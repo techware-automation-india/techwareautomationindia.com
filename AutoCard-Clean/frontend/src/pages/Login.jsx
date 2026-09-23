@@ -33,8 +33,14 @@ const roleConfig = {
 const Login = () => {
   const { role } = useParams();
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ email: "", password: "" });
+  
+  // Load saved credentials from localStorage
+  const savedEmail = localStorage.getItem(`${role}_email`) || "";
+  const savedRememberMe = localStorage.getItem(`${role}_remember`) === "true";
+  
+  const [formData, setFormData] = useState({ email: savedEmail, password: "" });
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(savedRememberMe);
   const [submitting, setSubmitting] = useState(false);
 
   const config = roleConfig[role];
@@ -71,6 +77,15 @@ const Login = () => {
         password: formData.password,
         role,
       });
+
+      // Save or clear "Remember me" data
+      if (rememberMe) {
+        localStorage.setItem(`${role}_email`, formData.email);
+        localStorage.setItem(`${role}_remember`, "true");
+      } else {
+        localStorage.removeItem(`${role}_email`);
+        localStorage.removeItem(`${role}_remember`);
+      }
 
       // Persist the authenticated session for use across the app.
       saveAuth(data.token, data.user);
@@ -159,8 +174,13 @@ const Login = () => {
             </div>
 
             <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2 text-muted-foreground cursor-pointer">
-                <input type="checkbox" className="rounded border-border" />
+              <label className="flex items-center gap-2 text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30 cursor-pointer" 
+                />
                 Remember me
               </label>
               <a href="#" className="text-primary hover:underline">Forgot password?</a>

@@ -135,11 +135,15 @@ async function main() {
   // 2. Seed default location
   const defaultLocation = {
     name: "Head Office",
-    addressLine: "123 Main Street",
+    addressLine: "123 Main Street, Mumbai",
     city: "Mumbai",
     state: "Maharashtra",
     country: "India",
-    isActive: true
+    latitude: 19.0760,
+    longitude: 72.8777,
+    radius: 100,
+    isActive: true,
+    isDefault: true
   };
 
   await prisma.location.upsert({

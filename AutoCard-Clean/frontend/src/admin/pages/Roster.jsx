@@ -228,7 +228,7 @@ const Roster = () => {
   };
 
   // ── delete all visible roster entries ───────────────────────────────────
- const deleteAllRoster = async () => {
+  const deleteAllRoster = async () => {
   if (deletingAll || deleting || entries.length === 0) return;
 
   const confirmed = window.confirm(
@@ -240,7 +240,7 @@ const Roster = () => {
   setDeletingAll(true);
 
   try {
-    const result = await apiDelete("/roster/all");
+    const result = await apiDelete("/roster/bulk-delete");
 
     toast.success(
       result.message || "All roster entries deleted successfully."

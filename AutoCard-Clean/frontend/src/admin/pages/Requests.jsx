@@ -95,6 +95,26 @@ const openAttendanceMap = (request) => {
   window.open(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`, "_blank", "noopener,noreferrer");
 };
 
+const openCheckInMap = (request) => {
+  const latitude = Number(request.checkInLatitude);
+  const longitude = Number(request.checkInLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    toast.error("Check-in location coordinates are not available.");
+    return;
+  }
+  window.open(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`, "_blank", "noopener,noreferrer");
+};
+
+const openCheckOutMap = (request) => {
+  const latitude = Number(request.checkOutLatitude);
+  const longitude = Number(request.checkOutLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    toast.error("Check-out location coordinates are not available.");
+    return;
+  }
+  window.open(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`, "_blank", "noopener,noreferrer");
+};
+
 const Requests = ({
   employeePermissions,
   isEmployeeView = false,
@@ -106,9 +126,15 @@ const Requests = ({
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState(null);
   const [previewId, setPreviewId] = useState(null);
+  
+  // Set default filters to current month/year
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const currentYear = now.getFullYear();
+  
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [monthFilter, setMonthFilter] = useState("ALL");
-  const [yearFilter, setYearFilter] = useState("ALL");
+  const [monthFilter, setMonthFilter] = useState(String(currentMonth));
+  const [yearFilter, setYearFilter] = useState(String(currentYear));
   const [search, setSearch] = useState("");
   const [reasonRequest, setReasonRequest] = useState(null);
   const canReview = !isEmployeeView || employeePermissions?.canEdit === true;
@@ -402,7 +428,7 @@ const loadRequests = async () => {
           </div>
         </div>
 
-        {/* Request list */}
+        {/* Request list - Modern Card Design */}
         {loading ? (
           <div className="flex min-h-[280px] items-center justify-center text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -428,127 +454,211 @@ const loadRequests = async () => {
             )}
           </div>
         ) : (
-          <div className="divide-y divide-border">
-            {filteredRequests.map((r) => (
-              <div key={r.id} className="group p-4 transition hover:bg-secondary/20 sm:p-5 lg:p-6">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-                  <div className="flex min-w-0 flex-1 gap-4">
-                    <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary sm:flex">
-                      {r.type === "ATTENDANCE" || r.type === "CORRECTION"
-                        ? <Clock3 className="h-5 w-5" />
-                        : r.type === "ONBOARDING"
-                          ? <UserRound className="h-5 w-5" />
-                          : <MessageSquareText className="h-5 w-5" />}
-                    </div>
+          <div className="p-4 sm:p-5 lg:p-6">
+            <div className="grid gap-4 lg:gap-5">
+              {filteredRequests.map((r) => (
+                <div 
+                  key={r.id} 
+                  className="group relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-background to-secondary/10 shadow-sm transition hover:shadow-md hover:border-primary/20"
+                >
+                  {/* Status Indicator Bar */}
+                  <div className={`absolute left-0 top-0 h-full w-1.5 ${
+                    r.status === "PENDING" ? "bg-amber-500" : 
+                    r.status === "APPROVED" ? "bg-emerald-500" : "bg-rose-500"
+                  }`} />
+                  
+                  <div className="p-5 pl-7">
+                    {/* Header Section */}
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex gap-4">
+                        {/* Icon */}
+                        <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl shadow-sm ${
+                          r.type === "ATTENDANCE" || r.type === "CORRECTION"
+                            ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white"
+                            : r.type === "ONBOARDING"
+                            ? "bg-gradient-to-br from-purple-500 to-purple-600 text-white"
+                            : "bg-gradient-to-br from-slate-500 to-slate-600 text-white"
+                        }`}>
+                          {r.type === "ATTENDANCE" || r.type === "CORRECTION"
+                            ? <Clock3 className="h-6 w-6" />
+                            : r.type === "ONBOARDING"
+                              ? <UserRound className="h-6 w-6" />
+                              : <MessageSquareText className="h-6 w-6" />}
+                        </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">
-                          {typeLabels[r.type] || r.type}
-                        </span>
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${statusStyles[r.status]}`}>
-                          {r.status}
-                        </span>
-                        {r.createdAt && (
-                          <span className="text-xs text-muted-foreground">
-                            {fmt(r.createdAt)}
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="mt-2 truncate text-[15px] font-bold">{r.subject}</h3>
-
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">{r.employee?.fullName}</span>
-                        <span>•</span>
-                        <span>{r.employee?.employeeCode}</span>
-                        <span>•</span>
-                        <span className="truncate">{r.employee?.email}</span>
-                      </div>
-
-                      {r.correction && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <span className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
-                            {formatPunchDate(r.correction.date)}
-                          </span>
-                          {r.correction.checkInTime && (
-                            <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-                              In {r.correction.checkInTime}
+                        {/* Content */}
+                        <div className="min-w-0 flex-1">
+                          {/* Badges Row */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-primary">
+                              {typeLabels[r.type] || r.type}
                             </span>
+                            <span className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
+                              r.status === "PENDING" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                              r.status === "APPROVED" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                              "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                            }`}>
+                              {r.status}
+                            </span>
+                            {r.createdAt && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <CalendarDays className="h-3.5 w-3.5" />
+                                {fmt(r.createdAt)}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Subject Title */}
+                          <h3 className="mt-3 text-lg font-bold leading-tight text-foreground">
+                            {r.subject}
+                          </h3>
+
+                          {/* Employee Info */}
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-2 rounded-lg bg-secondary/60 px-3 py-1.5">
+                              <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-sm font-semibold text-foreground">
+                                {r.employee?.fullName}
+                              </span>
+                            </div>
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {r.employee?.employeeCode}
+                            </span>
+                            <span className="hidden text-xs text-muted-foreground sm:inline">•</span>
+                            <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+                              {r.employee?.email}
+                            </span>
+                          </div>
+
+                          {/* Correction Details */}
+                          {r.correction && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <div className="flex items-center gap-1.5 rounded-xl bg-blue-50 px-3 py-2 dark:bg-blue-950/30">
+                                <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <span className="text-sm font-bold text-blue-700 dark:text-blue-300">
+                                  {formatPunchDate(r.correction.date)}
+                                </span>
+                              </div>
+                              {r.correction.checkInTime && (
+                                <div className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30">
+                                  <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                  <span className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                                    In: {r.correction.checkInTime}
+                                  </span>
+                                </div>
+                              )}
+                              {r.correction.checkOutTime && (
+                                <div className="flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 dark:bg-rose-950/30">
+                                  <Clock3 className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                                  <span className="text-sm font-bold text-rose-700 dark:text-rose-300">
+                                    Out: {r.correction.checkOutTime}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                           )}
-                          {r.correction.checkOutTime && (
-                            <span className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
-                              Out {r.correction.checkOutTime}
-                            </span>
+
+                          {/* View Reason Button */}
+                          {r.description && (
+                            <button
+                              type="button"
+                              onClick={() => setReasonRequest(r)}
+                              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary"
+                            >
+                              <MessageSquareText className="h-4 w-4" />
+                              <span>
+                                {r.type === "CORRECTION" ? "View Reason" : "View Details"}
+                              </span>
+                            </button>
                           )}
                         </div>
-                      )}
+                      </div>
 
-                      {r.description && (
-                        <button
-                          type="button"
-                          onClick={() => setReasonRequest(r)}
-                          className="mt-3 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-secondary/70 px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
-                        >
-                          <MessageSquareText className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">
-                            {r.type === "CORRECTION" ? "View reason" : "View request details"}
-                          </span>
-                        </button>
-                      )}
+                      {/* Action Buttons - Right Side */}
+                      <div className="flex shrink-0 flex-wrap items-center gap-2.5 lg:flex-col lg:items-stretch">
+                        {r.status === "PENDING" ? (
+                          <>
+                            {/* Map Buttons for Attendance */}
+                            {r.type === "ATTENDANCE" && (
+                              <div className="flex w-full flex-wrap gap-2">
+                                {r.checkInLatitude != null && r.checkInLongitude != null && (
+                                  <button
+                                    onClick={() => openCheckInMap(r)}
+                                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-emerald-100 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:from-emerald-100 hover:to-emerald-200 hover:shadow dark:from-emerald-950/50 dark:to-emerald-900/50 dark:text-emerald-300"
+                                    title="View check-in location on map"
+                                  >
+                                    <MapPin className="h-4 w-4" />
+                                    <span>Check-in Map</span>
+                                  </button>
+                                )}
+                                {r.checkOutLatitude != null && r.checkOutLongitude != null && (
+                                  <button
+                                    onClick={() => openCheckOutMap(r)}
+                                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-gradient-to-r from-rose-50 to-rose-100 px-4 py-2.5 text-sm font-bold text-rose-700 shadow-sm transition hover:from-rose-100 hover:to-rose-200 hover:shadow dark:from-rose-950/50 dark:to-rose-900/50 dark:text-rose-300"
+                                    title="View check-out location on map"
+                                  >
+                                    <MapPin className="h-4 w-4" />
+                                    <span>Check-out Map</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Preview Button for Onboarding */}
+                            {r.type === "ONBOARDING" && (
+                              <button
+                                onClick={() => setPreviewId(r.id)}
+                                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-border bg-secondary px-4 py-2.5 text-sm font-bold transition hover:border-primary hover:bg-primary/10 hover:text-primary"
+                              >
+                                <Eye className="h-4 w-4" />
+                                Preview
+                              </button>
+                            )}
+
+                            {/* Approve/Reject Buttons */}
+                            {canReview && (
+                              <div className="flex w-full gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => review(r.id, "approve")}
+                                  disabled={actingId === r.id}
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:from-emerald-700 hover:to-emerald-800 hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                  {actingId === r.id ? (
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                  ) : (
+                                    <Check className="h-5 w-5" />
+                                  )}
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => review(r.id, "reject")}
+                                  disabled={actingId === r.id}
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-5 py-3 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20"
+                                >
+                                  <X className="h-5 w-5" />
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center">
+                            <div className="text-xs">
+                              <div className="font-semibold text-muted-foreground">Reviewed</div>
+                              <div className="mt-0.5 font-bold text-foreground">
+                                {r.reviewedAt ? fmt(r.reviewedAt) : "—"}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
-                    {r.status === "PENDING" ? (
-                      <>
-                        {r.type === "ATTENDANCE" && (
-                          <button
-                            onClick={() => openAttendanceMap(r)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2.5 text-sm font-semibold transition hover:bg-secondary"
-                          >
-                            <MapPin className="h-4 w-4" /> Map
-                          </button>
-                        )}
-                        {r.type === "ONBOARDING" && (
-                          <button
-                            onClick={() => setPreviewId(r.id)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2.5 text-sm font-semibold transition hover:bg-secondary"
-                          >
-                            <Eye className="h-4 w-4" /> Preview
-                          </button>
-                        )}
-                        {canReview && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => review(r.id, "approve")}
-                              disabled={actingId === r.id}
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
-                            >
-                              {actingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => review(r.id, "reject")}
-                              disabled={actingId === r.id}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2.5 text-sm font-bold transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60 dark:hover:bg-rose-950/20"
-                            >
-                              <X className="h-4 w-4" /> Reject
-                            </button>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <div className="text-xs font-medium text-muted-foreground">
-                        Reviewed {r.reviewedAt ? fmt(r.reviewedAt) : "—"}
-                      </div>
-                    )}
-                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

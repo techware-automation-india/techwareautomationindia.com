@@ -39,6 +39,8 @@ const AttendanceCorrection = ({ correctionType }) => {
   const [time, setTime] = useState(indiaNow.time);
   const [checkOutTime, setCheckOutTime] = useState(indiaNow.time);
   const [reason, setReason] = useState("");
+  const [checkInLocation, setCheckInLocation] = useState("");
+  const [checkOutLocation, setCheckOutLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -77,13 +79,35 @@ const AttendanceCorrection = ({ correctionType }) => {
               ? checkOutTime
               : time,
       };
+      
+      // Build location text based on punch type
+      let locationText = "";
+      if (punchType === "check-in" && checkInLocation.trim()) {
+        locationText = `\n\nCheck-In Location: ${checkInLocation.trim()}`;
+      } else if (punchType === "check-out" && checkOutLocation.trim()) {
+        locationText = `\n\nCheck-Out Location: ${checkOutLocation.trim()}`;
+      } else if (punchType === "both") {
+        if (checkInLocation.trim() || checkOutLocation.trim()) {
+          locationText = "\n\n";
+          if (checkInLocation.trim()) {
+            locationText += `Check-In Location: ${checkInLocation.trim()}`;
+          }
+          if (checkOutLocation.trim()) {
+            if (checkInLocation.trim()) locationText += "\n";
+            locationText += `Check-Out Location: ${checkOutLocation.trim()}`;
+          }
+        }
+      }
+      
       await apiPost("/requests/my", {
         type: "CORRECTION",
         subject: `${label} - ${punchLabel}`,
-        description: `${label} request for ${punchLabel} on ${date} at ${punchType === "both" ? `check-in ${time} and check-out ${checkOutTime}` : `${punchLabel.toLowerCase()} ${time}`}.\n\n${reason.trim()}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
+        description: `${label} request for ${punchLabel} on ${date} at ${punchType === "both" ? `check-in ${time} and check-out ${checkOutTime}` : `${punchLabel.toLowerCase()} ${time}`}.\n\n${reason.trim()}${locationText}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
       });
       toast.success(`${label} request submitted.`);
       setReason("");
+      setCheckInLocation("");
+      setCheckOutLocation("");
     } catch (err) {
       toast.error(err.message || "Failed to submit request.");
     } finally {
@@ -174,6 +198,38 @@ const AttendanceCorrection = ({ correctionType }) => {
             />
           </label>
         )}
+        
+        {/* Location Fields - Show based on punch type */}
+        {(punchType === "check-in" || punchType === "both") && (
+          <label className="block text-sm font-medium">
+            Check-In Location
+            <input
+              type="text"
+              value={checkInLocation}
+              onChange={(event) => setCheckInLocation(event.target.value)}
+              maxLength={200}
+              placeholder="Where were you during check-in? (e.g., 'Client Office, Mumbai')"
+              className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Optional: Your location at check-in time</p>
+          </label>
+        )}
+        
+        {(punchType === "check-out" || punchType === "both") && (
+          <label className="block text-sm font-medium">
+            Check-Out Location
+            <input
+              type="text"
+              value={checkOutLocation}
+              onChange={(event) => setCheckOutLocation(event.target.value)}
+              maxLength={200}
+              placeholder="Where were you during check-out? (e.g., 'Home' or 'Office')"
+              className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Optional: Your location at check-out time</p>
+          </label>
+        )}
+        
         <label className="block text-sm font-medium">
           Reason
           <textarea

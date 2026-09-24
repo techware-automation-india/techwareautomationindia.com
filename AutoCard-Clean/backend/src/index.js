@@ -250,16 +250,24 @@ if (process.env.VERCEL !== "1") {
     }
   });
 
+  let isShuttingDown = false;
+
   const shutdown = async () => {
+    if (isShuttingDown) {
+      return;
+    }
+
+    isShuttingDown = true;
     console.log("Stopping server...");
-    
-    // Disconnect Prisma
-    await prisma.$disconnect();
-    
-    server.close(() => {
-      console.log("Server Stopped.");
-      process.exit(0);
+
+    await new Promise((resolve) => {
+      server.close(() => resolve());
     });
+
+    await prisma.$disconnect();
+
+    console.log("Server Stopped.");
+    process.exit(0);
   };
 
   process.on("SIGINT", shutdown);

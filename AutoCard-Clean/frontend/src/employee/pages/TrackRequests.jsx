@@ -109,22 +109,28 @@ const getForgotPunchData = (request) => {
     return null;
   }
 
-  const markerIndex = request.description.lastIndexOf(
-    "[ATTENDANCE_CORRECTION]",
-  );
+  const marker = "[ATTENDANCE_CORRECTION]";
+  const markerIndex = request.description.lastIndexOf(marker);
 
   if (markerIndex === -1) {
     return null;
   }
 
-  try {
-    const jsonText = request.description
-      .slice(markerIndex + "[ATTENDANCE_CORRECTION]".length)
-      .trim();
+  const jsonText = request.description
+    .slice(markerIndex + marker.length)
+    .trim();
 
+  if (!jsonText) {
+    return null;
+  }
+
+  try {
     return JSON.parse(jsonText);
   } catch (error) {
-    console.error("Failed to parse Forgot Punch data:", error);
+    console.warn(
+      "Skipping malformed Forgot Punch data:",
+      request.id || "unknown request",
+    );
 
     return null;
   }

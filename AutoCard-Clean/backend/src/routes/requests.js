@@ -171,6 +171,25 @@ function parseCorrectionRequest(description) {
   }
 }
 
+function buildCorrectionDescription(correction) {
+  const reason = correction.reason?.trim() || "Forgot Punch request.";
+
+  const readableText =
+    `Forgot Punch request for ${correction.punchType} on ${correction.date}.` +
+    `\n\n${reason}`;
+
+  const metadata = JSON.stringify({
+    date: correction.date,
+    punchType: correction.punchType,
+    checkInTime: correction.checkInTime || null,
+    checkOutTime: correction.checkOutTime || null,
+    checkInLocation: correction.checkInLocation || null,
+    checkOutLocation: correction.checkOutLocation || null,
+  });
+
+  return `${readableText}\n\n${CORRECTION_MARKER}${metadata}`;
+}
+
 /*
 |--------------------------------------------------------------------------
 | DATE HELPERS
@@ -827,6 +846,11 @@ router.post("/my", async (req, res) => {
     |
     */
 
+    const finalDescription =
+      correction && parsed.data.type === "CORRECTION"
+        ? buildCorrectionDescription(correction)
+        : parsed.data.description || "";
+
     const createdRequest =
       await prisma.employeeRequest.create({
         data: {
@@ -836,8 +860,7 @@ router.post("/my", async (req, res) => {
 
           subject: parsed.data.subject,
 
-          description:
-            parsed.data.description || "",
+          description: finalDescription,
 
           status: "PENDING",
         },

@@ -862,7 +862,7 @@ router.post("/my", async (req, res) => {
 
           description: finalDescription,
 
-          status: "PENDING",
+          status: "Pending",
         },
       });
 

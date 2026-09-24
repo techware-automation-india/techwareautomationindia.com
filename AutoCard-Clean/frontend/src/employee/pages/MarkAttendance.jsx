@@ -637,20 +637,12 @@ const MarkAttendance = () => {
       setCapturingLocation(false);
     }
   };
-
-  // =======================================================
-  // ATTENDANCE STATE
-  // =======================================================
-
-  const hasCheckedIn = !!record?.checkIn;
-
-  const hasCheckedOut = !!record?.checkOut;
-
   // =======================================================
   // FORGOT PUNCH STATUS
   // =======================================================
 
   const correctionStatus = correctionRequest?.status || null;
+
   // =======================================================
   // FORGOT PUNCH TIME
   // =======================================================
@@ -694,6 +686,20 @@ const MarkAttendance = () => {
       hour12: true,
     });
   };
+  const getManualPunchDate = (time) => {
+  if (!time) return null;
+
+  const [hours, minutes] = String(time).split(":").map(Number);
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+
+  return date;
+};
 
   const forgotPunchData = getForgotPunchData(correctionRequest);
 
@@ -710,6 +716,17 @@ const MarkAttendance = () => {
   const isCorrectionApproved = correctionStatus === "APPROVED";
 
   const isCorrectionRejected = correctionStatus === "REJECTED";
+
+  // =======================================================
+  // ATTENDANCE STATE
+  // =======================================================
+
+  // Normal attendance check-in OR Forgot Punch check-in
+  const hasCheckedIn =
+    !!record?.checkIn || (isCorrectionPending && !!forgotPunchCheckIn);
+
+  // Normal attendance checkout OR Forgot Punch checkout
+  const hasCheckedOut = !!record?.checkOut || !!forgotPunchCheckOut;
 
   // =======================================================
   // BUTTON RULES
@@ -773,12 +790,23 @@ const MarkAttendance = () => {
   // WORKED TIME
   // =======================================================
 
-  const workedMs = record?.checkIn
-    ? record.checkOut
-      ? new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime()
-      : now.getTime() - new Date(record.checkIn).getTime()
-    : 0;
+ const normalCheckInDate = record?.checkIn
+  ? new Date(record.checkIn)
+  : null;
 
+const forgotPunchCheckInDate = isCorrectionPending
+  ? getManualPunchDate(forgotPunchData?.checkInTime)
+  : null;
+
+const effectiveCheckInDate =
+  normalCheckInDate || forgotPunchCheckInDate;
+
+const workedMs = effectiveCheckInDate
+  ? record?.checkOut
+    ? new Date(record.checkOut).getTime() -
+      effectiveCheckInDate.getTime()
+    : now.getTime() - effectiveCheckInDate.getTime()
+  : 0;
   const workedH = Math.floor(workedMs / (1000 * 60 * 60));
 
   const workedM = Math.floor((workedMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -971,10 +999,10 @@ const MarkAttendance = () => {
                 }`}
               >
                 {hasCheckedIn
-                  ? fmtTime(record.checkIn)
-                  : isCorrectionPending && forgotPunchCheckIn
-                    ? forgotPunchCheckIn
-                    : "—"}
+                  ? record?.checkIn
+                    ? fmtTime(record.checkIn)
+                    : forgotPunchCheckIn || "—"
+                  : "—"}
               </div>
             </div>
 
@@ -1004,7 +1032,13 @@ const MarkAttendance = () => {
                   hasCheckedOut ? "text-rose-700" : "text-muted-foreground/40"
                 }`}
               >
-                {hasCheckedOut ? fmtTime(record.checkOut) : "—"}
+                {hasCheckedOut
+                  ? record?.checkOut
+                    ? fmtTime(record.checkOut)
+                    : forgotPunchCheckOut
+                      ? forgotPunchCheckOut
+                      : "—"
+                  : "—"}
               </div>
             </div>
           </div>
@@ -1082,7 +1116,12 @@ const MarkAttendance = () => {
                 <>
                   <CheckCircle2 className="h-5 w-5" />
 
-                  <span>Check In • {fmtTime(record.checkIn)}</span>
+                  <span>
+                    Check In •{" "}
+                    {record?.checkIn
+                      ? fmtTime(record.checkIn)
+                      : forgotPunchCheckIn || "Pending"}
+                  </span>
                 </>
               ) : isCorrectionPending ? (
                 <>
@@ -1153,7 +1192,12 @@ const MarkAttendance = () => {
                 <>
                   <CheckCircle2 className="h-5 w-5" />
 
-                  <span>Check Out • {fmtTime(record.checkOut)}</span>
+                  <span>
+                    Check Out •{" "}
+                    {record?.checkOut
+                      ? fmtTime(record.checkOut)
+                      : forgotPunchCheckOut || "—"}
+                  </span>
                 </>
               ) : isCorrectionRejected ? (
                 <>

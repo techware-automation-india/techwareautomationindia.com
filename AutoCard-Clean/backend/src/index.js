@@ -64,7 +64,7 @@ function startDatabaseHealthCheck() {
 
 // ==================== CORS CONFIGURATION ====================
 // Parse allowed origins from environment variable (comma-separated)
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173,https://techwareautomation.in,https://www.techwareautomation.in,https://api.techwareautomation.in")
   .split(",")
   .map(origin => origin.trim())
   .filter(Boolean);
@@ -127,8 +127,11 @@ const corsOptions = {
 
     // Blocked - log detailed information
     console.log("❌ CORS BLOCKED:", origin);
+    console.log("   - allowedOrigins:", allowedOrigins);
     console.log("   - allowVercelPattern:", allowVercelPattern);
     console.log("   - vercelPattern.test(origin):", vercelPattern.test(origin));
+    console.log("   - allowHostingerPattern:", allowHostingerPattern);
+    console.log("   - hostingerPattern.test(origin):", hostingerPattern.test(origin));
     console.log("   - Is in allowedOrigins:", allowedOrigins.includes(origin));
     return callback(null, false);
   },

@@ -110,14 +110,24 @@ function parseCorrectionRequest(description) {
     if (!["check-in", "check-out", "both"].includes(data.punchType)) {
       return null;
     }
+return {
+  date: data.date,
+  punchType: data.punchType,
 
-    return {
-      date: data.date,
-      punchType: data.punchType,
-      checkInTime: data.checkInTime || null,
-      checkOutTime: data.checkOutTime || null,
-      reason,
-    };
+  checkInTime:
+    data.checkInTime || null,
+
+  checkOutTime:
+    data.checkOutTime || null,
+
+  checkInLocation:
+    data.checkInLocation || null,
+
+  checkOutLocation:
+    data.checkOutLocation || null,
+
+  reason,
+};
   } catch (error) {
     console.error("Failed to parse correction:", error);
     return null;

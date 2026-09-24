@@ -9,7 +9,10 @@ const router = Router();
 router.use(requireAuth);
 
 const REGULAR_WORKING_HOURS = 8;
-const fitAttendanceNote = (note) => (note ? String(note).slice(0, 190) : note);
+const fitAttendanceNote = (note) => {
+  if (note == null) return note;
+  return String(note);
+};
 
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
@@ -455,7 +458,6 @@ router.get("/me/today", requireAuth, async (req, res) => {
   }
 });
 
-
 // POST /api/attendance/manual-correction
 router.post("/manual-correction", requireAuth, async (req, res) => {
   // Admin and Employee can use this endpoint.
@@ -466,13 +468,8 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
   }
 
   try {
-    const {
-      date,
-      punchType,
-      checkInTime,
-      checkOutTime,
-      reason,
-    } = req.body || {};
+    const { date, punchType, checkInTime, checkOutTime, reason } =
+      req.body || {};
 
     const normalizedType =
       punchType === "check-out"
@@ -481,10 +478,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
           ? "both"
           : "check-in";
 
-    const manualReason =
-      typeof reason === "string"
-        ? reason.trim()
-        : "";
+    const manualReason = typeof reason === "string" ? reason.trim() : "";
 
     // --------------------------------------------------
     // VALIDATION
@@ -526,10 +520,8 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
             userId: req.user.id,
             employeeCode: `ADMIN-${Date.now()}`,
             onboardingStatus: "APPROVED",
-            firstName:
-              user.fullName.split(" ")[0] || "Admin",
-            lastName:
-              user.fullName.split(" ").slice(1).join(" ") || "",
+            firstName: user.fullName.split(" ")[0] || "Admin",
+            lastName: user.fullName.split(" ").slice(1).join(" ") || "",
             jobTitle: "Administrator",
           },
         });
@@ -546,9 +538,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // INDIA DATE RANGE
     // --------------------------------------------------
 
-    const selectedDate = new Date(
-      `${date}T00:00:00+05:30`
-    );
+    const selectedDate = new Date(`${date}T00:00:00+05:30`);
 
     if (Number.isNaN(selectedDate.getTime())) {
       return res.status(400).json({
@@ -556,10 +546,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
       });
     }
 
-    const nextDate = new Date(
-      selectedDate.getTime() +
-        24 * 60 * 60 * 1000
-    );
+    const nextDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
 
     // --------------------------------------------------
     // FIND EXISTING ATTENDANCE
@@ -588,17 +575,22 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     const { start: todayStart } = getIndiaDayRange(new Date());
     const isToday = selectedDate.getTime() === todayStart.getTime();
 
-    if (record && isToday && (normalizedType === "check-in" || normalizedType === "both")) {
+    if (
+      record &&
+      isToday &&
+      (normalizedType === "check-in" || normalizedType === "both")
+    ) {
       // Check if attendance was marked via GPS (Mark Attendance module)
-      const isMarkedViaGPS = 
-        record.checkIn && 
-        record.checkInLatitude != null && 
+      const isMarkedViaGPS =
+        record.checkIn &&
+        record.checkInLatitude != null &&
         !record.note?.includes("Manual attendance correction") &&
         !record.note?.includes("Manual attendance:");
 
       if (isMarkedViaGPS) {
         return res.status(400).json({
-          message: "You have already checked in today via Mark Attendance. You cannot use Forgot Punch for check-in. You can use it for check-out if needed.",
+          message:
+            "You have already checked in today via Mark Attendance. You cannot use Forgot Punch for check-in. You can use it for check-out if needed.",
         });
       }
     }
@@ -610,15 +602,23 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     if (record) {
-      if ((normalizedType === "check-in" || normalizedType === "both") && record.checkIn) {
+      if (
+        (normalizedType === "check-in" || normalizedType === "both") &&
+        record.checkIn
+      ) {
         return res.status(400).json({
-          message: "Check-in already exists for this date. Please use a different punch type or contact admin to modify existing attendance.",
+          message:
+            "Check-in already exists for this date. Please use a different punch type or contact admin to modify existing attendance.",
         });
       }
 
-      if ((normalizedType === "check-out" || normalizedType === "both") && record.checkOut) {
+      if (
+        (normalizedType === "check-out" || normalizedType === "both") &&
+        record.checkOut
+      ) {
         return res.status(400).json({
-          message: "Check-out already exists for this date. Please use a different punch type or contact admin to modify existing attendance.",
+          message:
+            "Check-out already exists for this date. Please use a different punch type or contact admin to modify existing attendance.",
         });
       }
     }
@@ -647,21 +647,14 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     let checkInDateTime = null;
     let checkOutDateTime = null;
 
-    if (
-      normalizedType === "check-in" ||
-      normalizedType === "both"
-    ) {
+    if (normalizedType === "check-in" || normalizedType === "both") {
       if (!checkInTime) {
         return res.status(400).json({
           message: "Please enter check-in time.",
         });
       }
 
-      checkInDateTime =
-        parseManualPunchDateTime(
-          date,
-          checkInTime
-        );
+      checkInDateTime = parseManualPunchDateTime(date, checkInTime);
 
       if (!checkInDateTime) {
         return res.status(400).json({
@@ -670,21 +663,14 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
       }
     }
 
-    if (
-      normalizedType === "check-out" ||
-      normalizedType === "both"
-    ) {
+    if (normalizedType === "check-out" || normalizedType === "both") {
       if (!checkOutTime) {
         return res.status(400).json({
           message: "Please enter check-out time.",
         });
       }
 
-      checkOutDateTime =
-        parseManualPunchDateTime(
-          date,
-          checkOutTime
-        );
+      checkOutDateTime = parseManualPunchDateTime(date, checkOutTime);
 
       if (!checkOutDateTime) {
         return res.status(400).json({
@@ -697,13 +683,9 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // BOTH TIME VALIDATION
     // --------------------------------------------------
 
-    if (
-      normalizedType === "both" &&
-      checkOutDateTime <= checkInDateTime
-    ) {
+    if (normalizedType === "both" && checkOutDateTime <= checkInDateTime) {
       return res.status(400).json({
-        message:
-          "Check-out time must be greater than check-in time.",
+        message: "Check-out time must be greater than check-in time.",
       });
     }
 
@@ -715,17 +697,11 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     const updates = {};
 
-    if (
-      normalizedType === "check-in" ||
-      normalizedType === "both"
-    ) {
+    if (normalizedType === "check-in" || normalizedType === "both") {
       updates.checkIn = checkInDateTime;
     }
 
-    if (
-      normalizedType === "check-out" ||
-      normalizedType === "both"
-    ) {
+    if (normalizedType === "check-out" || normalizedType === "both") {
       updates.checkOut = checkOutDateTime;
     }
 
@@ -734,14 +710,10 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     const finalCheckIn =
-      updates.checkIn !== undefined
-        ? updates.checkIn
-        : record.checkIn;
+      updates.checkIn !== undefined ? updates.checkIn : record.checkIn;
 
     const finalCheckOut =
-      updates.checkOut !== undefined
-        ? updates.checkOut
-        : record.checkOut;
+      updates.checkOut !== undefined ? updates.checkOut : record.checkOut;
 
     // --------------------------------------------------
     // VALIDATE EXISTING CHECK-IN / CHECK-OUT
@@ -753,8 +725,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
       new Date(finalCheckOut) <= new Date(finalCheckIn)
     ) {
       return res.status(400).json({
-        message:
-          "Check-out time must be greater than check-in time.",
+        message: "Check-out time must be greater than check-in time.",
       });
     }
 
@@ -763,13 +734,8 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     if (finalCheckIn && finalCheckOut) {
-      updates.workedHours =
-        calculateWorkedHours(
-          finalCheckIn,
-          finalCheckOut
-        );
-      updates.overtimeHours = 
-        calculateOvertimeHours(updates.workedHours);
+      updates.workedHours = calculateWorkedHours(finalCheckIn, finalCheckOut);
+      updates.overtimeHours = calculateOvertimeHours(updates.workedHours);
     } else {
       updates.workedHours = null;
       updates.overtimeHours = null;
@@ -786,45 +752,34 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     updates.note = fitAttendanceNote(
-      `Manual attendance correction: ${manualReason}`
+      `Manual attendance correction: ${manualReason}`,
     );
 
     // --------------------------------------------------
     // UPDATE SAME RECORD
     // --------------------------------------------------
 
-    const updated =
-      await prisma.attendance.update({
-        where: {
-          id: record.id,
-        },
-        data: updates,
-      });
+    const updated = await prisma.attendance.update({
+      where: {
+        id: record.id,
+      },
+      data: updates,
+    });
 
     return res.json({
       record: updated,
-      message:
-        "Attendance updated successfully.",
+      message: "Attendance updated successfully.",
     });
   } catch (err) {
-    console.error(
-      "Manual attendance correction error:",
-      err
-    );
+    console.error("Manual attendance correction error:", err);
 
     console.error(err.stack);
 
     return res.status(500).json({
-      message:
-        "Failed to update attendance.",
+      message: "Failed to update attendance.",
     });
   }
 });
-
-
-
-
-
 
 // POST /api/attendance/checkin
 // ============================================================
@@ -1071,9 +1026,11 @@ router.post("/checkin", requireAuth, async (req, res) => {
 
         status = "PENDING_APPROVAL";
 
-        note = `Checkin to unapproved location: ${checkinLocation.name} (${formatDistanceKm(
+        note = `Checkin to unassigned location: ${checkinLocation.name} (${formatDistanceKm(
           checkinDistance,
-        )}). Pending admin approval.`;
+        )}). Reason: ${
+          normalizedReason || "No reason provided"
+        }. Pending admin approval.`;
       } else {
         note = `Checkin: ${checkinLocation.name}`;
       }
@@ -1148,7 +1105,7 @@ router.post("/checkin", requireAuth, async (req, res) => {
 
     const message = requiresApproval
       ? `Checked in to ${
-          checkinLocation?.name || "unapproved location"
+          checkinLocation?.name || "unassigned location"
         }. Awaiting admin approval.`
       : "Checked in successfully.";
 
@@ -1504,9 +1461,10 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
       try {
         const correction = JSON.parse(match[1]);
+        const todayKey = getIndiaDateKey(now);
 
         if (
-          correction.date === today.toISOString().slice(0, 10) &&
+          correction.date === todayKey &&
           (correction.punchType === "check-in" ||
             correction.punchType === "both") &&
           correction.checkInTime
@@ -1542,7 +1500,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
           workedHours: null,
 
-          status: "PRESENT",
+          status: "PENDING_APPROVAL",
 
           note: fitAttendanceNote(
             "Checkout recorded while Forgot Punch Check In request is pending.",
@@ -1577,12 +1535,12 @@ router.post("/checkout", requireAuth, async (req, res) => {
     const isPendingForgotPunchOnly =
       hasPendingForgotPunchCheckIn && !record.checkIn;
 
-    if (record.status === "PENDING_APPROVAL" && !isPendingForgotPunchOnly) {
-      return res.status(400).json({
-        message:
-          "Your check-in is pending admin approval. Check out will be available after approval.",
-      });
-    }
+    // if (record.status === "PENDING_APPROVAL" && !isPendingForgotPunchOnly) {
+    //   return res.status(400).json({
+    //     message:
+    //       "Your check-in is pending admin approval. Check out will be available after approval.",
+    //   });
+    // }
 
     // --------------------------------------------------------
     // ALREADY CHECKED OUT
@@ -1874,8 +1832,8 @@ router.get("/my-requests", requireRole("EMPLOYEE"), async (req, res) => {
         employeeId: profile.id,
         OR: [
           { note: { contains: "Pending admin approval" } },
-          { note: { contains: "Approved by admin" } },
-          { note: { contains: "Rejected by admin" } },
+          { note: { contains: "Admin approved" } },
+          { note: { contains: "Admin rejected" } },
         ],
       },
       orderBy: { updatedAt: "desc" },

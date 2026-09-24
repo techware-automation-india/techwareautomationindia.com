@@ -562,7 +562,10 @@ const loadRequests = async () => {
                           {r.description && (
                             <button
                               type="button"
-                              onClick={() => setReasonRequest(r)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setReasonRequest(r);
+                              }}
                               className="mt-4 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary"
                             >
                               <MessageSquareText className="h-4 w-4" />

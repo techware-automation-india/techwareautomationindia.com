@@ -96,40 +96,77 @@ function parseCorrectionRequest(description) {
       )
       .trim();
 
+  /*
+   * Parse correction JSON safely.
+   */
   try {
     const jsonText = description
       .slice(markerIndex + CORRECTION_MARKER.length)
       .trim();
 
-    const data = JSON.parse(jsonText);
+    if (!jsonText) {
+      return null;
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(jsonText);
+    } catch (jsonError) {
+      // Recover the fields needed for display and approval from old truncated records.
+      const readString = (key) =>
+        jsonText.match(new RegExp(`"${key}"\\s*:\\s*"([^"\\r\\n]*)"`))?.[1] || null;
+
+      data = {
+        date: readString("date"),
+        punchType: readString("punchType"),
+        checkInTime: readString("checkInTime"),
+        checkOutTime: readString("checkOutTime"),
+        checkInLocation: readString("checkInLocation"),
+        checkOutLocation: readString("checkOutLocation"),
+      };
+    }
+
+    if (!data || typeof data !== "object") {
+      return null;
+    }
 
     if (!data.date) {
       return null;
     }
 
-    if (!["check-in", "check-out", "both"].includes(data.punchType)) {
+    if (
+      !["check-in", "check-out", "both"].includes(
+        data.punchType,
+      )
+    ) {
       return null;
     }
-return {
-  date: data.date,
-  punchType: data.punchType,
 
-  checkInTime:
-    data.checkInTime || null,
+    return {
+      date: data.date,
 
-  checkOutTime:
-    data.checkOutTime || null,
+      punchType: data.punchType,
 
-  checkInLocation:
-    data.checkInLocation || null,
+      checkInTime:
+        data.checkInTime || null,
 
-  checkOutLocation:
-    data.checkOutLocation || null,
+      checkOutTime:
+        data.checkOutTime || null,
 
-  reason,
-};
+      checkInLocation:
+        data.checkInLocation || null,
+
+      checkOutLocation:
+        data.checkOutLocation || null,
+
+      reason,
+    };
   } catch (error) {
-    console.error("Failed to parse correction:", error);
+    console.warn(
+      "⚠️ Failed to parse attendance correction. Request skipped.",
+    );
+
     return null;
   }
 }

@@ -157,12 +157,16 @@ const parseManualPunchDateTime = (dateValue, timeValue) => {
 
   if (!trimmedDate || !trimmedTime) return null;
 
-  const safeDate = new Date(`${trimmedDate}T${trimmedTime}:00`);
+  // IMPORTANT:
+  // Manual attendance time is always India Standard Time (IST)
+  const safeDate = new Date(
+    `${trimmedDate}T${trimmedTime}:00+05:30`
+  );
+
   if (Number.isNaN(safeDate.getTime())) return null;
 
   return safeDate;
 };
-
 const parsePendingCorrection = (description) => {
   if (typeof description !== "string") return null;
 

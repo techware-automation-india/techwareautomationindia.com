@@ -93,8 +93,8 @@ export default function AccessTab() {
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Access Management</h2>
-        <p className="text-gray-600 mt-1">Assign roles to employees to control their access</p>
+        <h2 className="text-2xl font-bold text-foreground">Access Management</h2>
+        <p className="text-muted-foreground mt-1">Assign roles to employees to control their access</p>
       </div>
 
       {/* Filters */}
@@ -102,13 +102,13 @@ export default function AccessTab() {
         {/* Search */}
         <div className="flex-1">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search by name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+              className="w-full pl-10 pr-4 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
             />
           </div>
         </div>
@@ -116,11 +116,11 @@ export default function AccessTab() {
         {/* Role Filter */}
         <div className="sm:w-64">
           <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <select
               value={selectedRoleFilter}
               onChange={(e) => setSelectedRoleFilter(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary appearance-none bg-white"
+              className="w-full pl-10 pr-4 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary appearance-none"
             >
               <option value="all">All Roles</option>
               {roles.map(role => (
@@ -139,37 +139,37 @@ export default function AccessTab() {
           message={searchQuery || selectedRoleFilter !== 'all' ? "Try adjusting your search or filters" : "No users are available in the system"}
         />
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-card border border-border rounded-lg shadow overflow-hidden">
           {/* Desktop Table */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-secondary/40 border-b border-border">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Email
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Current Role
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Assign Role
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-border">
                 {filteredUsers.map(user => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                  <tr key={user.id} className="hover:bg-secondary/40">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900">{user.fullName || 'N/A'}</div>
+                      <div className="font-medium text-card-foreground">{user.fullName || 'N/A'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-gray-600">{user.email}</div>
+                      <div className="text-muted-foreground">{user.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
                         {user.customRole?.name || user.role || 'No Role'}
                       </span>
                     </td>
@@ -177,7 +177,7 @@ export default function AccessTab() {
                       <select
                         value={user.roleId || ''}
                         onChange={(e) => handleRoleAssignment(user.id, e.target.value)}
-                        className="px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
+                        className="px-3 py-1.5 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
                       >
                         <option value="">Select role...</option>
                         {roles.map(role => (
@@ -194,25 +194,25 @@ export default function AccessTab() {
           </div>
 
           {/* Mobile Card Layout */}
-          <div className="md:hidden divide-y divide-gray-200">
+          <div className="md:hidden divide-y divide-border">
             {filteredUsers.map(user => (
               <div key={user.id} className="p-4 space-y-3">
                 <div>
-                  <div className="font-medium text-gray-900">{user.fullName || 'N/A'}</div>
-                  <div className="text-sm text-gray-600">{user.email}</div>
+                  <div className="font-medium text-card-foreground">{user.fullName || 'N/A'}</div>
+                  <div className="text-sm text-muted-foreground">{user.email}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Current:</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  <span className="text-sm text-muted-foreground">Current:</span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
                     {user.customRole?.name || user.role || 'No Role'}
                   </span>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Role</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">Assign Role</label>
                   <select
                     value={user.roleId || ''}
                     onChange={(e) => handleRoleAssignment(user.id, e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
+                    className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
                   >
                     <option value="">Select role...</option>
                     {roles.map(role => (
@@ -230,7 +230,7 @@ export default function AccessTab() {
 
       {/* Results Count */}
       {filteredUsers.length > 0 && (
-        <div className="mt-4 text-sm text-gray-600 text-center">
+        <div className="mt-4 text-sm text-muted-foreground text-center">
           Showing {filteredUsers.length} of {users.length} users
         </div>
       )}

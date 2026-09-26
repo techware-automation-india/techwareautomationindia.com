@@ -373,7 +373,7 @@ const AdminMarkAttendance = () => {
       </div>
 
       <div className="rounded-2xl bg-secondary/50 border border-border p-4 text-sm text-muted-foreground">
-        <p className="font-semibold text-slate-900">Admin Attendance</p>
+        <p className="font-semibold text-foreground">Admin Attendance</p>
         <p className="mt-1">
           As an admin, you can mark your own attendance here. Note: Admin is
           also an employee of the company.
@@ -525,10 +525,10 @@ const AdminMarkAttendance = () => {
 
       {reasonModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-border">
+          <div className="w-full max-w-lg rounded-2xl bg-card text-card-foreground p-6 shadow-2xl border border-border">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-display text-xl font-bold text-slate-900">
+                <h3 className="font-display text-xl font-bold text-foreground">
                   {reasonModal.type === "checkin"
                     ? "Check-in reason"
                     : "Check-out reason"}

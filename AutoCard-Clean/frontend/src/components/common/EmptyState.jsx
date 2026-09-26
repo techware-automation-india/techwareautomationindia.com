@@ -1,4 +1,4 @@
-﻿/**
+/**
  * EmptyState Component
  * 
  * Displays an empty state with icon, message, and optional action button
@@ -13,18 +13,18 @@ export default function EmptyState({ icon: Icon, title, message, action }) {
     <div className="flex flex-col items-center justify-center p-12 text-center">
       {Icon && (
         <div className="mb-4">
-          <Icon className="h-16 w-16 text-gray-400" />
+          <Icon className="h-16 w-16 text-muted-foreground/60" />
         </div>
       )}
       
       {title && (
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        <h3 className="text-lg font-semibold text-foreground mb-2">
           {title}
         </h3>
       )}
       
       {message && (
-        <p className="text-gray-600 mb-6 max-w-md">
+        <p className="text-muted-foreground mb-6 max-w-md">
           {message}
         </p>
       )}

@@ -100,37 +100,37 @@ const fmtDate = (v) => {
 const STATUS_META = {
   PRESENT: {
     label: "Present",
-    bg: "bg-emerald-100",
-    text: "text-emerald-700",
-    cell: "bg-emerald-100 border-emerald-300 text-emerald-800",
+    bg: "bg-emerald-500/15 dark:bg-emerald-500/25",
+    text: "text-emerald-700 dark:text-emerald-400",
+    cell: "bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-800 dark:text-emerald-300",
   },
 
   ABSENT: {
     label: "Absent",
-    bg: "bg-rose-100",
-    text: "text-rose-700",
-    cell: "bg-rose-100 border-rose-300 text-rose-800",
+    bg: "bg-rose-500/15 dark:bg-rose-500/25",
+    text: "text-rose-700 dark:text-rose-400",
+    cell: "bg-rose-500/10 dark:bg-rose-500/20 border-rose-200 dark:border-rose-800/40 text-rose-800 dark:text-rose-300",
   },
 
   ON_LEAVE: {
     label: "On Leave",
-    bg: "bg-purple-100",
-    text: "text-purple-700",
-    cell: "bg-purple-100 border-purple-300 text-purple-800",
+    bg: "bg-purple-500/15 dark:bg-purple-500/25",
+    text: "text-purple-700 dark:text-purple-400",
+    cell: "bg-purple-500/10 dark:bg-purple-500/20 border-purple-200 dark:border-purple-800/40 text-purple-800 dark:text-purple-300",
   },
 
   HOLIDAY: {
     label: "Holiday",
-    bg: "bg-indigo-100",
-    text: "text-indigo-700",
-    cell: "bg-indigo-100 border-indigo-300 text-indigo-800",
+    bg: "bg-indigo-500/15 dark:bg-indigo-500/25",
+    text: "text-indigo-700 dark:text-indigo-400",
+    cell: "bg-indigo-500/10 dark:bg-indigo-500/20 border-indigo-200 dark:border-indigo-800/40 text-indigo-800 dark:text-indigo-300",
   },
 
   PENDING_APPROVAL: {
     label: "Awaiting Admin Approval",
-    bg: "bg-amber-100",
-    text: "text-amber-700",
-    cell: "bg-amber-100 border-amber-300 text-amber-800",
+    bg: "bg-amber-500/15 dark:bg-amber-500/25",
+    text: "text-amber-700 dark:text-amber-400",
+    cell: "bg-amber-500/10 dark:bg-amber-500/20 border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300",
   },
 };
 
@@ -376,7 +376,7 @@ const Attendance = () => {
                               {r.note.split("|").map((note, index) => (
                                 <div
                                   key={index}
-                                  className="text-base font-medium text-slate-700 whitespace-normal break-words"
+                                  className="text-base font-medium text-foreground whitespace-normal break-words"
                                 >
                                   {note.trim()}
                                 </div>
@@ -1172,7 +1172,7 @@ const Attendance = () => {
                               {r.note.split("|").map((note, index) => (
                                 <div
                                   key={index}
-                                  className="text-base font-medium text-slate-700 whitespace-nowrap"
+                                  className="text-base font-medium text-foreground whitespace-nowrap"
                                 >
                                   {note.trim()}
                                 </div>

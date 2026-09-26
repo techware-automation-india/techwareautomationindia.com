@@ -96,32 +96,98 @@ function parseCorrectionRequest(description) {
       )
       .trim();
 
+  /*
+   * Parse correction JSON safely.
+   */
   try {
     const jsonText = description
       .slice(markerIndex + CORRECTION_MARKER.length)
       .trim();
 
-    const data = JSON.parse(jsonText);
+    if (!jsonText) {
+      return null;
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(jsonText);
+    } catch (jsonError) {
+      // Recover the fields needed for display and approval from old truncated records.
+      const readString = (key) =>
+        jsonText.match(new RegExp(`"${key}"\\s*:\\s*"([^"\\r\\n]*)"`))?.[1] || null;
+
+      data = {
+        date: readString("date"),
+        punchType: readString("punchType"),
+        checkInTime: readString("checkInTime"),
+        checkOutTime: readString("checkOutTime"),
+        checkInLocation: readString("checkInLocation"),
+        checkOutLocation: readString("checkOutLocation"),
+      };
+    }
+
+    if (!data || typeof data !== "object") {
+      return null;
+    }
 
     if (!data.date) {
       return null;
     }
 
-    if (!["check-in", "check-out", "both"].includes(data.punchType)) {
+    if (
+      !["check-in", "check-out", "both"].includes(
+        data.punchType,
+      )
+    ) {
       return null;
     }
 
     return {
       date: data.date,
+
       punchType: data.punchType,
-      checkInTime: data.checkInTime || null,
-      checkOutTime: data.checkOutTime || null,
+
+      checkInTime:
+        data.checkInTime || null,
+
+      checkOutTime:
+        data.checkOutTime || null,
+
+      checkInLocation:
+        data.checkInLocation || null,
+
+      checkOutLocation:
+        data.checkOutLocation || null,
+
       reason,
     };
   } catch (error) {
-    console.error("Failed to parse correction:", error);
+    console.warn(
+      "⚠️ Failed to parse attendance correction. Request skipped.",
+    );
+
     return null;
   }
+}
+
+function buildCorrectionDescription(correction) {
+  const reason = correction.reason?.trim() || "Forgot Punch request.";
+
+  const readableText =
+    `Forgot Punch request for ${correction.punchType} on ${correction.date}.` +
+    `\n\n${reason}`;
+
+  const metadata = JSON.stringify({
+    date: correction.date,
+    punchType: correction.punchType,
+    checkInTime: correction.checkInTime || null,
+    checkOutTime: correction.checkOutTime || null,
+    checkInLocation: correction.checkInLocation || null,
+    checkOutLocation: correction.checkOutLocation || null,
+  });
+
+  return `${readableText}\n\n${CORRECTION_MARKER}${metadata}`;
 }
 
 /*
@@ -780,6 +846,11 @@ router.post("/my", async (req, res) => {
     |
     */
 
+    const finalDescription =
+      correction && parsed.data.type === "CORRECTION"
+        ? buildCorrectionDescription(correction)
+        : parsed.data.description || "";
+
     const createdRequest =
       await prisma.employeeRequest.create({
         data: {
@@ -789,8 +860,7 @@ router.post("/my", async (req, res) => {
 
           subject: parsed.data.subject,
 
-          description:
-            parsed.data.description || "",
+          description: finalDescription,
 
           status: "PENDING",
         },

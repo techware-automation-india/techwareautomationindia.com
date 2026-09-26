@@ -777,6 +777,29 @@ const LocationsPanel = () => {
                 </button>
               </div>
             </div>
+            <div className="sm:col-span-2">
+  <label className="text-sm font-medium mb-1.5 block">
+    Latitude, Longitude
+  </label>
+
+  <input
+    className={inputClass}
+    value={`${form.latitude}${form.latitude || form.longitude ? ", " : ""}${form.longitude}`}
+    onChange={(e) => {
+      const [latitude = "", longitude = ""] = e.target.value
+        .split(",")
+        .map((v) => v.trim());
+
+      setForm((p) => ({
+        ...p,
+        latitude,
+        longitude,
+      }));
+    }}
+    placeholder="e.g. 28.6139, 77.2090"
+    maxLength={45}
+  />
+</div>
             <div>
               <label className="text-sm font-medium mb-1.5 block">
                 Radius (m)

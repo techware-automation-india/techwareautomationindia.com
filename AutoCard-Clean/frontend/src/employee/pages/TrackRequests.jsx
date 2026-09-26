@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ClipboardList, Loader2, RefreshCw, Calendar, Clock3, FileText, MapPin, MessageSquareText, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ClipboardList,
+  Loader2,
+  RefreshCw,
+  Calendar,
+  Clock3,
+  FileText,
+  MapPin,
+  MessageSquareText,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
@@ -21,8 +32,18 @@ const typeStyles = {
 };
 
 const months = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 const formatDate = (value) => {
@@ -54,18 +75,129 @@ const openMap = (latitude, longitude, type = "location") => {
     toast.error(`${type} coordinates are not available.`);
     return;
   }
-  window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, "_blank", "noopener,noreferrer");
+  window.open(
+    `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
 };
 
 const getRequestReason = (request) => {
-  if (request.type !== "CORRECTION" || !request.description) return request.description;
-  const markerIndex = request.description.lastIndexOf("[ATTENDANCE_CORRECTION]");
+  if (request.type !== "CORRECTION" || !request.description)
+    return request.description;
+  const markerIndex = request.description.lastIndexOf(
+    "[ATTENDANCE_CORRECTION]",
+  );
   const readableDescription = request.description.slice(0, markerIndex);
-  const separatedReason = readableDescription.split("\n\n").slice(1).join("\n\n").trim();
-  return separatedReason || readableDescription.replace(
-    /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
-    "",
-  ).trim();
+  const separatedReason = readableDescription
+    .split("\n\n")
+    .slice(1)
+    .join("\n\n")
+    .trim();
+  return (
+    separatedReason ||
+    readableDescription
+      .replace(
+        /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+        "",
+      )
+      .trim()
+  );
+};
+const getForgotPunchData = (request) => {
+  if (request?.type !== "CORRECTION" || !request?.description) {
+    return null;
+  }
+
+  const marker = "[ATTENDANCE_CORRECTION]";
+  const markerIndex = request.description.lastIndexOf(marker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  const jsonText = request.description
+    .slice(markerIndex + marker.length)
+    .trim();
+
+  if (!jsonText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(jsonText);
+  } catch (error) {
+    console.warn(
+      "Skipping malformed Forgot Punch data:",
+      request.id || "unknown request",
+    );
+
+    return null;
+  }
+};
+
+const getAttendanceReason = (note = "", reason = "") => {
+  const text = String(note || "").trim();
+  const directReason = String(reason || "").trim();
+
+  // -----------------------------
+  // CHECK-IN PART
+  // -----------------------------
+  const checkInStart = text.search(/checkin/i);
+  const checkOutStart = text.search(/checkout/i);
+
+  const checkInText =
+    checkInStart >= 0
+      ? text.slice(
+          checkInStart,
+          checkOutStart > checkInStart ? checkOutStart : text.length,
+        )
+      : "";
+
+  const checkInReason =
+    directReason ||
+    checkInText
+      .match(/Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.?\s*\||$)/i)?.[1]
+      ?.trim() ||
+    null;
+
+  const checkInDistance =
+    checkInText.match(/\(([0-9.]+)\s*km\s*away\)/i)?.[1] || null;
+
+  const checkInLocation = checkInText.match(
+    /Checkin\s+(?:to unassigned location|from unassigned location)\s*\(([\d.]+)\s*km\s*away\)/i,
+  )
+    ? checkInText.match(
+        /Checkin\s+(?:to unassigned location|from unassigned location)\s*\(([\d.]+)\s*km\s*away\)/i,
+      )?.[0]
+    : null;
+
+  // -----------------------------
+  // CHECK-OUT PART
+  // -----------------------------
+  const checkoutText = checkOutStart >= 0 ? text.slice(checkOutStart) : "";
+
+  const checkOutReason =
+    checkoutText
+      .match(
+        /Reason:\s*(.*?)(?:\.\s*(?:Pending admin approval|Admin approved|Admin rejected)|\.?\s*\||$)/i,
+      )?.[1]
+      ?.trim() || null;
+
+  const checkOutDistance =
+    checkoutText.match(/\(([0-9.]+)\s*km\s*away\)/i)?.[1] || null;
+
+  const checkOutLocation =
+    checkoutText.match(/Checkout:\s*([^|]+)/i)?.[1]?.trim() || null;
+
+  return {
+    checkInReason,
+    checkInDistance,
+    checkInLocation,
+    checkOutReason,
+    checkOutDistance,
+    checkOutLocation,
+  };
 };
 
 const TrackRequests = ({ isAdmin = false }) => {
@@ -79,239 +211,215 @@ const TrackRequests = ({ isAdmin = false }) => {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
-  
+
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
   const [yearFilter, setYearFilter] = useState(String(currentYear));
   const [monthFilter, setMonthFilter] = useState(String(currentMonth));
 
   const loadRequests = async () => {
-  setLoading(true);
-  setLoadError("");
+    setLoading(true);
+    setLoadError("");
 
-  try {
-    // ============================================================
-    // ADMIN
-    // ============================================================
-    // Admin must NOT call:
-    // /requests/my
-    // /leave/my
-    // /attendance/my-requests
-    //
-    // Admin uses only:
-    // GET /api/requests
-    // ============================================================
+    try {
+      // ============================================================
+      // ADMIN
+      // ============================================================
+      // Admin must NOT call:
+      // /requests/my
+      // /leave/my
+      // /attendance/my-requests
+      //
+      // Admin uses only:
+      // GET /api/requests
+      // ============================================================
 
-    if (isAdmin) {
-      const result = await apiGet("/requests");
+      if (isAdmin) {
+        const result = await apiGet("/requests");
 
-      console.log("ADMIN TRACK REQUESTS:", result);
+        console.log("ADMIN TRACK REQUESTS:", result);
 
-      const adminRequests = result.requests || [];
+        const adminRequests = result.requests || [];
 
-      setRequests(
-        adminRequests.sort(
-          (first, second) =>
-            new Date(second.createdAt || 0) -
-            new Date(first.createdAt || 0)
-        )
-      );
+        setRequests(
+          adminRequests.sort(
+            (first, second) =>
+              new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
+          ),
+        );
 
-      return;
-    }
+        return;
+      }
 
-    // ============================================================
-    // EMPLOYEE
-    // ============================================================
+      // ============================================================
+      // EMPLOYEE
+      // ============================================================
 
-    const results = await Promise.allSettled([
-      apiGet("/requests/my"),
-      apiGet("/leave/my"),
-      apiGet("/attendance/my-requests"),
-    ]);
+      const results = await Promise.allSettled([
+        apiGet("/requests/my"),
+        apiGet("/leave/my"),
+        apiGet("/attendance/my-requests"),
+      ]);
 
-    const requestResult = results[0];
-    const leaveResult = results[1];
-    const attendanceResult = results[2];
+      const requestResult = results[0];
+      const leaveResult = results[1];
+      const attendanceResult = results[2];
 
-    // ------------------------------------------------------------
-    // GENERAL / FORGOT PUNCH REQUESTS
-    // ------------------------------------------------------------
+      // ------------------------------------------------------------
+      // GENERAL / FORGOT PUNCH REQUESTS
+      // ------------------------------------------------------------
 
-    const employeeRequests =
-      requestResult.status === "fulfilled"
-        ? requestResult.value.requests || []
-        : [];
+      const employeeRequests =
+        requestResult.status === "fulfilled"
+          ? (requestResult.value.requests || []).map((request) => ({
+              ...request,
 
-    // ------------------------------------------------------------
-    // LEAVE REQUESTS
-    // ------------------------------------------------------------
+              forgotPunch: getForgotPunchData(request),
+            }))
+          : [];
 
-    const leaveRequests =
-      leaveResult.status === "fulfilled"
-        ? (leaveResult.value.requests || []).map(
-            (request) => ({
+      // ------------------------------------------------------------
+      // LEAVE REQUESTS
+      // ------------------------------------------------------------
+
+      const leaveRequests =
+        leaveResult.status === "fulfilled"
+          ? (leaveResult.value.requests || []).map((request) => ({
               id: `leave-${request.id}`,
 
               type: "LEAVE",
 
-              subject: `${
-                request.leaveType?.name || "Leave"
-              } request`,
+              subject: `${request.leaveType?.name || "Leave"} request`,
 
               status: request.status,
 
               createdAt: request.createdAt,
 
               description:
-                `${new Date(
-                  request.startDate
-                ).toLocaleDateString()} – ` +
-                `${new Date(
-                  request.endDate
-                ).toLocaleDateString()} · ` +
+                `${new Date(request.startDate).toLocaleDateString()} – ` +
+                `${new Date(request.endDate).toLocaleDateString()} · ` +
                 `${request.totalDays} day(s)` +
-                (request.reason
-                  ? `\nReason: ${request.reason}`
-                  : ""),
+                (request.reason ? `\nReason: ${request.reason}` : ""),
 
               reviewNote: request.reviewNote,
-            })
-          )
-        : [];
+            }))
+          : [];
 
-    // ------------------------------------------------------------
-    // ATTENDANCE REQUESTS
-    // ------------------------------------------------------------
+      // ------------------------------------------------------------
+      // ATTENDANCE REQUESTS
+      // ------------------------------------------------------------
 
-    const attendanceRequests =
-      attendanceResult.status === "fulfilled"
-        ? (attendanceResult.value.records || []).map(
-            (request) => ({
+      const attendanceRequests =
+        attendanceResult.status === "fulfilled"
+          ? (attendanceResult.value.records || []).map((request) => ({
               id: `attendance-${request.id}`,
 
               type: "ATTENDANCE",
 
-              subject:
-                "Attendance location approval",
+              subject: "Attendance location approval",
 
               status:
-                request.status ===
-                "PENDING_APPROVAL"
+                request.status === "PENDING_APPROVAL"
                   ? "PENDING"
-                  : request.note?.includes(
-                      "Approved by admin"
-                    )
+                  : request.note?.includes("Admin approved")
                     ? "APPROVED"
-                    : "REJECTED",
+                    : request.note?.includes("Admin rejected")
+                      ? "REJECTED"
+                      : request.status,
 
-              createdAt:
-                request.createdAt ||
-                request.date,
+              createdAt: request.createdAt || request.date,
 
-              description:
-                request.note ||
-                "Check-in or check-out from an unassigned location.",
-            })
-          )
-        : [];
+              // IMPORTANT
+              description: request.note || "",
 
-    // ------------------------------------------------------------
-    // COMBINE EMPLOYEE REQUESTS
-    // ------------------------------------------------------------
+              // IMPORTANT
+              note: request.note || "",
 
-    setRequests(
-      [
-        ...employeeRequests,
-        ...leaveRequests,
-        ...attendanceRequests,
-      ].sort(
-        (first, second) =>
-          new Date(second.createdAt || 0) -
-          new Date(first.createdAt || 0)
-      )
-    );
+              // IMPORTANT
+              reason: request.reason || "",
 
-    // ------------------------------------------------------------
-    // AUTH ERROR
-    // ------------------------------------------------------------
+              checkInLatitude: request.checkInLatitude ?? null,
+              checkInLongitude: request.checkInLongitude ?? null,
 
-    const failedServices = results
-      .map((result, index) => ({
-        result,
-        label: [
-          "general requests",
-          "leave requests",
-          "attendance requests",
-        ][index],
-      }))
-      .filter(
-        ({ result }) =>
-          result.status === "rejected"
+              checkOutLatitude: request.checkOutLatitude ?? null,
+              checkOutLongitude: request.checkOutLongitude ?? null,
+
+              reviewNote: request.reviewNote,
+            }))
+          : [];
+
+      // ------------------------------------------------------------
+      // COMBINE EMPLOYEE REQUESTS
+      // ------------------------------------------------------------
+
+      setRequests(
+        [...employeeRequests, ...leaveRequests, ...attendanceRequests].sort(
+          (first, second) =>
+            new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
+        ),
       );
 
-    const unauthorizedResult =
-      failedServices.find(
-        ({ result }) =>
-          result.reason?.status === 401
+      // ------------------------------------------------------------
+      // AUTH ERROR
+      // ------------------------------------------------------------
+
+      const failedServices = results
+        .map((result, index) => ({
+          result,
+          label: ["general requests", "leave requests", "attendance requests"][
+            index
+          ],
+        }))
+        .filter(({ result }) => result.status === "rejected");
+
+      const unauthorizedResult = failedServices.find(
+        ({ result }) => result.reason?.status === 401,
       );
 
-    if (unauthorizedResult) {
-      clearAuth();
+      if (unauthorizedResult) {
+        clearAuth();
 
-      navigate("/login", {
-        replace: true,
-      });
+        navigate("/login", {
+          replace: true,
+        });
 
-      return;
-    }
+        return;
+      }
 
-    if (failedServices.length > 0) {
-      const failedLabels =
-        failedServices
+      if (failedServices.length > 0) {
+        const failedLabels = failedServices
           .map(({ label }) => label)
           .join(", ");
 
-      const message =
-        `Unable to load ${failedLabels}.`;
+        const message = `Unable to load ${failedLabels}.`;
 
-      setLoadError(message);
+        setLoadError(message);
 
-      toast.error(message);
+        toast.error(message);
+      }
+    } catch (err) {
+      console.error("Track Requests error:", err);
+
+      if (err.status === 401) {
+        clearAuth();
+
+        navigate("/login", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      setLoadError(err.message || "Failed to load requests.");
+
+      toast.error(err.message || "Failed to load requests.");
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error(
-      "Track Requests error:",
-      err
-    );
-
-    if (err.status === 401) {
-      clearAuth();
-
-      navigate("/login", {
-        replace: true,
-      });
-
-      return;
-    }
-
-    setLoadError(
-      err.message ||
-        "Failed to load requests."
-    );
-
-    toast.error(
-      err.message ||
-        "Failed to load requests."
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     loadRequests();
-    const intervalId = window.setInterval(loadRequests, 5000);
-    return () => window.clearInterval(intervalId);
   }, [navigate]);
 
   // Get unique years and months from requests
@@ -320,26 +428,56 @@ const TrackRequests = ({ isAdmin = false }) => {
       requests
         .map((r) => {
           const date = r.createdAt ? new Date(r.createdAt) : null;
-          return date && !Number.isNaN(date.getTime()) ? date.getFullYear() : null;
+          return date && !Number.isNaN(date.getTime())
+            ? date.getFullYear()
+            : null;
         })
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   ).sort((a, b) => b - a);
 
   const filteredRequests = requests.filter((request) => {
-    // Status filter
-    const matchesStatus = statusFilter === "ALL" || request.status === statusFilter;
-    if (!matchesStatus) return false;
+    // =====================================================
+    // STATUS FILTER
+    // =====================================================
 
-    // Year/Month filter
+    const matchesStatus =
+      statusFilter === "ALL" || request.status === statusFilter;
+
+    if (!matchesStatus) {
+      return false;
+    }
+
+    // =====================================================
+    // REQUEST TYPE FILTER
+    // =====================================================
+
+    const matchesType = typeFilter === "ALL" || request.type === typeFilter;
+
+    if (!matchesType) {
+      return false;
+    }
+
+    // =====================================================
+    // YEAR / MONTH FILTER
+    // =====================================================
+
     const createdDate = request.createdAt ? new Date(request.createdAt) : null;
-    if (!createdDate || Number.isNaN(createdDate.getTime())) return false;
+
+    if (!createdDate || Number.isNaN(createdDate.getTime())) {
+      return false;
+    }
 
     const requestYear = createdDate.getFullYear();
     const requestMonth = createdDate.getMonth() + 1;
 
-    if (yearFilter !== "ALL" && requestYear !== Number(yearFilter)) return false;
-    if (monthFilter !== "ALL" && requestMonth !== Number(monthFilter)) return false;
+    if (yearFilter !== "ALL" && requestYear !== Number(yearFilter)) {
+      return false;
+    }
+
+    if (monthFilter !== "ALL" && requestMonth !== Number(monthFilter)) {
+      return false;
+    }
 
     return true;
   });
@@ -361,7 +499,9 @@ const TrackRequests = ({ isAdmin = false }) => {
             <ClipboardList className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold">Track My Request</h1>
+            <h1 className="font-display text-2xl font-bold">
+              Track My Request
+            </h1>
             <p className="text-sm text-muted-foreground">
               {isAdmin
                 ? "View requests created by your admin account and their current status."
@@ -371,7 +511,10 @@ const TrackRequests = ({ isAdmin = false }) => {
         </div>
         <button
           type="button"
-          onClick={() => { setLoading(true); loadRequests(); }}
+          onClick={() => {
+            setLoading(true);
+            loadRequests();
+          }}
           className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary"
           aria-label="Refresh requests"
         >
@@ -404,17 +547,17 @@ const TrackRequests = ({ isAdmin = false }) => {
 
         <div className="ml-auto flex gap-2">
           {/* Year Filter */}
+          {/* Request Type Filter */}
           <select
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
             className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
           >
-            <option value="ALL">All Years</option>
-            {years.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
+            <option value="ALL">All Types</option>
+
+            <option value="CORRECTION">Forgot Punch</option>
+
+            <option value="ATTENDANCE">Attendance</option>
           </select>
 
           {/* Month Filter */}
@@ -443,7 +586,18 @@ const TrackRequests = ({ isAdmin = false }) => {
         <div className="rounded-2xl border border-border bg-background p-12 text-center card-shadow">
           {loadError && <p className="mb-3 text-rose-600">{loadError}</p>}
           <p className="text-sm text-muted-foreground">
-            No {statusFilter !== "ALL" && `${statusFilter.toLowerCase()} `}requests found
+            No{" "}
+            {typeFilter !== "ALL"
+              ? typeFilter === "CORRECTION"
+                ? "Forgot Punch"
+                : typeFilter === "ATTENDANCE"
+                  ? "Attendance"
+                  : typeFilter === "LEAVE"
+                    ? "Leave"
+                    : "General"
+              : ""}{" "}
+            {statusFilter !== "ALL" ? statusFilter.toLowerCase() : ""} requests
+            found
             {yearFilter !== "ALL" && ` for ${yearFilter}`}
             {monthFilter !== "ALL" && ` ${months[Number(monthFilter) - 1]}`}.
           </p>
@@ -458,24 +612,54 @@ const TrackRequests = ({ isAdmin = false }) => {
               {/* Card Header */}
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${typeStyles[request.type] || "bg-gray-100 text-gray-700"}`}>
-                    {request.type === "CORRECTION" ? "FORGOT PUNCH" : request.type}
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${typeStyles[request.type] || "bg-gray-100 text-gray-700"}`}
+                  >
+                    {request.type === "CORRECTION"
+                      ? "FORGOT PUNCH"
+                      : request.type}
                   </span>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${statusStyles[request.status] || "bg-secondary text-muted-foreground"}`}>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${statusStyles[request.status] || "bg-secondary text-muted-foreground"}`}
+                  >
                     {request.status}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setReasonModal(request)}
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  View Reason
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setReasonModal(request)}
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    View Reason
+                  </button>
+
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      request.status === "PENDING"
+                        ? "bg-amber-100 text-amber-700"
+                        : request.status === "APPROVED"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : request.status === "REJECTED"
+                            ? "bg-rose-100 text-rose-700"
+                            : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {request.status === "PENDING"
+                      ? "Pending"
+                      : request.status === "APPROVED"
+                        ? "Approved"
+                        : request.status === "REJECTED"
+                          ? "Rejected"
+                          : request.status}
+                  </span>
+                </div>
               </div>
 
               {/* Card Content */}
-              <h3 className="mb-3 font-semibold text-foreground">{request.subject}</h3>
+              <h3 className="mb-3 font-semibold text-foreground">
+                {request.subject}
+              </h3>
 
               <div className="grid gap-2 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -487,8 +671,12 @@ const TrackRequests = ({ isAdmin = false }) => {
 
                 {request.reviewNote && (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-                    <p className="text-xs font-medium text-emerald-900">Admin Response:</p>
-                    <p className="mt-1 text-sm text-emerald-700">{request.reviewNote}</p>
+                    <p className="text-xs font-medium text-emerald-900">
+                      Admin Response:
+                    </p>
+                    <p className="mt-1 text-sm text-emerald-700">
+                      {request.reviewNote}
+                    </p>
                   </div>
                 )}
               </div>
@@ -499,13 +687,21 @@ const TrackRequests = ({ isAdmin = false }) => {
 
       {/* View Reason Modal */}
       {reasonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setReasonModal(null)}>
-          <div className="w-full max-w-2xl rounded-2xl border border-border bg-background card-shadow" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setReasonModal(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl border border-border bg-background card-shadow"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-border p-6">
               <div>
-                <h2 className="font-display text-xl font-bold">Request Details</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{reasonModal.subject}</p>
+                <h2 className="font-display text-xl font-bold">Message</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {reasonModal.subject}
+                </p>
               </div>
               <button
                 type="button"
@@ -520,10 +716,16 @@ const TrackRequests = ({ isAdmin = false }) => {
             <div className="space-y-4 p-6">
               {/* Status Badges */}
               <div className="flex flex-wrap gap-2">
-                <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${typeStyles[reasonModal.type] || "bg-gray-100 text-gray-700"}`}>
-                  {reasonModal.type === "CORRECTION" ? "FORGOT PUNCH" : reasonModal.type}
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${typeStyles[reasonModal.type] || "bg-gray-100 text-gray-700"}`}
+                >
+                  {reasonModal.type === "CORRECTION"
+                    ? "FORGOT PUNCH"
+                    : reasonModal.type}
                 </span>
-                <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${statusStyles[reasonModal.status] || "bg-secondary text-muted-foreground"}`}>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${statusStyles[reasonModal.status] || "bg-secondary text-muted-foreground"}`}
+                >
                   {reasonModal.status}
                 </span>
               </div>
@@ -542,41 +744,259 @@ const TrackRequests = ({ isAdmin = false }) => {
 
               {/* Reason/Description */}
               <div className="rounded-lg bg-secondary/50 p-4">
-                <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                   <MessageSquareText className="h-4 w-4" />
-                  <span>Reason</span>
+                  <span>Message</span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                  {getRequestReason(reasonModal) || reasonModal.description || "No reason provided."}
-                </p>
+                {reasonModal.type === "CORRECTION" ? (
+                  (() => {
+                    const forgotPunch = getForgotPunchData(reasonModal);
+
+                    return (
+                      <div className="space-y-3">
+                        {/* Date */}
+                        <div>
+                          <p className="text-xs text-muted-foreground">Date</p>
+                          <p className="text-sm font-medium text-foreground">
+                            {forgotPunch?.date || "—"}
+                          </p>
+                        </div>
+
+                        {/* Punch Type */}
+                        <div>
+                          <p className="text-xs text-muted-foreground">
+                            Punch Type
+                          </p>
+                          <p className="text-sm font-medium text-foreground">
+                            {forgotPunch?.punchType === "both"
+                              ? "Check In + Check Out"
+                              : forgotPunch?.punchType === "check-in"
+                                ? "Check In"
+                                : forgotPunch?.punchType === "check-out"
+                                  ? "Check Out"
+                                  : "—"}
+                          </p>
+                        </div>
+
+                        {/* Check In Time */}
+                        {forgotPunch?.checkInTime && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check In Time
+                            </p>
+                            <p className="text-sm font-medium text-foreground">
+                              {forgotPunch.checkInTime}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check In Location */}
+                        {forgotPunch?.checkInLocation && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check In Location
+                            </p>
+                            <p className="text-sm font-medium text-foreground">
+                              {forgotPunch.checkInLocation}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check Out Time */}
+                        {forgotPunch?.checkOutTime && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check Out Time
+                            </p>
+                            <p className="text-sm font-medium text-foreground">
+                              {forgotPunch.checkOutTime}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check Out Location */}
+                        {forgotPunch?.checkOutLocation && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check Out Location
+                            </p>
+                            <p className="text-sm font-medium text-foreground">
+                              {forgotPunch.checkOutLocation}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Reason */}
+                        <div>
+                          <p className="text-xs text-muted-foreground">
+                            Reason
+                          </p>
+                          <p className="whitespace-pre-wrap text-sm font-medium text-foreground">
+                            {getRequestReason(reasonModal) ||
+                              "No reason provided."}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : reasonModal.type === "ATTENDANCE" ? (
+                  (() => {
+                    const attendanceReason = getAttendanceReason(
+                      reasonModal.note || reasonModal.description || "",
+                      reasonModal.reason || "",
+                    );
+
+                    return (
+                      <div className="space-y-3">
+                        {/* Check-In Reason */}
+                        {attendanceReason.checkInReason && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check-In Reason
+                            </p>
+
+                            <p className="text-sm font-medium text-foreground">
+                              {attendanceReason.checkInReason}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check-In Distance */}
+                        {attendanceReason.checkInDistance && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check-In Distance
+                            </p>
+
+                            <p className="text-sm font-medium text-foreground">
+                              {attendanceReason.checkInDistance} km
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check-In Location */}
+                        {attendanceReason.checkInLocation && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check-In Location
+                            </p>
+
+                            <p className="text-sm font-medium text-foreground">
+                              {attendanceReason.checkInLocation}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check-Out Location */}
+                        {/* Check-Out Reason */}
+                        {attendanceReason.checkOutReason && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check-Out Reason
+                            </p>
+
+                            <p className="text-sm font-medium text-foreground">
+                              {attendanceReason.checkOutReason}
+                            </p>
+                          </div>
+                        )}
+                        {/* Check-Out Distance */}
+                        {attendanceReason.checkOutDistance && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check-Out Distance
+                            </p>
+
+                            <p className="text-sm font-medium text-foreground">
+                              {attendanceReason.checkOutDistance} km
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Check-Out Location */}
+                        {attendanceReason.checkOutLocation && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">
+                              Check-Out Location
+                            </p>
+
+                            <p className="text-sm font-medium text-foreground">
+                              {attendanceReason.checkOutLocation}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Fallback Reason */}
+                        {!attendanceReason.checkInReason &&
+                          !attendanceReason.checkInLocation &&
+                          !attendanceReason.checkOutReason &&
+                          !attendanceReason.checkOutLocation &&
+                          !attendanceReason.checkInDistance &&
+                          !attendanceReason.checkOutDistance &&
+                          reasonModal.description && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">
+                                Reason
+                              </p>
+
+                              <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
+                                {reasonModal.description}
+                              </p>
+                            </div>
+                          )}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                    {getRequestReason(reasonModal) ||
+                      reasonModal.description ||
+                      "No reason provided."}
+                  </p>
+                )}
               </div>
 
               {/* GPS Map Buttons */}
-              {(reasonModal.checkInLatitude || reasonModal.checkOutLatitude) && (
+              {(reasonModal.checkInLatitude ||
+                reasonModal.checkOutLatitude) && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <MapPin className="h-4 w-4" />
                     <span>Location</span>
                   </div>
                   <div className="flex gap-2">
-                    {reasonModal.checkInLatitude && reasonModal.checkInLongitude && (
-                      <button
-                        type="button"
-                        onClick={() => openMap(reasonModal.checkInLatitude, reasonModal.checkInLongitude, "Check-in")}
-                        className="flex-1 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
-                      >
-                        📍 View Check In Map
-                      </button>
-                    )}
-                    {reasonModal.checkOutLatitude && reasonModal.checkOutLongitude && (
-                      <button
-                        type="button"
-                        onClick={() => openMap(reasonModal.checkOutLatitude, reasonModal.checkOutLongitude, "Check-out")}
-                        className="flex-1 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-medium text-violet-700 hover:bg-violet-100"
-                      >
-                        📍 View Check Out Map
-                      </button>
-                    )}
+                    {reasonModal.checkInLatitude &&
+                      reasonModal.checkInLongitude && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openMap(
+                              reasonModal.checkInLatitude,
+                              reasonModal.checkInLongitude,
+                              "Check-in",
+                            )
+                          }
+                          className="flex-1 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                        >
+                          📍 View Check In Map
+                        </button>
+                      )}
+                    {reasonModal.checkOutLatitude &&
+                      reasonModal.checkOutLongitude && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openMap(
+                              reasonModal.checkOutLatitude,
+                              reasonModal.checkOutLongitude,
+                              "Check-out",
+                            )
+                          }
+                          className="flex-1 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-medium text-violet-700 hover:bg-violet-100"
+                        >
+                          📍 View Check Out Map
+                        </button>
+                      )}
                   </div>
                 </div>
               )}
@@ -588,7 +1008,9 @@ const TrackRequests = ({ isAdmin = false }) => {
                     <FileText className="h-4 w-4" />
                     <span>Admin Response</span>
                   </div>
-                  <p className="text-sm text-emerald-700">{reasonModal.reviewNote}</p>
+                  <p className="text-sm text-emerald-700">
+                    {reasonModal.reviewNote}
+                  </p>
                 </div>
               )}
             </div>

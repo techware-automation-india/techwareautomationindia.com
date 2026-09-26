@@ -24,6 +24,21 @@ const getIndiaNow = () => {
   };
 };
 
+const getIndiaMaxTime = () => {
+  const now = getIndiaNow();
+
+  const [hours, minutes] = now.time.split(":").map(Number);
+
+  const totalMinutes = hours * 60 + minutes - 1;
+
+  const maxMinutes = Math.max(0, totalMinutes);
+
+  const maxHours = Math.floor(maxMinutes / 60);
+  const maxMins = maxMinutes % 60;
+
+  return `${String(maxHours).padStart(2, "0")}:${String(maxMins).padStart(2, "0")}`;
+};
+
 const AttendanceCorrection = ({ correctionType }) => {
   const navigate = useNavigate();
   const [indiaNow, setIndiaNow] = useState(getIndiaNow);
@@ -46,15 +61,23 @@ const AttendanceCorrection = ({ correctionType }) => {
   useEffect(() => {
     const refreshIndiaNow = () => {
       const nextIndiaNow = getIndiaNow();
+
       setIndiaNow(nextIndiaNow);
 
+      // If selected date is today,
+      // don't allow time beyond current India time.
       if (date === nextIndiaNow.date) {
-        setTime(nextIndiaNow.time);
-        setCheckOutTime(nextIndiaNow.time);
+        const maxTime = getIndiaMaxTime();
+
+        setTime((prev) => (prev > maxTime ? maxTime : prev));
+
+        setCheckOutTime((prev) => (prev > maxTime ? maxTime : prev));
       }
     };
 
-    const intervalId = window.setInterval(refreshIndiaNow, 60_000);
+    refreshIndiaNow();
+
+    const intervalId = window.setInterval(refreshIndiaNow, 1000);
 
     return () => window.clearInterval(intervalId);
   }, [date]);
@@ -79,7 +102,7 @@ const AttendanceCorrection = ({ correctionType }) => {
               ? checkOutTime
               : time,
       };
-      
+
       // Build location text based on punch type
       let locationText = "";
       if (punchType === "check-in" && checkInLocation.trim()) {
@@ -98,7 +121,7 @@ const AttendanceCorrection = ({ correctionType }) => {
           }
         }
       }
-      
+
       await apiPost("/requests/my", {
         type: "CORRECTION",
         subject: `${label} - ${punchLabel}`,
@@ -180,7 +203,7 @@ const AttendanceCorrection = ({ correctionType }) => {
             type="time"
             required
             value={time}
-            max={date === indiaNow.date ? indiaNow.time : undefined}
+            max={date === indiaNow.date ? getIndiaMaxTime() : undefined}
             onChange={(event) => setTime(event.target.value)}
             className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
           />
@@ -192,13 +215,13 @@ const AttendanceCorrection = ({ correctionType }) => {
               type="time"
               required
               value={checkOutTime}
-              max={date === indiaNow.date ? indiaNow.time : undefined}
+              max={date === indiaNow.date ? getIndiaMaxTime() : undefined}
               onChange={(event) => setCheckOutTime(event.target.value)}
               className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
             />
           </label>
         )}
-        
+
         {/* Location Fields - Show based on punch type */}
         {(punchType === "check-in" || punchType === "both") && (
           <label className="block text-sm font-medium">
@@ -211,10 +234,12 @@ const AttendanceCorrection = ({ correctionType }) => {
               placeholder="Where were you during check-in? (e.g., 'Client Office, Mumbai')"
               className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
             />
-            <p className="mt-1 text-xs text-muted-foreground">Optional: Your location at check-in time</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Optional: Your location at check-in time
+            </p>
           </label>
         )}
-        
+
         {(punchType === "check-out" || punchType === "both") && (
           <label className="block text-sm font-medium">
             Check-Out Location
@@ -226,10 +251,12 @@ const AttendanceCorrection = ({ correctionType }) => {
               placeholder="Where were you during check-out? (e.g., 'Home' or 'Office')"
               className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
             />
-            <p className="mt-1 text-xs text-muted-foreground">Optional: Your location at check-out time</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Optional: Your location at check-out time
+            </p>
           </label>
         )}
-        
+
         <label className="block text-sm font-medium">
           Reason
           <textarea

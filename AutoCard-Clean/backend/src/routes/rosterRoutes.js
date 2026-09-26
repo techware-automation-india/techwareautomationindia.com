@@ -76,6 +76,20 @@ const bulkSchema = z.object({
 
 const toNull = (v) => (!v || v === "" ? null : v);
 
+const parseRosterDate = (dateString) => {
+  const [year, month, day] = String(dateString).split("-").map(Number);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    throw new Error("Invalid roster date.");
+  }
+
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
 const includeRelations = {
   employee: { include: { user: { select: { fullName: true, email: true } } } },
   shift:    true,
@@ -156,11 +170,7 @@ router.post("/", requireAuth, checkRolePermission("roster"), async (req, res) =>
   const { employeeId, date, shiftId, locationId, note } = parsed.data;
 
   try {
-    const dateUTC = new Date(Date.UTC(
-      new Date(date).getUTCFullYear(),
-      new Date(date).getUTCMonth(),
-      new Date(date).getUTCDate(),
-    ));
+    const dateUTC = parseRosterDate(date);
 
     const entry = await prisma.rosterEntry.upsert({
       where: { employeeId_date: { employeeId, date: dateUTC } },
@@ -204,11 +214,7 @@ router.post("/bulk", requireAuth, checkRolePermission("roster"), async (req, res
 
   try {
     const ops = parsed.data.entries.map(({ employeeId, date, shiftId, locationId, note }) => {
-      const dateUTC = new Date(Date.UTC(
-        new Date(date).getUTCFullYear(),
-        new Date(date).getUTCMonth(),
-        new Date(date).getUTCDate(),
-      ));
+      const dateUTC = parseRosterDate(date);
       return prisma.rosterEntry.upsert({
         where: { employeeId_date: { employeeId, date: dateUTC } },
         create: { employeeId, date: dateUTC, shiftId, locationId: toNull(locationId), note: toNull(note) },

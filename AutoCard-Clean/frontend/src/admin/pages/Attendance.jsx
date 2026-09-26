@@ -185,7 +185,7 @@ const getCalendarLocationCode = (note, type) => {
   const cleanedNote = cleanAttendanceNote(note);
   const isCheckIn = type === "check-in";
 
-  // Unassigned / unapproved locations are always UL.
+  // Unassigned / unassigned locations are always UL.
   const unassignedPattern = isCheckIn
     ? /Checkin(?:\s+from|\s+to)?:?\s*unassigned location/i
     : /Checkout(?:\s+from)?:?\s*unassigned location/i;
@@ -814,7 +814,7 @@ const Attendance = () => {
         record.employee?.user?.fullName ||
         record.employee?.fullName ||
         "Employee",
-      reason: record.note || "Unapproved location",
+      reason: record.note || "unassigned location",
     });
   };
 
@@ -926,7 +926,7 @@ const Attendance = () => {
               </tr>
               <tr>
                 <td><span class="code unassigned">UL</span></td>
-                <td>Unassigned or unapproved location.</td>
+                <td>Unassigned or unassigned location.</td>
               </tr>
             </tbody>
           </table>
@@ -1067,7 +1067,7 @@ const Attendance = () => {
                               onClick={() =>
                                 rejectRecord(
                                   rec.id,
-                                  rec.note || "Unapproved location",
+                                  rec.note || "unassigned location",
                                 )
                               }
                               className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors"
@@ -1089,33 +1089,48 @@ const Attendance = () => {
                       <th className="py-2 pr-4">Check In</th>
                       <th className="py-2 pr-4">Check Out</th>
                       <th className="py-2 pr-4">Worked Hours</th>
+                      <th className="py-2 pr-4">OT Hours</th>
                       <th className="py-2 pr-4">Location</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {filteredRecords.map((rec) => (
-                      <tr
-                        key={rec.id}
-                        className="hover:bg-secondary/50 transition-colors"
-                      >
-                        <td className="py-3 pr-4">{fmtDateDMY(rec.date)}</td>
-                        <td className="py-3 pr-4">
-                          {statusMeta[rec.status]?.label || rec.status}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {fmtTime(rec.checkIn) ?? "—"}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {fmtTime(rec.checkOut) ?? "—"}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {fmtWorkedHours(rec.workedHours)}
-                        </td>
-                        <td className="py-3 pr-4 max-w-xl truncate">
-                          {rec.note || "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredRecords.map((rec) => {
+                      const isHoliday = isHolidayDate(rec.date);
+                      const otHours = fmtOvertimeHours(rec, isHoliday);
+                      
+                      return (
+                        <tr
+                          key={rec.id}
+                          className="hover:bg-secondary/50 transition-colors"
+                        >
+                          <td className="py-3 pr-4">{fmtDateDMY(rec.date)}</td>
+                          <td className="py-3 pr-4">
+                            {statusMeta[rec.status]?.label || rec.status}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {fmtTime(rec.checkIn) ?? "—"}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {fmtTime(rec.checkOut) ?? "—"}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {fmtWorkedHours(rec.workedHours)}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {otHours ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                                {otHours}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="py-3 pr-4 max-w-xl truncate">
+                            {rec.note || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </>
@@ -3102,7 +3117,7 @@ const Attendance = () => {
                 onClick={() =>
                   rejectRecord(
                     rejectModal.recordId,
-                    rejectModal.reason.trim() || "Unapproved location",
+                    rejectModal.reason.trim() || "unassigned location",
                   )
                 }
                 className="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-sm font-medium"

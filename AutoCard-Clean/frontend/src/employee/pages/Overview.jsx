@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import {
   AlertCircle,
   Bell,
@@ -14,7 +14,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-import { employeeModules } from "../modules.js";
+import { employeeModules, getModulesByPermissions } from "../modules.js";
 import { getAuthUser } from "../../lib/auth.js";
 import { apiGet } from "../../lib/api.js";
 import { formatTimeRange } from "../../lib/timeFormat.js";
@@ -331,8 +331,43 @@ const Overview = () => {
      MODULES
   ========================================================= */
 
-  // Exclude Overview from module grid.
-  const modules = employeeModules.filter((module) => module.key !== "overview");
+  const outletContext = useOutletContext();
+  const [dynamicModules, setDynamicModules] = useState(null);
+
+  useEffect(() => {
+    if (outletContext?.visibleModules && outletContext.visibleModules.length > 0) {
+      setDynamicModules(
+        outletContext.visibleModules.filter((module) => module.key !== "overview")
+      );
+      return;
+    }
+
+    let mounted = true;
+    const fetchPerms = async () => {
+      try {
+        const data = await apiGet("/roles-access/me/permissions");
+        if (mounted && data?.permissions) {
+          const visible = getModulesByPermissions(data.permissions).filter(
+            (module) => module.key !== "overview"
+          );
+          setDynamicModules(visible);
+        }
+      } catch (err) {
+        console.error("Overview fetch permissions error:", err);
+      }
+    };
+    fetchPerms();
+    return () => {
+      mounted = false;
+    };
+  }, [outletContext?.visibleModules]);
+
+  const modules =
+    dynamicModules ||
+    (outletContext?.visibleModules
+      ? outletContext.visibleModules.filter((module) => module.key !== "overview")
+      : getModulesByPermissions({}).filter((module) => module.key !== "overview"));
+
 
   /* =========================================================
      ROSTER DATA

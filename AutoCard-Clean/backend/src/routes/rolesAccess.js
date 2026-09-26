@@ -90,16 +90,22 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
     const permissionMap = buildPermissionMap(legacyPermissions);
 
     // If user has a customRole with modules, merge them into permissionMap
-    if (user?.customRole?.modules) {
-      for (const m of user.customRole.modules) {
-        permissionMap[m.moduleKey] = {
-          canView: true,
-          canCreate: true,
-          canEdit: true,
-          canDelete: true,
-        };
-      }
+    let roleModules = user?.customRole?.modules || [];
+    if (roleModules.length === 0 && user?.roleId) {
+      roleModules = await prisma.roleModule.findMany({
+        where: { roleId: user.roleId },
+      });
     }
+
+    for (const m of roleModules) {
+      permissionMap[m.moduleKey] = {
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+      };
+    }
+
 
     const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0;
 

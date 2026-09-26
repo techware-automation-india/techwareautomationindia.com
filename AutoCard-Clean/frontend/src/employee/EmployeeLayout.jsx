@@ -29,6 +29,7 @@ const EmployeeLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [permissions, setPermissions] = useState({});
   const [visibleModules, setVisibleModules] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
@@ -51,7 +52,9 @@ const EmployeeLayout = () => {
     const loadPermissions = async () => {
       try {
         const data = await apiGet("/roles-access/me/permissions");
-        const modules = getModulesByPermissions(data.permissions || {});
+        const perms = data?.permissions || {};
+        setPermissions(perms);
+        const modules = getModulesByPermissions(perms);
         setVisibleModules(modules);
       } catch (err) {
         console.error("Failed to load permissions:", err);
@@ -331,7 +334,7 @@ const EmployeeLayout = () => {
             </div>
           )}
 
-          <Outlet />
+          <Outlet context={{ visibleModules, permissions }} />
         </main>
       </div>
     </div>

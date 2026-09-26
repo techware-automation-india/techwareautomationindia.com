@@ -14,6 +14,7 @@ import {
   Wrench,
   MapPin,
   CalendarRange,
+  BadgeCheck,
 } from "lucide-react";
 
 // Default modules always visible to employees
@@ -76,65 +77,72 @@ const defaultModules = [
   // },
 ];
 
-// Admin modules that can be assigned to employees
+// Admin modules that can be delegated to employees via custom roles or permissions
 const adminModules = [
-  // {
-  //   key: "employee",
-  //   label: "Employee Management",
-  //   path: "/employee/employee-management",
-  //   icon: UserCog,
-  //   description: "Manage employee records.",
-  //   adminKey: "employee",
-  // },
-  // {
-  //   key: "customer",
-  //   label: "Customer Management",
-  //   path: "/employee/customer-management",
-  //   icon: Contact,
-  //   description: "Manage customer accounts.",
-  //   adminKey: "customer",
-  // },
-  // {
-  //   key: "requests",
-  //   label: "Requests",
-  //   path: "/employee/requests",
-  //   icon: FileText,
-  //   description: "View and manage requests.",
-  //   adminKey: "requests",
-  // },
-  // {
-  //   key: "leave-policy",
-  //   label: "Leave Policy",
-  //   path: "/employee/leave-policy",
-  //   icon: BookOpen,
-  //   description: "Leave types and policies.",
-  //   adminKey: "leave-policy",
-  // },
-  // {
-  //   key: "projects",
-  //   label: "Projects",
-  //   path: "/employee/projects",
-  //   icon: FolderKanban,
-  //   description: "Project management.",
-  //   adminKey: "projects",
-  // },
- 
-  // {
-  //   key: "shift-location",
-  //   label: "Shift & Location",
-  //   path: "/employee/shift-location",
-  //   icon: MapPin,
-  //   description: "Shift and location management.",
-  //   adminKey: "shift-location",
-  // },
-  // {
-  //   key: "roster",
-  //   label: "Roster",
-  //   path: "/employee/roster",
-  //   icon: CalendarRange,
-  //   description: "Employee scheduling.",
-  //   adminKey: "roster",
-  // },
+  {
+    key: "employee",
+    label: "Employee Management",
+    path: "/employee/employee-management",
+    icon: UserCog,
+    description: "Manage employee records.",
+    adminKey: "employee",
+  },
+  {
+    key: "approvals",
+    label: "Approvals",
+    path: "/employee/approvals",
+    icon: BadgeCheck,
+    description: "Review and act on employee requests.",
+    adminKey: "approvals",
+  },
+  {
+    key: "attendance-management",
+    label: "Attendance Register",
+    path: "/employee/attendance-management",
+    icon: Clock,
+    description: "Company-wide attendance register.",
+    adminKey: "attendance",
+  },
+  {
+    key: "shift-location",
+    label: "Shift & Location",
+    path: "/employee/shift-location",
+    icon: MapPin,
+    description: "Shift and location management.",
+    adminKey: "shift-location",
+  },
+  {
+    key: "roster",
+    label: "Roster",
+    path: "/employee/roster",
+    icon: CalendarRange,
+    description: "Employee scheduling.",
+    adminKey: "roster",
+  },
+  {
+    key: "roles-access",
+    label: "Roles & Access",
+    path: "/employee/roles-access",
+    icon: ShieldCheck,
+    description: "Configure roles and permissions.",
+    adminKey: "roles-access",
+  },
+  {
+    key: "leave-policy",
+    label: "Leave Policy",
+    path: "/employee/leave-policy",
+    icon: BookOpen,
+    description: "Leave types and policies.",
+    adminKey: "leave-policy",
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    path: "/employee/projects",
+    icon: FolderKanban,
+    description: "Project management.",
+    adminKey: "projects",
+  },
 ];
 
 // All modules combined
@@ -145,15 +153,17 @@ export const employeeModules = [...defaultModules, ...adminModules];
  * @param {Object} permissions - Permission object from API
  * @returns {Array} - Array of module objects to display
  */
-export function getModulesByPermissions(permissions) {
+export function getModulesByPermissions(permissions = {}) {
   // Always include default modules
   const modules = [...defaultModules];
 
   // Add admin modules if employee has at least 'canView' permission
   adminModules.forEach((module) => {
     const perm = permissions[module.adminKey];
-    if (perm && perm.canView) {
-      modules.push(module);
+    if (perm && (perm.canView || perm === true)) {
+      if (!modules.some((m) => m.key === module.key)) {
+        modules.push(module);
+      }
     }
   });
 

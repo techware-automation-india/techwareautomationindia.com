@@ -905,7 +905,7 @@ router.post("/my", async (req, res) => {
 
 router.get(
   "/",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   async (req, res) => {
     try {
@@ -1034,7 +1034,7 @@ router.get(
 
 router.get(
   "/:id/profile",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   async (req, res) => {
     try {
@@ -1615,7 +1615,7 @@ async function reviewRequest(
 
 router.post(
   "/:id/approve",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   (req, res) =>
     reviewRequest(
@@ -1637,7 +1637,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   (req, res) =>
     reviewRequest(

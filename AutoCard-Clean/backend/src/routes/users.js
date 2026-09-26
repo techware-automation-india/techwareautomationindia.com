@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 import { validateAssignRole } from "../middleware/validate-access.js";
 
 const router = Router();
@@ -15,7 +16,7 @@ router.use(requireAuth);
 // Returns: Array of users with role information
 // ============================================================================
 
-router.get("/with-roles", requireRole("ADMIN"), async (req, res) => {
+router.get("/with-roles", checkRolePermission("roles-access"), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -75,7 +76,7 @@ router.get("/with-roles", requireRole("ADMIN"), async (req, res) => {
 // Requirements: 8.4, 14.3, 14.4
 // ============================================================================
 
-router.get("/by-role/:roleId", requireRole("ADMIN"), async (req, res) => {
+router.get("/by-role/:roleId", checkRolePermission("roles-access"), async (req, res) => {
   try {
     const { roleId } = req.params;
 
@@ -166,7 +167,7 @@ router.get("/by-role/:roleId", requireRole("ADMIN"), async (req, res) => {
 
 router.put(
   "/:id/role",
-  requireRole("ADMIN"),
+  checkRolePermission("roles-access"),
   validateAssignRole,
   async (req, res) => {
     try {

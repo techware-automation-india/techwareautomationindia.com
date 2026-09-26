@@ -12,14 +12,17 @@ const employeeModules = [
   { key: "employee", label: "Employee" },
   { key: "customer", label: "Customer" },
   { key: "requests", label: "Requests" },
+  { key: "approvals", label: "Approvals" },
   { key: "leave-policy", label: "Leave Policy" },
   { key: "holidays", label: "Holidays" },
   { key: "attendance", label: "Attendance" },
   { key: "projects", label: "Projects" },
   { key: "services", label: "Services" },
+  { key: "roles-access", label: "Roles & Access" },
   { key: "shift-location", label: "Shift & Location" },
   { key: "roster", label: "Roster" },
 ];
+
 
 const permissionSchema = z.object({
   canView: z.boolean().optional(),

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -258,7 +259,7 @@ router.post("/:id/cancel", requireAuth, requireRole("EMPLOYEE"), async (req, res
 // ─── ADMIN ROUTES ────────────────────────────────────────────────────────────
 
 // GET /api/leave/admin/all  – all leave requests with employee info
-router.get("/admin/all", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.get("/admin/all", requireAuth, checkRolePermission(["approvals", "requests"]), async (req, res) => {
   try {
     const { status } = req.query;
     const where = {};
@@ -286,7 +287,7 @@ router.get("/admin/all", requireAuth, requireRole("ADMIN"), async (req, res) => 
 });
 
 // POST /api/leave/admin/:id/approve
-router.post("/admin/:id/approve", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.post("/admin/:id/approve", requireAuth, checkRolePermission(["approvals", "requests"]), async (req, res) => {
   const { id } = req.params;
   const { note } = req.body;
 
@@ -337,7 +338,7 @@ router.post("/admin/:id/approve", requireAuth, requireRole("ADMIN"), async (req,
 });
 
 // POST /api/leave/admin/:id/reject
-router.post("/admin/:id/reject", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.post("/admin/:id/reject", requireAuth, checkRolePermission(["approvals", "requests"]), async (req, res) => {
   const { id } = req.params;
   const { note } = req.body;
 

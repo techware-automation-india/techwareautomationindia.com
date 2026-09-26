@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 import {
   validateCreateRole,
   validateUpdateModules,
@@ -10,8 +11,8 @@ import {
 
 const router = Router();
 
-// All routes require admin authentication
-router.use(requireAuth, requireRole("ADMIN"));
+// All routes require admin or roles-access module permission
+router.use(requireAuth, checkRolePermission("roles-access"));
 
 /**
  * POST /api/roles
@@ -21,6 +22,7 @@ router.use(requireAuth, requireRole("ADMIN"));
 router.post("/", validateCreateRole, async (req, res) => {
   try {
     const { name } = req.body;
+    const moduleKeys = req.body.moduleKeys || req.body.modules || [];
 
     // Check for duplicate role name
     const existingRole = await prisma.roleTable.findUnique({
@@ -33,21 +35,29 @@ router.post("/", validateCreateRole, async (req, res) => {
       });
     }
 
-    // Create role with isDefault: false
+    // Create role with isDefault: false and optional modules
     const newRole = await prisma.roleTable.create({
       data: {
         name,
         isDefault: false,
+        modules: moduleKeys.length > 0
+          ? {
+              create: moduleKeys.map((moduleKey) => ({ moduleKey })),
+            }
+          : undefined,
+      },
+      include: {
+        modules: true,
       },
     });
 
-    // Return created role with empty modules array
+    // Return created role with modules array
     res.status(201).json({
       id: newRole.id,
       name: newRole.name,
       isDefault: newRole.isDefault,
-      modules: [],
-      moduleCount: 0,
+      modules: (newRole.modules || []).map((m) => m.moduleKey),
+      moduleCount: (newRole.modules || []).length,
       createdAt: newRole.createdAt,
       updatedAt: newRole.updatedAt,
     });

@@ -196,10 +196,20 @@ router.put(
         });
       }
 
-      // Update user's roleId
+      // Determine role enum if matching default/named roles
+      let updatedRoleEnum = user.role;
+      if (role.name.toUpperCase() === "ADMIN") {
+        updatedRoleEnum = "ADMIN";
+      } else if (role.name.toUpperCase() === "CUSTOMER") {
+        updatedRoleEnum = "CUSTOMER";
+      } else if (user.role === "CUSTOMER" && role.name.toUpperCase() !== "CUSTOMER") {
+        updatedRoleEnum = "EMPLOYEE";
+      }
+
+      // Update user's roleId and role
       const updatedUser = await prisma.user.update({
         where: { id },
-        data: { roleId },
+        data: { roleId, role: updatedRoleEnum },
         select: {
           id: true,
           email: true,

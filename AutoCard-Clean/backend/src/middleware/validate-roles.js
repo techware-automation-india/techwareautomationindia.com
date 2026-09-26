@@ -13,7 +13,9 @@ export const VALID_MODULES = [
   'attendance',
   'roles-access',
   'shift-location',
-  'roster'
+  'roster',
+  'leave-policy',
+  'projects'
 ];
 
 /**

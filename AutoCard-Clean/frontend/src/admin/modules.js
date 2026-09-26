@@ -1,4 +1,4 @@
-﻿import {
+import {
   LayoutDashboard,
   UserPlus,
   Users,
@@ -27,10 +27,10 @@ export const adminModules = [
   },
   {
     key: "employee",
-    label: "Employee",
+    label: "Add Account",
     path: "/admin/employee",
     icon: UserPlus,
-    description: "Create and manage employee records.",
+    description: "Create user accounts and assign roles.",
   },
   // {
   //   key: "customer",

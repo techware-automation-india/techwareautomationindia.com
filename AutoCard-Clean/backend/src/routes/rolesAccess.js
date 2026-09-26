@@ -9,13 +9,13 @@ const EMPLOYEE_ROLE = "EMPLOYEE";
 
 const employeeModules = [
   { key: "overview", label: "Dashboard" },
-  { key: "employee", label: "Employee" },
-  { key: "customer", label: "Customer" },
+  { key: "mark-attendance", label: "Mark Attendance" },
+  { key: "attendance", label: "My Attendance" },
+  { key: "employee", label: "Account Management" },
   { key: "requests", label: "Requests" },
   { key: "approvals", label: "Approvals" },
   { key: "leave-policy", label: "Leave Policy" },
   { key: "holidays", label: "Holidays" },
-  { key: "attendance", label: "Attendance" },
   { key: "projects", label: "Projects" },
   { key: "services", label: "Services" },
   { key: "roles-access", label: "Roles & Access" },

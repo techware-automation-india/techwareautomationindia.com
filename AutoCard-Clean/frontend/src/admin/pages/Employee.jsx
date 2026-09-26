@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { UserPlus, Loader2, Users, Clock, Send, CheckCircle2, XCircle, Trash2, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { UserPlus, Loader2, Users, Clock, Send, CheckCircle2, XCircle, Trash2, AlertTriangle, Eye, EyeOff, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiDelete } from "../../lib/api.js";
+import { fetchRoles } from "../../lib/api/rolesApi.js";
 
 const emptyForm = {
   fullName: "",
@@ -10,6 +11,7 @@ const emptyForm = {
   password: "", // Will be auto-filled by loadEmployees
   employeeCode: "", // Will be auto-filled by loadEmployees
   jobTitle: "",
+  roleId: "",
 };
 
 const statusStyles = {
@@ -51,6 +53,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -67,17 +70,22 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
   const canCreate = permissions.canCreate;
   const canDelete = permissions.canDelete;
 
-  const loadEmployees = async () => {
+  const loadData = async () => {
     try {
-      const data = await apiGet("/employees");
-      setEmployees(data.employees);
+      const [empData, rolesData] = await Promise.all([
+        apiGet("/employees"),
+        fetchRoles(),
+      ]);
+      setEmployees(empData.employees || []);
+      const loadedRoles = rolesData?.roles || [];
+      setRoles(loadedRoles);
       
       // Auto-generate next employee code ONLY (format: TAI-001, TAI-002, etc.)
       let nextCode;
       
-      if (data.employees.length > 0) {
+      if (empData.employees && empData.employees.length > 0) {
         // Find the highest employee code number
-        const empCodes = data.employees
+        const empCodes = empData.employees
           .map(e => e.employeeCode)
           .filter(code => code && code.startsWith('TAI'))
           .map(code => {
@@ -87,22 +95,17 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
           });
         
         const maxCode = empCodes.length > 0 ? Math.max(...empCodes) : 0;
-        nextCode = `TAI-${String(maxCode + 1).padStart(3, '0')}`; // Format: TAI-001
+        nextCode = `TAI-${String(maxCode + 1).padStart(3, '0')}`;
       } else {
-        // First employee
         nextCode = 'TAI-001';
       }
       
-      console.log('Auto-filling employee code only:', { nextCode });
-      
-      // Only set employee code, NOT username or password
       setForm(prev => ({ 
         ...prev, 
-        employeeCode: nextCode
-        // email and password remain empty - admin must fill them
+        employeeCode: nextCode,
       }));
     } catch (err) {
-      toast.error(err.message || "Failed to load employees.");
+      toast.error(err.message || "Failed to load accounts and roles.");
     } finally {
       setLoading(false);
     }
@@ -110,18 +113,22 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
 
   const refresh = () => {
     setLoading(true);
-    loadEmployees();
+    loadData();
   };
 
   useEffect(() => {
-    (async () => {
-      await loadEmployees();
-    })();
+    loadData();
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
+
+    if (!form.roleId) {
+      toast.error("Please select a role for this account.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       await apiPost("/employees", {
@@ -130,8 +137,9 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
         password: form.password,
         employeeCode: form.employeeCode,
         jobTitle: form.jobTitle || undefined,
+        roleId: form.roleId,
       });
-      toast.success(`Employee "${form.fullName}" created with code ${form.employeeCode}.`);
+      toast.success(`Account "${form.fullName}" created with code ${form.employeeCode}.`);
       
       // Clear form first
       setForm({
@@ -140,12 +148,13 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
         password: "",
         employeeCode: "",
         jobTitle: "",
+        roleId: "",
       });
       
       // Then reload and auto-fill with next values
       refresh();
     } catch (err) {
-      toast.error(err.message || "Failed to create employee.");
+      toast.error(err.message || "Failed to create account.");
     } finally {
       setSubmitting(false);
     }
@@ -193,15 +202,15 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
           <UserPlus className="h-6 w-6 text-primary" />
         </div>
         <div>
-          <h1 className="font-display text-2xl font-bold">Employee</h1>
-          <p className="text-sm text-muted-foreground">Create employee accounts and manage records.</p>
+          <h1 className="font-display text-2xl font-bold">Add Account</h1>
+          <p className="text-sm text-muted-foreground">Create user accounts and assign roles.</p>
         </div>
       </div>
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div onClick={() => handleStatCardClick("all")} className="cursor-pointer hover:scale-105 transition-transform">
-          <StatCard icon={Users} label="Total Employees" value={stats.total} tone="primary" />
+          <StatCard icon={Users} label="Total Accounts" value={stats.total} tone="primary" />
         </div>
         <div onClick={() => handleStatCardClick("pending")} className="cursor-pointer hover:scale-105 transition-transform">
           <StatCard icon={Clock} label="Pending" value={stats.pending} tone="amber" />
@@ -220,10 +229,10 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
       {/* Create form - Only show if canCreate permission */}
       {canCreate && (
         <div className="rounded-2xl bg-background border border-border card-shadow p-6">
-          <h2 className="font-display text-lg font-semibold mb-4">Create New Employee</h2>
+          <h2 className="font-display text-lg font-semibold mb-4">Create New Account</h2>
         <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Full Name</label>
+            <label className="text-sm font-medium mb-1.5 block">Full Name *</label>
             <input
               className={inputClass}
               placeholder="Jane Doe"
@@ -233,19 +242,19 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
             />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Employee Code</label>
+            <label className="text-sm font-medium mb-1.5 block">Account Code *</label>
             <input
               className={inputClass}
               placeholder="TAI-001"
               value={form.employeeCode}
               onChange={(e) => setForm((p) => ({ ...p, employeeCode: e.target.value }))}
               required
-              title="Auto-generated employee code (you can edit if needed)"
+              title="Auto-generated account code (you can edit if needed)"
             />
             <p className="text-xs text-muted-foreground mt-1">✨ Auto-generated (editable)</p>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Username</label>
+            <label className="text-sm font-medium mb-1.5 block">Username *</label>
             <input
               type="text"
               className={inputClass}
@@ -256,7 +265,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
             />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Default Password</label>
+            <label className="text-sm font-medium mb-1.5 block">Default Password *</label>
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
@@ -280,11 +289,30 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
               </button>
             </div>
           </div>
-          <div className="sm:col-span-2">
-            <label className="text-sm font-medium mb-1.5 block">Job Title <span className="text-muted-foreground font-normal">(optional)</span></label>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Role *</label>
+            <select
+              className={inputClass}
+              value={form.roleId}
+              onChange={(e) => setForm((p) => ({ ...p, roleId: e.target.value }))}
+              required
+            >
+              <option value="">Select a role...</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} {r.isDefault ? "(Default)" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Specifies the role and module access for this account.
+            </p>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Job Title / Company <span className="text-muted-foreground font-normal">(optional)</span></label>
             <input
               className={inputClass}
-              placeholder="Automation Engineer"
+              placeholder="e.g. Automation Engineer or Techware Corp"
               value={form.jobTitle}
               onChange={(e) => setForm((p) => ({ ...p, jobTitle: e.target.value }))}
             />
@@ -296,7 +324,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
               className="cta-gradient text-white font-semibold px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-              {submitting ? "Creating..." : "Create Employee"}
+              {submitting ? "Creating..." : "Create Account"}
             </button>
           </div>
         </form>

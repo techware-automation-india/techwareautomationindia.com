@@ -81,10 +81,10 @@ const defaultModules = [
 const adminModules = [
   {
     key: "employee",
-    label: "Employee Management",
+    label: "Account Management",
     path: "/employee/employee-management",
     icon: UserCog,
-    description: "Manage employee records.",
+    description: "Manage user accounts.",
     adminKey: "employee",
   },
   {
@@ -101,7 +101,7 @@ const adminModules = [
     path: "/employee/attendance-management",
     icon: Clock,
     description: "Company-wide attendance register.",
-    adminKey: "attendance",
+    adminKey: "attendance-management",
   },
   {
     key: "shift-location",
@@ -149,23 +149,45 @@ const adminModules = [
 export const employeeModules = [...defaultModules, ...adminModules];
 
 /**
- * Get modules to display based on employee permissions
+ * Get modules to display based on account role permissions
  * @param {Object} permissions - Permission object from API
  * @returns {Array} - Array of module objects to display
  */
 export function getModulesByPermissions(permissions = {}) {
-  // Always include default modules
-  const modules = [...defaultModules];
+  const permKeys = Object.keys(permissions);
 
-  // Add admin modules if employee has at least 'canView' permission
-  adminModules.forEach((module) => {
-    const perm = permissions[module.adminKey];
+  // If no configured permissions returned (e.g. unassigned legacy account), use default base modules
+  if (permKeys.length === 0) {
+    return [...defaultModules];
+  }
+
+  // When an account has an assigned role, its access is strictly governed by the role's assigned modules
+  const allModules = [...defaultModules, ...adminModules];
+  const allowedModules = [];
+
+  allModules.forEach((module) => {
+    // Check direct key, or adminKey, or admin attendance fallback
+    const directPerm = permissions[module.key];
+    const adminPerm = module.adminKey ? permissions[module.adminKey] : null;
+    const hasAdminPower = permissions["employee"] || permissions["roles-access"] || permissions["approvals"];
+    const attendanceMgmtFallback = module.key === "attendance-management" && permissions["attendance"] && hasAdminPower;
+
+    const perm = directPerm || adminPerm || (attendanceMgmtFallback ? permissions["attendance"] : null);
+
     if (perm && (perm.canView || perm === true)) {
-      if (!modules.some((m) => m.key === module.key)) {
-        modules.push(module);
+      if (!allowedModules.some((m) => m.key === module.key)) {
+        allowedModules.push(module);
       }
     }
   });
 
-  return modules;
+  // Ensure dashboard / overview is always present as home if user has any active permissions
+  if (!allowedModules.some((m) => m.key === "overview")) {
+    const overviewMod = defaultModules.find((m) => m.key === "overview");
+    if (overviewMod && (permissions["overview"] || allowedModules.length > 0)) {
+      allowedModules.unshift(overviewMod);
+    }
+  }
+
+  return allowedModules;
 }

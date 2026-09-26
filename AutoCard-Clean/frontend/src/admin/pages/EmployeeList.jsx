@@ -115,8 +115,8 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
 
   // Get title based on filter
   const getPageTitle = () => {
-    if (!filterStatus) return "All Employees";
-    return `${filterStatus.charAt(0) + filterStatus.slice(1).toLowerCase()} Employees`;
+    if (!filterStatus) return "All Accounts";
+    return `${filterStatus.charAt(0) + filterStatus.slice(1).toLowerCase()} Accounts`;
   };
 
   return (
@@ -129,11 +129,11 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-2 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Employee Module
+            Back to Add Account Module
           </Link>
           <h1 className="font-display text-2xl font-bold">{getPageTitle()}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Showing {filteredEmployees.length} {filteredEmployees.length === 1 ? 'employee' : 'employees'}
+            Showing {filteredEmployees.length} {filteredEmployees.length === 1 ? 'account' : 'accounts'}
           </p>
         </div>
         <button
@@ -154,8 +154,8 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
         ) : filteredEmployees.length === 0 ? (
           <div className="p-12 text-center text-sm text-muted-foreground">
             {filterStatus 
-              ? `No ${filterStatus.toLowerCase()} employees found.` 
-              : "No employees found."}
+              ? `No ${filterStatus.toLowerCase()} accounts found.` 
+              : "No accounts found."}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -166,7 +166,8 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
                   <th className="px-6 py-4 font-medium">Name</th>
                   <th className="px-6 py-4 font-medium">Code</th>
                   <th className="px-6 py-4 font-medium">Email</th>
-                  <th className="px-6 py-4 font-medium">Job Title</th>
+                  <th className="px-6 py-4 font-medium">Role</th>
+                  <th className="px-6 py-4 font-medium">Job Title / Company</th>
                   <th className="px-6 py-4 font-medium">Onboarding</th>
                   <th className="px-6 py-4 font-medium text-right">Actions</th>
                 </tr>
@@ -192,6 +193,11 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
                     <td className="px-6 py-4 font-medium">{emp.fullName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{emp.employeeCode}</td>
                     <td className="px-6 py-4 text-muted-foreground">{emp.email}</td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                        {emp.roleName || emp.role || "No Role"}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-muted-foreground">{emp.jobTitle || "—"}</td>
                     <td className="px-6 py-4"><StatusBadge status={emp.onboardingStatus} /></td>
                     <td className="px-6 py-4 text-right">

@@ -42,15 +42,23 @@ export default function AccessTab() {
     if (!roleId) return;
     try {
       await assignUserRole(userId, roleId);
+      const assignedRole = roles.find(r => r.id === roleId);
       
-      // Update local state
+      // Update local state immediately
       setUsers(prevUsers => prevUsers.map(user => 
         user.id === userId 
-          ? { ...user, roleId, customRole: roles.find(r => r.id === roleId) }
+          ? { 
+              ...user, 
+              roleId, 
+              customRole: assignedRole,
+              role: assignedRole?.name?.toUpperCase() === 'ADMIN' 
+                ? 'ADMIN' 
+                : (assignedRole?.name?.toUpperCase() === 'CUSTOMER' ? 'CUSTOMER' : 'EMPLOYEE')
+            }
           : user
       ));
       
-      toast.success('Role assigned successfully!');
+      toast.success(`Role "${assignedRole?.name || 'role'}" assigned successfully!`);
     } catch (err) {
       toast.error(`Error: ${err.message || 'Failed to assign role'}`);
       console.error('Assign role error:', err);
@@ -93,8 +101,8 @@ export default function AccessTab() {
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">Access Management</h2>
-        <p className="text-muted-foreground mt-1">Assign roles to employees to control their access</p>
+        <h2 className="text-2xl font-bold text-foreground">Account Access & Role Assignment</h2>
+        <p className="text-muted-foreground mt-1">Reassign or change the active role for any user account to update their module access.</p>
       </div>
 
       {/* Filters */}
@@ -155,7 +163,7 @@ export default function AccessTab() {
                     Current Role
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Assign Role
+                    Reassign / Change Role
                   </th>
                 </tr>
               </thead>

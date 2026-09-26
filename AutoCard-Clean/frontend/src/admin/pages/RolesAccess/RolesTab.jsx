@@ -78,7 +78,12 @@ export default function RolesTab() {
     if (modalMode === 'create') {
       // Create new role
       const newRole = await createRole(data.name);
-      setRoles([...roles, { ...newRole, modules: [], moduleCount: 0 }]);
+
+      // Persist assigned modules if selected
+      if (Array.isArray(data.moduleKeys) && data.moduleKeys.length > 0) {
+        await updateRoleModules(newRole.id, data.moduleKeys);
+      }
+
       toast.success(`Role "${data.name}" created successfully!`);
       await loadRoles();
     } else {

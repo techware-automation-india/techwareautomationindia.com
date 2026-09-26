@@ -1,29 +1,85 @@
 import prisma from "../prismaClient.js";
 
+/**
+ * Middleware to check if a user has access to a given module.
+ * Grants access if:
+ * 1. User has ADMIN role
+ * 2. User has a custom role (RoleModule) containing moduleKey
+ * 3. User has a direct ModulePermission for moduleKey
+ * 4. The default role (isDefault: true) contains moduleKey
+ */
 export function checkRolePermission(moduleKey) {
   return async (req, res, next) => {
     try {
-      if (req.user && req.user.role === "ADMIN") {
+      if (!req.user) {
+        return res.status(401).json({ message: "Authentication required." });
+      }
+
+      // 1. ADMIN always has full access
+      if (req.user.role === "ADMIN") {
         return next();
       }
 
-      if (!req.user || !req.user.roleId) {
-        return res.status(403).json({
-          message: "No role assigned. Access denied.",
+      const userId = req.user.id;
+
+      // 2. Fetch fresh roleId from DB if missing or stale in JWT
+      let roleId = req.user.roleId;
+      if (!roleId) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { roleId: true },
         });
+        roleId = dbUser?.roleId || null;
+        if (roleId) {
+          req.user.roleId = roleId; // Update in-memory for downstream handlers
+        }
       }
 
-      const hasAccess = await prisma.roleModule.findUnique({
+      // 3. Check custom role modules
+      if (roleId) {
+        const hasRoleAccess = await prisma.roleModule.findUnique({
+          where: {
+            roleId_moduleKey: {
+              roleId,
+              moduleKey,
+            },
+          },
+        });
+
+        if (hasRoleAccess) {
+          return next();
+        }
+      }
+
+      // 4. Check direct module permissions
+      const directPermission = await prisma.modulePermission.findUnique({
         where: {
-          roleId_moduleKey: {
-            roleId: req.user.roleId,
-            moduleKey: moduleKey,
+          userId_moduleKey: {
+            userId,
+            moduleKey,
           },
         },
       });
 
-      if (hasAccess) {
+      if (
+        directPermission &&
+        (directPermission.canView ||
+          directPermission.canEdit ||
+          directPermission.canCreate)
+      ) {
         return next();
+      }
+
+      // 5. Fallback to default role if no custom role assigned
+      if (!roleId) {
+        const defaultRole = await prisma.roleTable.findFirst({
+          where: { isDefault: true },
+          include: { modules: true },
+        });
+
+        if (defaultRole?.modules?.some((m) => m.moduleKey === moduleKey)) {
+          return next();
+        }
       }
 
       return res.status(403).json({

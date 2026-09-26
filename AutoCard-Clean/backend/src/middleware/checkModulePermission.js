@@ -22,8 +22,9 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
         return next();
       }
 
-      // For EMPLOYEE role, check module permissions
+      // For EMPLOYEE role, check permissions
       if (user.role === "EMPLOYEE") {
+        // 1. Check direct ModulePermission
         const modulePermission = await prisma.modulePermission.findUnique({
           where: {
             userId_moduleKey: {
@@ -36,6 +37,46 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
         // Check if permission exists and is granted
         if (modulePermission && modulePermission[permission]) {
           return next();
+        }
+
+        // 2. Check RoleModule from assigned role (fresh lookup from DB if roleId not in JWT)
+        let roleId = user.roleId;
+        if (!roleId) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { roleId: true },
+          });
+          roleId = dbUser?.roleId || null;
+          if (roleId) {
+            req.user.roleId = roleId;
+          }
+        }
+
+        if (roleId) {
+          const roleMod = await prisma.roleModule.findUnique({
+            where: {
+              roleId_moduleKey: {
+                roleId,
+                moduleKey,
+              },
+            },
+          });
+
+          if (roleMod) {
+            return next();
+          }
+        }
+
+        // 3. Fallback to default role
+        if (!roleId) {
+          const defaultRole = await prisma.roleTable.findFirst({
+            where: { isDefault: true },
+            include: { modules: true },
+          });
+
+          if (defaultRole?.modules?.some((m) => m.moduleKey === moduleKey)) {
+            return next();
+          }
         }
 
         return res.status(403).json({ 

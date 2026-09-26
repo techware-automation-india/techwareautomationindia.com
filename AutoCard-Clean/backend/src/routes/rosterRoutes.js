@@ -10,6 +10,12 @@ const router = Router();
 // All routes require authentication
 router.use(requireAuth);
 
+const includeRelations = {
+  employee: { include: { user: { select: { fullName: true, email: true } } } },
+  shift:    true,
+  location: true,
+};
+
 router.get("/me", requireAuth, async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear();
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -88,12 +94,6 @@ const parseRosterDate = (dateString) => {
   }
 
   return new Date(Date.UTC(year, month - 1, day));
-};
-
-const includeRelations = {
-  employee: { include: { user: { select: { fullName: true, email: true } } } },
-  shift:    true,
-  location: true,
 };
 
 // GET /api/roster?year=YYYY&month=M&employeeId=

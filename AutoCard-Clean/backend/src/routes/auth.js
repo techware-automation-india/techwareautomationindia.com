@@ -62,8 +62,7 @@ router.post("/login", async (req, res) => {
           user: { 
             include: { 
               employeeProfile: true, 
-              customerProfile: true,
-              customRole: true
+              customerProfile: true
             } 
           } 
         },
@@ -80,8 +79,7 @@ router.post("/login", async (req, res) => {
         },
         include: { 
           employeeProfile: true, 
-          customerProfile: true,
-          customRole: true
+          customerProfile: true
         },
       });
       
@@ -95,8 +93,7 @@ router.post("/login", async (req, res) => {
             user: { 
               include: { 
                 employeeProfile: true, 
-                customerProfile: true,
-                customRole: true
+                customerProfile: true
               } 
             } 
           },
@@ -114,8 +111,7 @@ router.post("/login", async (req, res) => {
         },
         include: { 
           employeeProfile: true, 
-          customerProfile: true,
-          customRole: true
+          customerProfile: true
         },
       });
     }
@@ -160,7 +156,7 @@ router.get("/me", requireAuth, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: { employeeProfile: true, customRole: true },
+      include: { employeeProfile: true },
     });
     if (!user) {
       return res.status(404).json({ message: "User not found." });

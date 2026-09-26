@@ -10,7 +10,9 @@
     "npm": ">=9.0.0"
   },
   "scripts": {
+    "predev": "prisma generate",
     "dev": "nodemon src/index.js",
+    "prestart": "prisma generate",
     "start": "node src/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

@@ -5,7 +5,7 @@ import { z } from "zod";
  * Validates: Requirement 7.2
  */
 export const assignRoleSchema = z.object({
-  roleId: z.string().uuid("Role ID must be a valid UUID").nullable().optional().or(z.literal("")),
+  roleId: z.string().uuid("Role ID must be a valid UUID")
 });
 
 /**
@@ -32,9 +32,6 @@ export const validateAssignRole = (req, res, next) => {
     });
   }
 
-  req.body = {
-    ...req.body,
-    roleId: result.data.roleId ? result.data.roleId : null,
-  };
+  req.body = result.data;
   next();
 };

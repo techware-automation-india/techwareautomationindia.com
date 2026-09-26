@@ -78,14 +78,14 @@ const defaultModules = [
 
 // Admin modules that can be assigned to employees
 const adminModules = [
-  // {
-  //   key: "employee",
-  //   label: "Employee Management",
-  //   path: "/employee/employee-management",
-  //   icon: UserCog,
-  //   description: "Manage employee records.",
-  //   adminKey: "employee",
-  // },
+  {
+    key: "employee",
+    label: "Employee Management",
+    path: "/employee/employee-management",
+    icon: UserCog,
+    description: "Manage employee records.",
+    adminKey: "employee",
+  },
   // {
   //   key: "customer",
   //   label: "Customer Management",
@@ -94,47 +94,38 @@ const adminModules = [
   //   description: "Manage customer accounts.",
   //   adminKey: "customer",
   // },
-  // {
-  //   key: "requests",
-  //   label: "Requests",
-  //   path: "/employee/requests",
-  //   icon: FileText,
-  //   description: "View and manage requests.",
-  //   adminKey: "requests",
-  // },
-  // {
-  //   key: "leave-policy",
-  //   label: "Leave Policy",
-  //   path: "/employee/leave-policy",
-  //   icon: BookOpen,
-  //   description: "Leave types and policies.",
-  //   adminKey: "leave-policy",
-  // },
-  // {
-  //   key: "projects",
-  //   label: "Projects",
-  //   path: "/employee/projects",
-  //   icon: FolderKanban,
-  //   description: "Project management.",
-  //   adminKey: "projects",
-  // },
- 
-  // {
-  //   key: "shift-location",
-  //   label: "Shift & Location",
-  //   path: "/employee/shift-location",
-  //   icon: MapPin,
-  //   description: "Shift and location management.",
-  //   adminKey: "shift-location",
-  // },
-  // {
-  //   key: "roster",
-  //   label: "Roster",
-  //   path: "/employee/roster",
-  //   icon: CalendarRange,
-  //   description: "Employee scheduling.",
-  //   adminKey: "roster",
-  // },
+  {
+    key: "leave-policy",
+    label: "Leave Policy",
+    path: "/employee/leave-policy",
+    icon: BookOpen,
+    description: "Leave types and policies.",
+    adminKey: "leave-policy",
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    path: "/employee/projects",
+    icon: FolderKanban,
+    description: "Project management.",
+    adminKey: "projects",
+  },
+  {
+    key: "shift-location",
+    label: "Shift & Location",
+    path: "/employee/shift-location",
+    icon: MapPin,
+    description: "Shift and location management.",
+    adminKey: "shift-location",
+  },
+  {
+    key: "roster",
+    label: "Roster",
+    path: "/employee/roster",
+    icon: CalendarRange,
+    description: "Employee scheduling.",
+    adminKey: "roster",
+  },
 ];
 
 // All modules combined

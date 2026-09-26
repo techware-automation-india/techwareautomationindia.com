@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
@@ -169,14 +169,14 @@ const AppRoutes = () => {
           />
           {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
           {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
-          {/* <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} /> */}
+          <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} />
           {/* CUSTOMER MANAGEMENT ROUTE COMMENTED OUT */}
           {/* <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} /> */}
-          {/* <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} /> */}
-          {/* <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} /> */}
+          <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} />
+          <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} />
 
-          {/* <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} /> */}
-          {/* <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} /> */}
+          <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} />
+          <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} />
         </Route>
 
         {/* CUSTOMER ROUTES COMMENTED OUT */}

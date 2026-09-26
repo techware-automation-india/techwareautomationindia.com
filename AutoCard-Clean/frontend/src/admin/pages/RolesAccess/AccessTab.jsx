@@ -39,24 +39,20 @@ export default function AccessTab() {
   };
 
   const handleRoleAssignment = async (userId, roleId) => {
-    const targetRoleId = roleId || null;
+    if (!roleId) return;
     try {
-      await assignUserRole(userId, targetRoleId);
+      await assignUserRole(userId, roleId);
       
       // Update local state
       setUsers(prevUsers => prevUsers.map(user => 
         user.id === userId 
-          ? { 
-              ...user, 
-              roleId: targetRoleId, 
-              customRole: targetRoleId ? roles.find(r => r.id === targetRoleId) : null 
-            }
+          ? { ...user, roleId, customRole: roles.find(r => r.id === roleId) }
           : user
       ));
       
-      toast.success(targetRoleId ? 'Role assigned successfully!' : 'Role unassigned successfully!');
+      toast.success('Role assigned successfully!');
     } catch (err) {
-      toast.error(`Error: ${err.message || 'Failed to update role'}`);
+      toast.error(`Error: ${err.message || 'Failed to assign role'}`);
       console.error('Assign role error:', err);
     }
   };

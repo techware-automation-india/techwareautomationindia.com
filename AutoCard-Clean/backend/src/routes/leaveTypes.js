@@ -1,8 +1,8 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -28,7 +28,7 @@ const leaveTypeSchema = z.object({
 });
 
 // GET /api/leave-types - list all leave types.
-router.get("/", requireAdminOrModulePermission("leave-policy", "canView"), async (_req, res) => {
+router.get("/", checkRolePermission("requests"), async (_req, res) => {
   try {
     const leaveTypes = await prisma.leaveType.findMany({ orderBy: { createdAt: "desc" } });
     res.json({ leaveTypes });
@@ -39,7 +39,7 @@ router.get("/", requireAdminOrModulePermission("leave-policy", "canView"), async
 });
 
 // POST /api/leave-types - create a leave type.
-router.post("/", requireAdminOrModulePermission("leave-policy", "canCreate"), async (req, res) => {
+router.post("/", checkRolePermission("requests"), async (req, res) => {
   const parsed = leaveTypeSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -74,7 +74,7 @@ router.post("/", requireAdminOrModulePermission("leave-policy", "canCreate"), as
 });
 
 // PUT /api/leave-types/:id - update a leave type.
-router.put("/:id", requireAdminOrModulePermission("leave-policy", "canEdit"), async (req, res) => {
+router.put("/:id", checkRolePermission("requests"), async (req, res) => {
   const parsed = leaveTypeSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -117,7 +117,7 @@ router.put("/:id", requireAdminOrModulePermission("leave-policy", "canEdit"), as
 });
 
 // DELETE /api/leave-types/:id - remove a leave type.
-router.delete("/:id", requireAdminOrModulePermission("leave-policy", "canDelete"), async (req, res) => {
+router.delete("/:id", checkRolePermission("requests"), async (req, res) => {
   const { id } = req.params;
   try {
     const current = await prisma.leaveType.findUnique({ where: { id } });

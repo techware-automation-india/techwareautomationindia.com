@@ -1,4 +1,4 @@
-import {
+﻿import {
   LayoutDashboard,
   UserPlus,
   Users,
@@ -96,13 +96,13 @@ export const adminModules = [
   //   description: "Create projects and assign team members.",
   // },
   
-  // {
-  //   key: "roles-access",
-  //   label: "Roles & Access",
-  //   path: "/admin/roles-access",
-  //   icon: ShieldCheck,
-  //   description: "Configure roles and permission levels.",
-  // },
+  {
+    key: "roles-access",
+    label: "Roles & Access",
+    path: "/admin/roles-access",
+    icon: ShieldCheck,
+    description: "Configure roles and permission levels.",
+  },
   {
     key: "shift-location",
     label: "Shift & Location",

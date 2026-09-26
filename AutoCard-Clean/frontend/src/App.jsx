@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
@@ -33,7 +33,7 @@ import AttendanceRequests from "./admin/pages/AttendanceRequests.jsx";
 import Projects from "./admin/pages/Projects.jsx";
 import ProjectDetails from "./admin/pages/ProjectDetails.jsx";
 import Services from "./admin/pages/Services.jsx";
-import RolesAccess from "./admin/pages/RolesAccess.jsx";
+import RolesAccess from "./admin/pages/RolesAccess";
 import ShiftLocation from "./admin/pages/ShiftLocation.jsx";
 import Roster from "./admin/pages/Roster.jsx";
 
@@ -142,8 +142,7 @@ const AppRoutes = () => {
           <Route path="attendance-requests" element={<AttendanceRequests />} />
           {/* <Route path="projects" element={<Projects />} /> */}
           {/* <Route path="project/:id" element={<ProjectDetails />} /> */}
-
-          {/* <Route path="roles-access" element={<RolesAccess />} /> */}
+<Route path="roles-access" element={<RolesAccess />} />
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
         </Route>

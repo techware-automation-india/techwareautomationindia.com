@@ -1,13 +1,13 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
 // Public GET for authenticated users (employees need location list for their profile)
-// Write routes (POST/PATCH/DELETE) are admin-only — enforced per-route below.
+// Write routes (POST/PATCH/DELETE) are admin-only â€” enforced per-route below.
 
 // GET /api/locations?page=1&limit=20&search=
 router.get("/", requireAuth, async (req, res) => {
@@ -76,8 +76,8 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/locations — admin or with permission
-router.post("/", requireAuth, requireAdminOrModulePermission("shift-location", "canCreate"), async (req, res) => {
+// POST /api/locations â€” admin or with permission
+router.post("/", requireAuth, checkRolePermission("shift-location"), async (req, res) => {
   try {
     const data = locationSchema.parse(req.body);
     const exists = await prisma.location.findFirst({ where: { name: data.name } });
@@ -110,8 +110,8 @@ router.post("/", requireAuth, requireAdminOrModulePermission("shift-location", "
   }
 });
 
-// PATCH /api/locations/:id — admin or with permission
-router.patch("/:id", requireAuth, requireAdminOrModulePermission("shift-location", "canEdit"), async (req, res) => {
+// PATCH /api/locations/:id â€” admin or with permission
+router.patch("/:id", requireAuth, checkRolePermission("shift-location"), async (req, res) => {
   try {
     const data = updateLocationSchema.parse(req.body);
     const loc = await prisma.location.findUnique({ where: { id: req.params.id } });
@@ -150,8 +150,8 @@ router.patch("/:id", requireAuth, requireAdminOrModulePermission("shift-location
   }
 });
 
-// DELETE /api/locations/:id — admin or with permission
-router.delete("/:id", requireAuth, requireAdminOrModulePermission("shift-location", "canDelete"), async (req, res) => {
+// DELETE /api/locations/:id â€” admin or with permission
+router.delete("/:id", requireAuth, checkRolePermission("shift-location"), async (req, res) => {
   try {
     const loc = await prisma.location.findUnique({ where: { id: req.params.id } });
     if (!loc) return res.status(404).json({ success: false, message: "Location not found." });

@@ -27,6 +27,12 @@ function publicUser(user) {
     email: user.email,
     fullName: user.fullName,
     role: user.role,
+    roleId: user.roleId ?? null,
+    customRole: user.customRole ? {
+      id: user.customRole.id,
+      name: user.customRole.name,
+      isDefault: user.customRole.isDefault,
+    } : null,
     onboardingStatus: user.employeeProfile?.onboardingStatus ?? null,
     employeeProfileId: user.employeeProfile?.id ?? null,
   };
@@ -51,10 +57,16 @@ router.post("/login", async (req, res) => {
     // For employees, use username (employee code) only - case insensitive (MySQL compatible)
     if (role === "employee") {
       const employeeProfile = await prisma.employeeProfile.findFirst({
-        where: { 
-          employeeCode: normalizedEmail
+        where: { employeeCode: normalizedEmail },
+        include: { 
+          user: { 
+            include: { 
+              employeeProfile: true, 
+              customerProfile: true,
+              customRole: true
+            } 
+          } 
         },
-        include: { user: { include: { employeeProfile: true, customerProfile: true } } },
       });
       
       if (employeeProfile) {
@@ -66,7 +78,11 @@ router.post("/login", async (req, res) => {
         where: { 
           email: normalizedEmail
         },
-        include: { employeeProfile: true, customerProfile: true },
+        include: { 
+          employeeProfile: true, 
+          customerProfile: true,
+          customRole: true
+        },
       });
       
       // If not found by email, try to find employee by employee code (case insensitive)
@@ -75,7 +91,15 @@ router.post("/login", async (req, res) => {
           where: { 
             employeeCode: normalizedEmail
           },
-          include: { user: { include: { employeeProfile: true, customerProfile: true } } },
+          include: { 
+            user: { 
+              include: { 
+                employeeProfile: true, 
+                customerProfile: true,
+                customRole: true
+              } 
+            } 
+          },
         });
         
         if (employeeProfile) {
@@ -88,7 +112,11 @@ router.post("/login", async (req, res) => {
         where: { 
           email: normalizedEmail
         },
-        include: { employeeProfile: true, customerProfile: true },
+        include: { 
+          employeeProfile: true, 
+          customerProfile: true,
+          customRole: true
+        },
       });
     }
 
@@ -114,7 +142,11 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const token = signToken({ id: user.id, role: user.role });
+    const token = signToken({ 
+      id: user.id, 
+      role: user.role,
+      roleId: user.roleId 
+    });
 
     return res.json({ token, user: publicUser(user) });
   } catch (err) {
@@ -128,7 +160,7 @@ router.get("/me", requireAuth, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: { employeeProfile: true },
+      include: { employeeProfile: true, customRole: true },
     });
     if (!user) {
       return res.status(404).json({ message: "User not found." });

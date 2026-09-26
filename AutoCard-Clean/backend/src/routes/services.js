@@ -1,8 +1,8 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -35,7 +35,7 @@ router.get("/", async (req, res) => {
 router.use(requireAuth);
 
 // GET /api/services/all - List all services (including inactive) - Admin only
-router.get("/all", requireAdminOrModulePermission("services", "canView"), async (req, res) => {
+router.get("/all", checkRolePermission("overview"), async (req, res) => {
   try {
     const services = await prisma.service.findMany({
       orderBy: { orderIndex: "asc" },
@@ -62,7 +62,7 @@ router.get("/all", requireAdminOrModulePermission("services", "canView"), async 
 });
 
 // POST /api/services - Create new service (Admin only)
-router.post("/", requireAdminOrModulePermission("services", "canCreate"), async (req, res) => {
+router.post("/", checkRolePermission("overview"), async (req, res) => {
   try {
     const serviceSchema = z.object({
       name: z.string().min(3, "Service name must be at least 3 characters.").max(200),
@@ -101,7 +101,7 @@ router.post("/", requireAdminOrModulePermission("services", "canCreate"), async 
 });
 
 // PUT /api/services/:id - Update service (Admin only)
-router.put("/:id", requireAdminOrModulePermission("services", "canEdit"), async (req, res) => {
+router.put("/:id", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -148,7 +148,7 @@ router.put("/:id", requireAdminOrModulePermission("services", "canEdit"), async 
 });
 
 // DELETE /api/services/:id - Delete service (Admin only)
-router.delete("/:id", requireAdminOrModulePermission("services", "canDelete"), async (req, res) => {
+router.delete("/:id", checkRolePermission("overview"), async (req, res) => {
   try {
     const { id } = req.params;
 

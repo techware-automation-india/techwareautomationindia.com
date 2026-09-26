@@ -72,12 +72,41 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
   }
 
   try {
-    const permissions = await prisma.modulePermission.findMany({ where: { userId: req.user.id } });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        customRole: {
+          include: {
+            modules: true,
+          },
+        },
+      },
+    });
+
+    const legacyPermissions = await prisma.modulePermission.findMany({ where: { userId: req.user.id } });
+    const permissionMap = buildPermissionMap(legacyPermissions);
+
+    // If user has a customRole with modules, merge them into permissionMap
+    if (user?.customRole?.modules) {
+      for (const m of user.customRole.modules) {
+        permissionMap[m.moduleKey] = {
+          canView: true,
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+        };
+      }
+    }
+
+    const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0;
+
     res.json({
       role: EMPLOYEE_ROLE,
+      roleName: user?.customRole?.name || null,
+      roleId: user?.roleId || null,
       modules: employeeModules,
-      permissions: buildPermissionMap(permissions),
-      hasConfiguredPermissions: permissions.length > 0,
+      permissions: permissionMap,
+      hasConfiguredPermissions,
     });
   } catch (err) {
     console.error("RolesAccess get current permissions error:", err);

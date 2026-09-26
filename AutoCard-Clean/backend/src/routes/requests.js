@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -262,7 +262,7 @@ function getAttendanceDayRange(value) {
 
 /*
 |--------------------------------------------------------------------------
-| TIME → DATE
+| TIME â†’ DATE
 |--------------------------------------------------------------------------
 */
 
@@ -905,10 +905,7 @@ router.post("/my", async (req, res) => {
 
 router.get(
   "/",
-  requireAdminOrModulePermission(
-    "requests",
-    "canView",
-  ),
+  checkRolePermission("requests"),
 
   async (req, res) => {
     try {
@@ -1037,10 +1034,7 @@ router.get(
 
 router.get(
   "/:id/profile",
-  requireAdminOrModulePermission(
-    "requests",
-    "canView",
-  ),
+  checkRolePermission("requests"),
 
   async (req, res) => {
     try {
@@ -1621,11 +1615,7 @@ async function reviewRequest(
 
 router.post(
   "/:id/approve",
-
-  requireAdminOrModulePermission(
-    "requests",
-    "canEdit",
-  ),
+  checkRolePermission("requests"),
 
   (req, res) =>
     reviewRequest(
@@ -1647,11 +1637,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-
-  requireAdminOrModulePermission(
-    "requests",
-    "canEdit",
-  ),
+  checkRolePermission("requests"),
 
   (req, res) =>
     reviewRequest(

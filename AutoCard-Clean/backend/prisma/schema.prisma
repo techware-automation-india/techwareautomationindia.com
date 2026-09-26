@@ -93,6 +93,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Custom role assignment (NEW)
+  roleId       String?
+  customRole   RoleTable? @relation("UserCustomRole", fields: [roleId], references: [id])
+
   // One-to-one role profiles.
   employeeProfile EmployeeProfile?
   customerProfile CustomerProfile?
@@ -105,6 +109,7 @@ model User {
   modulePermissions ModulePermission[]
 
   @@index([role])
+  @@index([roleId])
   @@map("users")
 }
 
@@ -690,4 +695,30 @@ model SupportInfo {
   updatedAt       DateTime @updatedAt
 
   @@map("support_info")
+}
+// ===========================================================================
+// ROLES SYSTEM (NEW)
+// ===========================================================================
+
+model RoleTable {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  modules RoleModule[]
+  users   User[]       @relation("UserCustomRole")
+
+  @@map("roles")
+}
+
+model RoleModule {
+  roleId    String
+  moduleKey String
+  role      RoleTable @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, moduleKey])
+  @@index([roleId])
+  @@map("role_modules")
 }

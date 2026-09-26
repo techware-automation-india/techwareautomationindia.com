@@ -45,10 +45,10 @@ const defaultModules = [
   },
   {
     key: "attendance",
-    label: "Attendance",
+    label: "My Attendance",
     path: "/employee/attendance",
     icon: Clock,
-    description: "View your attendance history.",
+    description: "View your personal attendance history.",
     alwaysVisible: true,
   },
   {

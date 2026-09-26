@@ -596,7 +596,7 @@ const Attendance = () => {
           </div>
 
           <div>
-            <h1 className="font-display text-2xl font-bold">Attendance</h1>
+            <h1 className="font-display text-2xl font-bold">My Attendance</h1>
 
             <p className="text-sm text-muted-foreground">
               Your monthly attendance history.

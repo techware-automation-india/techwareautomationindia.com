@@ -152,7 +152,11 @@ const normalizeAttendance = (items) =>
 
 const getAttendanceDetails = (note = "") => {
   const text = String(note || "");
-  const reasonMatches = [...text.matchAll(/Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi)]
+  const reasonMatches = [
+    ...text.matchAll(
+      /Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi,
+    ),
+  ]
     .map((match) => match[1].trim())
     .filter(Boolean);
 
@@ -709,55 +713,74 @@ const Approvals = () => {
                   </span>
                 </div>
 
-                {reasonModal.source === "REQUEST" && reasonModal.correctionDetails ? (
+                {reasonModal.source === "REQUEST" &&
+                reasonModal.correctionDetails ? (
                   <div className="grid gap-3 rounded-2xl border border-border bg-secondary/20 px-4 py-4 sm:grid-cols-2">
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Date</p>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Date
+                      </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
                         {formatPunchDate(reasonModal.correctionDetails.date)}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Punch Type</p>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Punch Type
+                      </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
                         {reasonModal.punchType || "—"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Check-in Time</p>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Check-in Time
+                      </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
                         {reasonModal.correctionDetails.checkInTime || "—"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Check-out Time</p>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Check-out Time
+                      </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
                         {reasonModal.correctionDetails.checkOutTime || "—"}
                       </p>
                     </div>
                     <div className="sm:col-span-2">
-                      <p className="text-xs font-semibold text-muted-foreground">Employee Reason</p>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Employee Reason
+                      </p>
                       <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                        {reasonModal.correctionDetails.reason || "No reason provided."}
+                        {reasonModal.correctionDetails.reason ||
+                          "No reason provided."}
                       </p>
                     </div>
                   </div>
                 ) : reasonModal.source === "ATTENDANCE" ? (
                   (() => {
-                    const attendanceDetails = getAttendanceDetails(reasonModal.description);
+                    const attendanceDetails = getAttendanceDetails(
+                      reasonModal.description,
+                    );
                     return (
                       <div className="space-y-3 rounded-2xl border border-border bg-secondary/20 px-4 py-4">
                         <div>
-                          <p className="text-xs font-semibold text-muted-foreground">Employee Reason</p>
+                          <p className="text-xs font-semibold text-muted-foreground">
+                            Employee Reason
+                          </p>
                           <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
                             {attendanceDetails.reason}
                           </p>
                         </div>
-                        {(attendanceDetails.checkInDistance || attendanceDetails.checkOutDistance) && (
+                        {(attendanceDetails.checkInDistance ||
+                          attendanceDetails.checkOutDistance) && (
                           <div className="grid gap-3 sm:grid-cols-2">
                             {attendanceDetails.checkInDistance && (
                               <div>
-                                <p className="text-xs font-semibold text-muted-foreground">Check-in Distance</p>
+                                <p className="text-xs font-semibold text-muted-foreground">
+                                  Check-in Distance From Your Office
+                                </p>
                                 <p className="mt-1 text-sm font-semibold text-foreground">
                                   {attendanceDetails.checkInDistance} km
                                 </p>
@@ -765,7 +788,9 @@ const Approvals = () => {
                             )}
                             {attendanceDetails.checkOutDistance && (
                               <div>
-                                <p className="text-xs font-semibold text-muted-foreground">Check-out Distance</p>
+                                <p className="text-xs font-semibold text-muted-foreground">
+                                  Check-out Distance From Your Office
+                                </p>
                                 <p className="mt-1 text-sm font-semibold text-foreground">
                                   {attendanceDetails.checkOutDistance} km
                                 </p>
@@ -778,7 +803,9 @@ const Approvals = () => {
                   })()
                 ) : (
                   <div className="rounded-2xl border border-border bg-secondary/20 px-4 py-4">
-                    <p className="mb-1 text-xs font-semibold text-muted-foreground">Employee Reason</p>
+                    <p className="mb-1 text-xs font-semibold text-muted-foreground">
+                      Employee Reason
+                    </p>
                     <p className="break-words text-sm font-medium leading-6 text-foreground">
                       {getReadableReason(reasonModal).reason}
                     </p>

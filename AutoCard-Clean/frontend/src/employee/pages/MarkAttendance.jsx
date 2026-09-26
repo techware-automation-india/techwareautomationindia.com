@@ -687,19 +687,19 @@ const MarkAttendance = () => {
     });
   };
   const getManualPunchDate = (time) => {
-  if (!time) return null;
+    if (!time) return null;
 
-  const [hours, minutes] = String(time).split(":").map(Number);
+    const [hours, minutes] = String(time).split(":").map(Number);
 
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
-    return null;
-  }
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+      return null;
+    }
 
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
 
-  return date;
-};
+    return date;
+  };
 
   const forgotPunchData = getForgotPunchData(correctionRequest);
 
@@ -790,23 +790,19 @@ const MarkAttendance = () => {
   // WORKED TIME
   // =======================================================
 
- const normalCheckInDate = record?.checkIn
-  ? new Date(record.checkIn)
-  : null;
+  const normalCheckInDate = record?.checkIn ? new Date(record.checkIn) : null;
 
-const forgotPunchCheckInDate = isCorrectionPending
-  ? getManualPunchDate(forgotPunchData?.checkInTime)
-  : null;
+  const forgotPunchCheckInDate = isCorrectionPending
+    ? getManualPunchDate(forgotPunchData?.checkInTime)
+    : null;
 
-const effectiveCheckInDate =
-  normalCheckInDate || forgotPunchCheckInDate;
+  const effectiveCheckInDate = normalCheckInDate || forgotPunchCheckInDate;
 
-const workedMs = effectiveCheckInDate
-  ? record?.checkOut
-    ? new Date(record.checkOut).getTime() -
-      effectiveCheckInDate.getTime()
-    : now.getTime() - effectiveCheckInDate.getTime()
-  : 0;
+  const workedMs = effectiveCheckInDate
+    ? record?.checkOut
+      ? new Date(record.checkOut).getTime() - effectiveCheckInDate.getTime()
+      : now.getTime() - effectiveCheckInDate.getTime()
+    : 0;
   const workedH = Math.floor(workedMs / (1000 * 60 * 60));
 
   const workedM = Math.floor((workedMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -1271,7 +1267,11 @@ const workedMs = effectiveCheckInDate
 
                 {reasonModal.distanceMeters != null && (
                   <span className="ml-2">
-                    ({reasonModal.distanceMeters}m away)
+                    (
+                    {reasonModal.distanceMeters >= 1000
+                      ? `${(reasonModal.distanceMeters / 1000).toFixed(2)} km away`
+                      : `${Math.round(reasonModal.distanceMeters)} m away`}
+                    )
                   </span>
                 )}
               </div>

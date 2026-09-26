@@ -1977,16 +1977,52 @@ router.get(
   },
 );
 
-// GET /api/attendance/register/weekly?days=7 - all employee attendance register.
+// GET /api/attendance/register/weekly?days=7 - employee attendance register.
 router.get("/register/weekly", async (req, res) => {
-  // Allow ADMIN with permission OR any EMPLOYEE to access their own data
+  // Determine if caller has administrative attendance access (ADMIN or EMPLOYEE with attendance module permission)
+  let isFullManager = req.user.role === "ADMIN";
+
   if (req.user.role === "ADMIN") {
     const hasPermission = await requireAdminOrModulePermission(
       "attendance",
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return; // Permission denied
-  } else if (req.user.role !== "EMPLOYEE") {
+  } else if (req.user.role === "EMPLOYEE") {
+    // Check if employee has attendance module permission via custom role or direct permission
+    let roleId = req.user.roleId;
+    if (!roleId) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { roleId: true },
+      });
+      roleId = dbUser?.roleId || null;
+    }
+
+    if (roleId) {
+      const roleMod = await prisma.roleModule.findUnique({
+        where: {
+          roleId_moduleKey: {
+            roleId,
+            moduleKey: "attendance",
+          },
+        },
+      });
+      if (roleMod) isFullManager = true;
+    }
+
+    if (!isFullManager) {
+      const directPerm = await prisma.modulePermission.findUnique({
+        where: {
+          userId_moduleKey: {
+            userId: req.user.id,
+            moduleKey: "attendance",
+          },
+        },
+      });
+      if (directPerm?.canView) isFullManager = true;
+    }
+  } else {
     return res.status(403).json({ message: "Access denied." });
   }
 
@@ -2042,6 +2078,8 @@ router.get("/register/weekly", async (req, res) => {
     const attendanceQueryEnd = new Date(end);
     attendanceQueryEnd.setUTCDate(attendanceQueryEnd.getUTCDate() + 1);
 
+    const employeeFilter = isFullManager ? {} : { userId: req.user.id };
+
     const [
       employees,
       attendanceRecords,
@@ -2050,12 +2088,14 @@ router.get("/register/weekly", async (req, res) => {
       pendingCorrectionRequests,
     ] = await Promise.all([
       prisma.employeeProfile.findMany({
+        where: employeeFilter,
         include: { user: { select: { fullName: true, email: true } } },
         orderBy: { employeeCode: "asc" },
       }),
       prisma.attendance.findMany({
         where: {
           date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
+          ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
         },
         orderBy: [{ date: "desc" }],
       }),
@@ -2067,11 +2107,16 @@ router.get("/register/weekly", async (req, res) => {
           status: "APPROVED",
           startDate: { lt: end },
           endDate: { gte: start },
+          ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
         },
         include: { leaveType: { select: { name: true, code: true } } },
       }),
       prisma.employeeRequest.findMany({
-        where: { type: "CORRECTION", status: "PENDING" },
+        where: {
+          type: "CORRECTION",
+          status: "PENDING",
+          ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
+        },
         select: { employeeId: true, description: true },
       }),
     ]);

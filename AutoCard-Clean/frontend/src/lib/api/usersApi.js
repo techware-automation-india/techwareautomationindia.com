@@ -30,11 +30,12 @@ export async function fetchUsersWithRoles() {
  */
 export async function assignUserRole(userId, roleId) {
   try {
-    if (!userId || !roleId) {
-      throw new Error("User ID and Role ID are required");
+    if (!userId) {
+      throw new Error("User ID is required");
     }
 
-    const response = await apiPut(`/users/${userId}/role`, { roleId });
+    const targetRoleId = roleId || null;
+    const response = await apiPut(`/users/${userId}/role`, { roleId: targetRoleId });
     return response;
   } catch (error) {
     console.error("Failed to assign user role:", error);

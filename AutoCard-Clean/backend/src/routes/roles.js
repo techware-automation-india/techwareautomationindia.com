@@ -21,7 +21,6 @@ router.use(requireAuth, requireRole("ADMIN"));
 router.post("/", validateCreateRole, async (req, res) => {
   try {
     const { name } = req.body;
-    const modulesToAssign = req.body.modules || req.body.moduleKeys || [];
 
     // Check for duplicate role name
     const existingRole = await prisma.roleTable.findUnique({
@@ -39,28 +38,16 @@ router.post("/", validateCreateRole, async (req, res) => {
       data: {
         name,
         isDefault: false,
-        ...(Array.isArray(modulesToAssign) && modulesToAssign.length > 0
-          ? {
-              modules: {
-                create: modulesToAssign.map((moduleKey) => ({ moduleKey })),
-              },
-            }
-          : {}),
-      },
-      include: {
-        modules: true,
       },
     });
 
-    const assignedKeys = (newRole.modules || []).map((m) => m.moduleKey);
-
-    // Return created role with modules array
+    // Return created role with empty modules array
     res.status(201).json({
       id: newRole.id,
       name: newRole.name,
       isDefault: newRole.isDefault,
-      modules: assignedKeys,
-      moduleCount: assignedKeys.length,
+      modules: [],
+      moduleCount: 0,
       createdAt: newRole.createdAt,
       updatedAt: newRole.updatedAt,
     });

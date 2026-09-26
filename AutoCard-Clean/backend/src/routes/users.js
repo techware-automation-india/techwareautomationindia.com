@@ -184,21 +184,23 @@ router.put(
         });
       }
 
-      // Check if role exists
-      const role = await prisma.roleTable.findUnique({
-        where: { id: roleId },
-      });
-
-      if (!role) {
-        return res.status(400).json({
-          message: "Invalid role ID. Role does not exist.",
+      // If roleId is provided, verify it exists. If null, we are unassigning.
+      if (roleId) {
+        const role = await prisma.roleTable.findUnique({
+          where: { id: roleId },
         });
+
+        if (!role) {
+          return res.status(400).json({
+            message: "Invalid role ID. Role does not exist.",
+          });
+        }
       }
 
-      // Update user's roleId
+      // Update user's roleId (sets to null when unassigning)
       const updatedUser = await prisma.user.update({
         where: { id },
-        data: { roleId },
+        data: { roleId: roleId || null },
         select: {
           id: true,
           email: true,

@@ -2259,11 +2259,11 @@ router.get(
 // POST /api/attendance/:id/reject - reject pending attendance (ADMIN)
 // ============================================================================
 // APPROVE ATTENDANCE
-// POST /api/attendance/approve/:id and /api/attendance/:id/approve
+// POST /api/attendance/approve/:id
 // ============================================================================
 
 router.post(
-  ["/approve/:id", "/:id/approve"],
+  "/approve/:id",
   requireAdminOrModulePermission("attendance", "canEdit"),
   async (req, res) => {
     try {
@@ -2318,11 +2318,11 @@ router.post(
 
 // ============================================================================
 // REJECT ATTENDANCE
-// POST /api/attendance/reject/:id and /api/attendance/:id/reject
+// POST /api/attendance/reject/:id
 // ============================================================================
 
 router.post(
-  ["/reject/:id", "/:id/reject"],
+  "/reject/:id",
   requireAdminOrModulePermission("attendance", "canEdit"),
   async (req, res) => {
     try {
@@ -2605,6 +2605,222 @@ router.get(
     } catch (err) {
       console.error("Get attendance error:", err);
       res.status(500).json({ message: "Failed to load attendance." });
+    }
+  },
+);
+
+// POST /api/attendance/approve/:id - Approve a pending check-in
+router.post(
+  "/approve/:id",
+  requireAdminOrModulePermission("attendance", "canEdit"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const record = await prisma.attendance.findUnique({
+        where: { id },
+        include: { employee: true },
+      });
+
+      if (!record) {
+        return res
+          .status(404)
+          .json({ message: "Attendance record not found." });
+      }
+
+      if (record.status !== "PENDING_APPROVAL") {
+        return res
+          .status(400)
+          .json({ message: "Record is not pending approval." });
+      }
+
+      const updatedNote = record.note
+        ? `${record.note} | Admin approved.`
+        : "Admin approved.";
+
+      const updated = await prisma.attendance.update({
+        where: { id },
+        data: {
+          status: "PRESENT",
+          note: updatedNote,
+        },
+      });
+
+      res.json({ record: updated, message: "Check-in approved successfully." });
+    } catch (err) {
+      console.error("Approve check-in error:", err);
+      res.status(500).json({ message: "Failed to approve check-in." });
+    }
+  },
+);
+
+// POST /api/attendance/reject/:id - Reject a pending check-in
+router.post(
+  "/reject/:id",
+  requireAdminOrModulePermission("attendance", "canEdit"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      const record = await prisma.attendance.findUnique({
+        where: { id },
+        include: { employee: true },
+      });
+
+      if (!record) {
+        return res
+          .status(404)
+          .json({ message: "Attendance record not found." });
+      }
+
+      if (record.status !== "PENDING_APPROVAL") {
+        return res
+          .status(400)
+          .json({ message: "Record is not pending approval." });
+      }
+
+      const rejectionNote = reason
+        ? `Admin rejected: ${reason}`
+        : "Admin rejected.";
+      const updatedNote = record.note
+        ? `${record.note} | ${rejectionNote}`
+        : rejectionNote;
+
+      const updated = await prisma.attendance.update({
+        where: { id },
+        data: {
+          status: "ABSENT",
+          note: updatedNote,
+        },
+      });
+
+      res.json({ record: updated, message: "Check-in rejected successfully." });
+    } catch (err) {
+      console.error("Reject check-in error:", err);
+      res.status(500).json({ message: "Failed to reject check-in." });
+    }
+  },
+);
+
+// ============================================================================
+// APPROVE ATTENDANCE
+// POST /api/attendance/approve/:id
+// ============================================================================
+
+router.post(
+  "/approve/:id",
+  requireAdminOrModulePermission("attendance", "canEdit"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const record = await prisma.attendance.findUnique({
+        where: { id },
+        include: { employee: true },
+      });
+
+      if (!record) {
+        return res.status(404).json({
+          message: "Attendance record not found.",
+        });
+      }
+
+      if (record.status !== "PENDING_APPROVAL") {
+        return res.status(400).json({
+          message: "Record is not pending approval.",
+        });
+      }
+
+      const workedHours = calculateWorkedHours(record.checkIn, record.checkOut);
+
+      const updatedNote = record.note
+        ? `${record.note} | Admin approved.`
+        : "Admin approved.";
+
+      const updated = await prisma.attendance.update({
+        where: { id },
+
+        data: {
+          status: "PRESENT",
+          workedHours,
+          note: fitAttendanceNote(updatedNote),
+        },
+      });
+
+      return res.json({
+        record: updated,
+        message: "Check-in approved successfully.",
+      });
+    } catch (err) {
+      console.error("Approve check-in error:", err);
+
+      return res.status(500).json({
+        message: "Failed to approve check-in.",
+      });
+    }
+  },
+);
+
+// ============================================================================
+// REJECT ATTENDANCE
+// POST /api/attendance/reject/:id
+// ============================================================================
+
+router.post(
+  "/reject/:id",
+  requireAdminOrModulePermission("attendance", "canEdit"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+
+      const record = await prisma.attendance.findUnique({
+        where: { id },
+        include: { employee: true },
+      });
+
+      if (!record) {
+        return res.status(404).json({
+          message: "Attendance record not found.",
+        });
+      }
+
+      if (record.status !== "PENDING_APPROVAL") {
+        return res.status(400).json({
+          message: "Record is not pending approval.",
+        });
+      }
+
+      const rejectionNote = reason
+        ? `Admin rejected: ${reason}`
+        : "Admin rejected.";
+
+      const updatedNote = record.note
+        ? `${record.note} | ${rejectionNote}`
+        : rejectionNote;
+
+      const updated = await prisma.attendance.update({
+        where: { id },
+
+        data: {
+          status: "ABSENT",
+          note: fitAttendanceNote(updatedNote),
+        },
+      });
+
+      return res.json({
+        record: updated,
+        message: "Check-in rejected successfully.",
+      });
+    } catch (err) {
+      console.error("Reject check-in error:", err);
+
+      return res.status(500).json({
+        message: "Failed to reject check-in.",
+      });
     }
   },
 );

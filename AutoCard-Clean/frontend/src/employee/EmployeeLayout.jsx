@@ -64,7 +64,9 @@ const EmployeeLayout = () => {
         const modules = getModulesByPermissions(perms);
         setVisibleModules(modules);
         if (data?.roleName) {
+          console.log("👤 [Employee Layout] Assigned role loaded:", data.roleName);
           setAssignedRoleName(data.roleName);
+          setUser((prev) => (prev ? { ...prev, roleName: data.roleName } : prev));
           updateAuthUser({ roleName: data.roleName });
         }
       } catch (err) {
@@ -215,14 +217,19 @@ const EmployeeLayout = () => {
                 onClick={() => setProfileOpen((prev) => !prev)}
                 className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-secondary transition-colors"
               >
-                {/* Name + Email */}
+                {/* Name + Email + Role */}
                 <div className="text-right hidden sm:block">
                   <div className="text-sm font-semibold text-foreground">
                     {user?.fullName || "Employee"}
                   </div>
 
-                  <div className="text-xs text-muted-foreground">
-                    {user?.email || ""}
+                  <div className="text-xs text-muted-foreground flex items-center justify-end gap-1.5">
+                    <span>{user?.email || ""}</span>
+                    {(assignedRoleName || user?.roleName || user?.customRole?.name) && (
+                      <span className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold uppercase">
+                        {assignedRoleName || user?.roleName || user?.customRole?.name}
+                      </span>
+                    )}
                   </div>
                 </div>
 

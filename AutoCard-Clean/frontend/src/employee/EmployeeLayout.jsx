@@ -217,20 +217,19 @@ const EmployeeLayout = () => {
                 onClick={() => setProfileOpen((prev) => !prev)}
                 className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-secondary transition-colors"
               >
-                {/* Name + Email + Role */}
+                {/* Name + Role */}
                 <div className="text-right hidden sm:block">
-                  <div className="text-sm font-semibold text-foreground">
+                  <div className="text-sm font-semibold text-foreground leading-tight">
                     {user?.fullName || "Employee"}
                   </div>
 
-                  <div className="text-xs text-muted-foreground flex items-center justify-end gap-1.5">
-                    <span>{user?.email || ""}</span>
-                    {(assignedRoleName || user?.roleName || user?.customRole?.name) && (
+                  {(assignedRoleName || user?.roleName || user?.customRole?.name || user?.role) && (
+                    <div className="flex items-center justify-end mt-0.5">
                       <span className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold uppercase">
-                        {assignedRoleName || user?.roleName || user?.customRole?.name}
+                        {assignedRoleName || user?.roleName || user?.customRole?.name || user?.role}
                       </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Avatar */}

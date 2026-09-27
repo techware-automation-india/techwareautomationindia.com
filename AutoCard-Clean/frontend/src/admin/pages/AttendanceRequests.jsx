@@ -65,7 +65,7 @@ const AttendanceRequests = () => {
   const approve = async (id) => {
     setActingId(id);
     try {
-      await apiPost(`/attendance/${id}/approve`);
+      await apiPost(`/attendance/approve/${id}`);
       toast.success("Attendance request approved.");
       await loadRequests();
     } catch (err) {
@@ -78,7 +78,7 @@ const AttendanceRequests = () => {
   const reject = async (id) => {
     setActingId(id);
     try {
-      await apiPost(`/attendance/${id}/reject`, { reason: "Unassigned location request rejected by admin." });
+      await apiPost(`/attendance/reject/${id}`, { reason: "Unassigned location request rejected by admin." });
       toast.success("Attendance request rejected.");
       await loadRequests();
     } catch (err) {

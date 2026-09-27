@@ -22,12 +22,14 @@ const loginSchema = z.object({
 // Builds the public user object returned to the client, including the
 // employee onboarding status when applicable.
 function publicUser(user) {
+  const customRoleName = user.customRole?.name || null;
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     role: user.role,
     roleId: user.roleId ?? null,
+    roleName: customRoleName || (user.role === "ADMIN" ? "Admin" : user.role === "CUSTOMER" ? "Customer" : "Employee"),
     customRole: user.customRole ? {
       id: user.customRole.id,
       name: user.customRole.name,
@@ -148,6 +150,12 @@ router.post("/login", async (req, res) => {
       roleId: user.roleId 
     });
 
+    if (user.roleId && !user.customRole) {
+      user.customRole = await prisma.roleTable.findUnique({
+        where: { id: user.roleId },
+      });
+    }
+
     return res.json({ token, user: publicUser(user) });
   } catch (err) {
     console.error("Login error:", err);
@@ -164,6 +172,11 @@ router.get("/me", requireAuth, async (req, res) => {
     });
     if (!user) {
       return res.status(404).json({ message: "User not found." });
+    }
+    if (user.roleId && !user.customRole) {
+      user.customRole = await prisma.roleTable.findUnique({
+        where: { id: user.roleId },
+      });
     }
     return res.json({ user: publicUser(user) });
   } catch (err) {

@@ -117,9 +117,15 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
 
     const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0 || roleModules.length > 0;
 
+    let roleName = user?.customRole?.name || null;
+    if (!roleName && user?.roleId) {
+      const r = await prisma.roleTable.findUnique({ where: { id: user.roleId } });
+      if (r) roleName = r.name;
+    }
+
     res.json({
       role: user?.role || req.user?.role,
-      roleName: user?.customRole?.name || null,
+      roleName: roleName || (user?.role === "ADMIN" ? "Admin" : user?.role === "CUSTOMER" ? "Customer" : "Employee"),
       roleId: user?.roleId || null,
       modules: employeeModules,
       permissions: permissionMap,

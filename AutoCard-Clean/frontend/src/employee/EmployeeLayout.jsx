@@ -17,7 +17,7 @@ import {
   
 } from "lucide-react";
 import { employeeModules, getModulesByPermissions } from "./modules.js";
-import { getAuthUser, clearAuth } from "../lib/auth.js";
+import { getAuthUser, clearAuth, updateAuthUser } from "../lib/auth.js";
 import { apiGet } from "../lib/api.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 
@@ -29,6 +29,10 @@ const EmployeeLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [assignedRoleName, setAssignedRoleName] = useState(() => {
+    const authUser = getAuthUser();
+    return authUser?.roleName || authUser?.customRole?.name || "";
+  });
   const [permissions, setPermissions] = useState({});
   const [visibleModules, setVisibleModules] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
@@ -43,6 +47,9 @@ const EmployeeLayout = () => {
     }
 
     setUser(authUser);
+    if (authUser.roleName || authUser.customRole?.name) {
+      setAssignedRoleName(authUser.roleName || authUser.customRole?.name);
+    }
   }, [navigate, location.pathname]);
 
   // Load permissions and determine visible modules
@@ -56,6 +63,10 @@ const EmployeeLayout = () => {
         setPermissions(perms);
         const modules = getModulesByPermissions(perms);
         setVisibleModules(modules);
+        if (data?.roleName) {
+          setAssignedRoleName(data.roleName);
+          updateAuthUser({ roleName: data.roleName });
+        }
       } catch (err) {
         console.error("Failed to load permissions:", err);
         // Fallback to default modules if permission loading fails
@@ -66,7 +77,7 @@ const EmployeeLayout = () => {
     };
 
     loadPermissions();
-  }, [user]);
+  }, [user?.id]);
 
   const handleLogout = () => {
     console.log("🚪 [Employee Layout] Logging out");
@@ -278,8 +289,8 @@ const EmployeeLayout = () => {
                       </div>
                     </div>
 
-                    <span className="inline-flex mt-3 px-2 py-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold tracking-wide">
-                      EMPLOYEE
+                    <span className="inline-flex mt-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold tracking-wide uppercase">
+                      {assignedRoleName || user?.roleName || user?.customRole?.name || user?.role || "EMPLOYEE"}
                     </span>
                   </div>
 

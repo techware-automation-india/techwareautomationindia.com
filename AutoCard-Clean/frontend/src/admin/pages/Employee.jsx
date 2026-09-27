@@ -74,7 +74,10 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
     try {
       const [empData, rolesData] = await Promise.all([
         apiGet("/employees"),
-        fetchRoles(),
+        fetchRoles().catch((err) => {
+          console.warn("Could not fetch roles:", err);
+          return { roles: [] };
+        }),
       ]);
       setEmployees(empData.employees || []);
       const loadedRoles = rolesData?.roles || [];
@@ -188,10 +191,11 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
   };
 
   const handleStatCardClick = (status) => {
+    const basePath = isEmployeeView ? "/employee/employee-list" : "/admin/employee-list";
     if (status === "all") {
-      navigate("/admin/employee-list");
+      navigate(basePath);
     } else {
-      navigate(`/admin/employee-list?status=${status.toUpperCase()}`);
+      navigate(`${basePath}?status=${status.toUpperCase()}`);
     }
   };
 

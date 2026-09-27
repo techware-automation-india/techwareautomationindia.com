@@ -170,10 +170,34 @@ const AppRoutes = () => {
           {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
           {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
           <Route
+            path="employee"
+            element={
+              <RequireOnboarding>
+                <EmployeeManagement />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="add-account"
+            element={
+              <RequireOnboarding>
+                <EmployeeManagement />
+              </RequireOnboarding>
+            }
+          />
+          <Route
             path="employee-management"
             element={
               <RequireOnboarding>
                 <EmployeeManagement />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="employee-list"
+            element={
+              <RequireOnboarding>
+                <EmployeeList isEmployeeView={true} />
               </RequireOnboarding>
             }
           />

@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ShieldCheck,
   UserCog,
+  UserPlus,
   Contact,
   FileText,
   BookOpen,
@@ -81,10 +82,10 @@ const defaultModules = [
 const adminModules = [
   {
     key: "employee",
-    label: "Account Management",
-    path: "/employee/employee-management",
-    icon: UserCog,
-    description: "Manage user accounts.",
+    label: "Add Account",
+    path: "/employee/employee",
+    icon: UserPlus,
+    description: "Create user accounts and assign roles.",
     adminKey: "employee",
   },
   {

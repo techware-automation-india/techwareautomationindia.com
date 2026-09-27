@@ -1,6 +1,6 @@
 import {
   LayoutDashboard,
-  UserCog,
+  UserPlus,
   ClipboardList,
   CheckCircle,
   Clock,
@@ -14,7 +14,7 @@ import {
 
 export const MODULES = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { key: 'employee', label: 'Account Management', icon: UserCog },
+  { key: 'employee', label: 'Add Account', icon: UserPlus },
   { key: 'requests', label: 'Requests', icon: ClipboardList },
   { key: 'approvals', label: 'Approvals', icon: CheckCircle },
   { key: 'mark-attendance', label: 'Mark Attendance', icon: Clock },

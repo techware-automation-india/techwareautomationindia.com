@@ -11,15 +11,15 @@ import {
 
 const router = Router();
 
-// All routes require admin or roles-access module permission
-router.use(requireAuth, checkRolePermission("roles-access"));
+// All routes require authentication
+router.use(requireAuth);
 
 /**
  * POST /api/roles
  * Create a new custom role with isDefault: false
  * Requirements: 2.1, 2.2, 2.3, 2.4, 2.6, 13.1, 13.7, 15.1, 15.2, 15.3
  */
-router.post("/", validateCreateRole, async (req, res) => {
+router.post("/", checkRolePermission("roles-access"), validateCreateRole, async (req, res) => {
   try {
     const { name } = req.body;
     const moduleKeys = req.body.moduleKeys || req.body.modules || [];
@@ -73,7 +73,7 @@ router.post("/", validateCreateRole, async (req, res) => {
  * Returns roles array and validModules list
  * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 13.2, 13.7
  */
-router.get("/", async (req, res) => {
+router.get("/", checkRolePermission(["roles-access", "employee"]), async (req, res) => {
   try {
     // Fetch all roles with their associated modules
     const roles = await prisma.roleTable.findMany({
@@ -119,7 +119,7 @@ router.get("/", async (req, res) => {
  * Returns array of module keys for the role
  * Requirements: 3.6, 13.5, 13.7, 15.2
  */
-router.get("/:id/modules", async (req, res) => {
+router.get("/:id/modules", checkRolePermission("roles-access"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -157,7 +157,7 @@ router.get("/:id/modules", async (req, res) => {
  * Fetch single role by ID with modules
  * Requirements: 6.3, 13.7, 15.2
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", checkRolePermission("roles-access"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -199,7 +199,7 @@ router.get("/:id", async (req, res) => {
  * Delete a custom role
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 13.4, 13.7, 15.2, 15.3, 15.4
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", checkRolePermission("roles-access"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -256,7 +256,7 @@ router.delete("/:id", async (req, res) => {
  * Update role name (custom roles only)
  * Requirements: 4.1, 4.2, 4.5, 13.3, 13.7, 15.1, 15.2, 15.3, 15.4
  */
-router.put("/:id", validateUpdateRoleName, async (req, res) => {
+router.put("/:id", checkRolePermission("roles-access"), validateUpdateRoleName, async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
@@ -326,7 +326,7 @@ router.put("/:id", validateUpdateRoleName, async (req, res) => {
  * Update role module access configuration
  * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 4.3, 4.4, 13.6, 13.7, 15.1, 15.2, 20.3
  */
-router.put("/:id/modules", validateUpdateModules, async (req, res) => {
+router.put("/:id/modules", checkRolePermission("roles-access"), validateUpdateModules, async (req, res) => {
   try {
     const { id } = req.params;
     const { moduleKeys } = req.body;

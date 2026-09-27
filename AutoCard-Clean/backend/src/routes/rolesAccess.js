@@ -11,7 +11,7 @@ const employeeModules = [
   { key: "overview", label: "Dashboard" },
   { key: "mark-attendance", label: "Mark Attendance" },
   { key: "attendance", label: "My Attendance" },
-  { key: "employee", label: "Account Management" },
+  { key: "employee", label: "Add Account" },
   { key: "requests", label: "Requests" },
   { key: "approvals", label: "Approvals" },
   { key: "leave-policy", label: "Leave Policy" },
@@ -65,12 +65,21 @@ function buildPermissionMap(rows) {
 }
 
 router.get("/me/permissions", requireAuth, async (req, res) => {
-  if (req.user?.role !== EMPLOYEE_ROLE) {
+  if (req.user?.role === "ADMIN") {
+    const adminPerms = {};
+    for (const m of employeeModules) {
+      adminPerms[m.key] = {
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+      };
+    }
     return res.json({
-      role: req.user?.role,
-      modules: [],
-      permissions: {},
-      hasConfiguredPermissions: false,
+      role: "ADMIN",
+      modules: employeeModules,
+      permissions: adminPerms,
+      hasConfiguredPermissions: true,
     });
   }
 
@@ -106,11 +115,10 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
       };
     }
 
-
-    const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0;
+    const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0 || roleModules.length > 0;
 
     res.json({
-      role: EMPLOYEE_ROLE,
+      role: user?.role || req.user?.role,
       roleName: user?.customRole?.name || null,
       roleId: user?.roleId || null,
       modules: employeeModules,

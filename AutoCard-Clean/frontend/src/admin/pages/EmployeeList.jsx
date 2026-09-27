@@ -241,7 +241,7 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
       <div className="flex items-center justify-between">
         <div>
           <Link 
-            to="/admin/employee" 
+            to={isEmployeeView ? "/employee/employee" : "/admin/employee"} 
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-2 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />

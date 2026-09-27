@@ -603,28 +603,6 @@ const Overview = () => {
         </div>
       )}
 
-      {/* =====================================================
-          ONBOARDING - APPROVED
-      ===================================================== */}
-
-      {onboardingStatus === "APPROVED" && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 flex items-start gap-4">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="h-5 w-5 text-white" />
-          </div>
-
-          <div>
-            <h3 className="font-semibold text-emerald-900 mb-1">
-              Onboarding Complete
-            </h3>
-
-            <p className="text-sm text-emerald-800">
-              Welcome aboard! Your onboarding has been approved. You now have
-              full access to all employee modules.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* =====================================================
           ASSIGNED SHIFTS & LOCATIONS

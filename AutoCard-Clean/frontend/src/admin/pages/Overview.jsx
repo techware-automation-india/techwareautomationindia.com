@@ -30,9 +30,8 @@ const Overview = () => {
           })),
           ...(attendanceData.pendingRecords || []).map((request) => ({
             id: `attendance-${request.id}`,
-            subject: "Attendance location approval",
+            subject: "Attendance Location Approval",
             type: "ATTENDANCE",
-            path: "/admin/attendance-requests",
             employee: { fullName: request.employee?.user?.fullName || "Employee" },
           })),
         ];
@@ -93,7 +92,7 @@ const Overview = () => {
                   {pendingRequests.map((request) => (
                     <Link
                       key={request.id}
-                      to={request.path || "/admin/requests"}
+                      to="/admin/approvals"
                       onClick={() => setShowNotifications(false)}
                       className="block rounded-lg bg-secondary/60 p-2.5 text-sm hover:bg-secondary"
                     >
@@ -106,11 +105,11 @@ const Overview = () => {
                 </div>
               )}
               <Link
-                to="/admin/requests"
+                to="/admin/approvals"
                 onClick={() => setShowNotifications(false)}
                 className="mt-3 inline-flex text-sm font-semibold text-primary hover:underline"
               >
-                Open Requests
+                Open Approvals
               </Link>
             </div>
           )}

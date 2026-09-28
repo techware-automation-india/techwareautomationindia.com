@@ -47,7 +47,6 @@ import EmployeeAttendance from "./employee/pages/Attendance.jsx";
 import EmployeeLeave from "./employee/pages/Leave.jsx";
 import EmployeeHolidays from "./employee/pages/Holidays.jsx";
 import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
-import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
 // CUSTOMER MANAGEMENT COMMENTED OUT
 // import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
 import EmployeeRequests from "./employee/pages/Requests.jsx";
@@ -169,7 +168,6 @@ const AppRoutes = () => {
           />
           {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
           {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
-          {/* <Route path="employee-management" element={<RequireOnboarding><EmployeeManagement /></RequireOnboarding>} /> */}
           {/* CUSTOMER MANAGEMENT ROUTE COMMENTED OUT */}
           {/* <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} /> */}
           {/* <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} /> */}

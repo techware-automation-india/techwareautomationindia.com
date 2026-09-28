@@ -19,6 +19,38 @@ import { getAuthUser } from "../../lib/auth.js";
 import { apiGet } from "../../lib/api.js";
 import { formatTimeRange } from "../../lib/timeFormat.js";
 
+const parseNotificationDescription = (description) => {
+  if (typeof description !== "string") return { text: description || "", details: null };
+
+  const markerIndex = description.lastIndexOf("[ATTENDANCE_CORRECTION]");
+  if (markerIndex === -1) {
+    return { text: description, details: null };
+  }
+
+  const jsonText = description.slice(markerIndex + "[ATTENDANCE_CORRECTION]".length).trim();
+  const rawText = description.slice(0, markerIndex).trim();
+
+  let reason = rawText
+    .replace(/^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i, "")
+    .replace(/^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i, "")
+    .replace(/Check-In Location:.*$/i, "")
+    .replace(/Check-Out Location:.*$/i, "")
+    .replace(/\|?\s*Pending admin approval\.?/gi, "")
+    .replace(/\|?\s*Approved by admin\.?/gi, "")
+    .replace(/\|?\s*Rejected by admin\.?/gi, "")
+    .replace(/\|/g, "")
+    .trim();
+
+  let details = null;
+  try {
+    details = JSON.parse(jsonText);
+  } catch {
+    details = null;
+  }
+
+  return { text: reason || "Attendance Correction Request", details };
+};
+
 /* =========================================================
    ROSTER HELPERS
 ========================================================= */
@@ -454,6 +486,9 @@ const Overview = () => {
                         })
                       : "—";
 
+                    const { text: cleanDescription, details: correctionData } =
+                      parseNotificationDescription(request.description);
+
                     return (
                       <div
                         key={`${request.type}-${request.id}`}
@@ -476,8 +511,31 @@ const Overview = () => {
                           </div>
 
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            {request.description || request.status || "Request update"}
+                            {cleanDescription || request.status || "Request update"}
                           </p>
+
+                          {correctionData && (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+                              {correctionData.date && (
+                                <span className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
+                                  <CalendarDays className="h-3 w-3 text-primary" />
+                                  {correctionData.date}
+                                </span>
+                              )}
+                              {correctionData.checkInTime && (
+                                <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                  <Clock className="h-3 w-3" />
+                                  In: {correctionData.checkInTime}
+                                </span>
+                              )}
+                              {correctionData.checkOutTime && (
+                                <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 font-medium text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                                  <Clock className="h-3 w-3" />
+                                  Out: {correctionData.checkOutTime}
+                                </span>
+                              )}
+                            </div>
+                          )}
 
                           <span
                             className={`mt-2 inline-flex rounded-md px-2 py-0.5 text-[10px] font-semibold ${

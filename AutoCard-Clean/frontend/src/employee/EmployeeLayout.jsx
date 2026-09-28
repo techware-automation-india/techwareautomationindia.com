@@ -173,7 +173,7 @@ const EmployeeLayout = () => {
       )}
 
       {/* Main content */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden lg:ml-64 flex flex-col min-h-screen">
         <header className="h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <button
@@ -304,7 +304,7 @@ const EmployeeLayout = () => {
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8">
+        <main className="flex-1 min-w-0 max-w-full overflow-x-hidden p-4 lg:p-8">
           {/* Onboarding Status Banner */}
           {user?.onboardingStatus === "PENDING" && (
             <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">

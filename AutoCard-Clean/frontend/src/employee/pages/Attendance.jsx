@@ -70,7 +70,7 @@ const getRegularHours = (workedHours) => {
 };
 
 // Calculate overtime from worked hours.
-// Anything above 8 hours is overtime.
+// Anything above 8 hours is overtime, but overtime of 15 mins or less (<= 0.25 hours) is not counted.
 const getOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -80,7 +80,14 @@ const getOvertimeHours = (workedHours) => {
     return 0;
   }
 
-  return hours - REGULAR_HOURS;
+  const rawOvertimeHours = hours - REGULAR_HOURS;
+  const overtimeMinutes = Math.round(rawOvertimeHours * 60);
+
+  if (overtimeMinutes <= 15) {
+    return 0;
+  }
+
+  return rawOvertimeHours;
 };
 
 const fmtDate = (v) => {
@@ -596,7 +603,7 @@ const Attendance = () => {
           </div>
 
           <div>
-            <h1 className="font-display text-2xl font-bold">Attendance</h1>
+            <h1 className="font-display text-2xl font-bold">My Attendance</h1>
 
             <p className="text-sm text-muted-foreground">
               Your monthly attendance history.
@@ -870,7 +877,9 @@ const Attendance = () => {
 
           {/* Calendar */}
           <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-            {/* Weekdays */}
+            <div className="overflow-x-auto">
+              <div className="min-w-[700px]">
+                {/* Weekdays */}
             <div className="grid grid-cols-7 border-b border-border bg-secondary/30">
               {[
                 ["Sun", "Sunday"],
@@ -1042,6 +1051,8 @@ const Attendance = () => {
                 },
               )}
             </div>
+          </div>
+        </div>
 
             {/* Calendar footer */}
             <div className="px-4 py-3 bg-secondary/20 border-t border-border">

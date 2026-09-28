@@ -44,7 +44,7 @@ const calculateWorkedHours = (checkIn, checkOut) => {
   return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
 };
 
-// Anything above 8 hours is overtime
+// Anything above 8 hours is overtime, but overtime of 15 mins or less (<= 0.25 hours) is not counted.
 const calculateOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -54,7 +54,14 @@ const calculateOvertimeHours = (workedHours) => {
     return 0;
   }
 
-  return parseFloat((hours - REGULAR_WORKING_HOURS).toFixed(2));
+  const rawOvertimeHours = hours - REGULAR_WORKING_HOURS;
+  const overtimeMinutes = Math.round(rawOvertimeHours * 60);
+
+  if (overtimeMinutes <= 15) {
+    return 0;
+  }
+
+  return parseFloat(rawOvertimeHours.toFixed(2));
 };
 
 const parseLocationString = (location) => {
@@ -1778,6 +1785,73 @@ router.get("/employees", async (req, res) => {
   }
 });
 
+const enrichAttendanceRecordsWithDistance = async (records) => {
+  const defaultLocation =
+    (await prisma.location.findFirst({
+      where: { isDefault: true, isActive: true },
+    })) ||
+    (await prisma.location.findFirst({
+      where: { isDefault: true },
+    })) ||
+    (await prisma.location.findFirst({
+      where: { isActive: true },
+    })) ||
+    (await prisma.location.findFirst());
+
+  return Promise.all(
+    (records || []).map(async (record) => {
+      let empLocation = record.employee?.location;
+      if (!empLocation && record.employeeId) {
+        const emp = await prisma.employeeProfile.findUnique({
+          where: { id: record.employeeId },
+          include: { location: true },
+        });
+        empLocation = emp?.location;
+      }
+      const targetLoc = empLocation || defaultLocation;
+
+      let checkInDistance = null;
+      let checkOutDistance = null;
+
+      if (
+        record.checkInLatitude != null &&
+        record.checkInLongitude != null &&
+        targetLoc?.latitude != null &&
+        targetLoc?.longitude != null
+      ) {
+        const distMeters = getDistanceInMeters(
+          targetLoc.latitude,
+          targetLoc.longitude,
+          record.checkInLatitude,
+          record.checkInLongitude,
+        );
+        checkInDistance = formatDistanceKm(distMeters);
+      }
+
+      if (
+        record.checkOutLatitude != null &&
+        record.checkOutLongitude != null &&
+        targetLoc?.latitude != null &&
+        targetLoc?.longitude != null
+      ) {
+        const distMeters = getDistanceInMeters(
+          targetLoc.latitude,
+          targetLoc.longitude,
+          record.checkOutLatitude,
+          record.checkOutLongitude,
+        );
+        checkOutDistance = formatDistanceKm(distMeters);
+      }
+
+      return {
+        ...record,
+        checkInDistance: checkInDistance || record.checkInDistance || null,
+        checkOutDistance: checkOutDistance || record.checkOutDistance || null,
+      };
+    }),
+  );
+};
+
 // GET /api/attendance/pending-approvals - Get all pending check-in approvals
 router.get("/pending-approvals", async (req, res) => {
   // Allow ADMIN with permission OR any EMPLOYEE to see their own pending
@@ -1802,6 +1876,7 @@ router.get("/pending-approvals", async (req, res) => {
       include: {
         employee: {
           include: {
+            location: true,
             user: {
               select: { fullName: true, email: true },
             },
@@ -1811,11 +1886,13 @@ router.get("/pending-approvals", async (req, res) => {
       orderBy: { date: "desc" },
     });
 
+    const enriched = await enrichAttendanceRecordsWithDistance(pendingRecords);
+
     console.log(
-      `[GET /pending-approvals] Returning ${pendingRecords.length} pending record(s) for ${req.user.role}.`,
+      `[GET /pending-approvals] Returning ${enriched.length} pending record(s) for ${req.user.role}.`,
     );
 
-    res.json({ pendingRecords });
+    res.json({ pendingRecords: enriched });
   } catch (err) {
     console.error("Get pending approvals error:", err);
     res.status(500).json({ message: "Failed to load pending approvals." });
@@ -1827,6 +1904,7 @@ router.get("/my-requests", requireRole("EMPLOYEE"), async (req, res) => {
   try {
     const profile = await prisma.employeeProfile.findUnique({
       where: { userId: req.user.id },
+      include: { location: true },
     });
     if (!profile)
       return res.status(404).json({ message: "Employee profile not found." });
@@ -1838,12 +1916,17 @@ router.get("/my-requests", requireRole("EMPLOYEE"), async (req, res) => {
           { note: { contains: "Pending admin approval" } },
           { note: { contains: "Admin approved" } },
           { note: { contains: "Admin rejected" } },
+          { note: { contains: "Approved by admin" } },
+          { note: { contains: "Rejected by admin" } },
+          { status: "PENDING_APPROVAL" },
         ],
       },
       orderBy: { updatedAt: "desc" },
     });
 
-    res.json({ records });
+    const enriched = await enrichAttendanceRecordsWithDistance(records);
+
+    res.json({ records: enriched });
   } catch (err) {
     console.error("Get employee attendance requests error:", err);
     res.status(500).json({ message: "Failed to load attendance requests." });
@@ -1862,17 +1945,27 @@ router.get(
             { note: { contains: "Pending admin approval" } },
             { note: { contains: "Approved by admin" } },
             { note: { contains: "Rejected by admin" } },
+            { note: { contains: "Admin approved" } },
+            { note: { contains: "Admin rejected" } },
+            { note: { contains: "unassigned location" } },
+            { note: { contains: "requires approval" } },
+            { status: "PENDING_APPROVAL" },
           ],
         },
         include: {
           employee: {
-            include: { user: { select: { fullName: true, email: true } } },
+            include: {
+              location: true,
+              user: { select: { fullName: true, email: true } },
+            },
           },
         },
         orderBy: { updatedAt: "desc" },
       });
 
-      res.json({ records });
+      const enriched = await enrichAttendanceRecordsWithDistance(records);
+
+      res.json({ records: enriched });
     } catch (err) {
       console.error("Get attendance request history error:", err);
       res

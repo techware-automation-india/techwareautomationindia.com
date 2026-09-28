@@ -83,6 +83,8 @@ const fmtOvertimeHours = (record, isHoliday = false) => {
   if (Number.isNaN(workedHours)) return null;
   const overtimeHours = isHoliday ? workedHours : workedHours - 8;
   if (overtimeHours <= 0) return null;
+  const otMinutes = Math.round(overtimeHours * 60);
+  if (otMinutes <= 15) return null;
   return fmtWorkedHours(overtimeHours);
 };
 
@@ -631,13 +633,17 @@ const Attendance = () => {
   const isOvertimeRecord = (record) => {
     if (!record) return false;
 
-    // On a holiday, every hour worked is overtime.
+    // On a holiday, every hour worked is overtime (if > 15 minutes).
     if (isHolidayDate(record.date)) {
-      return isWorkedRecord(record);
+      const worked = Number(record.workedHours);
+      return Math.round(worked * 60) > 15;
     }
 
-    // On a normal working day, overtime starts after 8 hours.
-    return Number(record.workedHours) > 8;
+    // On a normal working day, overtime starts after 8 hours (if > 15 minutes).
+    const workedHours = Number(record.workedHours);
+    if (Number.isNaN(workedHours) || workedHours <= 8) return false;
+    const otMinutes = Math.round((workedHours - 8) * 60);
+    return otMinutes > 15;
   };
 
   const overtimeDays = records.filter(isOvertimeRecord).length;

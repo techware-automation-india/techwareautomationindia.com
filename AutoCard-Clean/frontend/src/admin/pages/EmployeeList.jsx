@@ -122,7 +122,7 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <Link 
             to="/admin/employee" 
@@ -138,7 +138,7 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
         </div>
         <button
           onClick={refresh}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-sm font-medium"
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-sm font-medium shrink-0 self-start sm:self-auto"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh

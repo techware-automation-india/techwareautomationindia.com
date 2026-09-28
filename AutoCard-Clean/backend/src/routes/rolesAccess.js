@@ -14,7 +14,7 @@ const employeeModules = [
   { key: "requests", label: "Requests" },
   { key: "leave-policy", label: "Leave Policy" },
   { key: "holidays", label: "Holidays" },
-  { key: "attendance", label: "Attendance" },
+  { key: "attendance", label: "My Attendance" },
   { key: "projects", label: "Projects" },
   { key: "services", label: "Services" },
   { key: "shift-location", label: "Shift & Location" },

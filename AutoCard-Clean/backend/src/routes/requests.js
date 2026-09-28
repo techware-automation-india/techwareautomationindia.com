@@ -31,6 +31,7 @@ const CORRECTION_MARKER = "[ATTENDANCE_CORRECTION]";
 
 const reviewSchema = z.object({
   note: z.string().optional(),
+  reason: z.string().optional(),
 });
 
 const employeeRequestSchema = z.object({
@@ -1116,6 +1117,7 @@ async function reviewRequest(
 
     const note =
       parsed.data.note?.trim() ||
+      parsed.data.reason?.trim() ||
       null;
 
     const requestId =

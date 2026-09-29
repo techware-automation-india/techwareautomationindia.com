@@ -11,9 +11,14 @@ export const VALID_MODULES = [
   'approvals',
   'mark-attendance',
   'attendance',
+  'attendance-management',
   'roles-access',
   'shift-location',
-  'roster'
+  'roster',
+  'leave-policy',
+  'holidays',
+  'projects',
+  'services'
 ];
 
 /**
@@ -47,7 +52,9 @@ export const moduleKeysSchema = z.array(z.string())
  * Validates: Requirements 2.2, 2.3
  */
 export const createRoleSchema = z.object({
-  name: roleNameSchema
+  name: roleNameSchema,
+  moduleKeys: moduleKeysSchema.optional(),
+  modules: moduleKeysSchema.optional(),
 });
 
 /**

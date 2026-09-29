@@ -17,6 +17,7 @@ const createEmployeeSchema = z.object({
   password: z.string().min(1, "Password is required."),
   employeeCode: z.string().min(1, "Employee code is required."),
   jobTitle: z.string().optional(),
+  roleId: z.string().min(1, "Role is required."),
 });
 
 // ============================================================================
@@ -29,8 +30,19 @@ router.get(
   async (_req, res) => {
     try {
       const employees = await prisma.user.findMany({
-        where: { role: "EMPLOYEE" },
-        include: { employeeProfile: true },
+        where: {
+          role: { in: ["EMPLOYEE", "CUSTOMER"] },
+        },
+        include: {
+          employeeProfile: true,
+          customRole: {
+            select: {
+              id: true,
+              name: true,
+              isDefault: true,
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
       });
 
@@ -39,6 +51,9 @@ router.get(
         fullName: u.fullName,
         email: u.email,
         isActive: u.isActive,
+        role: u.role,
+        roleId: u.roleId,
+        roleName: u.customRole?.name ?? u.role,
         employeeCode: u.employeeProfile?.employeeCode ?? null,
         jobTitle: u.employeeProfile?.jobTitle ?? null,
         onboardingStatus: u.employeeProfile?.onboardingStatus ?? null,
@@ -80,9 +95,23 @@ router.post(
       password,
       employeeCode,
       jobTitle,
+      roleId,
     } = parsed.data;
 
     try {
+      // ------------------------------------------------------------
+      // Check role exists
+      // ------------------------------------------------------------
+      const role = await prisma.roleTable.findUnique({
+        where: { id: roleId },
+      });
+
+      if (!role) {
+        return res.status(400).json({
+          message: "Selected role does not exist.",
+        });
+      }
+
       // ------------------------------------------------------------
       // Check duplicate email
       // ------------------------------------------------------------
@@ -122,7 +151,17 @@ router.post(
       );
 
       // ------------------------------------------------------------
-      // Create employee + profile
+      // Determine user role enum
+      // ------------------------------------------------------------
+      let roleEnum = "EMPLOYEE";
+      if (role.name.toUpperCase() === "ADMIN") {
+        roleEnum = "ADMIN";
+      } else if (role.name.toUpperCase() === "CUSTOMER") {
+        roleEnum = "CUSTOMER";
+      }
+
+      // ------------------------------------------------------------
+      // Create user + profile with roleId
       // ------------------------------------------------------------
 
       const user = await prisma.user.create({
@@ -130,21 +169,32 @@ router.post(
           email,
           fullName,
           passwordHash,
-          role: "EMPLOYEE",
+          role: roleEnum,
+          roleId: role.id,
 
           employeeProfile: {
             create: {
               employeeCode,
               jobTitle: jobTitle || null,
 
-              // Admin-created employees are automatically approved.
+              // Admin-created accounts are automatically approved.
               onboardingStatus: "APPROVED",
             },
           },
+          ...(roleEnum === "CUSTOMER"
+            ? {
+                customerProfile: {
+                  create: {
+                    companyName: jobTitle || fullName,
+                  },
+                },
+              }
+            : {}),
         },
 
         include: {
           employeeProfile: true,
+          customRole: true,
         },
       });
 
@@ -227,9 +277,9 @@ router.delete(
         where: { id },
       });
 
-      if (!user || user.role !== "EMPLOYEE") {
+      if (!user || user.role === "ADMIN") {
         return res.status(404).json({
-          message: "Employee not found.",
+          message: "Account not found or cannot be deleted.",
         });
       }
 

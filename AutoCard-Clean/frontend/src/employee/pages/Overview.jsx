@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import {
   AlertCircle,
   Bell,
@@ -14,7 +14,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-import { employeeModules } from "../modules.js";
+import { employeeModules, getModulesByPermissions } from "../modules.js";
 import { getAuthUser } from "../../lib/auth.js";
 import { apiGet } from "../../lib/api.js";
 import { formatTimeRange } from "../../lib/timeFormat.js";
@@ -363,8 +363,43 @@ const Overview = () => {
      MODULES
   ========================================================= */
 
-  // Exclude Overview from module grid.
-  const modules = employeeModules.filter((module) => module.key !== "overview");
+  const outletContext = useOutletContext();
+  const [dynamicModules, setDynamicModules] = useState(null);
+
+  useEffect(() => {
+    if (outletContext?.visibleModules && outletContext.visibleModules.length > 0) {
+      setDynamicModules(
+        outletContext.visibleModules.filter((module) => module.key !== "overview")
+      );
+      return;
+    }
+
+    let mounted = true;
+    const fetchPerms = async () => {
+      try {
+        const data = await apiGet("/roles-access/me/permissions");
+        if (mounted && data?.permissions) {
+          const visible = getModulesByPermissions(data.permissions).filter(
+            (module) => module.key !== "overview"
+          );
+          setDynamicModules(visible);
+        }
+      } catch (err) {
+        console.error("Overview fetch permissions error:", err);
+      }
+    };
+    fetchPerms();
+    return () => {
+      mounted = false;
+    };
+  }, [outletContext?.visibleModules]);
+
+  const modules =
+    dynamicModules ||
+    (outletContext?.visibleModules
+      ? outletContext.visibleModules.filter((module) => module.key !== "overview")
+      : getModulesByPermissions({}).filter((module) => module.key !== "overview"));
+
 
   /* =========================================================
      ROSTER DATA
@@ -626,28 +661,6 @@ const Overview = () => {
         </div>
       )}
 
-      {/* =====================================================
-          ONBOARDING - APPROVED
-      ===================================================== */}
-
-      {onboardingStatus === "APPROVED" && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 flex items-start gap-4">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="h-5 w-5 text-white" />
-          </div>
-
-          <div>
-            <h3 className="font-semibold text-emerald-900 mb-1">
-              Onboarding Complete
-            </h3>
-
-            <p className="text-sm text-emerald-800">
-              Welcome aboard! Your onboarding has been approved. You now have
-              full access to all employee modules.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* =====================================================
           ASSIGNED SHIFTS & LOCATIONS

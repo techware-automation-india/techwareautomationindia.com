@@ -60,7 +60,10 @@ const formatPunchDate = (value) => {
 
   // If ISO string like 2026-09-24T18:30:00.000Z or date object
   const dateObj = new Date(str);
-  if (!Number.isNaN(dateObj.getTime()) && (str.includes("T") || str.length > 10)) {
+  if (
+    !Number.isNaN(dateObj.getTime()) &&
+    (str.includes("T") || str.length > 10)
+  ) {
     return dateObj.toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "2-digit",
@@ -157,13 +160,21 @@ const parseCorrectionFromDescription = (description) => {
   if (markerIndex === -1) return null;
 
   try {
-    const jsonText = description.slice(markerIndex + "[ATTENDANCE_CORRECTION]".length).trim();
+    const jsonText = description
+      .slice(markerIndex + "[ATTENDANCE_CORRECTION]".length)
+      .trim();
     const data = JSON.parse(jsonText);
     const readableText = description.slice(0, markerIndex).trim();
 
     let reason = readableText
-      .replace(/^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i, "")
-      .replace(/^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i, "")
+      .replace(
+        /^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+        "",
+      )
+      .replace(
+        /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+        "",
+      )
       .replace(/Check-In Location:.*$/i, "")
       .replace(/Check-Out Location:.*$/i, "")
       .replace(/\|?\s*Pending admin approval\.?/gi, "")
@@ -174,7 +185,12 @@ const parseCorrectionFromDescription = (description) => {
 
     return {
       date: data.date,
-      punchType: data.punchType === "check-in" ? "Check In" : data.punchType === "check-out" ? "Check Out" : "Check In + Check Out",
+      punchType:
+        data.punchType === "check-in"
+          ? "Check In"
+          : data.punchType === "check-out"
+            ? "Check Out"
+            : "Check In + Check Out",
       checkInTime: data.checkInTime,
       checkOutTime: data.checkOutTime,
       checkInLocation: data.checkInLocation,
@@ -201,8 +217,10 @@ const normalizeRequests = (items) =>
         : null,
     description:
       item.description || item.notification?.reason || "No details provided.",
-    employee: item.employee?.fullName || "Employee",
+    employee:
+      item.employee?.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    reviewNote: item.reviewNote || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
@@ -221,6 +239,7 @@ const normalizeLeave = (items) =>
       `${formatDate(item.startDate)} - ${formatDate(item.endDate)} (${item.totalDays} day(s))`,
     employee: item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    reviewNote: item.reviewNote || null,
     status: item.status,
     createdAt: item.createdAt,
   }));
@@ -229,16 +248,26 @@ const normalizeAttendance = (items) =>
   (items || []).map((item) => ({
     id: item.id,
     source: "ATTENDANCE",
-    title: "Attendance Location Approval",
+    title:
+      item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
+        ? "Attendance Location Approval"
+        : item.note?.includes("Forgot Punch")
+          ? "Forgot Punch Checkout Approval"
+          : "Attendance Approval",
     description: item.note || "Employee attendance requires approval.",
     employee: item.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    reviewNote: item.note || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
     checkOutLongitude: item.checkOutLongitude,
     checkInTime: item.checkInTime || item.createdAt || item.date,
-    checkOutTime: item.checkOutTime || (item.note?.toLowerCase().includes("checkout") ? item.updatedAt || item.createdAt : null),
+    checkOutTime:
+      item.checkOutTime ||
+      (item.note?.toLowerCase().includes("checkout")
+        ? item.updatedAt || item.createdAt
+        : null),
     date: item.date,
     status:
       item.status === "PENDING_APPROVAL"
@@ -271,11 +300,20 @@ const getAttendanceDetails = (note = "") => {
 
   // 1. Check for marker [ATTENDANCE_CORRECTION]
   const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
-  let cleanText = markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
+  let cleanText =
+    markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
 
   // 2. Extract distance
-  const checkInDistance = cleanText.match(/Checkin .*?\(([0-9.]+) km away\)/i)?.[1] || null;
-  const checkOutDistance = cleanText.match(/Checkout .*?\(([0-9.]+) km away\)/i)?.[1] || null;
+  const checkInDistance =
+    cleanText.match(
+      /Checkin .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i,
+    )?.[1] ||
+    cleanText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i)?.[1] ||
+    null;
+  const checkOutDistance =
+    cleanText.match(
+      /Checkout .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i,
+    )?.[1] || null;
 
   // 3. Extract Reason: pattern
   const reasonMatches = [
@@ -362,8 +400,14 @@ const getReadableReason = (approval) => {
 
   // 2. Strip system preamble "Forgot Punch request for ... on YYYY-MM-DD."
   text = text
-    .replace(/^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i, "")
-    .replace(/^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i, "")
+    .replace(
+      /^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+      "",
+    )
+    .replace(
+      /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+      "",
+    )
     .trim();
 
   // 3. Strip trailing Check-In / Check-Out location strings
@@ -389,6 +433,42 @@ const getReadableReason = (approval) => {
     reason: reason || "No reason provided.",
   };
 };
+
+const getAdminRejectionReason = (reviewNote = "") => {
+  const text = String(reviewNote || "").trim();
+
+  if (!text) return "No rejection reason provided.";
+
+  // Pattern 1: "... | Admin rejected: <reason>" or "Admin rejected: <reason>"
+  const match = text.match(/Admin rejected:\s*(.*?)(?=\s*\||$)/i);
+  if (match && match[1] && match[1].trim()) {
+    return match[1].trim();
+  }
+
+  // Pattern 2: "Rejected by admin: <reason>" or "[REJECTED] <reason>"
+  const match2 = text.match(/(?:Rejected by admin|\[REJECTED\]):\s*(.*?)(?=\s*\||$)/i);
+  if (match2 && match2[1] && match2[1].trim()) {
+    return match2[1].trim();
+  }
+
+  // Pattern 3: If text ends with "Admin rejected." or "| Admin rejected." without custom text
+  if (/Admin rejected\.?\s*$/i.test(text)) {
+    return "Rejected by Admin.";
+  }
+
+  // Pattern 4: If text contains "|" separator, check if last part is the rejection note
+  if (text.includes("|")) {
+    const parts = text.split("|").map((p) => p.trim());
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && /admin rejected/i.test(lastPart)) {
+      const cleaned = lastPart.replace(/^Admin rejected:?\s*/i, "").trim();
+      return cleaned || "Rejected by Admin.";
+    }
+  }
+
+  return text;
+};
+
 
 const Approvals = () => {
   const [approvals, setApprovals] = useState([]);
@@ -717,7 +797,7 @@ const Approvals = () => {
                                 event.stopPropagation();
                                 setReasonModal(approval);
                               }}
-                              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary"
+                              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary w-fit"
                             >
                               <MessageSquareText className="h-4 w-4" />
                               <span>View Reason</span>
@@ -902,7 +982,9 @@ const Approvals = () => {
                         Check-in Time
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
-                        {formatTimeIST(reasonModal.correctionDetails.checkInTime)}
+                        {formatTimeIST(
+                          reasonModal.correctionDetails.checkInTime,
+                        )}
                       </p>
                     </div>
                     <div>
@@ -910,7 +992,9 @@ const Approvals = () => {
                         Check-out Time
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
-                        {formatTimeIST(reasonModal.correctionDetails.checkOutTime)}
+                        {formatTimeIST(
+                          reasonModal.correctionDetails.checkOutTime,
+                        )}
                       </p>
                     </div>
                     <div className="sm:col-span-2">
@@ -940,7 +1024,11 @@ const Approvals = () => {
                               </span>
                             </div>
                             <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                              Check-In Time: {formatTimeIST(reasonModal.checkInTime || reasonModal.createdAt)}
+                              Check-In Time:{" "}
+                              {formatTimeIST(
+                                reasonModal.checkInTime ||
+                                  reasonModal.createdAt,
+                              )}
                             </span>
                           </div>
                           <div>
@@ -950,20 +1038,32 @@ const Approvals = () => {
                             <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
                               {attendanceDetails.checkInReason}
                             </p>
-                            {(attendanceDetails.checkInDistance || reasonModal.checkInDistance) ? (
+                            {reasonModal.checkInDistance ||
+                            attendanceDetails.checkInDistance ? (
                               <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                                Distance from office: {formatDistance(attendanceDetails.checkInDistance || reasonModal.checkInDistance)} away
+                                Distance from office:{" "}
+                                {formatDistance(
+                                  reasonModal.checkInDistance ||
+                                    attendanceDetails.checkInDistance,
+                                )}
                               </p>
-                            ) : (reasonModal.checkInLatitude != null && reasonModal.checkInLongitude != null) ? (
+                            ) : reasonModal.checkInLatitude != null &&
+                              reasonModal.checkInLongitude != null ? (
                               <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                                Distance from office: Check-in GPS Recorded
+                                Distance from office: GPS Recorded (
+                                {reasonModal.checkInLatitude.toFixed(4)},{" "}
+                                {reasonModal.checkInLongitude.toFixed(4)})
                               </p>
                             ) : null}
                           </div>
                         </div>
 
                         {/* 2. CHECK-OUT DIV */}
-                        {(reasonModal.checkOutTime || attendanceDetails.checkOutReason !== "No check-out reason provided." || attendanceDetails.checkOutDistance || reasonModal.checkOutDistance) && (
+                        {(reasonModal.checkOutTime ||
+                          attendanceDetails.checkOutReason !==
+                            "No check-out reason provided." ||
+                          attendanceDetails.checkOutDistance ||
+                          reasonModal.checkOutDistance) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
                             <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
                               <div className="flex items-center gap-2">
@@ -973,7 +1073,12 @@ const Approvals = () => {
                                 </span>
                               </div>
                               <span className="text-xs font-bold text-rose-800 dark:text-rose-300">
-                                Check-Out Time: {formatTimeIST(reasonModal.checkOutTime || reasonModal.updatedAt || reasonModal.createdAt)}
+                                Check-Out Time:{" "}
+                                {formatTimeIST(
+                                  reasonModal.checkOutTime ||
+                                    reasonModal.updatedAt ||
+                                    reasonModal.createdAt,
+                                )}
                               </span>
                             </div>
                             <div>
@@ -981,15 +1086,24 @@ const Approvals = () => {
                                 Check-Out Reason
                               </p>
                               <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                                {attendanceDetails.checkOutReason || "No check-out reason provided."}
+                                {attendanceDetails.checkOutReason ||
+                                  "No check-out reason provided."}
                               </p>
-                              {(attendanceDetails.checkOutDistance || reasonModal.checkOutDistance) ? (
+                              {reasonModal.checkOutDistance ||
+                              attendanceDetails.checkOutDistance ? (
                                 <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                                  Distance from office: {formatDistance(attendanceDetails.checkOutDistance || reasonModal.checkOutDistance)} away
+                                  Distance from office:{" "}
+                                  {formatDistance(
+                                    reasonModal.checkOutDistance ||
+                                      attendanceDetails.checkOutDistance,
+                                  )}
                                 </p>
-                              ) : (reasonModal.checkOutLatitude != null && reasonModal.checkOutLongitude != null) ? (
+                              ) : reasonModal.checkOutLatitude != null &&
+                                reasonModal.checkOutLongitude != null ? (
                                 <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                                  Distance from office: Check-out GPS Recorded
+                                  Distance from office: GPS Recorded (
+                                  {reasonModal.checkOutLatitude.toFixed(4)},{" "}
+                                  {reasonModal.checkOutLongitude.toFixed(4)})
                                 </p>
                               ) : null}
                             </div>
@@ -1098,6 +1212,25 @@ const Approvals = () => {
                 </section>
               )}
 
+              {/* ================= ADMIN RESPONSE / REJECTION REASON ================= */}
+              {reasonModal.status === "REJECTED" && reasonModal.reviewNote && (
+                <section>
+                  <div className="mb-2 flex items-center gap-2">
+                    <MessageSquareText className="h-4 w-4 text-rose-600" />
+
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Admin Rejection Reason
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                    <p className="whitespace-pre-wrap break-words text-sm font-medium leading-6">
+                      {getAdminRejectionReason(reasonModal.reviewNote)}
+                    </p>
+                  </div>
+                </section>
+              )}
+
               {/* ================= SUBMITTED ================= */}
               {reasonModal.createdAt && (
                 <div className="flex items-center justify-between rounded-2xl border border-border bg-secondary/20 px-4 py-3">
@@ -1144,9 +1277,12 @@ const Approvals = () => {
           <div className="flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
             <div className="flex items-center justify-between border-b border-border bg-background px-6 py-5">
               <div>
-                <h3 className="text-lg font-bold text-foreground">Reject Request</h3>
+                <h3 className="text-lg font-bold text-foreground">
+                  Reject Request
+                </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {rejectModal.approval?.title} ({rejectModal.approval?.employee})
+                  {rejectModal.approval?.title} (
+                  {rejectModal.approval?.employee})
                 </p>
               </div>
               <button
@@ -1190,11 +1326,17 @@ const Approvals = () => {
               </button>
               <button
                 type="button"
-                onClick={() => review(rejectModal.approval, "reject", rejectReason)}
-                disabled={actingId === `${rejectModal.approval?.source}:${rejectModal.approval?.id}`}
+                onClick={() =>
+                  review(rejectModal.approval, "reject", rejectReason)
+                }
+                disabled={
+                  actingId ===
+                  `${rejectModal.approval?.source}:${rejectModal.approval?.id}`
+                }
                 className="flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-6 py-2.5 text-sm font-bold text-white shadow-md hover:bg-rose-700 transition disabled:opacity-60"
               >
-                {actingId === `${rejectModal.approval?.source}:${rejectModal.approval?.id}` && (
+                {actingId ===
+                  `${rejectModal.approval?.source}:${rejectModal.approval?.id}` && (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
                 Confirm Rejection

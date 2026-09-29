@@ -69,8 +69,7 @@ const getRegularHours = (workedHours) => {
   return Math.min(hours, REGULAR_HOURS);
 };
 
-// Calculate overtime from worked hours.
-// Anything above 8 hours is overtime, but overtime of 15 mins or less (<= 0.25 hours) is not counted.
+// Calculate overtime from worked hours. 15 minutes is deducted from total overtime.
 const getOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -81,13 +80,25 @@ const getOvertimeHours = (workedHours) => {
   }
 
   const rawOvertimeHours = hours - REGULAR_HOURS;
-  const overtimeMinutes = Math.round(rawOvertimeHours * 60);
+  const rawOvertimeMinutes = Math.round(rawOvertimeHours * 60);
+  const netOvertimeMinutes = Math.max(0, rawOvertimeMinutes - 15);
 
-  if (overtimeMinutes <= 15) {
+  if (netOvertimeMinutes <= 0) {
     return 0;
   }
 
-  return rawOvertimeHours;
+  return netOvertimeMinutes / 60;
+};
+
+const getIndiaDayNumber = (val) => {
+  if (!val) return null;
+  const date = new Date(val);
+  if (Number.isNaN(date.getTime())) return null;
+  const dayStr = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+  }).format(date);
+  return Number(dayStr);
 };
 
 const fmtDate = (v) => {
@@ -97,11 +108,12 @@ const fmtDate = (v) => {
 
   if (Number.isNaN(date.getTime())) return "—";
 
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-
-  return `${day}/${month}/${year}`;
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 };
 
 const STATUS_META = {
@@ -221,15 +233,15 @@ const Attendance = () => {
   const recordByDay = {};
 
   for (const r of records) {
-    const d = new Date(r.date).getUTCDate();
-    recordByDay[d] = r;
+    const d = getIndiaDayNumber(r.date);
+    if (d) recordByDay[d] = r;
   }
 
   const holidayByDay = {};
 
   for (const h of holidays) {
-    const d = new Date(h.date).getUTCDate();
-    holidayByDay[d] = h.name;
+    const d = getIndiaDayNumber(h.date);
+    if (d) holidayByDay[d] = h.name;
   }
 
   // ── worked & overtime calculations ──
@@ -603,7 +615,7 @@ const Attendance = () => {
           </div>
 
           <div>
-            <h1 className="font-display text-2xl font-bold">My Attendance</h1>
+            <h1 className="font-display text-2xl font-bold">Attendance</h1>
 
             <p className="text-sm text-muted-foreground">
               Your monthly attendance history.
@@ -917,6 +929,8 @@ const Attendance = () => {
                 (day) => {
                   const r = recordByDay[day];
                   const hol = holidayByDay[day];
+                  const dayOfWeek = new Date(year, month - 1, day).getDay();
+                  const isSunday = dayOfWeek === 0;
 
                   const isToday =
                     year === today.getFullYear() &&
@@ -925,13 +939,15 @@ const Attendance = () => {
 
                   const meta = r
                     ? STATUS_META[r.status] ?? STATUS_META.PRESENT
-                    : hol
+                    : hol || isSunday
                       ? STATUS_META.HOLIDAY
                       : null;
 
                   const overtime = r
                     ? getOvertimeHours(r.workedHours)
                     : 0;
+
+                  const isHolidayCell = !r || r.status === "HOLIDAY";
 
                   return (
                     <div
@@ -978,7 +994,7 @@ const Attendance = () => {
                             </span>
                           </div>
 
-                          {r && (
+                          {r && !isHolidayCell && (
                             <>
                               {/* In / Out */}
                               <div className="grid grid-cols-2 gap-1.5">
@@ -1030,12 +1046,12 @@ const Attendance = () => {
                             </>
                           )}
 
-                          {!r && hol && (
+                          {isHolidayCell && (
                             <div
                               className="rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-1.5 text-[10px] font-semibold text-indigo-700 truncate"
-                              title={hol}
+                              title={hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
                             >
-                              {hol}
+                              {hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
                             </div>
                           )}
                         </div>

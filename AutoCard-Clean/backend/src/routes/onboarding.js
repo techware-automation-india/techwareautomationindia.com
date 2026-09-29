@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 import { onboardingSchema } from "../validation/onboarding.js";
 import { upload, uploadDocument } from "../middleware/upload.js";
 
@@ -259,8 +260,8 @@ router.post(
   }
 );
 
-// GET /api/onboarding/employee/:userId - fetch employee onboarding data (admin only)
-router.get("/employee/:userId", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// GET /api/onboarding/employee/:userId - fetch employee onboarding data (admin or employee module)
+router.get("/employee/:userId", requireAuth, checkRolePermission("employee"), async (req, res) => {
   const { userId } = req.params;
   console.log(`📥 [GET /api/onboarding/employee/${userId}] Request received`);
   
@@ -283,8 +284,8 @@ router.get("/employee/:userId", requireAuth, requireRole("ADMIN"), async (req, r
   }
 });
 
-// PUT /api/onboarding/employee/:userId - update employee onboarding data (admin only)
-router.put("/employee/:userId", requireAuth, requireRole("ADMIN"), async (req, res) => {
+// PUT /api/onboarding/employee/:userId - update employee onboarding data (admin or employee module)
+router.put("/employee/:userId", requireAuth, checkRolePermission("employee"), async (req, res) => {
   const { userId } = req.params;
   console.log(`📥 [PUT /api/onboarding/employee/${userId}] Request received`);
   console.log(`📝 [PUT /api/onboarding/employee/${userId}] Data:`, req.body);

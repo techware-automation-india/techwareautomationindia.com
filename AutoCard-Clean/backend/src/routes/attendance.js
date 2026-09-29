@@ -17,21 +17,37 @@ const fitAttendanceNote = (note) => {
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
 const getIndiaDateKey = (date = new Date()) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: INDIA_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date(date));
+  }).format(d);
 };
 
 const getIndiaDayRange = (date = new Date()) => {
-  const dateKey = getIndiaDateKey(date);
+  const dateKey = getIndiaDateKey(date) || getIndiaDateKey(new Date());
 
   const start = new Date(`${dateKey}T00:00:00+05:30`);
   const end = new Date(`${dateKey}T23:59:59.999+05:30`);
 
   return { start, end };
+};
+
+const normalizeUTCDate = (d) => {
+  if (!d) {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) {
+    const fallback = new Date();
+    return new Date(Date.UTC(fallback.getUTCFullYear(), fallback.getUTCMonth(), fallback.getUTCDate()));
+  }
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 };
 
 const calculateWorkedHours = (checkIn, checkOut) => {
@@ -44,7 +60,7 @@ const calculateWorkedHours = (checkIn, checkOut) => {
   return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
 };
 
-// Anything above 8 hours is overtime, but overtime of 15 mins or less (<= 0.25 hours) is not counted.
+// Anything above 8 hours is overtime. 15 minutes is deducted from total overtime (e.g. 9 hrs worked -> 1 hr raw OT - 15 mins = 45 mins OT).
 const calculateOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -55,13 +71,14 @@ const calculateOvertimeHours = (workedHours) => {
   }
 
   const rawOvertimeHours = hours - REGULAR_WORKING_HOURS;
-  const overtimeMinutes = Math.round(rawOvertimeHours * 60);
+  const rawOvertimeMinutes = Math.round(rawOvertimeHours * 60);
+  const netOvertimeMinutes = Math.max(0, rawOvertimeMinutes - 15);
 
-  if (overtimeMinutes <= 15) {
+  if (netOvertimeMinutes <= 0) {
     return 0;
   }
 
-  return parseFloat(rawOvertimeHours.toFixed(2));
+  return parseFloat((netOvertimeMinutes / 60).toFixed(2));
 };
 
 const parseLocationString = (location) => {
@@ -226,13 +243,15 @@ const findNearestLocation = async (coordinates) => {
   return nearest;
 };
 
-const normalizeUTCDate = (date) =>
-  new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-const formatDateKey = (date) =>
-  normalizeUTCDate(date).toISOString().slice(0, 10);
-const isWorkingDay = (date) => date.getUTCDay() !== 0; // skip Sundays as non-working
+const formatDateKey = (date) => (date ? getIndiaDateKey(date) : "");
+const isWorkingDay = (date) => {
+  if (!date) return false;
+  const dateKey = typeof date === "string" ? date : getIndiaDateKey(date);
+  if (!dateKey) return false;
+  const d = new Date(`${dateKey}T12:00:00+05:30`);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getDay() !== 0; // skip Sundays as non-working
+};
 
 // ============================================================================
 // EMPLOYEE SELF-SERVICE ROUTES  (requireAuth only, no role guard)
@@ -263,8 +282,13 @@ router.get("/me", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "Employee profile not found." });
     }
 
-    const start = new Date(Date.UTC(year, month - 1, 1));
-    const end = new Date(Date.UTC(year, month, 1));
+    const monthStr = String(month).padStart(2, "0");
+    const endMonth = month === 12 ? 1 : month + 1;
+    const endYear = month === 12 ? year + 1 : year;
+    const endMonthStr = String(endMonth).padStart(2, "0");
+
+    const start = new Date(`${year}-${monthStr}-01T00:00:00+05:30`);
+    const end = new Date(`${endYear}-${endMonthStr}-01T00:00:00+05:30`);
 
     const [records, holidays, leaveRequests] = await Promise.all([
       prisma.attendance.findMany({
@@ -294,39 +318,28 @@ router.get("/me", requireAuth, async (req, res) => {
     const leaveByDate = new Map();
 
     for (const leave of leaveRequests) {
-      let current = normalizeUTCDate(leave.startDate);
-      const last = normalizeUTCDate(leave.endDate);
-      while (current <= last) {
-        if (isWorkingDay(current)) {
-          leaveByDate.set(formatDateKey(current), leave);
+      const startKey = formatDateKey(leave.startDate);
+      const endKey = formatDateKey(leave.endDate);
+      const curDate = new Date(`${startKey}T12:00:00+05:30`);
+      const endDateObj = new Date(`${endKey}T12:00:00+05:30`);
+
+      while (curDate <= endDateObj) {
+        const curKey = getIndiaDateKey(curDate);
+        if (isWorkingDay(curKey)) {
+          leaveByDate.set(curKey, leave);
         }
-        current = new Date(
-          Date.UTC(
-            current.getUTCFullYear(),
-            current.getUTCMonth(),
-            current.getUTCDate() + 1,
-          ),
-        );
+        curDate.setDate(curDate.getDate() + 1);
       }
     }
 
     const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
     const populatedRecords = [];
-    const now = new Date();
-    const todayUtc = normalizeUTCDate(now);
+    const todayKey = getIndiaDateKey(new Date());
+    const daysInMonth = new Date(year, month, 0).getDate();
 
-    for (
-      let current = new Date(start);
-      current < end;
-      current = new Date(
-        Date.UTC(
-          current.getUTCFullYear(),
-          current.getUTCMonth(),
-          current.getUTCDate() + 1,
-        ),
-      )
-    ) {
-      const key = formatDateKey(current);
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayStr = String(day).padStart(2, "0");
+      const key = `${year}-${monthStr}-${dayStr}`;
       const attendance = attendanceByDate.get(key);
 
       if (attendance) {
@@ -356,7 +369,17 @@ router.get("/me", requireAuth, async (req, res) => {
         continue;
       }
 
-      if (!isWorkingDay(current)) {
+      if (!isWorkingDay(key)) {
+        summary.HOLIDAY += 1;
+        populatedRecords.push({
+          id: null,
+          date: new Date(`${key}T00:00:00+05:30`),
+          checkIn: null,
+          checkOut: null,
+          status: "HOLIDAY",
+          workedHours: null,
+          note: holidayByDate.get(key) || "Weekly Off (Sunday)",
+        });
         continue;
       }
 
@@ -364,7 +387,7 @@ router.get("/me", requireAuth, async (req, res) => {
         summary.HOLIDAY += 1;
         populatedRecords.push({
           id: null,
-          date: new Date(current),
+          date: new Date(`${key}T00:00:00+05:30`),
           checkIn: null,
           checkOut: null,
           status: "HOLIDAY",
@@ -379,7 +402,7 @@ router.get("/me", requireAuth, async (req, res) => {
         summary.ON_LEAVE += 1;
         populatedRecords.push({
           id: null,
-          date: new Date(current),
+          date: new Date(`${key}T00:00:00+05:30`),
           checkIn: null,
           checkOut: null,
           status: "ON_LEAVE",
@@ -389,12 +412,12 @@ router.get("/me", requireAuth, async (req, res) => {
         continue;
       }
 
-      const isPastDay = current < todayUtc;
+      const isPastDay = key < todayKey;
       if (isPastDay) {
         summary.ABSENT += 1;
         populatedRecords.push({
           id: null,
-          date: new Date(current),
+          date: new Date(`${key}T00:00:00+05:30`),
           checkIn: null,
           checkOut: null,
           status: "ABSENT",
@@ -1507,25 +1530,16 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
           checkIn: null,
 
-          checkOut: now,
+          checkOut: null,
 
           workedHours: null,
 
-          status: "PENDING_APPROVAL",
+          status: "PRESENT",
 
           note: fitAttendanceNote(
             "Checkout recorded while Forgot Punch Check In request is pending.",
           ),
         },
-      });
-
-      return res.json({
-        record,
-
-        message:
-          "Checked out successfully. Your Forgot Punch Check In request is still pending admin approval.",
-
-        forgotPunchPending: true,
       });
     }
 
@@ -1857,7 +1871,7 @@ router.get("/pending-approvals", async (req, res) => {
   // Allow ADMIN with permission OR any EMPLOYEE to see their own pending
   if (req.user.role === "ADMIN") {
     const hasPermission = await requireAdminOrModulePermission(
-      "attendance",
+      ["attendance", "approvals", "attendance-management"],
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return;
@@ -1936,10 +1950,10 @@ router.get("/my-requests", requireRole("EMPLOYEE"), async (req, res) => {
 // GET /api/attendance/admin/requests - all attendance approval history
 router.get(
   "/admin/requests",
-  requireAdminOrModulePermission("attendance", "canView"),
+  requireAdminOrModulePermission(["attendance", "approvals", "attendance-management"], "canView"),
   async (req, res) => {
     try {
-      const records = await prisma.attendance.findMany({
+      const rawRecords = await prisma.attendance.findMany({
         where: {
           OR: [
             { note: { contains: "Pending admin approval" } },
@@ -1961,6 +1975,18 @@ router.get(
           },
         },
         orderBy: { updatedAt: "desc" },
+      });
+
+      const records = rawRecords.filter((rec) => {
+        if (
+          rec.note?.includes("Checkout recorded while Forgot Punch Check In request is pending.") &&
+          !rec.note?.includes("outside") &&
+          !rec.note?.includes("unassigned") &&
+          !rec.note?.includes("requires approval")
+        ) {
+          return false;
+        }
+        return true;
       });
 
       const enriched = await enrichAttendanceRecordsWithDistance(records);
@@ -2070,16 +2096,52 @@ router.get(
   },
 );
 
-// GET /api/attendance/register/weekly?days=7 - all employee attendance register.
+// GET /api/attendance/register/weekly?days=7 - employee attendance register.
 router.get("/register/weekly", async (req, res) => {
-  // Allow ADMIN with permission OR any EMPLOYEE to access their own data
+  // Determine if caller has administrative attendance access (ADMIN or EMPLOYEE with attendance module permission)
+  let isFullManager = req.user.role === "ADMIN";
+
   if (req.user.role === "ADMIN") {
     const hasPermission = await requireAdminOrModulePermission(
       "attendance",
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return; // Permission denied
-  } else if (req.user.role !== "EMPLOYEE") {
+  } else if (req.user.role === "EMPLOYEE") {
+    // Check if employee has attendance module permission via custom role or direct permission
+    let roleId = req.user.roleId;
+    if (!roleId) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { roleId: true },
+      });
+      roleId = dbUser?.roleId || null;
+    }
+
+    if (roleId) {
+      const roleMod = await prisma.roleModule.findUnique({
+        where: {
+          roleId_moduleKey: {
+            roleId,
+            moduleKey: "attendance",
+          },
+        },
+      });
+      if (roleMod) isFullManager = true;
+    }
+
+    if (!isFullManager) {
+      const directPerm = await prisma.modulePermission.findUnique({
+        where: {
+          userId_moduleKey: {
+            userId: req.user.id,
+            moduleKey: "attendance",
+          },
+        },
+      });
+      if (directPerm?.canView) isFullManager = true;
+    }
+  } else {
     return res.status(403).json({ message: "Access denied." });
   }
 
@@ -2135,6 +2197,8 @@ router.get("/register/weekly", async (req, res) => {
     const attendanceQueryEnd = new Date(end);
     attendanceQueryEnd.setUTCDate(attendanceQueryEnd.getUTCDate() + 1);
 
+    const employeeFilter = isFullManager ? {} : { userId: req.user.id };
+
     const [
       employees,
       attendanceRecords,
@@ -2143,12 +2207,14 @@ router.get("/register/weekly", async (req, res) => {
       pendingCorrectionRequests,
     ] = await Promise.all([
       prisma.employeeProfile.findMany({
+        where: employeeFilter,
         include: { user: { select: { fullName: true, email: true } } },
         orderBy: { employeeCode: "asc" },
       }),
       prisma.attendance.findMany({
         where: {
           date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
+          ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
         },
         orderBy: [{ date: "desc" }],
       }),
@@ -2160,11 +2226,16 @@ router.get("/register/weekly", async (req, res) => {
           status: "APPROVED",
           startDate: { lt: end },
           endDate: { gte: start },
+          ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
         },
         include: { leaveType: { select: { name: true, code: true } } },
       }),
       prisma.employeeRequest.findMany({
-        where: { type: "CORRECTION", status: "PENDING" },
+        where: {
+          type: "CORRECTION",
+          status: "PENDING",
+          ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
+        },
         select: { employeeId: true, description: true },
       }),
     ]);
@@ -2283,8 +2354,8 @@ router.get("/register/weekly", async (req, res) => {
           id: attendance?.id ?? `${employee.id}-${dateKey}`,
           employeeId: employee.id,
           employeeCode: employee.employeeCode,
-          fullName: employee.user.fullName,
-          email: employee.user.email,
+          fullName: employee.user?.fullName || "Employee",
+          email: employee.user?.email || "",
           date: new Date(date),
           status,
           checkIn,
@@ -2352,12 +2423,12 @@ router.get(
 // POST /api/attendance/:id/reject - reject pending attendance (ADMIN)
 // ============================================================================
 // APPROVE ATTENDANCE
-// POST /api/attendance/approve/:id
+// POST /api/attendance/approve/:id or POST /api/attendance/:id/approve
 // ============================================================================
 
 router.post(
-  "/approve/:id",
-  requireAdminOrModulePermission("attendance", "canEdit"),
+  ["/approve/:id", "/:id/approve"],
+  requireAdminOrModulePermission(["attendance", "approvals", "attendance-management"], "canEdit"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -2411,12 +2482,12 @@ router.post(
 
 // ============================================================================
 // REJECT ATTENDANCE
-// POST /api/attendance/reject/:id
+// POST /api/attendance/reject/:id or POST /api/attendance/:id/reject
 // ============================================================================
 
 router.post(
-  "/reject/:id",
-  requireAdminOrModulePermission("attendance", "canEdit"),
+  ["/reject/:id", "/:id/reject"],
+  requireAdminOrModulePermission(["attendance", "approvals", "attendance-management"], "canEdit"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -2592,6 +2663,10 @@ router.get(
         const existing = attendanceByDate.get(key);
         const pendingCorrection = pendingCorrectionByDate.get(key);
 
+        const isSunday = !isWorkingDay(current);
+        const holidayObj = holidayByDate.get(key);
+        const holidayNote = holidayObj?.name || (isSunday ? "Weekly Off (Sunday)" : null);
+
         if (existing) {
           const status = pendingCorrection
             ? "PENDING_APPROVAL"
@@ -2614,12 +2689,22 @@ router.get(
               calculateWorkedHours(existing.checkIn, existing.checkOut),
             note: pendingCorrection
               ? `${existing.note || ""}${existing.note ? " | " : ""}Forgot Punch Check In pending approval.`
-              : existing.note,
+              : existing.note || holidayNote,
           });
           continue;
         }
 
         if (!isWorkingDay(current)) {
+          summary.HOLIDAY += 1;
+          populatedRecords.push({
+            id: null,
+            date: new Date(current),
+            checkIn: null,
+            checkOut: null,
+            status: "HOLIDAY",
+            workedHours: null,
+            note: holidayByDate.get(key)?.name || "Weekly Off (Sunday)",
+          });
           continue;
         }
 
@@ -2632,7 +2717,7 @@ router.get(
             checkOut: null,
             status: "HOLIDAY",
             workedHours: null,
-            note: holidayByDate.get(key).name,
+            note: holidayByDate.get(key)?.name || "Holiday",
           });
           continue;
         }
@@ -2698,222 +2783,6 @@ router.get(
     } catch (err) {
       console.error("Get attendance error:", err);
       res.status(500).json({ message: "Failed to load attendance." });
-    }
-  },
-);
-
-// POST /api/attendance/approve/:id - Approve a pending check-in
-router.post(
-  "/approve/:id",
-  requireAdminOrModulePermission("attendance", "canEdit"),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const record = await prisma.attendance.findUnique({
-        where: { id },
-        include: { employee: true },
-      });
-
-      if (!record) {
-        return res
-          .status(404)
-          .json({ message: "Attendance record not found." });
-      }
-
-      if (record.status !== "PENDING_APPROVAL") {
-        return res
-          .status(400)
-          .json({ message: "Record is not pending approval." });
-      }
-
-      const updatedNote = record.note
-        ? `${record.note} | Admin approved.`
-        : "Admin approved.";
-
-      const updated = await prisma.attendance.update({
-        where: { id },
-        data: {
-          status: "PRESENT",
-          note: updatedNote,
-        },
-      });
-
-      res.json({ record: updated, message: "Check-in approved successfully." });
-    } catch (err) {
-      console.error("Approve check-in error:", err);
-      res.status(500).json({ message: "Failed to approve check-in." });
-    }
-  },
-);
-
-// POST /api/attendance/reject/:id - Reject a pending check-in
-router.post(
-  "/reject/:id",
-  requireAdminOrModulePermission("attendance", "canEdit"),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { reason } = req.body;
-
-      const record = await prisma.attendance.findUnique({
-        where: { id },
-        include: { employee: true },
-      });
-
-      if (!record) {
-        return res
-          .status(404)
-          .json({ message: "Attendance record not found." });
-      }
-
-      if (record.status !== "PENDING_APPROVAL") {
-        return res
-          .status(400)
-          .json({ message: "Record is not pending approval." });
-      }
-
-      const rejectionNote = reason
-        ? `Admin rejected: ${reason}`
-        : "Admin rejected.";
-      const updatedNote = record.note
-        ? `${record.note} | ${rejectionNote}`
-        : rejectionNote;
-
-      const updated = await prisma.attendance.update({
-        where: { id },
-        data: {
-          status: "ABSENT",
-          note: updatedNote,
-        },
-      });
-
-      res.json({ record: updated, message: "Check-in rejected successfully." });
-    } catch (err) {
-      console.error("Reject check-in error:", err);
-      res.status(500).json({ message: "Failed to reject check-in." });
-    }
-  },
-);
-
-// ============================================================================
-// APPROVE ATTENDANCE
-// POST /api/attendance/approve/:id
-// ============================================================================
-
-router.post(
-  "/approve/:id",
-  requireAdminOrModulePermission("attendance", "canEdit"),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const record = await prisma.attendance.findUnique({
-        where: { id },
-        include: { employee: true },
-      });
-
-      if (!record) {
-        return res.status(404).json({
-          message: "Attendance record not found.",
-        });
-      }
-
-      if (record.status !== "PENDING_APPROVAL") {
-        return res.status(400).json({
-          message: "Record is not pending approval.",
-        });
-      }
-
-      const workedHours = calculateWorkedHours(record.checkIn, record.checkOut);
-
-      const updatedNote = record.note
-        ? `${record.note} | Admin approved.`
-        : "Admin approved.";
-
-      const updated = await prisma.attendance.update({
-        where: { id },
-
-        data: {
-          status: "PRESENT",
-          workedHours,
-          note: fitAttendanceNote(updatedNote),
-        },
-      });
-
-      return res.json({
-        record: updated,
-        message: "Check-in approved successfully.",
-      });
-    } catch (err) {
-      console.error("Approve check-in error:", err);
-
-      return res.status(500).json({
-        message: "Failed to approve check-in.",
-      });
-    }
-  },
-);
-
-// ============================================================================
-// REJECT ATTENDANCE
-// POST /api/attendance/reject/:id
-// ============================================================================
-
-router.post(
-  "/reject/:id",
-  requireAdminOrModulePermission("attendance", "canEdit"),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const reason =
-        typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
-
-      const record = await prisma.attendance.findUnique({
-        where: { id },
-        include: { employee: true },
-      });
-
-      if (!record) {
-        return res.status(404).json({
-          message: "Attendance record not found.",
-        });
-      }
-
-      if (record.status !== "PENDING_APPROVAL") {
-        return res.status(400).json({
-          message: "Record is not pending approval.",
-        });
-      }
-
-      const rejectionNote = reason
-        ? `Admin rejected: ${reason}`
-        : "Admin rejected.";
-
-      const updatedNote = record.note
-        ? `${record.note} | ${rejectionNote}`
-        : rejectionNote;
-
-      const updated = await prisma.attendance.update({
-        where: { id },
-
-        data: {
-          status: "ABSENT",
-          note: fitAttendanceNote(updatedNote),
-        },
-      });
-
-      return res.json({
-        record: updated,
-        message: "Check-in rejected successfully.",
-      });
-    } catch (err) {
-      console.error("Reject check-in error:", err);
-
-      return res.status(500).json({
-        message: "Failed to reject check-in.",
-      });
     }
   },
 );

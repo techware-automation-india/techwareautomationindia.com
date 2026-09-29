@@ -949,17 +949,24 @@ const MarkAttendance = () => {
           ================================================= */}
 
           {isCorrectionRejected && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              <div className="flex items-center gap-2 font-semibold">
-                <LogOut className="h-4 w-4" />
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+              <div className="flex items-center gap-2 font-bold">
+                <LogOut className="h-4 w-4 text-rose-600" />
                 Forgot Punch request rejected
               </div>
 
               <div className="mt-1">
-                The corrected Check In was not approved.
+                The corrected Check In was not approved by Admin.
                 <br />
                 Your original attendance remains unchanged.
               </div>
+
+              {correctionRequest?.reviewNote && (
+                <div className="mt-2.5 border-t border-rose-200/80 pt-2 font-medium dark:border-rose-800/40">
+                  <span className="font-bold">❌ Admin Rejection Reason:</span>{" "}
+                  {correctionRequest.reviewNote}
+                </div>
+              )}
             </div>
           )}
 

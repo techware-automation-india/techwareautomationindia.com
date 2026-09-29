@@ -431,17 +431,6 @@ router.get("/my", async (req, res) => {
       });
     }
 
-    /*
-     * IMPORTANT:
-     * Only employees can access /my.
-     */
-    if (req.user.role !== "EMPLOYEE") {
-      return res.status(403).json({
-        message: "Only employees can view their requests.",
-        role: req.user.role,
-      });
-    }
-
     const employee =
       await getEmployeeProfile(req.user.id);
 
@@ -505,14 +494,10 @@ router.post("/my", async (req, res) => {
       });
     }
 
-    /*
-     * IMPORTANT:
-     * ADMIN CANNOT CREATE REQUESTS HERE.
-     */
-    if (req.user.role !== "EMPLOYEE") {
-      return res.status(403).json({
-        message: "Only employees can create requests.",
-        role: req.user.role,
+    const employee = await getEmployeeProfile(req.user.id);
+    if (!employee) {
+      return res.status(404).json({
+        message: "Employee profile not found for this account.",
       });
     }
 
@@ -541,20 +526,7 @@ router.post("/my", async (req, res) => {
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | EMPLOYEE PROFILE
-    |--------------------------------------------------------------------------
-    */
 
-    const employee =
-      await getEmployeeProfile(req.user.id);
-
-    if (!employee) {
-      return res.status(404).json({
-        message: "Employee profile not found.",
-      });
-    }
 
     console.log(
       "✅ Employee:",
@@ -906,7 +878,7 @@ router.post("/my", async (req, res) => {
 
 router.get(
   "/",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals", "attendance", "attendance-management"]),
 
   async (req, res) => {
     try {
@@ -1035,7 +1007,7 @@ router.get(
 
 router.get(
   "/:id/profile",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   async (req, res) => {
     try {
@@ -1617,7 +1589,7 @@ async function reviewRequest(
 
 router.post(
   "/:id/approve",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   (req, res) =>
     reviewRequest(
@@ -1639,7 +1611,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-  checkRolePermission("requests"),
+  checkRolePermission(["requests", "approvals"]),
 
   (req, res) =>
     reviewRequest(

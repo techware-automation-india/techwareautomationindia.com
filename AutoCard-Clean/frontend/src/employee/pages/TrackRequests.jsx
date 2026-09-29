@@ -674,16 +674,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                   <span>{formatTime(request.createdAt)}</span>
                 </div>
 
-                {request.reviewNote && (
-                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-                    <p className="text-xs font-medium text-emerald-900">
-                      Admin Response:
-                    </p>
-                    <p className="mt-1 text-sm text-emerald-700">
-                      {request.reviewNote}
-                    </p>
-                  </div>
-                )}
+                
               </div>
             </div>
           ))}
@@ -873,16 +864,16 @@ const TrackRequests = ({ isAdmin = false }) => {
                             <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
                               {attendanceReason.checkInReason || "No check-in reason provided."}
                             </p>
-                            {attendanceReason.checkInDistance && (
+                            {(reasonModal.checkInDistance || attendanceReason.checkInDistance) && (
                               <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                                Distance from office: {formatDistance(attendanceReason.checkInDistance)} away
+                                Distance from office: {formatDistance(reasonModal.checkInDistance || attendanceReason.checkInDistance)} away
                               </p>
                             )}
                           </div>
                         </div>
 
                         {/* 2. CHECK-OUT DIV */}
-                        {(reasonModal.checkOutTime || attendanceReason.checkOutReason || attendanceReason.checkOutDistance) && (
+                        {(reasonModal.checkOutTime || attendanceReason.checkOutReason || attendanceReason.checkOutDistance || reasonModal.checkOutDistance) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
                             <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
                               <div className="flex items-center gap-2">
@@ -902,9 +893,9 @@ const TrackRequests = ({ isAdmin = false }) => {
                               <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
                                 {attendanceReason.checkOutReason || "No check-out reason provided."}
                               </p>
-                              {attendanceReason.checkOutDistance && (
+                              {(reasonModal.checkOutDistance || attendanceReason.checkOutDistance) && (
                                 <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                                  Distance from office: {formatDistance(attendanceReason.checkOutDistance)} away
+                                  Distance from office: {formatDistance(reasonModal.checkOutDistance || attendanceReason.checkOutDistance)} away
                                 </p>
                               )}
                             </div>
@@ -967,14 +958,24 @@ const TrackRequests = ({ isAdmin = false }) => {
                 </div>
               )}
 
-              {/* Admin Response */}
+              {/* Admin Response / Rejection Reason */}
               {reasonModal.reviewNote && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-900">
-                    <FileText className="h-4 w-4" />
-                    <span>Admin Response</span>
+                <div
+                  className={`rounded-xl border p-4 ${
+                    reasonModal.status === "REJECTED"
+                      ? "border-rose-200 bg-rose-50/80 dark:border-rose-900/40 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200"
+                      : "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200"
+                  }`}
+                >
+                  <div className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wider">
+                    <FileText className={`h-4 w-4 ${reasonModal.status === "REJECTED" ? "text-rose-600" : "text-emerald-600"}`} />
+                    <span>
+                      {reasonModal.status === "REJECTED"
+                        ? "Admin Rejection Reason"
+                        : "Admin Response"}
+                    </span>
                   </div>
-                  <p className="text-sm text-emerald-700">
+                  <p className="text-sm font-medium whitespace-pre-wrap break-words">
                     {reasonModal.reviewNote}
                   </p>
                 </div>

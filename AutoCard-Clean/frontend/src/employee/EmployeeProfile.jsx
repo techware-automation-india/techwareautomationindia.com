@@ -119,7 +119,7 @@ const EmployeeProfile = () => {
               <div className="flex flex-wrap items-center gap-2 mt-4">
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
                   <Shield className="h-3.5 w-3.5" />
-                  Employee
+                  {user?.roleName || user?.customRole?.name || "Employee"}
                 </span>
 
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground">

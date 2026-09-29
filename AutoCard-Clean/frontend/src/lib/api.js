@@ -39,10 +39,6 @@ async function request(method, path, body) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  console.log("🌐 API:", `${API_BASE}/api${path}`);
-
-  console.log("🔐 Token:", token ? "FOUND" : "MISSING");
-
   const response = await fetch(`${API_BASE}/api${path}`, {
     method,
 

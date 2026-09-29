@@ -84,8 +84,41 @@ const fmtOvertimeHours = (record, isHoliday = false) => {
   const overtimeHours = isHoliday ? workedHours : workedHours - 8;
   if (overtimeHours <= 0) return null;
   const otMinutes = Math.round(overtimeHours * 60);
-  if (otMinutes <= 15) return null;
-  return fmtWorkedHours(overtimeHours);
+  const netOtMinutes = isHoliday ? otMinutes : Math.max(0, otMinutes - 15);
+  if (netOtMinutes <= 0) return null;
+  return fmtWorkedHours(netOtMinutes / 60);
+};
+
+const getNumericWorkedMinutes = (record) => {
+  if (!record) return 0;
+  let hours = Number(record.workedHours);
+  if (Number.isNaN(hours) || hours <= 0) {
+    if (record.checkIn && record.checkOut) {
+      const diffMs = new Date(record.checkOut) - new Date(record.checkIn);
+      if (diffMs > 0) hours = diffMs / 3600000;
+    }
+  }
+  if (Number.isNaN(hours) || hours <= 0) return 0;
+  return Math.round(hours * 60);
+};
+
+const getNumericOvertimeMinutes = (record, isHoliday = false) => {
+  if (!record) return 0;
+  const workedMinutes = getNumericWorkedMinutes(record);
+  if (workedMinutes <= 0) return 0;
+  const workedHours = workedMinutes / 60;
+  const overtimeHours = isHoliday ? workedHours : workedHours - 8;
+  if (overtimeHours <= 0) return 0;
+  const otMinutes = Math.round(overtimeHours * 60);
+  const netOtMinutes = isHoliday ? otMinutes : Math.max(0, otMinutes - 15);
+  return netOtMinutes > 0 ? netOtMinutes : 0;
+};
+
+const fmtMinutesToHM = (totalMinutes) => {
+  if (!totalMinutes || totalMinutes <= 0) return "0h 0m";
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}h ${m}m`;
 };
 
 const cleanAttendanceNote = (note) => {
@@ -618,7 +651,12 @@ const Attendance = () => {
     ? registerData?.records || []
     : data?.records || [];
   const isHolidayDate = (date) => {
-    const dateKey = formatDateKey(date);
+    if (!date) return false;
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return false;
+    if (d.getUTCDay() === 0) return true;
+
+    const dateKey = formatDateKey(d);
     const holidays = isAllEmployees
       ? registerData?.holidays || []
       : data?.holidays || [];
@@ -656,6 +694,9 @@ const Attendance = () => {
     ? records.filter((rec) => {
         if (selectedStatus === "OVERTIME") {
           return isOvertimeRecord(rec);
+        }
+        if (selectedStatus === "HOLIDAY") {
+          return isHolidayDate(rec.date) || rec.status === "HOLIDAY";
         }
         // Do not show ABSENT records for today or future days (people may still arrive)
         if (selectedStatus === "ABSENT") {
@@ -701,14 +742,56 @@ const Attendance = () => {
     ]),
   );
 
+  const individualTotals = records.reduce(
+    (acc, rec) => {
+      const isHol = isHolidayDate(rec.date);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
+  const presentTotals = records
+    .filter((rec) => rec.status === "PRESENT")
+    .reduce(
+      (acc, rec) => {
+        const isHol = isHolidayDate(rec.date);
+        acc.workedMinutes += getNumericWorkedMinutes(rec);
+        acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+        return acc;
+      },
+      { workedMinutes: 0, otMinutes: 0 },
+    );
+
+  const filteredTotals = filteredRecords.reduce(
+    (acc, rec) => {
+      const isHol = isHolidayDate(rec.date);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
+  const allEmployeesTotals = (registerData?.records || []).reduce(
+    (acc, rec) => {
+      const isHol = isHolidayDate(rec.date);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
   // Monthly summary for the All Employees view.
   const getEmployeeMonthSummary = (emp) => {
     let present = 0;
     let absent = 0;
     let leave = 0;
     let holiday = 0;
-
-    const holidays = registerData?.holidays || [];
+    let totalWorkedMinutes = 0;
+    let totalOtMinutes = 0;
 
     visibleRegisterDates.forEach((date) => {
       const dateKey = formatDateKey(date);
@@ -719,16 +802,17 @@ const Attendance = () => {
         rec = null;
       }
 
-      const isHoliday = holidays.some(
-        (h) => formatDateKey(new Date(h.date)) === dateKey,
-      );
+      const isHoliday = isHolidayDate(date) || rec?.status === "HOLIDAY";
+
+      if (rec) {
+        totalWorkedMinutes += getNumericWorkedMinutes(rec);
+        totalOtMinutes += getNumericOvertimeMinutes(rec, isHoliday);
+      }
 
       if (rec?.status === "ON_LEAVE") {
         leave += 1;
       } else if (rec?.status === "ABSENT") {
         absent += 1;
-      } else if (isHoliday && !isWorkedRecord(rec)) {
-        holiday += 1;
       } else if (
         rec &&
         (isWorkedRecord(rec) ||
@@ -736,6 +820,8 @@ const Attendance = () => {
           rec.status === "PENDING_APPROVAL")
       ) {
         present += 1;
+      } else if (isHoliday) {
+        holiday += 1;
       }
     });
 
@@ -744,6 +830,10 @@ const Attendance = () => {
       absent,
       leave,
       holiday,
+      totalWorkedMinutes,
+      totalOtMinutes,
+      totalWorkedText: fmtMinutesToHM(totalWorkedMinutes),
+      totalOtText: fmtMinutesToHM(totalOtMinutes),
       total: present + absent + leave + holiday,
     };
   };
@@ -1005,18 +1095,52 @@ const Attendance = () => {
                   {filteredRecords.length === 1 ? "" : "s"} found
                 </div>
               </div>
-              <span
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${selectedStatusMeta?.cell}`}
-              >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 dark:bg-blue-500/20 px-3 py-1 text-xs font-bold text-blue-700 dark:text-blue-300">
+                  Worked: {fmtMinutesToHM(filteredTotals.workedMinutes)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 px-3 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+                  OT: {fmtMinutesToHM(filteredTotals.otMinutes)}
+                </span>
                 <span
-                  className={`w-2 h-2 rounded-full ${selectedStatusMeta?.dot}`}
-                />
-                {selectedStatusMeta?.label}
-              </span>
+                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${selectedStatusMeta?.cell}`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${selectedStatusMeta?.dot}`}
+                  />
+                  {selectedStatusMeta?.label}
+                </span>
+              </div>
             </div>
           </div>
 
           <div className="p-6 overflow-x-auto">
+            {/* Per-month working hour & OT count summary cards for Present / OT submodule */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+              <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-50/70 dark:bg-blue-950/20 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                  <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                    Monthly Working Hours ({selectedStatusMeta?.label})
+                  </span>
+                </div>
+                <div className="font-display text-2xl font-bold text-blue-900 dark:text-blue-200">
+                  {fmtMinutesToHM(filteredTotals.workedMinutes)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/70 dark:bg-amber-950/20 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    Monthly Overtime (OT) Hours ({selectedStatusMeta?.label})
+                  </span>
+                </div>
+                <div className="font-display text-2xl font-bold text-amber-900 dark:text-amber-200">
+                  {fmtMinutesToHM(filteredTotals.otMinutes)}
+                </div>
+              </div>
+            </div>
+
             {filteredRecords.length > 0 ? (
               <>
                 {selectedStatus === "PENDING_APPROVAL" && (
@@ -1481,6 +1605,13 @@ const Attendance = () => {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {Object.entries(statusMeta).map(([key, meta]) => {
                 const isActive = selectedStatus === key;
+                const count =
+                  key === "HOLIDAY"
+                    ? records.filter(
+                        (rec) =>
+                          isHolidayDate(rec.date) || rec.status === "HOLIDAY",
+                      ).length
+                    : summary[key] || 0;
 
                 return (
                   <button
@@ -1502,8 +1633,13 @@ const Attendance = () => {
                       </span>
                     </div>
                     <div className="font-display text-xl font-bold">
-                      {summary[key] || 0}
+                      {count}
                     </div>
+                    {key === "PRESENT" && (
+                      <div className="mt-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        {fmtMinutesToHM(presentTotals.workedMinutes)} worked
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -1518,6 +1654,9 @@ const Attendance = () => {
                 </div>
                 <div className="font-display text-xl font-bold text-orange-900 dark:text-orange-200">
                   {overtimeDays} {overtimeDays === 1 ? "day" : "days"}
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                  {fmtMinutesToHM(individualTotals.otMinutes)} OT
                 </div>
               </button>
             </div>
@@ -1809,6 +1948,8 @@ const Attendance = () => {
                           ? `Week ${selectedWeek}`
                           : "Full Month"}
                     </span>
+                  
+                  
                   </div>
                 </div>
               </div>
@@ -2009,6 +2150,12 @@ const Attendance = () => {
                           <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-blue-500/10 dark:bg-blue-500/20 px-3 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 shadow-sm">
                             Holiday
                           </th>
+                          <th className="sticky top-0 z-[60] min-w-[110px] border-b border-border bg-blue-600/10 dark:bg-blue-600/20 px-3 py-3 text-center text-xs font-bold text-blue-700 dark:text-blue-300 shadow-sm">
+                            Worked Hours
+                          </th>
+                          <th className="sticky top-0 z-[60] min-w-[110px] border-b border-border bg-amber-500/10 dark:bg-amber-500/20 px-3 py-3 text-center text-xs font-bold text-amber-700 dark:text-amber-300 shadow-sm">
+                            OT Hours
+                          </th>
                         </>
                       )}
                     </tr>
@@ -2070,7 +2217,9 @@ const Attendance = () => {
                             )?.name;
 
                             const isHoliday =
-                              Boolean(holidayName) || rec?.status === "HOLIDAY";
+                              Boolean(holidayName) ||
+                              rec?.status === "HOLIDAY" ||
+                              date.getUTCDay() === 0;
                             const isAbsent = rec?.status === "ABSENT";
 
                             const meta = rec ? statusMeta[rec.status] : null;
@@ -2306,7 +2455,16 @@ const Attendance = () => {
                                       {monthSummary.holiday}
                                     </span>
                                   </td>
-                                  
+                                  <td className="border-b border-border bg-blue-500/5 dark:bg-blue-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[54px] items-center justify-center rounded-lg bg-blue-500/10 dark:bg-blue-500/20 px-2.5 py-1.5 text-sm font-bold text-blue-700 dark:text-blue-300">
+                                      {monthSummary.totalWorkedText}
+                                    </span>
+                                  </td>
+                                  <td className="border-b border-border bg-amber-500/5 dark:bg-amber-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[54px] items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-500/20 px-2.5 py-1.5 text-sm font-bold text-amber-700 dark:text-amber-300">
+                                      {monthSummary.totalOtText}
+                                    </span>
+                                  </td>
                                 </>
                               );
                             })()}
@@ -2319,7 +2477,7 @@ const Attendance = () => {
                             registerDates.length +
                             1 +
                             (isAllEmployees && !selectedDate && !selectedWeek
-                              ? 5
+                              ? 6
                               : 0)
                           }
                           className="px-6 py-14 text-center"

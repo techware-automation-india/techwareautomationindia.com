@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
@@ -57,6 +57,7 @@ import EmployeeProjects from "./employee/pages/Projects.jsx";
 import EmployeeServices from "./employee/pages/Services.jsx";
 import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
 import EmployeeRoster from "./employee/pages/Roster.jsx";
+import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
 // CUSTOMER PANEL COMMENTED OUT
@@ -141,7 +142,7 @@ const AppRoutes = () => {
           <Route path="attendance-requests" element={<AttendanceRequests />} />
           {/* <Route path="projects" element={<Projects />} /> */}
           {/* <Route path="project/:id" element={<ProjectDetails />} /> */}
-<Route path="roles-access" element={<RolesAccess />} />
+          <Route path="roles-access" element={<RolesAccess />} />
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
         </Route>
@@ -163,6 +164,94 @@ const AppRoutes = () => {
             element={
               <RequireOnboarding>
                 <EmployeeLeave />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="employee"
+            element={
+              <RequireOnboarding>
+                <EmployeeManagement />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="add-account"
+            element={
+              <RequireOnboarding>
+                <EmployeeManagement />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="employee-management"
+            element={
+              <RequireOnboarding>
+                <EmployeeManagement />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="employee-list"
+            element={
+              <RequireOnboarding>
+                <EmployeeList isEmployeeView={true} />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="approvals"
+            element={
+              <RequireOnboarding>
+                <Approvals />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="attendance-management"
+            element={
+              <RequireOnboarding>
+                <Attendance />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="leave-policy"
+            element={
+              <RequireOnboarding>
+                <EmployeeLeavePolicy />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="projects"
+            element={
+              <RequireOnboarding>
+                <EmployeeProjects />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="roles-access"
+            element={
+              <RequireOnboarding>
+                <RolesAccess />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="shift-location"
+            element={
+              <RequireOnboarding>
+                <ShiftLocation />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="roster"
+            element={
+              <RequireOnboarding>
+                <Roster />
               </RequireOnboarding>
             }
           />

@@ -17,7 +17,7 @@ import {
   
 } from "lucide-react";
 import { employeeModules, getModulesByPermissions } from "./modules.js";
-import { getAuthUser, clearAuth } from "../lib/auth.js";
+import { getAuthUser, clearAuth, updateAuthUser } from "../lib/auth.js";
 import { apiGet } from "../lib/api.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 
@@ -29,6 +29,11 @@ const EmployeeLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [assignedRoleName, setAssignedRoleName] = useState(() => {
+    const authUser = getAuthUser();
+    return authUser?.roleName || authUser?.customRole?.name || "";
+  });
+  const [permissions, setPermissions] = useState({});
   const [visibleModules, setVisibleModules] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
@@ -42,6 +47,9 @@ const EmployeeLayout = () => {
     }
 
     setUser(authUser);
+    if (authUser.roleName || authUser.customRole?.name) {
+      setAssignedRoleName(authUser.roleName || authUser.customRole?.name);
+    }
   }, [navigate, location.pathname]);
 
   // Load permissions and determine visible modules
@@ -51,8 +59,16 @@ const EmployeeLayout = () => {
     const loadPermissions = async () => {
       try {
         const data = await apiGet("/roles-access/me/permissions");
-        const modules = getModulesByPermissions(data.permissions || {});
+        const perms = data?.permissions || {};
+        setPermissions(perms);
+        const modules = getModulesByPermissions(perms);
         setVisibleModules(modules);
+        if (data?.roleName) {
+          console.log("👤 [Employee Layout] Assigned role loaded:", data.roleName);
+          setAssignedRoleName(data.roleName);
+          setUser((prev) => (prev ? { ...prev, roleName: data.roleName } : prev));
+          updateAuthUser({ roleName: data.roleName });
+        }
       } catch (err) {
         console.error("Failed to load permissions:", err);
         // Fallback to default modules if permission loading fails
@@ -63,7 +79,7 @@ const EmployeeLayout = () => {
     };
 
     loadPermissions();
-  }, [user]);
+  }, [user?.id]);
 
   const handleLogout = () => {
     console.log("🚪 [Employee Layout] Logging out");
@@ -201,15 +217,19 @@ const EmployeeLayout = () => {
                 onClick={() => setProfileOpen((prev) => !prev)}
                 className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-secondary transition-colors"
               >
-                {/* Name + Email */}
+                {/* Name + Role */}
                 <div className="text-right hidden sm:block">
-                  <div className="text-sm font-semibold text-foreground">
+                  <div className="text-sm font-semibold text-foreground leading-tight">
                     {user?.fullName || "Employee"}
                   </div>
 
-                  <div className="text-xs text-muted-foreground">
-                    {user?.email || ""}
-                  </div>
+                  {(assignedRoleName || user?.roleName || user?.customRole?.name || user?.role) && (
+                    <div className="flex items-center justify-end mt-0.5">
+                      <span className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold uppercase">
+                        {assignedRoleName || user?.roleName || user?.customRole?.name || user?.role}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Avatar */}
@@ -275,8 +295,8 @@ const EmployeeLayout = () => {
                       </div>
                     </div>
 
-                    <span className="inline-flex mt-3 px-2 py-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold tracking-wide">
-                      EMPLOYEE
+                    <span className="inline-flex mt-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold tracking-wide uppercase">
+                      {assignedRoleName || user?.roleName || user?.customRole?.name || user?.role || "EMPLOYEE"}
                     </span>
                   </div>
 
@@ -331,7 +351,7 @@ const EmployeeLayout = () => {
             </div>
           )}
 
-          <Outlet />
+          <Outlet context={{ visibleModules, permissions }} />
         </main>
       </div>
     </div>

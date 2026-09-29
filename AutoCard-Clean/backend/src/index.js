@@ -262,7 +262,7 @@ if (process.env.VERCEL !== "1") {
     }
 
     isShuttingDown = true;
-    console.log("Stopping server...");
+    console.log("Stopping Server...");
 
     await new Promise((resolve) => {
       server.close(() => resolve());

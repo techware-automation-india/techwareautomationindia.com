@@ -119,7 +119,7 @@ const REQUEST_STATUS_META = {
 
 const toRadians = (value) => (value * Math.PI) / 180;
 
-const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+const getStraightDistanceInMeters = (lat1, lon1, lat2, lon2) => {
   const earthRadiusMeters = 6371000;
 
   const dLat = toRadians(lat2 - lat1);
@@ -137,6 +137,58 @@ const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
 
   return earthRadiusMeters * c;
 };
+
+const getRoadDistanceInMeters = async (lat1, lon1, lat2, lon2) => {
+  const straightDistance = getStraightDistanceInMeters(lat1, lon1, lat2, lon2);
+  if (straightDistance < 100) {
+    return straightDistance;
+  }
+
+  // 1. Try Google Maps Distance Matrix API if key is set in Vite env
+  const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (googleApiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${lat1},${lon1}&destinations=${lat2},${lon2}&key=${googleApiKey}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        const element = data?.rows?.[0]?.elements?.[0];
+        if (element?.status === "OK" && element?.distance?.value != null) {
+          return element.distance.value;
+        }
+      }
+    } catch (err) {
+      console.warn("Google Distance Matrix API error, using OSRM fallback:", err.message);
+    }
+  }
+
+  // 2. Try OSRM (Open Source Routing Machine) Free Driving Route API
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+        return data.routes[0].distance;
+      }
+    }
+  } catch (err) {
+    console.warn("OSRM routing API error, using fallback factor:", err.message);
+  }
+
+  // 3. Fallback: Straight-line * 1.35 road factor multiplier
+  return straightDistance * 1.35;
+};
+
+const getDistanceInMeters = getStraightDistanceInMeters;
 
 const parseLocationCoordinates = (location) => {
   if (!location || typeof location !== "string") {
@@ -500,7 +552,7 @@ const MarkAttendance = () => {
         );
       }
 
-      const distanceMeters = getDistanceInMeters(
+      const distanceMeters = getStraightDistanceInMeters(
         targetLocation.latitude,
         targetLocation.longitude,
         coordinates.latitude,
@@ -508,11 +560,18 @@ const MarkAttendance = () => {
       );
 
       if (distanceMeters > (targetLocation.radius ?? 50)) {
+        const roadDistance = await getRoadDistanceInMeters(
+          targetLocation.latitude,
+          targetLocation.longitude,
+          coordinates.latitude,
+          coordinates.longitude,
+        );
+
         openReasonModal(
           "checkin",
           location,
           coordinates,
-          Math.round(distanceMeters),
+          Math.round(roadDistance),
         );
 
         return;
@@ -592,7 +651,7 @@ const MarkAttendance = () => {
       // CALCULATE DISTANCE
       // =====================================================
 
-      const distanceMeters = getDistanceInMeters(
+      const distanceMeters = getStraightDistanceInMeters(
         targetLocation.latitude,
         targetLocation.longitude,
         coordinates.latitude,
@@ -604,11 +663,18 @@ const MarkAttendance = () => {
       // =====================================================
 
       if (distanceMeters > (targetLocation.radius ?? 50)) {
+        const roadDistance = await getRoadDistanceInMeters(
+          targetLocation.latitude,
+          targetLocation.longitude,
+          coordinates.latitude,
+          coordinates.longitude,
+        );
+
         openReasonModal(
           "checkout",
           location,
           coordinates,
-          Math.round(distanceMeters),
+          Math.round(roadDistance),
         );
 
         return;

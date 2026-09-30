@@ -125,36 +125,43 @@ router.get("/", checkRolePermission("roster"), async (req, res) => {
   }
 });
 
-// GET /api/roster/meta â€” returns employees with shift+location, all shifts, locations
+// GET /api/roster/meta — returns employees with shift+location, all shifts, locations
 router.get("/meta", checkRolePermission("roster"), async (_req, res) => {
-  console.log("ðŸ“‹ [GET /roster/meta] Request received, user:", _req.user?.id, "role:", _req.user?.role);
+  console.log("📋 [GET /roster/meta] Request received, user:", _req.user?.id, "role:", _req.user?.role);
   try {
-    const [allEmployees, shifts, locations] = await Promise.all([
-      prisma.user.findMany({
-        where: { role: "EMPLOYEE" },
-        select: { 
-          id: true, 
-          fullName: true, 
-          email: true, 
-          employeeProfile: { 
+    const [allProfiles, shifts, locations] = await Promise.all([
+      prisma.employeeProfile.findMany({
+        include: {
+          user: {
             select: { 
               id: true, 
-              employeeCode: true,
-              shiftId: true,      // Check if shift assigned
-              locationId: true    // Check if location assigned
-            } 
-          } 
+              fullName: true, 
+              email: true, 
+              role: true,
+            },
+          },
         },
-        orderBy: { fullName: "asc" },
+        orderBy: [
+          { employeeCode: "asc" },
+          { firstName: "asc" },
+        ],
       }),
       prisma.shift.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
       prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     ]);
-    
-    // Include every employee with a profile. Shift and location are selected
-    // for each roster entry and do not need to be preassigned on the profile.
-    const employees = allEmployees.filter((emp) => emp.employeeProfile);
-    
+
+    const employees = allProfiles.map((prof) => ({
+      id: prof.user?.id || prof.userId,
+      fullName: prof.user?.fullName || `${prof.firstName || ""} ${prof.lastName || ""}`.trim() || "Employee",
+      email: prof.user?.email || "",
+      employeeProfile: {
+        id: prof.id,
+        employeeCode: prof.employeeCode,
+        shiftId: prof.shiftId,
+        locationId: prof.locationId,
+      },
+    }));
+
     res.json({ employees, shifts, locations });
   } catch (err) {
     console.error("Roster meta error:", err);

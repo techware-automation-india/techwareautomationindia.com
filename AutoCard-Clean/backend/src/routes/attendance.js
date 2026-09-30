@@ -121,26 +121,78 @@ const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
   return earthRadiusMeters * c;
 };
 
+const getRoadDistanceInMeters = async (lat1, lon1, lat2, lon2) => {
+  const straightDistance = getDistanceInMeters(lat1, lon1, lat2, lon2);
+  if (straightDistance < 100) {
+    return straightDistance;
+  }
+
+  // 1. Try Google Maps Distance Matrix API if key is set
+  const googleApiKey =
+    process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (googleApiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${lat1},${lon1}&destinations=${lat2},${lon2}&key=${googleApiKey}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        const element = data?.rows?.[0]?.elements?.[0];
+        if (element?.status === "OK" && element?.distance?.value != null) {
+          return element.distance.value;
+        }
+      }
+    } catch (err) {
+      console.warn("Google Distance Matrix API error, using OSRM fallback:", err.message);
+    }
+  }
+
+  // 2. Try OSRM (Open Source Routing Machine) Free Driving Route API
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+        return data.routes[0].distance;
+      }
+    }
+  } catch (err) {
+    console.warn("OSRM routing API error, using fallback factor:", err.message);
+  }
+
+  // 3. Fallback: Straight-line * 1.35 road factor multiplier
+  return straightDistance * 1.35;
+};
+
 const getRosterLocation = async (profileId) => {
-  const today = new Date();
-  const start = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
-  );
-  const tomorrow = new Date(
-    Date.UTC(
-      today.getUTCFullYear(),
-      today.getUTCMonth(),
-      today.getUTCDate() + 1,
-    ),
-  );
+  const now = new Date();
+  const dateKey = getIndiaDateKey(now);
+  const { start, end } = getIndiaDayRange(now);
 
   const rosterEntry = await prisma.rosterEntry.findFirst({
     where: {
       employeeId: profileId,
-      date: { gte: start, lt: tomorrow },
       locationId: { not: null },
+      OR: [
+        { date: { gte: start, lte: end } },
+        ...(dateKey
+          ? [
+              { date: new Date(`${dateKey}T00:00:00.000Z`) },
+              { date: new Date(`${dateKey}T00:00:00+05:30`) },
+            ]
+          : []),
+      ],
     },
     include: { location: true },
+    orderBy: { updatedAt: "desc" },
   });
 
   return rosterEntry?.location ?? null;
@@ -1048,6 +1100,8 @@ router.post("/checkin", requireAuth, async (req, res) => {
 
     let note = `Checkin: ${getLocationLabel(targetLocation)}`;
 
+    let requiresApproval = false;
+
     // ----------------------------------------------------------
     // DEFAULT & ASSIGNED LOCATION DISTANCES
     // ----------------------------------------------------------
@@ -1055,7 +1109,7 @@ router.post("/checkin", requireAuth, async (req, res) => {
     const defaultLocRef = defaultLocation || targetLocation;
     const distanceToDefault =
       defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
-        ? getDistanceInMeters(
+        ? await getRoadDistanceInMeters(
             defaultLocRef.latitude,
             defaultLocRef.longitude,
             coordinates.latitude,
@@ -1065,7 +1119,7 @@ router.post("/checkin", requireAuth, async (req, res) => {
 
     const distanceToAssigned =
       targetLocation?.latitude != null && targetLocation?.longitude != null
-        ? getDistanceInMeters(
+        ? await getRoadDistanceInMeters(
             targetLocation.latitude,
             targetLocation.longitude,
             coordinates.latitude,
@@ -1084,7 +1138,9 @@ router.post("/checkin", requireAuth, async (req, res) => {
     // ----------------------------------------------------------
 
     if (checkinLocation && checkinDistance <= (checkinLocation.radius ?? 50)) {
-      const isAssignedLocation = profile.locationId === checkinLocation.id;
+      const isAssignedLocation =
+        (profile.locationId && profile.locationId === checkinLocation.id) ||
+        (targetLocation && targetLocation.id === checkinLocation.id);
 
       const isDefaultLocation =
         defaultLocation && checkinLocation.id === defaultLocation.id;
@@ -1691,7 +1747,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
       const defaultLocRef = defaultLocation || comparisonLocation;
       const distanceToDefault = defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
-        ? getDistanceInMeters(
+        ? await getRoadDistanceInMeters(
             defaultLocRef.latitude,
             defaultLocRef.longitude,
             coordinates.latitude,
@@ -1699,13 +1755,15 @@ router.post("/checkout", requireAuth, async (req, res) => {
           )
         : distance;
 
-      const distStr = Number.isFinite(distanceToDefault)
-        ? ` (${formatDistanceKm(distanceToDefault)} away)`
+      const distToUse = Number.isFinite(distanceToDefault) ? distanceToDefault : distance;
+
+      const distStr = Number.isFinite(distToUse)
+        ? ` (${formatDistanceKm(distToUse)} away)`
         : "";
 
       const checkoutNote = comparisonLocation
         ? `Checkout outside assigned location (${formatDistanceKm(
-            Number.isFinite(distance) ? distance : distanceToDefault,
+            distToUse,
           )} away). Pending admin approval.${reasonText}`
         : `Checkout from unassigned location${distStr}. Pending admin approval.${reasonText}`;
 
@@ -1881,7 +1939,7 @@ const enrichAttendanceRecordsWithDistance = async (records) => {
         targetLoc?.latitude != null &&
         targetLoc?.longitude != null
       ) {
-        const distMeters = getDistanceInMeters(
+        const distMeters = await getRoadDistanceInMeters(
           targetLoc.latitude,
           targetLoc.longitude,
           record.checkInLatitude,
@@ -1896,7 +1954,7 @@ const enrichAttendanceRecordsWithDistance = async (records) => {
         targetLoc?.latitude != null &&
         targetLoc?.longitude != null
       ) {
-        const distMeters = getDistanceInMeters(
+        const distMeters = await getRoadDistanceInMeters(
           targetLoc.latitude,
           targetLoc.longitude,
           record.checkOutLatitude,

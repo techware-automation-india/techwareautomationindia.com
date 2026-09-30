@@ -1080,14 +1080,24 @@ router.post("/checkin", requireAuth, async (req, res) => {
 
       const allowedRadius = targetLocation?.radius ?? 50;
 
-      const distanceToAssigned = targetLocation
+      const defaultLocRef = defaultLocation || targetLocation;
+      const distanceToDefault = defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
+        ? getDistanceInMeters(
+            defaultLocRef.latitude,
+            defaultLocRef.longitude,
+            coordinates.latitude,
+            coordinates.longitude,
+          )
+        : Infinity;
+
+      const distanceToAssigned = targetLocation?.latitude != null && targetLocation?.longitude != null
         ? getDistanceInMeters(
             targetLocation.latitude,
             targetLocation.longitude,
             coordinates.latitude,
             coordinates.longitude,
           )
-        : Infinity;
+        : distanceToDefault;
 
       if (targetLocation && distanceToAssigned > allowedRadius) {
         if (!normalizedReason) {
@@ -1105,14 +1115,18 @@ router.post("/checkin", requireAuth, async (req, res) => {
         status = "PENDING_APPROVAL";
 
         note = `Checkin from unassigned location (${formatDistanceKm(
-          distanceToAssigned,
+          Number.isFinite(distanceToAssigned) ? distanceToAssigned : distanceToDefault,
         )} away). Reason: ${normalizedReason}. Pending admin approval.`;
       } else if (!targetLocation && normalizedReason) {
         requiresApproval = true;
 
         status = "PENDING_APPROVAL";
 
-        note = `Checkin from unassigned location. Reason: ${normalizedReason}. Pending admin approval.`;
+        const distStr = Number.isFinite(distanceToDefault)
+          ? ` (${formatDistanceKm(distanceToDefault)} away)`
+          : "";
+
+        note = `Checkin from unassigned location${distStr}. Reason: ${normalizedReason}. Pending admin approval.`;
       }
     }
 
@@ -1665,11 +1679,25 @@ router.post("/checkout", requireAuth, async (req, res) => {
         ? ` Reason: ${normalizedReason}.`
         : "";
 
+      const defaultLocRef = defaultLocation || comparisonLocation;
+      const distanceToDefault = defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
+        ? getDistanceInMeters(
+            defaultLocRef.latitude,
+            defaultLocRef.longitude,
+            coordinates.latitude,
+            coordinates.longitude,
+          )
+        : distance;
+
+      const distStr = Number.isFinite(distanceToDefault)
+        ? ` (${formatDistanceKm(distanceToDefault)} away)`
+        : "";
+
       const checkoutNote = comparisonLocation
         ? `Checkout outside assigned location (${formatDistanceKm(
-            distance,
+            Number.isFinite(distance) ? distance : distanceToDefault,
           )} away). Pending admin approval.${reasonText}`
-        : `Checkout from unassigned location. Pending admin approval.${reasonText}`;
+        : `Checkout from unassigned location${distStr}. Pending admin approval.${reasonText}`;
 
       const updatedNote = record.note
         ? `${record.note} | ${checkoutNote}`

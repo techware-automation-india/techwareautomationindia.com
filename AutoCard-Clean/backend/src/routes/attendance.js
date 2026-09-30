@@ -148,16 +148,21 @@ const getRosterLocation = async (profileId) => {
 
 const getTargetLocation = async (profile) => {
   const rosterLocation = await getRosterLocation(profile.id);
-  if (rosterLocation) {
+  if (rosterLocation && rosterLocation.latitude != null && rosterLocation.longitude != null) {
     return rosterLocation;
   }
 
-  if (profile.location) {
+  if (profile?.location && profile.location.latitude != null && profile.location.longitude != null) {
     return profile.location;
   }
 
-  return prisma.location.findFirst({
+  const defaultLoc = await prisma.location.findFirst({
     where: { isDefault: true, isActive: true },
+  });
+  if (defaultLoc) return defaultLoc;
+
+  return prisma.location.findFirst({
+    where: { isActive: true },
   });
 };
 
@@ -1822,7 +1827,10 @@ const enrichAttendanceRecordsWithDistance = async (records) => {
         });
         empLocation = emp?.location;
       }
-      const targetLoc = empLocation || defaultLocation;
+      const targetLoc =
+        (empLocation?.latitude != null && empLocation?.longitude != null)
+          ? empLocation
+          : defaultLocation;
 
       let checkInDistance = null;
       let checkOutDistance = null;

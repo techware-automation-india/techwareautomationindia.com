@@ -70,7 +70,8 @@ const formatTime = (value) => {
 
 const formatDistance = (value) => {
   if (value == null || value === "") return "";
-  const str = String(value).trim();
+  let str = String(value).replace(/\s*away\s*$/i, "").trim();
+  if (str.endsWith("m") || str.endsWith("km")) return str;
   const num = parseFloat(str.replace(/[^0-9.]/g, ""));
   if (Number.isNaN(num)) return str;
 
@@ -167,8 +168,13 @@ const getAttendanceReason = (note = "", reason = "") => {
   const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
   const cleanText = markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
 
-  const checkInDistance = cleanText.match(/Checkin .*?\(([0-9.]+)\s*km(?:\s*away)?\)/i)?.[1] || null;
-  const checkOutDistance = cleanText.match(/Checkout .*?\(([0-9.]+)\s*km(?:\s*away)?\)/i)?.[1] || null;
+  const checkInDistance =
+    cleanText.match(/Checkin .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    cleanText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i)?.[1] ||
+    null;
+  const checkOutDistance =
+    cleanText.match(/Checkout .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    null;
 
   const reasonMatches = [
     ...cleanText.matchAll(

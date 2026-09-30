@@ -262,6 +262,8 @@ const normalizeAttendance = (items) =>
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
     checkOutLongitude: item.checkOutLongitude,
+    checkInDistance: item.checkInDistance || null,
+    checkOutDistance: item.checkOutDistance || null,
     checkInTime: item.checkInTime || item.createdAt || item.date,
     checkOutTime:
       item.checkOutTime ||

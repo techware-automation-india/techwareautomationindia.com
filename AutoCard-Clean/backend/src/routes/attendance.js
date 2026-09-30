@@ -1048,7 +1048,36 @@ router.post("/checkin", requireAuth, async (req, res) => {
 
     let note = `Checkin: ${getLocationLabel(targetLocation)}`;
 
-    let requiresApproval = false;
+    // ----------------------------------------------------------
+    // DEFAULT & ASSIGNED LOCATION DISTANCES
+    // ----------------------------------------------------------
+
+    const defaultLocRef = defaultLocation || targetLocation;
+    const distanceToDefault =
+      defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
+        ? getDistanceInMeters(
+            defaultLocRef.latitude,
+            defaultLocRef.longitude,
+            coordinates.latitude,
+            coordinates.longitude,
+          )
+        : Infinity;
+
+    const distanceToAssigned =
+      targetLocation?.latitude != null && targetLocation?.longitude != null
+        ? getDistanceInMeters(
+            targetLocation.latitude,
+            targetLocation.longitude,
+            coordinates.latitude,
+            coordinates.longitude,
+          )
+        : distanceToDefault;
+
+    const officeDistance = Number.isFinite(distanceToDefault)
+      ? distanceToDefault
+      : Number.isFinite(distanceToAssigned)
+        ? distanceToAssigned
+        : checkinDistance;
 
     // ----------------------------------------------------------
     // EMPLOYEE IS INSIDE A LOCATION
@@ -1066,8 +1095,8 @@ router.post("/checkin", requireAuth, async (req, res) => {
         status = "PENDING_APPROVAL";
 
         note = `Checkin to unassigned location: ${checkinLocation.name} (${formatDistanceKm(
-          checkinDistance,
-        )}). Reason: ${
+          officeDistance,
+        )} away). Reason: ${
           normalizedReason || "No reason provided"
         }. Pending admin approval.`;
       } else {
@@ -1079,25 +1108,6 @@ router.post("/checkin", requireAuth, async (req, res) => {
       // --------------------------------------------------------
 
       const allowedRadius = targetLocation?.radius ?? 50;
-
-      const defaultLocRef = defaultLocation || targetLocation;
-      const distanceToDefault = defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
-        ? getDistanceInMeters(
-            defaultLocRef.latitude,
-            defaultLocRef.longitude,
-            coordinates.latitude,
-            coordinates.longitude,
-          )
-        : Infinity;
-
-      const distanceToAssigned = targetLocation?.latitude != null && targetLocation?.longitude != null
-        ? getDistanceInMeters(
-            targetLocation.latitude,
-            targetLocation.longitude,
-            coordinates.latitude,
-            coordinates.longitude,
-          )
-        : distanceToDefault;
 
       if (targetLocation && distanceToAssigned > allowedRadius) {
         if (!normalizedReason) {
@@ -1115,15 +1125,15 @@ router.post("/checkin", requireAuth, async (req, res) => {
         status = "PENDING_APPROVAL";
 
         note = `Checkin from unassigned location (${formatDistanceKm(
-          Number.isFinite(distanceToAssigned) ? distanceToAssigned : distanceToDefault,
+          officeDistance,
         )} away). Reason: ${normalizedReason}. Pending admin approval.`;
       } else if (!targetLocation && normalizedReason) {
         requiresApproval = true;
 
         status = "PENDING_APPROVAL";
 
-        const distStr = Number.isFinite(distanceToDefault)
-          ? ` (${formatDistanceKm(distanceToDefault)} away)`
+        const distStr = Number.isFinite(officeDistance)
+          ? ` (${formatDistanceKm(officeDistance)} away)`
           : "";
 
         note = `Checkin from unassigned location${distStr}. Reason: ${normalizedReason}. Pending admin approval.`;
@@ -1856,9 +1866,11 @@ const enrichAttendanceRecordsWithDistance = async (records) => {
         empLocation = emp?.location;
       }
       const targetLoc =
-        (empLocation?.latitude != null && empLocation?.longitude != null)
-          ? empLocation
-          : defaultLocation;
+        (defaultLocation?.latitude != null && defaultLocation?.longitude != null)
+          ? defaultLocation
+          : ((empLocation?.latitude != null && empLocation?.longitude != null)
+              ? empLocation
+              : null);
 
       let checkInDistance = null;
       let checkOutDistance = null;

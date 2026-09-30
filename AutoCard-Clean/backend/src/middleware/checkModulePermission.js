@@ -21,7 +21,19 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
 
       // For EMPLOYEE role, check module permissions
       if (user.role === "EMPLOYEE") {
-        const keys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+        const inputKeys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+
+        const keySet = new Set(inputKeys);
+        for (const k of inputKeys) {
+          if (k === "shift-location" || k === "shift" || k === "location") {
+            keySet.add("shift-location");
+            keySet.add("shift");
+            keySet.add("location");
+            keySet.add("shift-and-location");
+            keySet.add("shift_location");
+          }
+        }
+        const keys = Array.from(keySet);
 
         // 1. Check custom role modules
         let roleId = user.roleId;

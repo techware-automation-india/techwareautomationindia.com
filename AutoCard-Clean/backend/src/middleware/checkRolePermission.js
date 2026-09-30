@@ -13,7 +13,19 @@ export function checkRolePermission(moduleKey) {
         });
       }
 
-      const keys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+      const inputKeys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+
+      const keySet = new Set(inputKeys);
+      for (const k of inputKeys) {
+        if (k === "shift-location" || k === "shift" || k === "location") {
+          keySet.add("shift-location");
+          keySet.add("shift");
+          keySet.add("location");
+          keySet.add("shift-and-location");
+          keySet.add("shift_location");
+        }
+      }
+      const keys = Array.from(keySet);
 
       // 1. Resolve roleId (from token or live DB lookup)
       let roleId = req.user.roleId;
@@ -43,7 +55,12 @@ export function checkRolePermission(moduleKey) {
         where: {
           userId: req.user.id,
           moduleKey: { in: keys },
-          canView: true,
+          OR: [
+            { canView: true },
+            { canCreate: true },
+            { canEdit: true },
+            { canDelete: true },
+          ],
         },
       });
 
@@ -52,7 +69,7 @@ export function checkRolePermission(moduleKey) {
       }
 
       return res.status(403).json({
-        message: `Access denied to ${keys.join(", ")} module.`,
+        message: `Access denied to ${inputKeys.join(", ")} module.`,
       });
     } catch (err) {
       console.error(`[checkRolePermission] Error:`, err);

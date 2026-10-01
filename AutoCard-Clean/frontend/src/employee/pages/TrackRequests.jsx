@@ -389,7 +389,6 @@ const TrackRequests = ({ isAdmin = false }) => {
               checkOutDistance: request.checkOutDistance ?? null,
 
               reviewNote: request.reviewNote,
-              reviewedAt: request.updatedAt || null,
             }))
           : [];
 

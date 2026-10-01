@@ -22,12 +22,14 @@ const loginSchema = z.object({
 // Builds the public user object returned to the client, including the
 // employee onboarding status when applicable.
 function publicUser(user) {
+  const customRoleName = user.customRole?.name || null;
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     role: user.role,
     roleId: user.roleId ?? null,
+    roleName: customRoleName || (user.role === "ADMIN" ? "Admin" : user.role === "CUSTOMER" ? "Customer" : "Employee"),
     customRole: user.customRole ? {
       id: user.customRole.id,
       name: user.customRole.name,
@@ -117,7 +119,7 @@ router.post("/login", async (req, res) => {
     }
 
     // Generic message so we don't leak which emails/IDs exist.
-    if (!user) {
+    if (!user || !user.passwordHash) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
@@ -144,10 +146,20 @@ router.post("/login", async (req, res) => {
       roleId: user.roleId 
     });
 
+    if (user.roleId && !user.customRole) {
+      try {
+        user.customRole = await prisma.roleTable.findUnique({
+          where: { id: user.roleId },
+        });
+      } catch (roleErr) {
+        console.warn("Failed to fetch customRole for user:", roleErr.message);
+      }
+    }
+
     return res.json({ token, user: publicUser(user) });
   } catch (err) {
     console.error("Login error:", err);
-    return res.status(500).json({ message: "Something went wrong. Please try again." });
+    return res.status(500).json({ message: "Something went wrong. Please try again.", error: err?.message });
   }
 });
 
@@ -160,6 +172,11 @@ router.get("/me", requireAuth, async (req, res) => {
     });
     if (!user) {
       return res.status(404).json({ message: "User not found." });
+    }
+    if (user.roleId && !user.customRole) {
+      user.customRole = await prisma.roleTable.findUnique({
+        where: { id: user.roleId },
+      });
     }
     return res.json({ user: publicUser(user) });
   } catch (err) {

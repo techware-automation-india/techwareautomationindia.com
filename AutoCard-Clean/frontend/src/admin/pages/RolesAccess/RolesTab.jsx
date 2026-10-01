@@ -78,7 +78,9 @@ export default function RolesTab() {
     if (modalMode === 'create') {
       // Create new role
       const newRole = await createRole(data.name);
-      setRoles([...roles, { ...newRole, modules: [], moduleCount: 0 }]);
+      if (data.moduleKeys && data.moduleKeys.length > 0) {
+        await updateRoleModules(newRole.id, data.moduleKeys);
+      }
       toast.success(`Role "${data.name}" created successfully!`);
       await loadRoles();
     } else {
@@ -124,8 +126,8 @@ export default function RolesTab() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Role Management</h2>
-          <p className="text-gray-600 mt-1">Create and manage custom roles with module access</p>
+          <h2 className="text-2xl font-bold text-foreground">Role Management</h2>
+          <p className="text-muted-foreground mt-1">Create and manage custom roles with module access</p>
         </div>
         <button
           onClick={handleCreateClick}
@@ -139,7 +141,7 @@ export default function RolesTab() {
       {/* Default Roles Section */}
       {defaultRoles.length > 0 && (
         <div className="mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Default Roles</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">Default Roles</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {defaultRoles.map(role => (
               <RoleCard
@@ -156,7 +158,7 @@ export default function RolesTab() {
 
       {/* Custom Roles Section */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom Roles</h3>
+        <h3 className="text-lg font-semibold text-foreground mb-4">Custom Roles</h3>
         {customRoles.length === 0 ? (
           <EmptyState
             icon={FolderOpen}

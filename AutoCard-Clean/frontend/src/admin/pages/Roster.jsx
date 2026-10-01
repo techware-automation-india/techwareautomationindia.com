@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   CalendarRange,
   Loader2,
@@ -109,6 +109,27 @@ const Roster = () => {
   const [shifts, setShifts] = useState([]);
   const [locations, setLocations] = useState([]);
   const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState("");
+
+  // Sequential natural alphanumeric sorting by employeeCode or fullName
+  const sortedEmployees = useMemo(() => {
+    return [...employees].sort((a, b) => {
+      const codeA = a.employeeProfile?.employeeCode || a.fullName || "";
+      const codeB = b.employeeProfile?.employeeCode || b.fullName || "";
+      return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [employees]);
+
+  // Dropdown search filter
+  const filteredDropdownEmployees = useMemo(() => {
+    if (!dropdownSearch.trim()) return sortedEmployees;
+    const q = dropdownSearch.toLowerCase().trim();
+    return sortedEmployees.filter((emp) => {
+      const name = (emp.fullName || "").toLowerCase();
+      const code = (emp.employeeProfile?.employeeCode || "").toLowerCase();
+      return name.includes(q) || code.includes(q);
+    });
+  }, [sortedEmployees, dropdownSearch]);
 
   // ui states
   const [loading, setLoading] = useState(true);
@@ -468,7 +489,7 @@ const Roster = () => {
           onChange={(e) => setFilterEmp(e.target.value)}
         >
           <option value="">All employees</option>
-          {employees.map((emp) => {
+          {sortedEmployees.map((emp) => {
             const employeeId = emp.employeeProfile?.id ?? emp.id;
             return (
               <option key={employeeId} value={employeeId}>
@@ -545,24 +566,51 @@ const Roster = () => {
                 {/* Checkbox dropdown */}
                 {employeeDropdownOpen && (
                   <div className="absolute z-50 mt-1 w-full rounded-xl border border-border bg-background shadow-xl overflow-hidden">
+                    {/* Search box */}
+                    <div className="p-2 border-b border-border bg-secondary/30">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                        <input
+                          type="text"
+                          value={dropdownSearch}
+                          onChange={(e) => setDropdownSearch(e.target.value)}
+                          placeholder="Search employee name or code…"
+                          className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    </div>
+
                     {/* Select All */}
-                    <label className="flex items-center gap-3 px-4 py-3 border-b border-border cursor-pointer hover:bg-secondary/50">
+                    <label className="flex items-center gap-3 px-4 py-2.5 border-b border-border cursor-pointer hover:bg-secondary/50">
                       <input
                         type="checkbox"
                         className="h-4 w-4"
                         checked={
-                          employees.length > 0 &&
-                          form.employeeIds?.length === employees.length
+                          filteredDropdownEmployees.length > 0 &&
+                          filteredDropdownEmployees.every((emp) => {
+                            const empId = emp.employeeProfile?.id ?? emp.id;
+                            return form.employeeIds?.includes(empId);
+                          })
                         }
                         onChange={(e) => {
-                          setForm((p) => ({
-                            ...p,
-                            employeeIds: e.target.checked
-                              ? employees.map(
-                                  (emp) => emp.employeeProfile?.id ?? emp.id,
-                                )
-                              : [],
-                          }));
+                          const visibleIds = filteredDropdownEmployees.map(
+                            (emp) => emp.employeeProfile?.id ?? emp.id,
+                          );
+                          setForm((p) => {
+                            const current = p.employeeIds || [];
+                            if (e.target.checked) {
+                              const combined = new Set([...current, ...visibleIds]);
+                              return { ...p, employeeIds: Array.from(combined) };
+                            } else {
+                              return {
+                                ...p,
+                                employeeIds: current.filter(
+                                  (id) => !visibleIds.includes(id),
+                                ),
+                              };
+                            }
+                          });
                         }}
                       />
 
@@ -571,58 +619,75 @@ const Roster = () => {
 
                     {/* Employee list */}
                     <div className="max-h-64 overflow-y-auto">
-                      {employees.map((emp) => {
-                        const employeeId = emp.employeeProfile?.id ?? emp.id;
+                      {filteredDropdownEmployees.length === 0 ? (
+                        <div className="px-4 py-3 text-xs text-muted-foreground text-center">
+                          No employees found matching "{dropdownSearch}".
+                        </div>
+                      ) : (
+                        filteredDropdownEmployees.map((emp) => {
+                          const employeeId = emp.employeeProfile?.id ?? emp.id;
 
-                        const isSelected =
-                          form.employeeIds?.includes(employeeId);
+                          const isSelected =
+                            form.employeeIds?.includes(employeeId);
 
-                        return (
-                          <label
-                            key={employeeId}
-                            className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-secondary/40"
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                setForm((p) => {
-                                  const current = p.employeeIds || [];
+                          return (
+                            <label
+                              key={employeeId}
+                              className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-secondary/40"
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  setForm((p) => {
+                                    const current = p.employeeIds || [];
 
-                                  return {
-                                    ...p,
-                                    employeeIds: e.target.checked
-                                      ? [...current, employeeId]
-                                      : current.filter(
-                                          (id) => id !== employeeId,
-                                        ),
-                                  };
-                                });
-                              }}
-                            />
+                                    return {
+                                      ...p,
+                                      employeeIds: e.target.checked
+                                        ? [...current, employeeId]
+                                        : current.filter(
+                                            (id) => id !== employeeId,
+                                          ),
+                                    };
+                                  });
+                                }}
+                              />
 
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium truncate">
-                                {emp.fullName}
-                              </div>
-
-                              {emp.employeeProfile?.employeeCode && (
-                                <div className="text-xs text-muted-foreground">
-                                  {emp.employeeProfile.employeeCode}
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">
+                                  {emp.fullName}
                                 </div>
-                              )}
-                            </div>
-                          </label>
-                        );
-                      })}
+
+                                {emp.employeeProfile?.employeeCode && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {emp.employeeProfile.employeeCode}
+                                  </div>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })
+                      )}
                     </div>
 
                     {/* Selected count */}
-                    <div className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-                      {form.employeeIds?.length || 0} employee
-                      {(form.employeeIds?.length || 0) !== 1 ? "s" : ""}{" "}
-                      selected
+                    <div className="border-t border-border px-4 py-2 text-xs text-muted-foreground flex items-center justify-between">
+                      <span>
+                        {form.employeeIds?.length || 0} employee
+                        {(form.employeeIds?.length || 0) !== 1 ? "s" : ""}{" "}
+                        selected
+                      </span>
+                      {form.employeeIds?.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setForm((p) => ({ ...p, employeeIds: [] }))}
+                          className="text-xs font-medium text-rose-600 hover:underline"
+                        >
+                          Clear selected
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

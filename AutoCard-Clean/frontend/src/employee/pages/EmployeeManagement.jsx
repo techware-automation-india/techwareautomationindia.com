@@ -18,7 +18,7 @@ const EmployeeManagement = () => {
       const empPerm = data.permissions?.employee;
       
       if (!empPerm || !empPerm.canView) {
-        toast.error("You don't have permission to view Employee Management.");
+        toast.error("You don't have permission to view Add Account.");
       }
 
       setPermissions(empPerm);
@@ -45,49 +45,14 @@ const EmployeeManagement = () => {
         </div>
         <h3 className="font-display text-lg font-semibold mb-2">Access Denied</h3>
         <p className="text-sm text-muted-foreground max-w-md">
-          You don't have permission to access Employee Management. Contact your administrator.
+          You don't have permission to access Add Account. Contact your administrator.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Permission Info Banner */}
-      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
-        <div className="flex items-center gap-3">
-          <UserCog className="h-5 w-5 text-blue-600 shrink-0" />
-          <div className="text-sm text-blue-800 flex-1">
-            <p className="font-semibold mb-1">Your Permissions for Employee Management</p>
-            <div className="flex gap-2 flex-wrap">
-              {permissions.canView && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                  ✓ View
-                </span>
-              )}
-              {permissions.canCreate && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                  ✓ Create
-                </span>
-              )}
-              {permissions.canEdit && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                  ✓ Edit
-                </span>
-              )}
-              {permissions.canDelete && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                  ✓ Delete
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Render the actual admin Employee component with permissions */}
-      <Employee employeePermissions={permissions} isEmployeeView={true} />
-    </div>
+    <Employee employeePermissions={permissions} isEmployeeView={true} />
   );
 };
 

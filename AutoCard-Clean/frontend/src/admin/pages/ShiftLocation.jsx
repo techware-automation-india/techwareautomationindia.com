@@ -99,6 +99,7 @@ const emptyShift = {
   startTime: "",
   endTime: "",
   description: "",
+  isDefault: false,
   isActive: true,
 };
 
@@ -143,6 +144,7 @@ const ShiftsPanel = () => {
       startTime: s.startTime,
       endTime: s.endTime,
       description: s.description ?? "",
+      isDefault: !!s.isDefault,
       isActive: s.isActive,
     });
     setEditingId(s.id);
@@ -328,7 +330,17 @@ const ShiftsPanel = () => {
                 maxLength={300}
               />
             </div>
-            <div className="sm:col-span-2 flex items-center gap-3">
+            <div className="sm:col-span-2 flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={form.isDefault}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, isDefault: e.target.checked }))
+                  }
+                />
+                <span> Set as default</span>
+              </label>
               <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
                 <div
                   onClick={() =>
@@ -390,6 +402,7 @@ const ShiftsPanel = () => {
                   <th className="px-5 py-3 text-left">Start Time</th>
                   <th className="px-5 py-3 text-left">End Time</th>
                   <th className="px-5 py-3 text-left">Description</th>
+                  <th className="px-5 py-3 text-center">Default</th>
                   <th className="px-5 py-3 text-center">Status</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
@@ -409,6 +422,15 @@ const ShiftsPanel = () => {
                     </td>
                     <td className="px-5 py-3 text-muted-foreground max-w-[200px] truncate">
                       {s.description || "—"}
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      {s.isDefault ? (
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                          Default
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-5 py-3 text-center">
                       <span
@@ -777,29 +799,7 @@ const LocationsPanel = () => {
                 </button>
               </div>
             </div>
-            <div className="sm:col-span-2">
-  <label className="text-sm font-medium mb-1.5 block">
-    Latitude, Longitude
-  </label>
-
-  <input
-    className={inputClass}
-    value={`${form.latitude}${form.latitude || form.longitude ? ", " : ""}${form.longitude}`}
-    onChange={(e) => {
-      const [latitude = "", longitude = ""] = e.target.value
-        .split(",")
-        .map((v) => v.trim());
-
-      setForm((p) => ({
-        ...p,
-        latitude,
-        longitude,
-      }));
-    }}
-    placeholder="e.g. 28.6139, 77.2090"
-    maxLength={45}
-  />
-</div>
+          
             <div>
               <label className="text-sm font-medium mb-1.5 block">
                 Radius (m)

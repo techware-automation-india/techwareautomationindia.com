@@ -22,27 +22,27 @@ const statusMeta = {
   PRESENT: {
     label: "Present",
     dot: "bg-emerald-500",
-    cell: "bg-emerald-50 border-emerald-200 text-emerald-700",
+    cell: "bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300",
   },
   ABSENT: {
     label: "Absent",
     dot: "bg-rose-500",
-    cell: "bg-rose-50 border-rose-200 text-rose-700",
+    cell: "bg-rose-500/10 dark:bg-rose-500/20 border-rose-200 dark:border-rose-800/40 text-rose-700 dark:text-rose-300",
   },
   ON_LEAVE: {
     label: "On Leave",
     dot: "bg-violet-500",
-    cell: "bg-violet-50 border-violet-200 text-violet-700",
+    cell: "bg-violet-500/10 dark:bg-violet-500/20 border-violet-200 dark:border-violet-800/40 text-violet-700 dark:text-violet-300",
   },
   HOLIDAY: {
     label: "Holiday",
     dot: "bg-blue-500",
-    cell: "bg-blue-50 border-blue-200 text-blue-700",
+    cell: "bg-blue-500/10 dark:bg-blue-500/20 border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300",
   },
   PENDING_APPROVAL: {
     label: "Awaiting Approval",
     dot: "bg-amber-500",
-    cell: "bg-amber-50 border-amber-200 text-amber-700",
+    cell: "bg-amber-500/10 dark:bg-amber-500/20 border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300",
   },
 };
 
@@ -83,7 +83,42 @@ const fmtOvertimeHours = (record, isHoliday = false) => {
   if (Number.isNaN(workedHours)) return null;
   const overtimeHours = isHoliday ? workedHours : workedHours - 8;
   if (overtimeHours <= 0) return null;
-  return fmtWorkedHours(overtimeHours);
+  const otMinutes = Math.round(overtimeHours * 60);
+  const netOtMinutes = isHoliday ? otMinutes : Math.max(0, otMinutes - 15);
+  if (netOtMinutes <= 0) return null;
+  return fmtWorkedHours(netOtMinutes / 60);
+};
+
+const getNumericWorkedMinutes = (record) => {
+  if (!record) return 0;
+  let hours = Number(record.workedHours);
+  if (Number.isNaN(hours) || hours <= 0) {
+    if (record.checkIn && record.checkOut) {
+      const diffMs = new Date(record.checkOut) - new Date(record.checkIn);
+      if (diffMs > 0) hours = diffMs / 3600000;
+    }
+  }
+  if (Number.isNaN(hours) || hours <= 0) return 0;
+  return Math.round(hours * 60);
+};
+
+const getNumericOvertimeMinutes = (record, isHoliday = false) => {
+  if (!record) return 0;
+  const workedMinutes = getNumericWorkedMinutes(record);
+  if (workedMinutes <= 0) return 0;
+  const workedHours = workedMinutes / 60;
+  const overtimeHours = isHoliday ? workedHours : workedHours - 8;
+  if (overtimeHours <= 0) return 0;
+  const otMinutes = Math.round(overtimeHours * 60);
+  const netOtMinutes = isHoliday ? otMinutes : Math.max(0, otMinutes - 15);
+  return netOtMinutes > 0 ? netOtMinutes : 0;
+};
+
+const fmtMinutesToHM = (totalMinutes) => {
+  if (!totalMinutes || totalMinutes <= 0) return "0h 0m";
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}h ${m}m`;
 };
 
 const cleanAttendanceNote = (note) => {
@@ -319,7 +354,7 @@ const Attendance = () => {
   const [rejectModal, setRejectModal] = useState(null); // null or { recordId, employeeName, reason }
   const [attendanceReasonModal, setAttendanceReasonModal] = useState(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [calendarZoom, setCalendarZoom] = useState(60);
+  const [calendarZoom, setCalendarZoom] = useState(40);
   const knownPendingIds = useRef(null);
   const isAllEmployees = selectedId === "all";
 
@@ -616,7 +651,12 @@ const Attendance = () => {
     ? registerData?.records || []
     : data?.records || [];
   const isHolidayDate = (date) => {
-    const dateKey = formatDateKey(date);
+    if (!date) return false;
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return false;
+    if (d.getUTCDay() === 0) return true;
+
+    const dateKey = formatDateKey(d);
     const holidays = isAllEmployees
       ? registerData?.holidays || []
       : data?.holidays || [];
@@ -631,25 +671,32 @@ const Attendance = () => {
   const isOvertimeRecord = (record) => {
     if (!record) return false;
 
-    // On a holiday, every hour worked is overtime.
+    // On a holiday, every hour worked is overtime (if > 15 minutes).
     if (isHolidayDate(record.date)) {
-      return isWorkedRecord(record);
+      const worked = Number(record.workedHours);
+      return Math.round(worked * 60) > 15;
     }
 
-    // On a normal working day, overtime starts after 8 hours.
-    return Number(record.workedHours) > 8;
+    // On a normal working day, overtime starts after 8 hours (if > 15 minutes).
+    const workedHours = Number(record.workedHours);
+    if (Number.isNaN(workedHours) || workedHours <= 8) return false;
+    const otMinutes = Math.round((workedHours - 8) * 60);
+    return otMinutes > 15;
   };
 
   const overtimeDays = records.filter(isOvertimeRecord).length;
   const overtimeMeta = {
     label: "Overtime",
     dot: "bg-orange-500",
-    cell: "bg-orange-50 border-orange-200 text-orange-700",
+    cell: "bg-orange-500/10 dark:bg-orange-500/20 border-orange-200 dark:border-orange-800/40 text-orange-700 dark:text-orange-300",
   };
   const filteredRecords = selectedStatus
     ? records.filter((rec) => {
         if (selectedStatus === "OVERTIME") {
           return isOvertimeRecord(rec);
+        }
+        if (selectedStatus === "HOLIDAY") {
+          return isHolidayDate(rec.date) || rec.status === "HOLIDAY";
         }
         // Do not show ABSENT records for today or future days (people may still arrive)
         if (selectedStatus === "ABSENT") {
@@ -695,14 +742,56 @@ const Attendance = () => {
     ]),
   );
 
+  const individualTotals = records.reduce(
+    (acc, rec) => {
+      const isHol = isHolidayDate(rec.date);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
+  const presentTotals = records
+    .filter((rec) => rec.status === "PRESENT")
+    .reduce(
+      (acc, rec) => {
+        const isHol = isHolidayDate(rec.date);
+        acc.workedMinutes += getNumericWorkedMinutes(rec);
+        acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+        return acc;
+      },
+      { workedMinutes: 0, otMinutes: 0 },
+    );
+
+  const filteredTotals = filteredRecords.reduce(
+    (acc, rec) => {
+      const isHol = isHolidayDate(rec.date);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
+  const allEmployeesTotals = (registerData?.records || []).reduce(
+    (acc, rec) => {
+      const isHol = isHolidayDate(rec.date);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
   // Monthly summary for the All Employees view.
   const getEmployeeMonthSummary = (emp) => {
     let present = 0;
     let absent = 0;
     let leave = 0;
     let holiday = 0;
-
-    const holidays = registerData?.holidays || [];
+    let totalWorkedMinutes = 0;
+    let totalOtMinutes = 0;
 
     visibleRegisterDates.forEach((date) => {
       const dateKey = formatDateKey(date);
@@ -713,16 +802,17 @@ const Attendance = () => {
         rec = null;
       }
 
-      const isHoliday = holidays.some(
-        (h) => formatDateKey(new Date(h.date)) === dateKey,
-      );
+      const isHoliday = isHolidayDate(date) || rec?.status === "HOLIDAY";
+
+      if (rec) {
+        totalWorkedMinutes += getNumericWorkedMinutes(rec);
+        totalOtMinutes += getNumericOvertimeMinutes(rec, isHoliday);
+      }
 
       if (rec?.status === "ON_LEAVE") {
         leave += 1;
       } else if (rec?.status === "ABSENT") {
         absent += 1;
-      } else if (isHoliday && !isWorkedRecord(rec)) {
-        holiday += 1;
       } else if (
         rec &&
         (isWorkedRecord(rec) ||
@@ -730,6 +820,8 @@ const Attendance = () => {
           rec.status === "PENDING_APPROVAL")
       ) {
         present += 1;
+      } else if (isHoliday) {
+        holiday += 1;
       }
     });
 
@@ -738,6 +830,10 @@ const Attendance = () => {
       absent,
       leave,
       holiday,
+      totalWorkedMinutes,
+      totalOtMinutes,
+      totalWorkedText: fmtMinutesToHM(totalWorkedMinutes),
+      totalOtText: fmtMinutesToHM(totalOtMinutes),
       total: present + absent + leave + holiday,
     };
   };
@@ -999,18 +1095,52 @@ const Attendance = () => {
                   {filteredRecords.length === 1 ? "" : "s"} found
                 </div>
               </div>
-              <span
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${selectedStatusMeta?.cell}`}
-              >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 dark:bg-blue-500/20 px-3 py-1 text-xs font-bold text-blue-700 dark:text-blue-300">
+                  Worked: {fmtMinutesToHM(filteredTotals.workedMinutes)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 px-3 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+                  OT: {fmtMinutesToHM(filteredTotals.otMinutes)}
+                </span>
                 <span
-                  className={`w-2 h-2 rounded-full ${selectedStatusMeta?.dot}`}
-                />
-                {selectedStatusMeta?.label}
-              </span>
+                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${selectedStatusMeta?.cell}`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${selectedStatusMeta?.dot}`}
+                  />
+                  {selectedStatusMeta?.label}
+                </span>
+              </div>
             </div>
           </div>
 
           <div className="p-6 overflow-x-auto">
+            {/* Per-month working hour & OT count summary cards for Present / OT submodule */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+              <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-50/70 dark:bg-blue-950/20 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                  <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                    Monthly Working Hours ({selectedStatusMeta?.label})
+                  </span>
+                </div>
+                <div className="font-display text-2xl font-bold text-blue-900 dark:text-blue-200">
+                  {fmtMinutesToHM(filteredTotals.workedMinutes)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/70 dark:bg-amber-950/20 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    Monthly Overtime (OT) Hours ({selectedStatusMeta?.label})
+                  </span>
+                </div>
+                <div className="font-display text-2xl font-bold text-amber-900 dark:text-amber-200">
+                  {fmtMinutesToHM(filteredTotals.otMinutes)}
+                </div>
+              </div>
+            </div>
+
             {filteredRecords.length > 0 ? (
               <>
                 {selectedStatus === "PENDING_APPROVAL" && (
@@ -1018,12 +1148,12 @@ const Attendance = () => {
                     {filteredRecords.map((rec) => (
                       <div
                         key={rec.id}
-                        className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm"
+                        className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-gradient-to-br from-amber-500/10 to-orange-500/10 dark:from-amber-950/30 dark:to-orange-950/20 p-4 shadow-sm"
                       >
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-800">
+                              <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
                                 <span className="w-2 h-2 rounded-full bg-amber-500" />
                               </span>
                               <span className="text-xs text-muted-foreground">
@@ -1032,16 +1162,16 @@ const Attendance = () => {
                                   "Employee"}
                               </span>
                             </div>
-                            <div className="text-sm text-amber-900">
-                              <span className="font-semibold">Date:</span>{" "}
+                            <div className="text-sm text-foreground">
+                              <span className="font-semibold text-muted-foreground">Date:</span>{" "}
                               {fmtDateDMY(rec.date)}
                             </div>
-                            <div className="text-sm text-amber-900">
-                              <span className="font-semibold">Check-in:</span>{" "}
+                            <div className="text-sm text-foreground">
+                              <span className="font-semibold text-muted-foreground">Check-in:</span>{" "}
                               {fmtTime(rec.checkIn) ?? "—"}
                             </div>
-                            <div className="rounded-lg border border-amber-200 bg-white/70 p-3 text-sm text-amber-900">
-                              <div className="font-semibold mb-1">Reason</div>
+                            <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-card/70 p-3 text-sm text-foreground">
+                              <div className="font-semibold mb-1 text-amber-800 dark:text-amber-300">Reason</div>
                               <div>{rec.note || "No reason provided."}</div>
                             </div>
                           </div>
@@ -1175,7 +1305,7 @@ const Attendance = () => {
 
       {/* Controls */}
       {!isAllEmployees && (
-        <div className="sticky top-[72px] z-[100] overflow-visible rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200 shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-4 sm:p-5">
+        <div className="sticky top-[72px] z-[100] overflow-visible rounded-2xl bg-card/95 backdrop-blur-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.06)] p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             <div className="flex flex-wrap items-start gap-3">
               {/* 1. Select Employee */}
@@ -1206,7 +1336,7 @@ const Attendance = () => {
                         : "Search employee..."
                     }
                     disabled={loadingEmployees}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 pr-10 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                    className="w-full rounded-xl border border-input bg-background px-3.5 py-3 pr-10 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                   />
 
                   {/* Dropdown Arrow */}
@@ -1215,7 +1345,7 @@ const Attendance = () => {
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setShowEmployeeDropdown((prev) => !prev)}
                     disabled={loadingEmployees}
-                    className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
+                    className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-muted-foreground hover:text-foreground"
                     aria-label="Toggle employee dropdown"
                   >
                     <ChevronDown
@@ -1227,7 +1357,7 @@ const Attendance = () => {
                 </div>
 
                 {showEmployeeDropdown && !loadingEmployees && (
-                  <div className="absolute left-0 right-0 top-full z-[200] mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+                  <div className="absolute left-0 right-0 top-full z-[200] mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-xl">
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
@@ -1300,7 +1430,7 @@ const Attendance = () => {
                       setMonth(selectedMonth);
                     }
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                  className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                 />
               </div>
 
@@ -1318,7 +1448,7 @@ const Attendance = () => {
                     setSelectedWeek("");
                     setMonth(nextMonth);
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                  className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                 >
                   {monthNames.map((name, index) => {
                     const optionMonth = index + 1;
@@ -1360,7 +1490,7 @@ const Attendance = () => {
                       setMonth(today.getMonth() + 1);
                     }
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                  className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                 >
                   {Array.from(
                     { length: today.getFullYear() - 2020 + 1 },
@@ -1385,7 +1515,7 @@ const Attendance = () => {
                     setSelectedWeek(e.target.value);
                     setSelectedDate("");
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                  className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                 >
                   <option value="">Select Week</option>
 
@@ -1418,24 +1548,24 @@ const Attendance = () => {
 
       {/* Selected employee / calendar context */}
       {!isAllEmployees && selectedId && (
-        <div className="-mt-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3 shadow-sm">
+        <div className="-mt-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Users className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                   Employee Attendance
                 </div>
-                <div className="truncate text-sm font-bold text-slate-800">
+                <div className="truncate text-sm font-bold text-foreground">
                   {employees.find((emp) => emp.id === selectedId)?.fullName ||
                     "Selected Employee"}
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs font-semibold">
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-600">
+              <span className="rounded-full bg-secondary px-3 py-1.5 text-secondary-foreground">
                 {monthNames[month - 1]} {year}
               </span>
               <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
@@ -1475,6 +1605,13 @@ const Attendance = () => {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {Object.entries(statusMeta).map(([key, meta]) => {
                 const isActive = selectedStatus === key;
+                const count =
+                  key === "HOLIDAY"
+                    ? records.filter(
+                        (rec) =>
+                          isHolidayDate(rec.date) || rec.status === "HOLIDAY",
+                      ).length
+                    : summary[key] || 0;
 
                 return (
                   <button
@@ -1496,34 +1633,41 @@ const Attendance = () => {
                       </span>
                     </div>
                     <div className="font-display text-xl font-bold">
-                      {summary[key] || 0}
+                      {count}
                     </div>
+                    {key === "PRESENT" && (
+                      <div className="mt-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        {fmtMinutesToHM(presentTotals.workedMinutes)} worked
+                      </div>
+                    )}
                   </button>
                 );
               })}
               <button
                 type="button"
                 onClick={() => handleStatusClick("OVERTIME")}
-                className="rounded-xl border border-orange-200 bg-orange-50/70 p-4 text-left transition-colors hover:bg-orange-100/70 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                className="rounded-xl border border-orange-200 dark:border-orange-800/40 bg-orange-50/70 dark:bg-orange-950/20 p-4 text-left transition-colors hover:bg-orange-100/70 dark:hover:bg-orange-900/30 focus:outline-none focus:ring-2 focus:ring-orange-300"
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                  <span className="text-xs text-orange-700">Overtime Days</span>
+                  <span className="text-xs text-orange-700 dark:text-orange-300">Overtime Days</span>
                 </div>
-                <div className="font-display text-xl font-bold text-orange-900">
+                <div className="font-display text-xl font-bold text-orange-900 dark:text-orange-200">
                   {overtimeDays} {overtimeDays === 1 ? "day" : "days"}
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                  {fmtMinutesToHM(individualTotals.otMinutes)} OT
                 </div>
               </button>
             </div>
           )}
 
           {isAllEmployees ? (
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-[0_10px_35px_rgba(15,23,42,0.07)] overflow-visible">
+            <div className="rounded-2xl border border-border bg-card shadow-[0_10px_35px_rgba(0,0,0,0.07)] overflow-visible">
               {/* Filters inside Team Attendance for All Employees */}
-              <div className="sticky top-[72px] z-[100] overflow-visible rounded-2xl bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-4 sm:p-5">
+              <div className="sticky top-[72px] z-[100] overflow-visible rounded-2xl bg-card/95 backdrop-blur-md border-b border-border shadow-[0_8px_30px_rgba(0,0,0,0.06)] p-4 sm:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-end gap-4">
                   <div className="flex flex-wrap items-start gap-3">
-                    {/* 1. Select Employee */}
                     {/* 1. Select Employee */}
                     <div className="relative employee-dropdown-container w-full sm:w-[300px] sm:min-w-[300px] max-w-full shrink-0">
                       <label className="mb-1 block text-xs font-semibold text-muted-foreground">
@@ -1552,7 +1696,7 @@ const Attendance = () => {
                               : "Search employee..."
                           }
                           disabled={loadingEmployees}
-                          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 pr-10 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                          className="w-full rounded-xl border border-input bg-background px-3.5 py-3 pr-10 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                         />
 
                         {/* Dropdown Arrow */}
@@ -1563,7 +1707,7 @@ const Attendance = () => {
                             setShowEmployeeDropdown((prev) => !prev)
                           }
                           disabled={loadingEmployees}
-                          className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
+                          className="absolute right-0 top-0 flex h-full w-10 items-center justify-center text-muted-foreground hover:text-foreground"
                           aria-label="Toggle employee dropdown"
                         >
                           <ChevronDown
@@ -1575,7 +1719,7 @@ const Attendance = () => {
                       </div>
 
                       {showEmployeeDropdown && !loadingEmployees && (
-                        <div className="absolute left-0 right-0 top-full z-[200] mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+                        <div className="absolute left-0 right-0 top-full z-[200] mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-xl">
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
@@ -1655,7 +1799,7 @@ const Attendance = () => {
                             setMonth(selectedMonth);
                           }
                         }}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                        className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                       />
                     </div>
 
@@ -1673,7 +1817,7 @@ const Attendance = () => {
                           setSelectedWeek("");
                           setMonth(nextMonth);
                         }}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                        className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                       >
                         {monthNames.map((name, index) => {
                           const optionMonth = index + 1;
@@ -1715,7 +1859,7 @@ const Attendance = () => {
                             setMonth(today.getMonth() + 1);
                           }
                         }}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                        className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                       >
                         {Array.from(
                           { length: today.getFullYear() - 2020 + 1 },
@@ -1740,7 +1884,7 @@ const Attendance = () => {
                           setSelectedWeek(e.target.value);
                           setSelectedDate("");
                         }}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                        className="w-full rounded-xl border border-input bg-background px-3.5 py-3 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                       >
                         <option value="">Select Week</option>
 
@@ -1775,17 +1919,17 @@ const Attendance = () => {
               </div>
 
               {/* Selected employee / calendar context */}
-              <div className="mx-4 sm:mx-5 mb-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3 shadow-sm">
+              <div className="mx-4 sm:mx-5 mb-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                       <Users className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                         Calendar View
                       </div>
-                      <div className="truncate text-sm font-bold text-slate-800">
+                      <div className="truncate text-sm font-bold text-foreground">
                         {selectedId === "all"
                           ? "All Employees"
                           : employees.find((emp) => emp.id === selectedId)
@@ -1793,8 +1937,8 @@ const Attendance = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-                    <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
+                    <span className="rounded-full bg-secondary px-3 py-1.5 text-secondary-foreground">
                       {monthNames[month - 1]} {year}
                     </span>
                     <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
@@ -1804,74 +1948,76 @@ const Attendance = () => {
                           ? `Week ${selectedWeek}`
                           : "Full Month"}
                     </span>
+                  
+                  
                   </div>
                 </div>
               </div>
 
               {/* Location code explanation */}
-              <div className="mx-4 sm:mx-5 mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="mx-4 sm:mx-5 mb-2 rounded-xl border border-border bg-secondary/30 px-3 py-2">
                 <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-700">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-foreground">
                     Location Code Guide
                   </div>
                   
                 </div>
 
-                <div className="grid gap-1.5 text-[10px] leading-tight text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-md border border-orange-200 bg-white px-2 py-1.5">
+                <div className="grid gap-1.5 text-[10px] leading-tight text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-md border border-orange-200 dark:border-orange-900/40 bg-card px-2 py-1.5">
                     <div className="flex items-center gap-1">
-                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
                         UL O
                       </span>
                       <span>Check In: Unassigned · Check Out: Office</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
                         O UL
                       </span>
                       <span>Check In: Office · Check Out: Unassigned</span>
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-emerald-200 bg-white px-2 py-1.5">
+                  <div className="rounded-md border border-emerald-200 dark:border-emerald-900/40 bg-card px-2 py-1.5">
                     <div className="flex items-center gap-1">
-                      <span className="rounded bg-emerald-100 px-1 py-0.5 font-bold text-emerald-700">
+                      <span className="rounded bg-emerald-100 dark:bg-emerald-900/40 px-1 py-0.5 font-bold text-emerald-700 dark:text-emerald-300">
                         O O
                       </span>
                       <span>Check In: Office · Check Out: Office</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-blue-100 px-1 py-0.5 font-bold text-blue-700">
+                      <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 font-bold text-blue-700 dark:text-blue-300">
                         A A
                       </span>
                       <span>Check In & Check Out: Assign Location</span>
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-blue-200 bg-white px-2 py-1.5">
+                  <div className="rounded-md border border-blue-200 dark:border-blue-900/40 bg-card px-2 py-1.5">
                     <div className="flex items-center gap-1">
-                      <span className="rounded bg-blue-100 px-1 py-0.5 font-bold text-blue-700">
+                      <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 font-bold text-blue-700 dark:text-blue-300">
                         A O
                       </span>
                       <span>Check In: Assign · Check Out: Office</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-blue-100 px-1 py-0.5 font-bold text-blue-700">
+                      <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 font-bold text-blue-700 dark:text-blue-300">
                         O A
                       </span>
                       <span>Check In: Office · Check Out: Assign</span>
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-orange-200 bg-white px-2 py-1.5">
+                  <div className="rounded-md border border-orange-200 dark:border-orange-900/40 bg-card px-2 py-1.5">
                     <div className="flex items-center gap-1">
-                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
                         A UL
                       </span>
                       <span>Check In: Assign · Check Out: Unassigned</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-orange-100 px-1 py-0.5 font-bold text-orange-700">
+                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
                         UL A
                       </span>
                       <span>Check In: Unassigned · Check Out: Assign</span>
@@ -1880,9 +2026,9 @@ const Attendance = () => {
                 </div>
               </div>
               {/* Calendar Zoom */}
-              <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 border-t border-border bg-secondary/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-700">
+                  <span className="text-sm font-semibold text-foreground">
                     Calendar Zoom
                   </span>
                   <span className="min-w-[48px] rounded-full bg-primary/10 px-2.5 py-1 text-center text-xs font-bold text-primary">
@@ -1890,12 +2036,12 @@ const Attendance = () => {
                   </span>
                 </div>
                 <div className="flex w-full max-w-md items-center gap-3">
-                  <span className="text-xs font-semibold text-slate-500">
-                    60%
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    40%
                   </span>
                   <input
                     type="range"
-                    min="60"
+                    min="40"
                     max="100"
                     step="5"
                     value={calendarZoom}
@@ -1903,7 +2049,7 @@ const Attendance = () => {
                     className="h-2 w-full cursor-pointer accent-primary"
                     aria-label="Calendar zoom"
                   />
-                  <span className="text-xs font-semibold text-slate-500">
+                  <span className="text-xs font-semibold text-muted-foreground">
                     100%
                   </span>
                 </div>
@@ -1922,14 +2068,14 @@ const Attendance = () => {
     w-[200px] min-w-[200px] max-w-[200px]
     h-[60px] min-h-[60px]
     border-r border-b border-border
-    bg-white px-5 py-3.5
+    bg-card px-5 py-3.5
     text-left shadow-sm"
                       >
                         <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                           Employee
                         </div>
 
-                        <div className="mt-1 text-xs font-semibold text-slate-700">
+                        <div className="mt-1 text-xs font-semibold text-foreground">
                           {selectedDate
                             ? "Selected date attendance"
                             : selectedWeek
@@ -1951,17 +2097,17 @@ const Attendance = () => {
                               isRegisterToday
                                 ? "bg-primary/10"
                                 : isRegisterWeekend
-                                  ? "bg-slate-100"
-                                  : "bg-white"
+                                  ? "bg-secondary"
+                                  : "bg-card"
                             }`}
                           >
                             <div
                               className={`text-[13.3px] font-bold uppercase tracking-wide ${
                                 date.getUTCDay() === 6
-                                  ? "text-black"
+                                  ? "text-foreground"
                                   : isRegisterWeekend
-                                    ? "text-slate-400"
-                                    : "text-slate-700"
+                                    ? "text-muted-foreground/60"
+                                    : "text-foreground"
                               }`}
                             >
                               {weekdays[date.getUTCDay()]}
@@ -1969,10 +2115,10 @@ const Attendance = () => {
                             <div
                               className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full font-display text-[17.1px] font-bold ${
                                 date.getUTCDay() === 6
-                                  ? "text-black"
+                                  ? "text-foreground"
                                   : isRegisterToday
-                                    ? "bg-primary text-white shadow-sm"
-                                    : "text-slate-900"
+                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                    : "text-foreground"
                               }`}
                             >
                               {String(date.getUTCDate()).padStart(2, "0")}
@@ -1992,19 +2138,24 @@ const Attendance = () => {
 
                       {isAllEmployees && !selectedDate && !selectedWeek && (
                         <>
-                          <th className="sticky top-0 z-[60] min-w-[95px] border-l border-b border-border bg-emerald-50 px-3 py-3 text-center text-xs font-bold text-emerald-700 shadow-sm">
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-l border-b border-border bg-emerald-500/10 dark:bg-emerald-500/20 px-3 py-3 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400 shadow-sm">
                             Present
                           </th>
-                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-rose-50 px-3 py-3 text-center text-xs font-bold text-rose-700 shadow-sm">
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-rose-500/10 dark:bg-rose-500/20 px-3 py-3 text-center text-xs font-bold text-rose-600 dark:text-rose-400 shadow-sm">
                             Absent
                           </th>
-                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-violet-50 px-3 py-3 text-center text-xs font-bold text-violet-700 shadow-sm">
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-violet-500/10 dark:bg-violet-500/20 px-3 py-3 text-center text-xs font-bold text-violet-600 dark:text-violet-400 shadow-sm">
                             Leave
                           </th>
-                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-blue-50 px-3 py-3 text-center text-xs font-bold text-blue-700 shadow-sm">
+                          <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-blue-500/10 dark:bg-blue-500/20 px-3 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 shadow-sm">
                             Holiday
                           </th>
-                       \
+                          <th className="sticky top-0 z-[60] min-w-[110px] border-b border-border bg-blue-600/10 dark:bg-blue-600/20 px-3 py-3 text-center text-xs font-bold text-blue-700 dark:text-blue-300 shadow-sm">
+                            Worked Hours
+                          </th>
+                          <th className="sticky top-0 z-[60] min-w-[110px] border-b border-border bg-amber-500/10 dark:bg-amber-500/20 px-3 py-3 text-center text-xs font-bold text-amber-700 dark:text-amber-300 shadow-sm">
+                            OT Hours
+                          </th>
                         </>
                       )}
                     </tr>
@@ -2014,7 +2165,7 @@ const Attendance = () => {
                     {registerEmployees.length > 0 ? (
                       registerEmployees.map((emp) => (
                         <tr key={emp.id} className="group">
-                          <td className="sticky left-0 z-[40] border-r border-b border-border bg-white px-5 py-3.5 shadow-[2px_0_4px_rgba(0,0,0,0.04)] transition-colors group-hover:bg-slate-50">
+                          <td className="sticky left-0 z-[40] border-r border-b border-border bg-card px-5 py-3.5 shadow-[2px_0_4px_rgba(0,0,0,0.04)] transition-colors group-hover:bg-secondary/50">
                             <div className="flex items-center gap-3">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary ring-4 ring-primary/5">
                                 {emp.fullName
@@ -2026,7 +2177,7 @@ const Attendance = () => {
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div
-                                  className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-slate-900"
+                                  className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-foreground"
                                   title={emp.fullName}
                                 >
                                   {emp.fullName}
@@ -2066,7 +2217,9 @@ const Attendance = () => {
                             )?.name;
 
                             const isHoliday =
-                              Boolean(holidayName) || rec?.status === "HOLIDAY";
+                              Boolean(holidayName) ||
+                              rec?.status === "HOLIDAY" ||
+                              date.getUTCDay() === 0;
                             const isAbsent = rec?.status === "ABSENT";
 
                             const meta = rec ? statusMeta[rec.status] : null;
@@ -2100,20 +2253,20 @@ const Attendance = () => {
                                   isRegisterToday
                                     ? "bg-primary/[0.025]"
                                     : isRegisterWeekend
-                                      ? "bg-slate-50/70"
-                                      : "bg-white"
+                                      ? "bg-secondary/40"
+                                      : "bg-card"
                                 }`}
                               >
                                 {isHoliday && !isWorkedRecord(rec) ? (
-                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-blue-200 bg-blue-50">
-                                    <div className="text-lg font-bold text-blue-700">
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20">
+                                    <div className="text-lg font-bold text-blue-700 dark:text-blue-300">
                                       Holiday
                                     </div>
                                   </div>
                                 ) : isAbsent ? (
-                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-rose-200 bg-rose-50">
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-500/10 dark:bg-rose-500/20">
                                     <div className="text-center">
-                                      <div className="text-lg font-bold text-rose-700">
+                                      <div className="text-lg font-bold text-rose-700 dark:text-rose-300">
                                         Absent
                                       </div>
                                     </div>
@@ -2124,15 +2277,15 @@ const Attendance = () => {
                                       /Checkout.*unassigned location/i.test(
                                         rec.note || "",
                                       )
-                                        ? "border-orange-300 bg-orange-50"
+                                        ? "border-orange-300 dark:border-orange-800/40 bg-orange-500/10 dark:bg-orange-500/20"
                                         : meta?.cell ||
-                                          "border-border bg-slate-50"
+                                          "border-border bg-secondary/30"
                                     }`}
                                   >
                                     <div className="flex items-center justify-between gap-1">
-                                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-white/80 px-2 py-1 text-xs font-bold text-slate-700 shadow-sm">
+                                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-card/80 px-2 py-1 text-xs font-bold text-foreground shadow-sm">
                                         <span
-                                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta?.dot || "bg-slate-400"}`}
+                                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta?.dot || "bg-muted-foreground"}`}
                                         />
                                         <span className="truncate">
                                           {meta?.label || rec.status}
@@ -2140,7 +2293,7 @@ const Attendance = () => {
                                       </span>
 
                                       {isHoliday && (
-                                        <span className="rounded-md border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                                        <span className="rounded-md border border-blue-200 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300">
                                           Holiday
                                         </span>
                                       )}
@@ -2157,10 +2310,10 @@ const Attendance = () => {
                                             }
                                             className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${
                                               checkInLocationCode === "UL"
-                                                ? "border-orange-300 bg-orange-100 text-orange-700"
+                                                ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
                                                 : checkInLocationCode === "A"
-                                                  ? "border-blue-300 bg-blue-100 text-blue-700"
-                                                  : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                                  ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                                                  : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
                                             }`}
                                           >
                                             {checkInLocationCode}
@@ -2178,10 +2331,10 @@ const Attendance = () => {
                                             }
                                             className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${
                                               checkOutLocationCode === "UL"
-                                                ? "border-orange-300 bg-orange-100 text-orange-700"
+                                                ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
                                                 : checkOutLocationCode === "A"
-                                                  ? "border-blue-300 bg-blue-100 text-blue-700"
-                                                  : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                                  ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                                                  : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
                                             }`}
                                           >
                                             {checkOutLocationCode}
@@ -2191,21 +2344,21 @@ const Attendance = () => {
                                     </div>
 
                                     <div className="mt-2 grid grid-cols-2 gap-1.5">
-                                      <div className="rounded-lg bg-white/75 px-2 py-1.5">
+                                      <div className="rounded-lg bg-card/75 border border-border/50 px-2 py-1.5">
                                         <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                           Check In
                                         </div>
-                                        <div className="mt-0.5 text-base font-bold text-emerald-700">
+                                        <div className="mt-0.5 text-base font-bold text-emerald-600 dark:text-emerald-400">
                                           {rec.checkIn
                                             ? fmtTime(rec.checkIn)
                                             : "—"}
                                         </div>
                                       </div>
-                                      <div className="rounded-lg bg-white/75 px-2 py-1.5">
+                                      <div className="rounded-lg bg-card/75 border border-border/50 px-2 py-1.5">
                                         <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                           Check Out
                                         </div>
-                                        <div className="mt-0.5 text-base font-bold text-rose-700">
+                                        <div className="mt-0.5 text-base font-bold text-rose-600 dark:text-rose-400">
                                           {rec.checkOut
                                             ? fmtTime(rec.checkOut)
                                             : "—"}
@@ -2214,7 +2367,7 @@ const Attendance = () => {
                                     </div>
 
                                     {rec.workedHours != null && (
-                                      <div className="mt-2 flex items-center justify-between border-t border-black/5 pt-2">
+                                      <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
                                         <span className="text-[11.4px] font-bold text-muted-foreground">
                                           Working Hours
                                         </span>
@@ -2226,12 +2379,12 @@ const Attendance = () => {
 
                                     {((isHoliday && isWorkedRecord(rec)) ||
                                       Number(rec.workedHours) > 8) && (
-                                      <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-orange-200 bg-orange-100/95 px-2 py-1 shadow-sm">
-                                        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700">
+                                      <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-orange-200 dark:border-orange-800/40 bg-orange-100/95 dark:bg-orange-950/80 px-2 py-1 shadow-sm">
+                                        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">
                                           OT
                                         </span>
 
-                                        <span className="text-[11px] font-bold text-orange-700">
+                                        <span className="text-[11px] font-bold text-orange-700 dark:text-orange-300">
                                           {fmtWorkedHours(
                                             isHoliday
                                               ? Number(rec.workedHours)
@@ -2251,18 +2404,17 @@ const Attendance = () => {
                                               emp.fullName,
                                             )
                                           }
-                                          className="rounded-md bg-amber-50 px-2 py-1 text-[8px] font-semibold text-amber-700 hover:bg-amber-100"
+                                          className="rounded-md bg-amber-500/10 dark:bg-amber-500/20 px-2 py-1 text-[8px] font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
                                         >
                                           View Reason
                                         </button>
-                                        {/* Approve / Reject actions are intentionally hidden from the calendar. */}
                                       </div>
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60">
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-dashed border-border bg-secondary/20">
                                     <div className="text-center">
-                                      <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">
+                                      <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-xs text-muted-foreground">
                                         —
                                       </div>
                                       <div className="mt-1 text-[8px] font-medium text-muted-foreground">
@@ -2283,27 +2435,36 @@ const Attendance = () => {
 
                               return (
                                 <>
-                                  <td className="border-l border-b border-border bg-emerald-50/60 px-3 py-2 text-center">
-                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-emerald-100 px-2.5 py-1.5 text-sm font-bold text-emerald-700">
+                                  <td className="border-l border-b border-border bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-emerald-500/10 dark:bg-emerald-500/20 px-2.5 py-1.5 text-sm font-bold text-emerald-600 dark:text-emerald-400">
                                       {monthSummary.present}
                                     </span>
                                   </td>
-                                  <td className="border-b border-border bg-rose-50/60 px-3 py-2 text-center">
-                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-rose-100 px-2.5 py-1.5 text-sm font-bold text-rose-700">
+                                  <td className="border-b border-border bg-rose-500/5 dark:bg-rose-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-rose-500/10 dark:bg-rose-500/20 px-2.5 py-1.5 text-sm font-bold text-rose-600 dark:text-rose-400">
                                       {monthSummary.absent}
                                     </span>
                                   </td>
-                                  <td className="border-b border-border bg-violet-50/60 px-3 py-2 text-center">
-                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-violet-100 px-2.5 py-1.5 text-sm font-bold text-violet-700">
+                                  <td className="border-b border-border bg-violet-500/5 dark:bg-violet-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-violet-500/10 dark:bg-violet-500/20 px-2.5 py-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">
                                       {monthSummary.leave}
                                     </span>
                                   </td>
-                                  <td className="border-b border-border bg-blue-50/60 px-3 py-2 text-center">
-                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-blue-100 px-2.5 py-1.5 text-sm font-bold text-blue-700">
+                                  <td className="border-b border-border bg-blue-500/5 dark:bg-blue-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-blue-500/10 dark:bg-blue-500/20 px-2.5 py-1.5 text-sm font-bold text-blue-600 dark:text-blue-400">
                                       {monthSummary.holiday}
                                     </span>
                                   </td>
-                                  
+                                  <td className="border-b border-border bg-blue-500/5 dark:bg-blue-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[54px] items-center justify-center rounded-lg bg-blue-500/10 dark:bg-blue-500/20 px-2.5 py-1.5 text-sm font-bold text-blue-700 dark:text-blue-300">
+                                      {monthSummary.totalWorkedText}
+                                    </span>
+                                  </td>
+                                  <td className="border-b border-border bg-amber-500/5 dark:bg-amber-500/10 px-3 py-2 text-center">
+                                    <span className="inline-flex min-w-[54px] items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-500/20 px-2.5 py-1.5 text-sm font-bold text-amber-700 dark:text-amber-300">
+                                      {monthSummary.totalOtText}
+                                    </span>
+                                  </td>
                                 </>
                               );
                             })()}
@@ -2316,15 +2477,15 @@ const Attendance = () => {
                             registerDates.length +
                             1 +
                             (isAllEmployees && !selectedDate && !selectedWeek
-                              ? 5
+                              ? 6
                               : 0)
                           }
                           className="px-6 py-14 text-center"
                         >
-                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-                            <Users className="h-5 w-5 text-slate-400" />
+                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
+                            <Users className="h-5 w-5 text-muted-foreground" />
                           </div>
-                          <div className="mt-3 text-sm font-semibold text-slate-700">
+                          <div className="mt-3 text-sm font-semibold text-foreground">
                             No attendance records found
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
@@ -2342,12 +2503,12 @@ const Attendance = () => {
             </div>
           ) : (
             /* Calendar */
-            <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-              <div className="border-b border-slate-300 bg-white px-4 py-3 sm:px-5">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              <div className="border-b border-border bg-card px-4 py-3 sm:px-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2
-                      className="truncate text-lg font-bold text-slate-900"
+                      className="truncate text-lg font-bold text-foreground"
                       title={
                         data?.employee?.fullName ||
                         employees.find((emp) => emp.id === selectedId)
@@ -2360,13 +2521,13 @@ const Attendance = () => {
                           ?.fullName ||
                         "Employee"}
                     </h2>
-                    <p className="mt-0.5 text-sm font-semibold text-slate-600">
+                    <p className="mt-0.5 text-sm font-semibold text-muted-foreground">
                       Employee Attendance
                     </p>
                   </div>
 
                   <div className="shrink-0 text-right">
-                    <div className="text-sm font-bold text-slate-900">
+                    <div className="text-sm font-bold text-foreground">
                       {monthNames[month - 1]} {year}
                     </div>
                     {selectedWeek && (
@@ -2380,12 +2541,12 @@ const Attendance = () => {
 
               <div className="max-h-[650px] overflow-auto">
                 {selectedDay ? (
-                  <div className="p-4 sm:p-5 bg-slate-50/40">
+                  <div className="p-4 sm:p-5 bg-secondary/20">
                     {/* Selected day — styled like the All Employees attendance row */}
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                       <div className="grid lg:grid-cols-[260px_1fr]">
                         {/* Employee column */}
-                        <div className="border-b border-slate-200 bg-slate-50/80 p-5 lg:border-b-0 lg:border-r">
+                        <div className="border-b border-border bg-secondary/40 p-5 lg:border-b-0 lg:border-r">
                           <div className="flex items-center gap-3">
                             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
                               {(
@@ -2398,30 +2559,30 @@ const Attendance = () => {
                                 .toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                                 Employee
                               </div>
-                              <div className="truncate text-base font-bold text-slate-800">
+                              <div className="truncate text-base font-bold text-foreground">
                                 {data?.employee?.fullName ||
                                   employees.find((emp) => emp.id === selectedId)
                                     ?.fullName ||
                                   "Employee"}
                               </div>
-                              <div className="mt-0.5 text-xs text-slate-500">
+                              <div className="mt-0.5 text-xs text-muted-foreground">
                                 {employees.find((emp) => emp.id === selectedId)
                                   ?.employeeCode || "Employee attendance"}
                               </div>
                             </div>
                           </div>
 
-                          <div className="mt-5 border-t border-slate-200 pt-4">
-                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                          <div className="mt-5 border-t border-border pt-4">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                               Selected Date
                             </div>
-                            <div className="mt-1 text-lg font-bold text-slate-800">
+                            <div className="mt-1 text-lg font-bold text-foreground">
                               {fmtDateDMY(selectedDate)}
                             </div>
-                            <div className="mt-1 text-xs text-slate-500">
+                            <div className="mt-1 text-xs text-muted-foreground">
                               {monthNames[month - 1]} {year}
                             </div>
                           </div>
@@ -2430,32 +2591,32 @@ const Attendance = () => {
                         {/* Attendance column */}
                         <div className="p-4 sm:p-5">
                           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                            <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                            <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
                               Daily Attendance
                             </div>
                             {selectedRecord ? (
                               <span
                                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${
                                   statusMeta[selectedRecord.status]?.cell ||
-                                  "bg-slate-100 text-slate-700"
+                                  "bg-secondary text-secondary-foreground"
                                 }`}
                               >
                                 <span
                                   className={`h-2 w-2 rounded-full ${
                                     statusMeta[selectedRecord.status]?.dot ||
-                                    "bg-slate-400"
+                                    "bg-muted-foreground"
                                   }`}
                                 />
                                 {statusMeta[selectedRecord.status]?.label ||
                                   selectedRecord.status}
                               </span>
                             ) : selectedHolidayName ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20 px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300">
                                 <span className="h-2 w-2 rounded-full bg-blue-500" />
                                 Holiday
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700">
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 dark:border-rose-800/40 bg-rose-500/10 dark:bg-rose-500/20 px-3 py-1.5 text-xs font-bold text-rose-700 dark:text-rose-300">
                                 <span className="h-2 w-2 rounded-full bg-rose-500" />
                                 No Attendance
                               </span>
@@ -2464,23 +2625,23 @@ const Attendance = () => {
 
                           {selectedRecord ? (
                             selectedRecord.status === "ABSENT" ? (
-                              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-center">
-                                <div className="text-base font-bold text-rose-700">
+                              <div className="rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-500/10 dark:bg-rose-500/20 px-4 py-6 text-center">
+                                <div className="text-base font-bold text-rose-700 dark:text-rose-300">
                                   Absent
                                 </div>
-                                <div className="mt-1 text-xs text-rose-600">
+                                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
                                   No attendance was recorded for this date.
                                 </div>
                               </div>
                             ) : (
                               <div className="space-y-3">
                                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                  <div className="rounded-xl border border-border bg-card p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                       Check In
                                     </div>
                                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                                      <span className="text-base font-bold text-emerald-700">
+                                      <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
                                         {fmtTime(selectedRecord.checkIn) || "—"}
                                       </span>
                                       {getCalendarLocationCode(
@@ -2493,13 +2654,13 @@ const Attendance = () => {
                                               selectedRecord.note,
                                               "check-in",
                                             ) === "A"
-                                              ? "border-blue-300 bg-blue-100 text-blue-700"
+                                              ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                               : getCalendarLocationCode(
                                                     selectedRecord.note,
                                                     "check-in",
                                                   ) === "UL"
-                                                ? "border-orange-300 bg-orange-100 text-orange-700"
-                                                : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                                ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                                                : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
                                           }`}
                                         >
                                           {getCalendarLocationCode(
@@ -2511,12 +2672,12 @@ const Attendance = () => {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                  <div className="rounded-xl border border-border bg-card p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                       Check Out
                                     </div>
                                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                                      <span className="text-base font-bold text-rose-700">
+                                      <span className="text-base font-bold text-rose-600 dark:text-rose-400">
                                         {fmtTime(selectedRecord.checkOut) ||
                                           "—"}
                                       </span>
@@ -2529,14 +2690,14 @@ const Attendance = () => {
                                             getCalendarLocationCode(
                                               selectedRecord.note,
                                               "check-out",
-                                            ) === "A"
-                                              ? "border-blue-300 bg-blue-100 text-blue-700"
+                                              ) === "A"
+                                              ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                               : getCalendarLocationCode(
                                                     selectedRecord.note,
                                                     "check-out",
                                                   ) === "UL"
-                                                ? "border-orange-300 bg-orange-100 text-orange-700"
-                                                : "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                                ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                                                : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
                                           }`}
                                         >
                                           {getCalendarLocationCode(
@@ -2548,8 +2709,8 @@ const Attendance = () => {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                  <div className="rounded-xl border border-border bg-card p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                       Working Hours
                                     </div>
                                     <div className="mt-1.5 text-base font-bold text-primary">
@@ -2559,11 +2720,11 @@ const Attendance = () => {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-3">
-                                    <div className="text-[10px] font-bold uppercase tracking-wide text-orange-600">
+                                  <div className="rounded-xl border border-orange-200 dark:border-orange-800/40 bg-orange-500/10 dark:bg-orange-950/20 p-3">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400">
                                       Overtime
                                     </div>
-                                    <div className="mt-1.5 text-base font-bold text-orange-700">
+                                    <div className="mt-1.5 text-base font-bold text-orange-700 dark:text-orange-300">
                                       {isHolidayDate(selectedRecord.date)
                                         ? isWorkedRecord(selectedRecord)
                                           ? fmtWorkedHours(
@@ -2588,11 +2749,11 @@ const Attendance = () => {
                                     ))) && (
                                   <div className="grid gap-3 md:grid-cols-2">
                                     {selectedHolidayName && (
-                                      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
-                                        <div className="text-[10px] font-bold uppercase tracking-wide text-blue-600">
+                                      <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-950/20 p-3">
+                                        <div className="text-[10px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">
                                           Holiday
                                         </div>
-                                        <div className="mt-1 text-sm font-semibold text-blue-900">
+                                        <div className="mt-1 text-sm font-semibold text-blue-800 dark:text-blue-300">
                                           {selectedHolidayName}
                                         </div>
                                       </div>
@@ -2601,11 +2762,11 @@ const Attendance = () => {
                                       formatAttendanceNote(
                                         selectedRecord.note,
                                       ) && (
-                                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                        <div className="rounded-xl border border-border bg-secondary/30 p-3">
+                                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                             Attendance Note
                                           </div>
-                                          <div className="mt-1 whitespace-pre-line text-xs leading-5 text-slate-600">
+                                          <div className="mt-1 whitespace-pre-line text-xs leading-5 text-muted-foreground">
                                             {formatAttendanceNote(
                                               selectedRecord.note,
                                             )}
@@ -2628,7 +2789,7 @@ const Attendance = () => {
                                           "Employee",
                                       )
                                     }
-                                    className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                                    className="rounded-lg bg-amber-500/10 dark:bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
                                   >
                                     View attendance reason
                                   </button>
@@ -2636,20 +2797,20 @@ const Attendance = () => {
                               </div>
                             )
                           ) : selectedHolidayName ? (
-                            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-6 text-center">
-                              <div className="text-base font-bold text-blue-700">
+                            <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20 px-4 py-6 text-center">
+                              <div className="text-base font-bold text-blue-700 dark:text-blue-300">
                                 Holiday
                               </div>
-                              <div className="mt-1 text-xs font-medium text-blue-600">
+                              <div className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400">
                                 {selectedHolidayName}
                               </div>
                             </div>
                           ) : (
-                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
-                              <div className="text-base font-bold text-slate-600">
+                            <div className="rounded-xl border border-dashed border-border bg-secondary/20 px-4 py-6 text-center">
+                              <div className="text-base font-bold text-muted-foreground">
                                 No attendance record
                               </div>
-                              <div className="mt-1 text-xs text-slate-400">
+                              <div className="mt-1 text-xs text-muted-foreground">
                                 No attendance was recorded for this date.
                               </div>
                             </div>
@@ -2660,24 +2821,24 @@ const Attendance = () => {
                   </div>
                 ) : (
                   <div className="min-w-[900px]">
-                    <div className="grid grid-cols-7 border-b border-slate-300 bg-slate-50">
+                    <div className="grid grid-cols-7 border-b border-border bg-secondary/40">
                       {weekdays.map((w) => (
                         <div
                           key={w}
-                          className="border-r border-slate-300 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-slate-600 last:border-r-0"
+                          className="border-r border-border px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground last:border-r-0"
                         >
                           {w}
                         </div>
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-7 gap-px bg-slate-300">
+                    <div className="grid grid-cols-7 gap-px bg-border">
                       {calendarCells.map((day, idx) => {
                         if (day === null) {
                           return (
                             <div
                               key={`blank-${idx}`}
-                              className="min-h-[158px] bg-slate-50"
+                              className="min-h-[158px] bg-secondary/20"
                             />
                           );
                         }
@@ -2730,9 +2891,9 @@ const Attendance = () => {
                             key={day}
                             type="button"
                             onClick={() => setSelectedDate(dateKey)}
-                            className={`min-h-[158px] bg-white p-3 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
+                            className={`min-h-[158px] bg-card p-3 text-left transition hover:bg-secondary/50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
                               isToday ? "ring-2 ring-inset ring-primary" : ""
-                            } ${isHolidayCell && !isWorkedRecord(rec) ? "bg-blue-50/60" : ""}`}
+                            } ${isHolidayCell && !isWorkedRecord(rec) ? "bg-blue-500/10 dark:bg-blue-500/20" : ""}`}
                           >
                             {/* Fixed Layout Container */}
                             <div className="flex flex-col h-full">
@@ -2740,7 +2901,7 @@ const Attendance = () => {
                               <div className="flex items-center justify-between gap-2 mb-2">
                                 <span
                                   className={`text-base font-bold leading-none ${
-                                    isToday ? "text-primary" : "text-slate-900"
+                                    isToday ? "text-primary" : "text-foreground"
                                   }`}
                                 >
                                   {day}
@@ -2761,20 +2922,20 @@ const Attendance = () => {
                                     {/* Status Badge */}
                                     <div className="flex items-center gap-1.5">
                                       <span
-                                        className={`h-3 w-3 rounded-full ${meta?.dot || "bg-slate-400"}`}
+                                        className={`h-3 w-3 rounded-full ${meta?.dot || "bg-muted-foreground"}`}
                                       />
                                       <span
                                         className={`text-xs font-bold ${
                                           rec.status === "ABSENT"
-                                            ? "text-rose-700"
+                                            ? "text-rose-600 dark:text-rose-400"
                                             : rec.status === "ON_LEAVE"
-                                              ? "text-violet-700"
+                                              ? "text-violet-600 dark:text-violet-400"
                                               : rec.status === "HOLIDAY"
-                                                ? "text-blue-700"
+                                                ? "text-blue-600 dark:text-blue-400"
                                                 : rec.status ===
                                                     "PENDING_APPROVAL"
-                                                  ? "text-amber-700"
-                                                  : "text-emerald-700"
+                                                  ? "text-amber-600 dark:text-amber-400"
+                                                  : "text-emerald-600 dark:text-emerald-400"
                                         }`}
                                       >
                                         {meta?.label || rec.status}
@@ -2782,16 +2943,16 @@ const Attendance = () => {
                                     </div>
 
                                     {/* Time and Hours Grid - Fixed height container */}
-                                    <div className="space-y-1 text-xs font-semibold text-slate-700 min-h-[60px]">
+                                    <div className="space-y-1 text-xs font-semibold text-foreground min-h-[60px]">
                                       {(rec.checkIn || checkInLocationCode) && (
                                         <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
-                                          <span className="text-slate-500">
+                                          <span className="text-muted-foreground">
                                             In
                                           </span>
-                                          <span className="flex items-center justify-end gap-1 text-emerald-700">
+                                          <span className="flex items-center justify-end gap-1 text-emerald-600 dark:text-emerald-400">
                                             {fmtTime(rec.checkIn) || "-"}
                                             {checkInLocationCode && (
-                                              <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                              <span className="rounded border border-border bg-secondary/50 px-1 text-[9px] font-bold text-muted-foreground">
                                                 {checkInLocationCode}
                                               </span>
                                             )}
@@ -2801,13 +2962,13 @@ const Attendance = () => {
 
                                       {(rec.checkOut || checkOutLocationCode) && (
                                         <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
-                                          <span className="text-slate-500">
+                                          <span className="text-muted-foreground">
                                             Out
                                           </span>
-                                          <span className="flex items-center justify-end gap-1 text-rose-700">
+                                          <span className="flex items-center justify-end gap-1 text-rose-600 dark:text-rose-400">
                                             {fmtTime(rec.checkOut) || "-"}
                                             {checkOutLocationCode && (
-                                              <span className="rounded border border-slate-200 bg-slate-50 px-1 text-[9px] font-bold text-slate-600">
+                                              <span className="rounded border border-border bg-secondary/50 px-1 text-[9px] font-bold text-muted-foreground">
                                                 {checkOutLocationCode}
                                               </span>
                                             )}
@@ -2817,7 +2978,7 @@ const Attendance = () => {
 
                                       {rec.workedHours != null && (
                                         <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
-                                          <span className="text-slate-500">
+                                          <span className="text-muted-foreground">
                                             Hours
                                           </span>
                                           <span className="text-right text-primary">
@@ -2828,10 +2989,10 @@ const Attendance = () => {
 
                                       {overtimeText && (
                                         <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0">
-                                          <span className="text-orange-700">
+                                          <span className="text-orange-600 dark:text-orange-400">
                                             OT
                                           </span>
-                                          <span className="text-right text-orange-700">
+                                          <span className="text-right text-orange-600 dark:text-orange-400">
                                             {overtimeText}
                                           </span>
                                         </div>
@@ -2840,7 +3001,7 @@ const Attendance = () => {
 
                                     {attendanceNote && (
                                       <div
-                                        className="line-clamp-2 border-t border-slate-100 pt-1 text-[10px] leading-4 text-slate-500"
+                                        className="line-clamp-2 border-t border-border pt-1 text-[10px] leading-4 text-muted-foreground"
                                         title={attendanceNote}
                                       >
                                         {attendanceNote}
@@ -2848,7 +3009,7 @@ const Attendance = () => {
                                     )}
 
                                     {hasSubmittedReason(rec.note) && (
-                                      <span className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                                      <span className="inline-flex rounded bg-amber-500/10 dark:bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
                                         Reason
                                       </span>
                                     )}
@@ -2857,12 +3018,12 @@ const Attendance = () => {
                                   <div className="space-y-2">
                                     <div className="flex items-center gap-1.5">
                                       <span className="h-3 w-3 rounded-full bg-blue-500" />
-                                      <span className="text-xs font-bold text-blue-700">
+                                      <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
                                         Holiday
                                       </span>
                                     </div>
                                     <div
-                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-600 dark:text-blue-400"
                                       title={holidayName}
                                     >
                                       {holidayName}
@@ -2872,18 +3033,18 @@ const Attendance = () => {
                                   <div className="space-y-2">
                                     <div className="flex items-center gap-1.5">
                                       <span className="h-3 w-3 rounded-full bg-blue-500" />
-                                      <span className="text-xs font-bold text-blue-700">
+                                      <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
                                         Holiday
                                       </span>
                                     </div>
                                     <div
-                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-700"
+                                      className="line-clamp-3 text-xs font-semibold leading-5 text-blue-600 dark:text-blue-400"
                                     >
                                       Sunday
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="mt-9 text-center text-xs font-medium text-slate-400">
+                                  <div className="mt-9 text-center text-xs font-medium text-muted-foreground">
                                     No attendance
                                   </div>
                                 )}
@@ -2917,21 +3078,21 @@ const Attendance = () => {
       {/* Submitted Attendance Reason Modal */}
       {attendanceReasonModal && (
         <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setAttendanceReasonModal(null);
           }}
         >
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
             {/* Header */}
-            <div className="relative border-b border-slate-200 bg-gradient-to-r from-amber-50 via-white to-slate-50 px-6 py-5">
+            <div className="relative border-b border-border bg-card px-6 py-5">
               <div className="flex items-start gap-3 pr-10">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
                   <AlertCircle className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div
-                    className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-slate-900"
+                    className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-foreground"
                     title={attendanceReasonModal.employeeName}
                   >
                     {attendanceReasonModal.employeeName}
@@ -2942,7 +3103,7 @@ const Attendance = () => {
               <button
                 type="button"
                 onClick={() => setAttendanceReasonModal(null)}
-                className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+                className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground"
                 aria-label="Close attendance reason"
               >
                 <X className="h-4 w-4" />
@@ -2952,20 +3113,20 @@ const Attendance = () => {
             {/* Details */}
             <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
               <div className="mb-5 grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <div className="rounded-xl border border-border bg-secondary/30 p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Date
                   </div>
-                  <div className="mt-1.5 text-[15px] font-bold text-slate-800">
+                  <div className="mt-1.5 text-[15px] font-bold text-foreground">
                     {fmtDateDMY(attendanceReasonModal.date)}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-600">
+                <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-3.5 dark:border-amber-800/40 dark:bg-amber-500/20">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                     Status
                   </div>
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 text-[15px] font-bold text-amber-800">
+                  <div className="mt-1.5 inline-flex items-center gap-1.5 text-[15px] font-bold text-amber-800 dark:text-amber-300">
                     <span className="h-2 w-2 rounded-full bg-amber-500" />
                     {attendanceReasonModal.statusLabel ||
                       attendanceReasonModal.status ||
@@ -2973,20 +3134,20 @@ const Attendance = () => {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <div className="rounded-xl border border-border bg-card p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Check In
                   </div>
-                  <div className="mt-1.5 text-[15px] font-bold text-slate-800">
+                  <div className="mt-1.5 text-[15px] font-bold text-foreground">
                     {fmtTime(attendanceReasonModal.checkIn) || "—"}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <div className="rounded-xl border border-border bg-card p-3.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Check Out
                   </div>
-                  <div className="mt-1.5 text-[15px] font-bold text-slate-800">
+                  <div className="mt-1.5 text-[15px] font-bold text-foreground">
                     {fmtTime(attendanceReasonModal.checkOut) || "—"}
                   </div>
                 </div>
@@ -2995,16 +3156,16 @@ const Attendance = () => {
               {/* Submitted reason */}
               <div className="mb-5">
                 <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-base font-bold text-slate-900">
+                  <h4 className="text-base font-bold text-foreground">
                     Submitted Reason
                   </h4>
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                  <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
                     Review
                   </span>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-                  <p className="whitespace-pre-wrap text-[16px] leading-7 text-slate-700">
+                <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-4 dark:border-amber-800/40 dark:bg-amber-500/20">
+                  <p className="whitespace-pre-wrap text-[16px] leading-7 text-foreground">
                     {attendanceReasonModal.reason || "No reason provided."}
                   </p>
                 </div>
@@ -3012,7 +3173,7 @@ const Attendance = () => {
 
               {/* Locations */}
               <div>
-                <div className="mb-2 text-base font-bold text-slate-900">
+                <div className="mb-2 text-base font-bold text-foreground">
                   Attendance Location
                 </div>
 
@@ -3027,13 +3188,13 @@ const Attendance = () => {
                       href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-[15px] font-bold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-500/10 px-3 py-2.5 text-[15px] font-bold text-blue-700 transition hover:bg-blue-500/20 dark:border-blue-800/40 dark:text-blue-400"
                     >
                       <MapPin className="h-4 w-4 transition group-hover:scale-110" />
                       View Check-in
                     </a>
                   ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-[13px] font-medium text-slate-500">
+                    <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2.5 text-center text-[13px] font-medium text-muted-foreground">
                       Check-in location unavailable
                     </div>
                   )}
@@ -3048,13 +3209,13 @@ const Attendance = () => {
                       href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[15px] font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-3 py-2.5 text-[15px] font-bold text-rose-700 transition hover:bg-rose-500/20 dark:border-rose-800/40 dark:text-rose-400"
                     >
                       <MapPin className="h-4 w-4 transition group-hover:scale-110" />
                       View Check-out
                     </a>
                   ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-[13px] font-medium text-slate-500">
+                    <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2.5 text-center text-[13px] font-medium text-muted-foreground">
                       Check-out location unavailable
                     </div>
                   )}
@@ -3063,11 +3224,11 @@ const Attendance = () => {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-6 py-3">
+            <div className="flex items-center justify-end border-t border-border bg-card px-6 py-3">
               <button
                 type="button"
                 onClick={() => setAttendanceReasonModal(null)}
-                className="rounded-xl bg-slate-900 px-5 py-2.5 text-[15px] font-bold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                className="rounded-xl bg-primary px-5 py-2.5 text-[15px] font-bold text-primary-foreground transition hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/40"
               >
                 Close
               </button>
@@ -3079,18 +3240,18 @@ const Attendance = () => {
       {/* Reject Reason Modal */}
       {rejectModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="border-b border-border bg-rose-50 p-5">
-              <h3 className="text-lg font-semibold text-rose-900">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="border-b border-border bg-rose-500/10 dark:bg-rose-500/20 p-5">
+              <h3 className="text-lg font-semibold text-rose-700 dark:text-rose-300">
                 Reject Attendance
               </h3>
-              <p className="text-sm text-rose-700 mt-1">
+              <p className="text-sm text-rose-600 dark:text-rose-400 mt-1">
                 {rejectModal.employeeName}
               </p>
             </div>
 
             <div className="p-5 space-y-4">
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground">
                 Admin comment
                 <textarea
                   value={rejectModal.reason}
@@ -3107,11 +3268,11 @@ const Attendance = () => {
               </label>
             </div>
 
-            <div className="border-t border-border bg-slate-50/60 p-5 flex justify-end gap-3">
+            <div className="border-t border-border bg-secondary/30 p-5 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setRejectModal(null)}
-                className="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80 text-sm font-medium"
               >
                 Cancel
               </button>
@@ -3135,9 +3296,9 @@ const Attendance = () => {
       {/* Location Map Modal */}
       {mapModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-cyan-50 border-b border-blue-100 p-6 flex items-center justify-between">
+            <div className="sticky top-0 bg-card border-b border-border p-6 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-foreground">
                   Check-in Location Verification
@@ -3148,7 +3309,7 @@ const Attendance = () => {
               </div>
               <button
                 onClick={() => setMapModal(null)}
-                className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-secondary text-muted-foreground hover:text-foreground rounded-lg transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -3162,7 +3323,7 @@ const Attendance = () => {
                   Check-in Details
                 </h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-3">
                     <div className="text-muted-foreground">Date & Time</div>
                     <div className="font-medium mt-1">
                       {mapModal.checkIn
@@ -3170,17 +3331,17 @@ const Attendance = () => {
                         : "N/A"}
                     </div>
                   </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-3">
                     <div className="text-muted-foreground">Location Name</div>
                     <div className="font-medium mt-1">
                       {mapModal.locationName || "Unknown"}
                     </div>
                   </div>
-                  <div className="col-span-2 bg-amber-50 rounded-lg p-3 border border-amber-200">
+                  <div className="col-span-2 bg-amber-500/10 dark:bg-amber-500/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800/40">
                     <div className="text-muted-foreground text-xs">
                       Approval Note
                     </div>
-                    <div className="text-sm mt-1 text-amber-900">
+                    <div className="text-sm mt-1 text-amber-800 dark:text-amber-300">
                       {mapModal.note}
                     </div>
                   </div>
@@ -3192,10 +3353,10 @@ const Attendance = () => {
                 <h4 className="font-semibold text-foreground">
                   Location on Map
                 </h4>
-                <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border border-blue-100 p-4">
+                <div className="bg-secondary/20 rounded-lg border border-border p-4">
                   {mapModal.latitude && mapModal.longitude ? (
                     <div className="space-y-3">
-                      <div className="bg-white rounded-lg p-4 space-y-2 border border-blue-200">
+                      <div className="bg-card rounded-lg p-4 space-y-2 border border-border">
                         <div className="text-sm">
                           <span className="text-muted-foreground">
                             Latitude:
@@ -3229,7 +3390,7 @@ const Attendance = () => {
                             );
                             toast.success("Coordinates copied to clipboard!");
                           }}
-                          className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 text-sm font-medium transition-colors"
+                          className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 text-sm font-medium transition-colors"
                         >
                           Copy Coordinates
                         </button>
@@ -3244,7 +3405,7 @@ const Attendance = () => {
               </div>
 
               {/* Info Box */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+              <div className="bg-blue-500/10 dark:bg-blue-500/20 border border-blue-200 dark:border-blue-800/40 rounded-lg p-4 text-sm text-blue-800 dark:text-blue-300">
                 <div className="font-semibold mb-2">How to Verify</div>
                 <ul className="space-y-1 text-xs">
                   <li>
@@ -3264,10 +3425,10 @@ const Attendance = () => {
             </div>
 
             {/* Footer Actions */}
-            <div className="border-t border-border bg-slate-50/50 p-6 flex gap-3 justify-end">
+            <div className="border-t border-border bg-secondary/30 p-6 flex gap-3 justify-end">
               <button
                 onClick={() => setMapModal(null)}
-                className="px-4 py-2 text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-lg font-medium transition-colors"
+                className="px-4 py-2 text-secondary-foreground bg-secondary hover:bg-secondary/80 rounded-lg font-medium transition-colors"
               >
                 Close
               </button>

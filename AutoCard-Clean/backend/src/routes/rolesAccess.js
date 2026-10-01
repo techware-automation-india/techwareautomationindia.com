@@ -9,17 +9,21 @@ const EMPLOYEE_ROLE = "EMPLOYEE";
 
 const employeeModules = [
   { key: "overview", label: "Dashboard" },
-  { key: "employee", label: "Employee" },
-  { key: "customer", label: "Customer" },
+  { key: "mark-attendance", label: "Mark Attendance" },
+  { key: "attendance", label: "My Attendance" },
+  { key: "attendance-management", label: "Team Attendance (All Employees)" },
+  { key: "employee", label: "Add Account" },
   { key: "requests", label: "Requests" },
+  { key: "approvals", label: "Approvals" },
   { key: "leave-policy", label: "Leave Policy" },
   { key: "holidays", label: "Holidays" },
-  { key: "attendance", label: "Attendance" },
   { key: "projects", label: "Projects" },
   { key: "services", label: "Services" },
+  { key: "roles-access", label: "Roles & Access" },
   { key: "shift-location", label: "Shift & Location" },
   { key: "roster", label: "Roster" },
 ];
+
 
 const permissionSchema = z.object({
   canView: z.boolean().optional(),
@@ -62,12 +66,21 @@ function buildPermissionMap(rows) {
 }
 
 router.get("/me/permissions", requireAuth, async (req, res) => {
-  if (req.user?.role !== EMPLOYEE_ROLE) {
+  if (req.user?.role === "ADMIN") {
+    const adminPerms = {};
+    for (const m of employeeModules) {
+      adminPerms[m.key] = {
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+      };
+    }
     return res.json({
-      role: req.user?.role,
-      modules: [],
-      permissions: {},
-      hasConfiguredPermissions: false,
+      role: "ADMIN",
+      modules: employeeModules,
+      permissions: adminPerms,
+      hasConfiguredPermissions: true,
     });
   }
 
@@ -87,22 +100,33 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
     const permissionMap = buildPermissionMap(legacyPermissions);
 
     // If user has a customRole with modules, merge them into permissionMap
-    if (user?.customRole?.modules) {
-      for (const m of user.customRole.modules) {
-        permissionMap[m.moduleKey] = {
-          canView: true,
-          canCreate: true,
-          canEdit: true,
-          canDelete: true,
-        };
-      }
+    let roleModules = user?.customRole?.modules || [];
+    if (roleModules.length === 0 && user?.roleId) {
+      roleModules = await prisma.roleModule.findMany({
+        where: { roleId: user.roleId },
+      });
     }
 
-    const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0;
+    for (const m of roleModules) {
+      permissionMap[m.moduleKey] = {
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+      };
+    }
+
+    const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0 || roleModules.length > 0;
+
+    let roleName = user?.customRole?.name || null;
+    if (!roleName && user?.roleId) {
+      const r = await prisma.roleTable.findUnique({ where: { id: user.roleId } });
+      if (r) roleName = r.name;
+    }
 
     res.json({
-      role: EMPLOYEE_ROLE,
-      roleName: user?.customRole?.name || null,
+      role: user?.role || req.user?.role,
+      roleName: roleName || (user?.role === "ADMIN" ? "Admin" : user?.role === "CUSTOMER" ? "Customer" : "Employee"),
       roleId: user?.roleId || null,
       modules: employeeModules,
       permissions: permissionMap,

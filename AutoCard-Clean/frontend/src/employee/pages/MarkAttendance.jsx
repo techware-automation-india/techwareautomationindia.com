@@ -119,7 +119,7 @@ const REQUEST_STATUS_META = {
 
 const toRadians = (value) => (value * Math.PI) / 180;
 
-const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+const getStraightDistanceInMeters = (lat1, lon1, lat2, lon2) => {
   const earthRadiusMeters = 6371000;
 
   const dLat = toRadians(lat2 - lat1);
@@ -137,6 +137,58 @@ const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
 
   return earthRadiusMeters * c;
 };
+
+const getRoadDistanceInMeters = async (lat1, lon1, lat2, lon2) => {
+  const straightDistance = getStraightDistanceInMeters(lat1, lon1, lat2, lon2);
+  if (straightDistance < 100) {
+    return straightDistance;
+  }
+
+  // 1. Try Google Maps Distance Matrix API if key is set in Vite env
+  const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (googleApiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${lat1},${lon1}&destinations=${lat2},${lon2}&key=${googleApiKey}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        const element = data?.rows?.[0]?.elements?.[0];
+        if (element?.status === "OK" && element?.distance?.value != null) {
+          return element.distance.value;
+        }
+      }
+    } catch (err) {
+      console.warn("Google Distance Matrix API error, using OSRM fallback:", err.message);
+    }
+  }
+
+  // 2. Try OSRM (Open Source Routing Machine) Free Driving Route API
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+        return data.routes[0].distance;
+      }
+    }
+  } catch (err) {
+    console.warn("OSRM routing API error, using fallback factor:", err.message);
+  }
+
+  // 3. Fallback: Straight-line * 1.35 road factor multiplier
+  return straightDistance * 1.35;
+};
+
+const getDistanceInMeters = getStraightDistanceInMeters;
 
 const parseLocationCoordinates = (location) => {
   if (!location || typeof location !== "string") {
@@ -500,7 +552,7 @@ const MarkAttendance = () => {
         );
       }
 
-      const distanceMeters = getDistanceInMeters(
+      const distanceMeters = getStraightDistanceInMeters(
         targetLocation.latitude,
         targetLocation.longitude,
         coordinates.latitude,
@@ -508,11 +560,18 @@ const MarkAttendance = () => {
       );
 
       if (distanceMeters > (targetLocation.radius ?? 50)) {
+        const roadDistance = await getRoadDistanceInMeters(
+          targetLocation.latitude,
+          targetLocation.longitude,
+          coordinates.latitude,
+          coordinates.longitude,
+        );
+
         openReasonModal(
           "checkin",
           location,
           coordinates,
-          Math.round(distanceMeters),
+          Math.round(roadDistance),
         );
 
         return;
@@ -592,7 +651,7 @@ const MarkAttendance = () => {
       // CALCULATE DISTANCE
       // =====================================================
 
-      const distanceMeters = getDistanceInMeters(
+      const distanceMeters = getStraightDistanceInMeters(
         targetLocation.latitude,
         targetLocation.longitude,
         coordinates.latitude,
@@ -604,11 +663,18 @@ const MarkAttendance = () => {
       // =====================================================
 
       if (distanceMeters > (targetLocation.radius ?? 50)) {
+        const roadDistance = await getRoadDistanceInMeters(
+          targetLocation.latitude,
+          targetLocation.longitude,
+          coordinates.latitude,
+          coordinates.longitude,
+        );
+
         openReasonModal(
           "checkout",
           location,
           coordinates,
-          Math.round(distanceMeters),
+          Math.round(roadDistance),
         );
 
         return;
@@ -850,7 +916,7 @@ const MarkAttendance = () => {
       ================================================= */}
 
       <div className="rounded-2xl bg-secondary/50 border border-border p-4 text-sm text-muted-foreground">
-        <p className="font-semibold text-slate-900">Attendance policy</p>
+        <p className="font-semibold text-foreground">Attendance policy</p>
 
         <p className="mt-1">Attendance tracking is enabled.</p>
       </div>
@@ -949,17 +1015,24 @@ const MarkAttendance = () => {
           ================================================= */}
 
           {isCorrectionRejected && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              <div className="flex items-center gap-2 font-semibold">
-                <LogOut className="h-4 w-4" />
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+              <div className="flex items-center gap-2 font-bold">
+                <LogOut className="h-4 w-4 text-rose-600" />
                 Forgot Punch request rejected
               </div>
 
               <div className="mt-1">
-                The corrected Check In was not approved.
+                The corrected Check In was not approved by Admin.
                 <br />
                 Your original attendance remains unchanged.
               </div>
+
+              {correctionRequest?.reviewNote && (
+                <div className="mt-2.5 border-t border-rose-200/80 pt-2 font-medium dark:border-rose-800/40">
+                  <span className="font-bold">❌ Admin Rejection Reason:</span>{" "}
+                  {correctionRequest.reviewNote}
+                </div>
+              )}
             </div>
           )}
 
@@ -1230,10 +1303,10 @@ const MarkAttendance = () => {
 
       {reasonModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-border">
+          <div className="w-full max-w-lg rounded-2xl bg-card text-card-foreground p-6 shadow-2xl border border-border">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-display text-xl font-bold text-slate-900">
+                <h3 className="font-display text-xl font-bold text-foreground">
                   {reasonModal.type === "checkin"
                     ? "Check-in reason"
                     : "Check-out reason"}

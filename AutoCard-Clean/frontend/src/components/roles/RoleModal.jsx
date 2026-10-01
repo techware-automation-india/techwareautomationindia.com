@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import ModuleSelector from "./ModuleSelector";
 
@@ -71,17 +71,17 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-card text-card-foreground border border-border rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">
+        <div className="flex items-center justify-between p-6 border-b border-border">
+          <h2 className="text-xl font-semibold text-card-foreground">
             {mode === 'create' ? 'Create New Role' : 'Edit Role'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-secondary rounded-lg transition-colors"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-muted-foreground" />
           </button>
         </div>
 
@@ -89,7 +89,7 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Name Input */}
           <div>
-            <label htmlFor="roleName" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="roleName" className="block text-sm font-medium text-foreground mb-2">
               Role Name *
             </label>
             <input
@@ -99,10 +99,10 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
               onChange={(e) => setName(e.target.value)}
               disabled={loading || (mode === 'edit' && role?.isDefault)}
               placeholder="Enter role name"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full px-4 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-secondary disabled:cursor-not-allowed"
             />
             {mode === 'edit' && role?.isDefault && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Default role names cannot be changed
               </p>
             )}
@@ -111,7 +111,7 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
           {/* Module Selector (only in edit mode) */}
           {mode === 'edit' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
+              <label className="block text-sm font-medium text-foreground mb-3">
                 Module Access
               </label>
               <ModuleSelector
@@ -119,7 +119,7 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
                 onChange={setSelectedModules}
                 disabled={loading}
               />
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 Select which modules this role can access
               </p>
             </div>
@@ -127,18 +127,18 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
 
           {/* Error Message */}
           {error && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-600">{error}</p>
+            <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
+        <div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-secondary/30">
           <button
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 text-foreground bg-background border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Cancel
           </button>

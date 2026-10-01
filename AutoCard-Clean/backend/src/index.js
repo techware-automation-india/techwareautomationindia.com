@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -262,7 +262,7 @@ if (process.env.VERCEL !== "1") {
     }
 
     isShuttingDown = true;
-    console.log("Stopping server...");
+    console.log("Stopping Server...");
 
     await new Promise((resolve) => {
       server.close(() => resolve());

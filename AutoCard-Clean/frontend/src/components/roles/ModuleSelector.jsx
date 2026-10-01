@@ -1,4 +1,4 @@
-﻿import { MODULES } from "../../data/modules";
+import { MODULES } from "../../data/modules";
 
 /**
  * ModuleSelector Component
@@ -37,7 +37,7 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
               flex items-center gap-3 p-4 rounded-lg border-2 transition-all
               ${isSelected 
                 ? 'border-primary bg-primary/10 text-primary' 
-                : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                : 'border-border bg-card text-card-foreground hover:border-primary/50 hover:bg-secondary/40'
               }
               ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}

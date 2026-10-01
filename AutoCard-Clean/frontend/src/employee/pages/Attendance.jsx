@@ -69,8 +69,7 @@ const getRegularHours = (workedHours) => {
   return Math.min(hours, REGULAR_HOURS);
 };
 
-// Calculate overtime from worked hours.
-// Anything above 8 hours is overtime.
+// Calculate overtime from worked hours. 15 minutes is deducted from total overtime.
 const getOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -80,7 +79,26 @@ const getOvertimeHours = (workedHours) => {
     return 0;
   }
 
-  return hours - REGULAR_HOURS;
+  const rawOvertimeHours = hours - REGULAR_HOURS;
+  const rawOvertimeMinutes = Math.round(rawOvertimeHours * 60);
+  const netOvertimeMinutes = Math.max(0, rawOvertimeMinutes - 15);
+
+  if (netOvertimeMinutes <= 0) {
+    return 0;
+  }
+
+  return netOvertimeMinutes / 60;
+};
+
+const getIndiaDayNumber = (val) => {
+  if (!val) return null;
+  const date = new Date(val);
+  if (Number.isNaN(date.getTime())) return null;
+  const dayStr = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+  }).format(date);
+  return Number(dayStr);
 };
 
 const fmtDate = (v) => {
@@ -90,47 +108,48 @@ const fmtDate = (v) => {
 
   if (Number.isNaN(date.getTime())) return "—";
 
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-
-  return `${day}/${month}/${year}`;
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 };
 
 const STATUS_META = {
   PRESENT: {
     label: "Present",
-    bg: "bg-emerald-100",
-    text: "text-emerald-700",
-    cell: "bg-emerald-100 border-emerald-300 text-emerald-800",
+    bg: "bg-emerald-500/15 dark:bg-emerald-500/25",
+    text: "text-emerald-700 dark:text-emerald-400",
+    cell: "bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-800 dark:text-emerald-300",
   },
 
   ABSENT: {
     label: "Absent",
-    bg: "bg-rose-100",
-    text: "text-rose-700",
-    cell: "bg-rose-100 border-rose-300 text-rose-800",
+    bg: "bg-rose-500/15 dark:bg-rose-500/25",
+    text: "text-rose-700 dark:text-rose-400",
+    cell: "bg-rose-500/10 dark:bg-rose-500/20 border-rose-200 dark:border-rose-800/40 text-rose-800 dark:text-rose-300",
   },
 
   ON_LEAVE: {
     label: "On Leave",
-    bg: "bg-purple-100",
-    text: "text-purple-700",
-    cell: "bg-purple-100 border-purple-300 text-purple-800",
+    bg: "bg-purple-500/15 dark:bg-purple-500/25",
+    text: "text-purple-700 dark:text-purple-400",
+    cell: "bg-purple-500/10 dark:bg-purple-500/20 border-purple-200 dark:border-purple-800/40 text-purple-800 dark:text-purple-300",
   },
 
   HOLIDAY: {
     label: "Holiday",
-    bg: "bg-indigo-100",
-    text: "text-indigo-700",
-    cell: "bg-indigo-100 border-indigo-300 text-indigo-800",
+    bg: "bg-indigo-500/15 dark:bg-indigo-500/25",
+    text: "text-indigo-700 dark:text-indigo-400",
+    cell: "bg-indigo-500/10 dark:bg-indigo-500/20 border-indigo-200 dark:border-indigo-800/40 text-indigo-800 dark:text-indigo-300",
   },
 
   PENDING_APPROVAL: {
     label: "Awaiting Admin Approval",
-    bg: "bg-amber-100",
-    text: "text-amber-700",
-    cell: "bg-amber-100 border-amber-300 text-amber-800",
+    bg: "bg-amber-500/15 dark:bg-amber-500/25",
+    text: "text-amber-700 dark:text-amber-400",
+    cell: "bg-amber-500/10 dark:bg-amber-500/20 border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300",
   },
 };
 
@@ -214,15 +233,15 @@ const Attendance = () => {
   const recordByDay = {};
 
   for (const r of records) {
-    const d = new Date(r.date).getUTCDate();
-    recordByDay[d] = r;
+    const d = getIndiaDayNumber(r.date);
+    if (d) recordByDay[d] = r;
   }
 
   const holidayByDay = {};
 
   for (const h of holidays) {
-    const d = new Date(h.date).getUTCDate();
-    holidayByDay[d] = h.name;
+    const d = getIndiaDayNumber(h.date);
+    if (d) holidayByDay[d] = h.name;
   }
 
   // ── worked & overtime calculations ──
@@ -376,7 +395,7 @@ const Attendance = () => {
                               {r.note.split("|").map((note, index) => (
                                 <div
                                   key={index}
-                                  className="text-base font-medium text-slate-700 whitespace-normal break-words"
+                                  className="text-base font-medium text-foreground whitespace-normal break-words"
                                 >
                                   {note.trim()}
                                 </div>
@@ -870,7 +889,9 @@ const Attendance = () => {
 
           {/* Calendar */}
           <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-            {/* Weekdays */}
+            <div className="overflow-x-auto">
+              <div className="min-w-[700px]">
+                {/* Weekdays */}
             <div className="grid grid-cols-7 border-b border-border bg-secondary/30">
               {[
                 ["Sun", "Sunday"],
@@ -908,6 +929,8 @@ const Attendance = () => {
                 (day) => {
                   const r = recordByDay[day];
                   const hol = holidayByDay[day];
+                  const dayOfWeek = new Date(year, month - 1, day).getDay();
+                  const isSunday = dayOfWeek === 0;
 
                   const isToday =
                     year === today.getFullYear() &&
@@ -916,13 +939,15 @@ const Attendance = () => {
 
                   const meta = r
                     ? STATUS_META[r.status] ?? STATUS_META.PRESENT
-                    : hol
+                    : hol || isSunday
                       ? STATUS_META.HOLIDAY
                       : null;
 
                   const overtime = r
                     ? getOvertimeHours(r.workedHours)
                     : 0;
+
+                  const isHolidayCell = !r || r.status === "HOLIDAY";
 
                   return (
                     <div
@@ -969,7 +994,7 @@ const Attendance = () => {
                             </span>
                           </div>
 
-                          {r && (
+                          {r && !isHolidayCell && (
                             <>
                               {/* In / Out */}
                               <div className="grid grid-cols-2 gap-1.5">
@@ -1021,12 +1046,12 @@ const Attendance = () => {
                             </>
                           )}
 
-                          {!r && hol && (
+                          {isHolidayCell && (
                             <div
                               className="rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-1.5 text-[10px] font-semibold text-indigo-700 truncate"
-                              title={hol}
+                              title={hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
                             >
-                              {hol}
+                              {hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
                             </div>
                           )}
                         </div>
@@ -1042,6 +1067,8 @@ const Attendance = () => {
                 },
               )}
             </div>
+          </div>
+        </div>
 
             {/* Calendar footer */}
             <div className="px-4 py-3 bg-secondary/20 border-t border-border">
@@ -1172,7 +1199,7 @@ const Attendance = () => {
                               {r.note.split("|").map((note, index) => (
                                 <div
                                   key={index}
-                                  className="text-base font-medium text-slate-700 whitespace-nowrap"
+                                  className="text-base font-medium text-foreground whitespace-nowrap"
                                 >
                                   {note.trim()}
                                 </div>

@@ -7,29 +7,61 @@ import prisma from "../prismaClient.js";
  */
 export function checkModulePermission(moduleKey, permission = 'canView') {
   return async (req, res, next) => {
-    console.log(`🔒 [Permission Check] Module: ${moduleKey}, Permission: ${permission}, User:`, req.user?.id, "Role:", req.user?.role);
     try {
       const user = req.user;
 
       if (!user) {
-        console.log("❌ [Permission Check] No user found in request");
         return res.status(401).json({ message: "Authentication required." });
       }
 
       // ADMIN always has full access
       if (user.role === "ADMIN") {
-        console.log("✅ [Permission Check] ADMIN access granted");
         return next();
       }
 
       // For EMPLOYEE role, check module permissions
       if (user.role === "EMPLOYEE") {
-        const modulePermission = await prisma.modulePermission.findUnique({
-          where: {
-            userId_moduleKey: {
-              userId: user.id,
-              moduleKey: moduleKey,
+        const inputKeys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+
+        const keySet = new Set(inputKeys);
+        for (const k of inputKeys) {
+          if (k === "shift-location" || k === "shift" || k === "location") {
+            keySet.add("shift-location");
+            keySet.add("shift");
+            keySet.add("location");
+            keySet.add("shift-and-location");
+            keySet.add("shift_location");
+          }
+        }
+        const keys = Array.from(keySet);
+
+        // 1. Check custom role modules
+        let roleId = user.roleId;
+        if (!roleId && user.id) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { roleId: true },
+          });
+          roleId = dbUser?.roleId || null;
+        }
+
+        if (roleId) {
+          const hasRoleModule = await prisma.roleModule.findFirst({
+            where: {
+              roleId,
+              moduleKey: { in: keys },
             },
+          });
+          if (hasRoleModule) {
+            return next();
+          }
+        }
+
+        // 2. Check legacy modulePermission table
+        const modulePermission = await prisma.modulePermission.findFirst({
+          where: {
+            userId: user.id,
+            moduleKey: { in: keys },
           },
         });
 
@@ -39,7 +71,7 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
         }
 
         return res.status(403).json({ 
-          message: `You don't have ${permission} permission for ${moduleKey} module.` 
+          message: `You don't have ${permission} permission for ${keys.join(", ")} module.` 
         });
       }
 
@@ -60,3 +92,4 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
 export function requireAdminOrModulePermission(moduleKey, permission = 'canView') {
   return checkModulePermission(moduleKey, permission);
 }
+

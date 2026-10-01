@@ -56,9 +56,76 @@ const formatDate = (value) => {
 
 const formatPunchDate = (value) => {
   if (!value) return "—";
-  const parts = String(value).split("-");
-  if (parts.length !== 3) return value;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  const str = String(value).trim();
+
+  // If ISO string like 2026-09-24T18:30:00.000Z or date object
+  const dateObj = new Date(str);
+  if (
+    !Number.isNaN(dateObj.getTime()) &&
+    (str.includes("T") || str.length > 10)
+  ) {
+    return dateObj.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "Asia/Kolkata",
+    });
+  }
+
+  // If YYYY-MM-DD format
+  const cleanStr = str.split("T")[0];
+  const parts = cleanStr.split("-");
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2].padStart(2, "0")}/${parts[1].padStart(2, "0")}/${parts[0]}`;
+  }
+
+  return str;
+};
+
+const formatTimeIST = (timeValue) => {
+  if (!timeValue) return "—";
+
+  const str = String(timeValue).trim();
+
+  // Full ISO date / timestamp string
+  if (str.includes("T") || str.includes("-")) {
+    const d = new Date(str);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+  }
+
+  // 24-hour time format (HH:MM or HH:MM:SS)
+  const match = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const period = hours >= 12 ? "PM" : "AM";
+    if (hours === 0) hours = 12;
+    else if (hours > 12) hours = hours - 12;
+    return `${hours}:${minutes} ${period}`;
+  }
+
+  return str;
+};
+
+const formatDistance = (value) => {
+  if (value == null || value === "") return "";
+  const str = String(value).trim();
+  const num = parseFloat(str.replace(/[^0-9.]/g, ""));
+  if (Number.isNaN(num)) return str;
+
+  if (num < 1) {
+    const meters = Math.round(num * 1000);
+    return `${meters} m`;
+  }
+  const formattedKm = Number.isInteger(num) ? num : parseFloat(num.toFixed(2));
+  return `${formattedKm} km`;
 };
 
 const getPunchTypeLabel = (request) => {
@@ -87,6 +154,54 @@ const getPunchTypeLabel = (request) => {
         : null;
 };
 
+const parseCorrectionFromDescription = (description) => {
+  if (typeof description !== "string") return null;
+  const markerIndex = description.lastIndexOf("[ATTENDANCE_CORRECTION]");
+  if (markerIndex === -1) return null;
+
+  try {
+    const jsonText = description
+      .slice(markerIndex + "[ATTENDANCE_CORRECTION]".length)
+      .trim();
+    const data = JSON.parse(jsonText);
+    const readableText = description.slice(0, markerIndex).trim();
+
+    let reason = readableText
+      .replace(
+        /^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+        "",
+      )
+      .replace(
+        /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+        "",
+      )
+      .replace(/Check-In Location:.*$/i, "")
+      .replace(/Check-Out Location:.*$/i, "")
+      .replace(/\|?\s*Pending admin approval\.?/gi, "")
+      .replace(/\|?\s*Approved by admin\.?/gi, "")
+      .replace(/\|?\s*Rejected by admin\.?/gi, "")
+      .replace(/\|/g, "")
+      .trim();
+
+    return {
+      date: data.date,
+      punchType:
+        data.punchType === "check-in"
+          ? "Check In"
+          : data.punchType === "check-out"
+            ? "Check Out"
+            : "Check In + Check Out",
+      checkInTime: data.checkInTime,
+      checkOutTime: data.checkOutTime,
+      checkInLocation: data.checkInLocation,
+      checkOutLocation: data.checkOutLocation,
+      reason: reason || "No reason provided.",
+    };
+  } catch {
+    return null;
+  }
+};
+
 const normalizeRequests = (items) =>
   (items || []).map((item) => ({
     id: item.id,
@@ -96,11 +211,16 @@ const normalizeRequests = (items) =>
         ? `Forgot Punch${getPunchTypeLabel(item) ? ` - ${getPunchTypeLabel(item)}` : ""}`
         : item.subject || "Employee request",
     punchType: item.type === "CORRECTION" ? getPunchTypeLabel(item) : null,
-    correctionDetails: item.type === "CORRECTION" ? item.notification : null,
+    correctionDetails:
+      item.type === "CORRECTION"
+        ? item.notification || parseCorrectionFromDescription(item.description)
+        : null,
     description:
       item.description || item.notification?.reason || "No details provided.",
-    employee: item.employee?.fullName || "Employee",
+    employee:
+      item.employee?.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    reviewNote: item.reviewNote || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
@@ -119,6 +239,7 @@ const normalizeLeave = (items) =>
       `${formatDate(item.startDate)} - ${formatDate(item.endDate)} (${item.totalDays} day(s))`,
     employee: item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    reviewNote: item.reviewNote || null,
     status: item.status,
     createdAt: item.createdAt,
   }));
@@ -127,14 +248,29 @@ const normalizeAttendance = (items) =>
   (items || []).map((item) => ({
     id: item.id,
     source: "ATTENDANCE",
-    title: "Attendance location approval",
+    title:
+      item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
+        ? "Attendance Location Approval"
+        : item.note?.includes("Forgot Punch")
+          ? "Forgot Punch Checkout Approval"
+          : "Attendance Approval",
     description: item.note || "Employee attendance requires approval.",
     employee: item.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    reviewNote: item.note || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
     checkOutLongitude: item.checkOutLongitude,
+    checkInDistance: item.checkInDistance || null,
+    checkOutDistance: item.checkOutDistance || null,
+    checkInTime: item.checkInTime || item.createdAt || item.date,
+    checkOutTime:
+      item.checkOutTime ||
+      (item.note?.toLowerCase().includes("checkout")
+        ? item.updatedAt || item.createdAt
+        : null),
+    date: item.date,
     status:
       item.status === "PENDING_APPROVAL"
         ? "PENDING"
@@ -148,24 +284,82 @@ const normalizeAttendance = (items) =>
               ? "APPROVED"
               : "REJECTED",
     createdAt: item.updatedAt || item.createdAt || item.date,
+    updatedAt: item.updatedAt,
   }));
 
 const getAttendanceDetails = (note = "") => {
-  const text = String(note || "");
+  const text = String(note || "").trim();
+
+  if (!text) {
+    return {
+      reason: "No reason provided.",
+      checkInReason: "No check-in reason provided.",
+      checkOutReason: "No check-out reason provided.",
+      checkInDistance: null,
+      checkOutDistance: null,
+    };
+  }
+
+  // 1. Check for marker [ATTENDANCE_CORRECTION]
+  const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
+  let cleanText =
+    markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
+
+  // 2. Extract distance
+  const checkInDistance =
+    cleanText.match(
+      /Checkin .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i,
+    )?.[1] ||
+    cleanText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i)?.[1] ||
+    null;
+  const checkOutDistance =
+    cleanText.match(
+      /Checkout .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i,
+    )?.[1] || null;
+
+  // 3. Extract Reason: pattern
   const reasonMatches = [
-    ...text.matchAll(
+    ...cleanText.matchAll(
       /Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi,
     ),
   ]
     .map((match) => match[1].trim())
     .filter(Boolean);
 
+  // Clean up any remaining preamble system text
+  const sanitize = (rawStr) => {
+    if (!rawStr) return "";
+    return rawStr
+      .replace(/^Checkin location requires approval\.?\s*/i, "")
+      .replace(/^Checkout location requires approval\.?\s*/i, "")
+      .replace(/^Reason:\s*/i, "")
+      .replace(/\s*\([0-9.]+\s*km away\)\.?/i, "")
+      .replace(/\s*\|?\s*Pending admin approval\.?/gi, "")
+      .replace(/\s*\|?\s*Approved by admin\.?/gi, "")
+      .replace(/\s*\|?\s*Rejected by admin\.?/gi, "")
+      .trim();
+  };
+
+  const fullClean = sanitize(cleanText);
+
+  let checkInReason = "";
+  let checkOutReason = "";
+
+  if (reasonMatches.length > 0) {
+    checkInReason = sanitize(reasonMatches[0]);
+    if (reasonMatches.length > 1) {
+      checkOutReason = sanitize(reasonMatches[1]);
+    }
+  } else {
+    checkInReason = fullClean;
+  }
+
   return {
-    reason: reasonMatches.join(" | ") || "No reason provided.",
-    checkInDistance:
-      text.match(/Checkin .*?\(([0-9.]+) km away\)/i)?.[1] || null,
-    checkOutDistance:
-      text.match(/Checkout .*?\(([0-9.]+) km away\)/i)?.[1] || null,
+    reason: fullClean || "No reason provided.",
+    checkInReason: checkInReason || fullClean || "No check-in reason provided.",
+    checkOutReason: checkOutReason || "No check-out reason provided.",
+    checkInDistance,
+    checkOutDistance,
   };
 };
 
@@ -196,49 +390,95 @@ const openCheckOutMap = (approval) => {
     "noopener,noreferrer",
   );
 };
-const getReadableReason = (approval) => {
-  let text = approval.description || "";
 
-  // Remove system status messages from the employee reason
+const getReadableReason = (approval) => {
+  let text = approval?.description || "";
+
+  // 1. Strip [ATTENDANCE_CORRECTION] and JSON metadata
+  const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
+  if (markerIndex !== -1) {
+    text = text.substring(0, markerIndex).trim();
+  }
+
+  // 2. Strip system preamble "Forgot Punch request for ... on YYYY-MM-DD."
+  text = text
+    .replace(
+      /^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+      "",
+    )
+    .replace(
+      /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+      "",
+    )
+    .trim();
+
+  // 3. Strip trailing Check-In / Check-Out location strings
+  text = text
+    .replace(/Check-In Location:.*$/i, "")
+    .replace(/Check-Out Location:.*$/i, "")
+    .trim();
+
+  // 4. Remove system status messages from the employee reason
   text = text
     .replace(/\|?\s*Pending admin approval\.?/gi, "")
     .replace(/\|?\s*Approved by admin\.?/gi, "")
     .replace(/\|?\s*Rejected by admin\.?/gi, "")
     .replace(/\|?\s*Approved\.?/gi, "")
     .replace(/\|?\s*Rejected\.?/gi, "")
-    .trim();
-
-  const checkInMatch = text.match(
-    /Checkin to unassigned location:\s*(.*?)(?:\.\s*Pending admin approval|\.?\s*\||$)/i,
-  );
-
-  const checkOutMatch = text.match(/Checkout from unassigned location\./i);
-
-  const reasonMatch = text.match(/Reason:\s*(.*?)(?:\s*\||$)/i);
-
-  // If "Reason:" exists, use only the actual reason
-  let reason = reasonMatch?.[1]?.trim() || text;
-
-  // Remove remaining system text
-  reason = reason
-    .replace(/Pending admin approval\.?/gi, "")
-    .replace(/Approved by admin\.?/gi, "")
-    .replace(/Rejected by admin\.?/gi, "")
     .replace(/\|/g, "")
     .trim();
 
+  const reasonMatch = text.match(/Reason:\s*(.*?)(?:\s*\||$)/i);
+  let reason = reasonMatch?.[1]?.trim() || text;
+
   return {
-    checkIn: checkInMatch?.[1]?.trim() || null,
-    checkOut: checkOutMatch ? "Unassigned location" : null,
     reason: reason || "No reason provided.",
   };
 };
+
+const getAdminRejectionReason = (reviewNote = "") => {
+  const text = String(reviewNote || "").trim();
+
+  if (!text) return "No rejection reason provided.";
+
+  // Pattern 1: "... | Admin rejected: <reason>" or "Admin rejected: <reason>"
+  const match = text.match(/Admin rejected:\s*(.*?)(?=\s*\||$)/i);
+  if (match && match[1] && match[1].trim()) {
+    return match[1].trim();
+  }
+
+  // Pattern 2: "Rejected by admin: <reason>" or "[REJECTED] <reason>"
+  const match2 = text.match(/(?:Rejected by admin|\[REJECTED\]):\s*(.*?)(?=\s*\||$)/i);
+  if (match2 && match2[1] && match2[1].trim()) {
+    return match2[1].trim();
+  }
+
+  // Pattern 3: If text ends with "Admin rejected." or "| Admin rejected." without custom text
+  if (/Admin rejected\.?\s*$/i.test(text)) {
+    return "Rejected by Admin.";
+  }
+
+  // Pattern 4: If text contains "|" separator, check if last part is the rejection note
+  if (text.includes("|")) {
+    const parts = text.split("|").map((p) => p.trim());
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && /admin rejected/i.test(lastPart)) {
+      const cleaned = lastPart.replace(/^Admin rejected:?\s*/i, "").trim();
+      return cleaned || "Rejected by Admin.";
+    }
+  }
+
+  return text;
+};
+
 
 const Approvals = () => {
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState(null);
   const [reasonModal, setReasonModal] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   // Set default filters to current month/year
   const now = new Date();
@@ -307,7 +547,7 @@ const Approvals = () => {
     return matchesStatus && matchesYear && matchesMonth && matchesEmployee;
   });
 
-  const review = async (approval, decision) => {
+  const review = async (approval, decision, reason = "") => {
     setActingId(`${approval.source}:${approval.id}`);
     try {
       const endpoint =
@@ -317,10 +557,17 @@ const Approvals = () => {
             ? `/attendance/${decision}/${approval.id}`
             : `/requests/${approval.id}/${decision}`;
 
-      await apiPost(endpoint, approval.source === "LEAVE" ? { note: "" } : {});
+      const payload = {
+        reason: reason || "",
+        note: reason || "",
+      };
+
+      await apiPost(endpoint, payload);
       toast.success(
         `Request ${decision === "approve" ? "approved" : "rejected"}.`,
       );
+      setRejectModal(null);
+      setRejectReason("");
       await loadApprovals();
     } catch (err) {
       toast.error(err.message || "Approval action failed.");
@@ -552,7 +799,7 @@ const Approvals = () => {
                                 event.stopPropagation();
                                 setReasonModal(approval);
                               }}
-                              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary"
+                              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary w-fit"
                             >
                               <MessageSquareText className="h-4 w-4" />
                               <span>View Reason</span>
@@ -581,7 +828,7 @@ const Approvals = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => review(approval, "reject")}
+                                  onClick={() => setRejectModal({ approval })}
                                   disabled={acting}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-5 py-3 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20"
                                 >
@@ -737,7 +984,9 @@ const Approvals = () => {
                         Check-in Time
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
-                        {reasonModal.correctionDetails.checkInTime || "—"}
+                        {formatTimeIST(
+                          reasonModal.correctionDetails.checkInTime,
+                        )}
                       </p>
                     </div>
                     <div>
@@ -745,7 +994,9 @@ const Approvals = () => {
                         Check-out Time
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
-                        {reasonModal.correctionDetails.checkOutTime || "—"}
+                        {formatTimeIST(
+                          reasonModal.correctionDetails.checkOutTime,
+                        )}
                       </p>
                     </div>
                     <div className="sm:col-span-2">
@@ -764,38 +1015,100 @@ const Approvals = () => {
                       reasonModal.description,
                     );
                     return (
-                      <div className="space-y-3 rounded-2xl border border-border bg-secondary/20 px-4 py-4">
-                        <div>
-                          <p className="text-xs font-semibold text-muted-foreground">
-                            Employee Reason
-                          </p>
-                          <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                            {attendanceDetails.reason}
-                          </p>
+                      <div className="space-y-4">
+                        {/* 1. CHECK-IN DIV */}
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
+                          <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5 dark:border-emerald-900/40">
+                            <div className="flex items-center gap-2">
+                              <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                Check-In Details
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                              Check-In Time:{" "}
+                              {formatTimeIST(
+                                reasonModal.checkInTime ||
+                                  reasonModal.createdAt,
+                              )}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground">
+                              Check-In Reason
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+                              {attendanceDetails.checkInReason}
+                            </p>
+                            {reasonModal.checkInDistance ||
+                            attendanceDetails.checkInDistance ? (
+                              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                Distance from office:{" "}
+                                {formatDistance(
+                                  reasonModal.checkInDistance ||
+                                    attendanceDetails.checkInDistance,
+                                )}
+                              </p>
+                            ) : reasonModal.checkInLatitude != null &&
+                              reasonModal.checkInLongitude != null ? (
+                              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                Distance from office: GPS Recorded (
+                                {reasonModal.checkInLatitude.toFixed(4)},{" "}
+                                {reasonModal.checkInLongitude.toFixed(4)})
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                        {(attendanceDetails.checkInDistance ||
-                          attendanceDetails.checkOutDistance) && (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {attendanceDetails.checkInDistance && (
-                              <div>
-                                <p className="text-xs font-semibold text-muted-foreground">
-                                  Check-in Distance From Your Office
-                                </p>
-                                <p className="mt-1 text-sm font-semibold text-foreground">
-                                  {attendanceDetails.checkInDistance} km
-                                </p>
+
+                        {/* 2. CHECK-OUT DIV */}
+                        {(reasonModal.checkOutTime ||
+                          attendanceDetails.checkOutReason !==
+                            "No check-out reason provided." ||
+                          attendanceDetails.checkOutDistance ||
+                          reasonModal.checkOutDistance) && (
+                          <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
+                            <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
+                              <div className="flex items-center gap-2">
+                                <Clock3 className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                                  Check-Out Details
+                                </span>
                               </div>
-                            )}
-                            {attendanceDetails.checkOutDistance && (
-                              <div>
-                                <p className="text-xs font-semibold text-muted-foreground">
-                                  Check-out Distance From Your Office
+                              <span className="text-xs font-bold text-rose-800 dark:text-rose-300">
+                                Check-Out Time:{" "}
+                                {formatTimeIST(
+                                  reasonModal.checkOutTime ||
+                                    reasonModal.updatedAt ||
+                                    reasonModal.createdAt,
+                                )}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground">
+                                Check-Out Reason
+                              </p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+                                {attendanceDetails.checkOutReason ||
+                                  "No check-out reason provided."}
+                              </p>
+                              {reasonModal.checkOutDistance ||
+                              attendanceDetails.checkOutDistance ? (
+                                <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
+                                  Distance from office:{" "}
+                                  {formatDistance(
+                                    reasonModal.checkOutDistance ||
+                                      attendanceDetails.checkOutDistance,
+                                  )}
                                 </p>
-                                <p className="mt-1 text-sm font-semibold text-foreground">
-                                  {attendanceDetails.checkOutDistance} km
+                              ) : reasonModal.checkOutLatitude != null &&
+                                reasonModal.checkOutLongitude != null ? (
+                                <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
+                                  Distance from office: GPS Recorded (
+                                  {reasonModal.checkOutLatitude.toFixed(4)},{" "}
+                                  {reasonModal.checkOutLongitude.toFixed(4)})
                                 </p>
-                              </div>
-                            )}
+                              ) : null}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -901,6 +1214,25 @@ const Approvals = () => {
                 </section>
               )}
 
+              {/* ================= ADMIN RESPONSE / REJECTION REASON ================= */}
+              {reasonModal.status === "REJECTED" && reasonModal.reviewNote && (
+                <section>
+                  <div className="mb-2 flex items-center gap-2">
+                    <MessageSquareText className="h-4 w-4 text-rose-600" />
+
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Admin Rejection Reason
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                    <p className="whitespace-pre-wrap break-words text-sm font-medium leading-6">
+                      {getAdminRejectionReason(reasonModal.reviewNote)}
+                    </p>
+                  </div>
+                </section>
+              )}
+
               {/* ================= SUBMITTED ================= */}
               {reasonModal.createdAt && (
                 <div className="flex items-center justify-between rounded-2xl border border-border bg-secondary/20 px-4 py-3">
@@ -927,6 +1259,89 @@ const Approvals = () => {
                 className="rounded-xl bg-primary px-7 py-2.5 text-sm font-bold text-primary-foreground shadow-sm transition hover:opacity-90"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Reason Modal */}
+      {rejectModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setRejectModal(null);
+              setRejectReason("");
+            }
+          }}
+        >
+          <div className="flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border bg-background px-6 py-5">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">
+                  Reject Request
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {rejectModal.approval?.title} (
+                  {rejectModal.approval?.employee})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectModal(null);
+                  setRejectReason("");
+                }}
+                className="rounded-xl p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Rejection Reason (Optional)
+                </label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Enter reason for rejection (optional)..."
+                  rows={4}
+                  className="w-full rounded-2xl border border-border bg-secondary/20 p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-border bg-secondary/20 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectModal(null);
+                  setRejectReason("");
+                }}
+                className="rounded-xl border border-border px-5 py-2.5 text-sm font-semibold hover:bg-secondary transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  review(rejectModal.approval, "reject", rejectReason)
+                }
+                disabled={
+                  actingId ===
+                  `${rejectModal.approval?.source}:${rejectModal.approval?.id}`
+                }
+                className="flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-6 py-2.5 text-sm font-bold text-white shadow-md hover:bg-rose-700 transition disabled:opacity-60"
+              >
+                {actingId ===
+                  `${rejectModal.approval?.source}:${rejectModal.approval?.id}` && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Confirm Rejection
               </button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -37,6 +37,7 @@ const shiftSchema = z.object({
   startTime:   z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid start time (HH:mm)."),
   endTime:     z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid end time (HH:mm)."),
   description: z.string().trim().max(300).optional().or(z.literal("")),
+  isDefault:   z.boolean().optional().default(false),
   isActive:    z.boolean().default(true),
 });
 
@@ -54,14 +55,24 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/shifts â€” admin or with permission
+// POST /api/shifts — admin or with permission
 router.post("/", requireAuth, checkRolePermission("shift-location"), async (req, res) => {
   try {
     const data = shiftSchema.parse(req.body);
     const exists = await prisma.shift.findFirst({ where: { name: data.name } });
     if (exists) return res.status(400).json({ success: false, message: "A shift with this name already exists." });
 
-    const shift = await prisma.shift.create({ data: { ...data, description: data.description || null } });
+    if (data.isDefault) {
+      await prisma.shift.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
+    }
+
+    const shift = await prisma.shift.create({
+      data: {
+        ...data,
+        description: data.description || null,
+        isDefault: data.isDefault ?? false,
+      },
+    });
     res.status(201).json({ success: true, message: "Shift created.", data: shift });
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ success: false, message: err.errors[0].message });
@@ -70,7 +81,7 @@ router.post("/", requireAuth, checkRolePermission("shift-location"), async (req,
   }
 });
 
-// PATCH /api/shifts/:id â€” admin or with permission
+// PATCH /api/shifts/:id — admin or with permission
 router.patch("/:id", requireAuth, checkRolePermission("shift-location"), async (req, res) => {
   try {
     const data = updateShiftSchema.parse(req.body);
@@ -82,9 +93,16 @@ router.patch("/:id", requireAuth, checkRolePermission("shift-location"), async (
       if (exists) return res.status(400).json({ success: false, message: "A shift with this name already exists." });
     }
 
+    if (data.isDefault) {
+      await prisma.shift.updateMany({ where: { isDefault: true, NOT: { id: req.params.id } }, data: { isDefault: false } });
+    }
+
     const updated = await prisma.shift.update({
       where: { id: req.params.id },
-      data: { ...data, description: data.description === "" ? null : data.description },
+      data: {
+        ...data,
+        description: data.description === "" ? null : data.description,
+      },
     });
     res.json({ success: true, message: "Shift updated.", data: updated });
   } catch (err) {

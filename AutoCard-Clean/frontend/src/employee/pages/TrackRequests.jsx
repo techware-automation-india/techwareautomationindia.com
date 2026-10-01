@@ -68,6 +68,21 @@ const formatTime = (value) => {
   });
 };
 
+const formatDistance = (value) => {
+  if (value == null || value === "") return "";
+  let str = String(value).replace(/\s*away\s*$/i, "").trim();
+  if (str.endsWith("m") || str.endsWith("km")) return str;
+  const num = parseFloat(str.replace(/[^0-9.]/g, ""));
+  if (Number.isNaN(num)) return str;
+
+  if (num < 1) {
+    const meters = Math.round(num * 1000);
+    return `${meters} m`;
+  }
+  const formattedKm = Number.isInteger(num) ? num : parseFloat(num.toFixed(2));
+  return `${formattedKm} km`;
+};
+
 const openMap = (latitude, longitude, type = "location") => {
   const lat = Number(latitude);
   const lng = Number(longitude);
@@ -83,26 +98,26 @@ const openMap = (latitude, longitude, type = "location") => {
 };
 
 const getRequestReason = (request) => {
-  if (request.type !== "CORRECTION" || !request.description)
-    return request.description;
-  const markerIndex = request.description.lastIndexOf(
-    "[ATTENDANCE_CORRECTION]",
-  );
-  const readableDescription = request.description.slice(0, markerIndex);
-  const separatedReason = readableDescription
-    .split("\n\n")
-    .slice(1)
-    .join("\n\n")
+  if (!request?.description) return "No reason provided.";
+  let text = String(request.description || "");
+
+  const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
+  if (markerIndex !== -1) {
+    text = text.substring(0, markerIndex).trim();
+  }
+
+  text = text
+    .replace(/^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i, "")
+    .replace(/^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i, "")
+    .replace(/Check-In Location:.*$/i, "")
+    .replace(/Check-Out Location:.*$/i, "")
+    .replace(/\|?\s*Pending admin approval\.?/gi, "")
+    .replace(/\|?\s*Approved by admin\.?/gi, "")
+    .replace(/\|?\s*Rejected by admin\.?/gi, "")
+    .replace(/\|/g, "")
     .trim();
-  return (
-    separatedReason ||
-    readableDescription
-      .replace(
-        /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
-        "",
-      )
-      .trim()
-  );
+
+  return text || "No reason provided.";
 };
 const getForgotPunchData = (request) => {
   if (request?.type !== "CORRECTION" || !request?.description) {
@@ -140,63 +155,68 @@ const getAttendanceReason = (note = "", reason = "") => {
   const text = String(note || "").trim();
   const directReason = String(reason || "").trim();
 
-  // -----------------------------
-  // CHECK-IN PART
-  // -----------------------------
-  const checkInStart = text.search(/checkin/i);
-  const checkOutStart = text.search(/checkout/i);
+  if (!text && directReason) {
+    return {
+      reason: directReason,
+      checkInReason: directReason,
+      checkOutReason: "",
+      checkInDistance: null,
+      checkOutDistance: null,
+    };
+  }
 
-  const checkInText =
-    checkInStart >= 0
-      ? text.slice(
-          checkInStart,
-          checkOutStart > checkInStart ? checkOutStart : text.length,
-        )
-      : "";
-
-  const checkInReason =
-    directReason ||
-    checkInText
-      .match(/Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.?\s*\||$)/i)?.[1]
-      ?.trim() ||
-    null;
+  const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
+  const cleanText = markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
 
   const checkInDistance =
-    checkInText.match(/\(([0-9.]+)\s*km\s*away\)/i)?.[1] || null;
-
-  const checkInLocation = checkInText.match(
-    /Checkin\s+(?:to unassigned location|from unassigned location)\s*\(([\d.]+)\s*km\s*away\)/i,
-  )
-    ? checkInText.match(
-        /Checkin\s+(?:to unassigned location|from unassigned location)\s*\(([\d.]+)\s*km\s*away\)/i,
-      )?.[0]
-    : null;
-
-  // -----------------------------
-  // CHECK-OUT PART
-  // -----------------------------
-  const checkoutText = checkOutStart >= 0 ? text.slice(checkOutStart) : "";
-
-  const checkOutReason =
-    checkoutText
-      .match(
-        /Reason:\s*(.*?)(?:\.\s*(?:Pending admin approval|Admin approved|Admin rejected)|\.?\s*\||$)/i,
-      )?.[1]
-      ?.trim() || null;
-
+    cleanText.match(/Checkin .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    cleanText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i)?.[1] ||
+    null;
   const checkOutDistance =
-    checkoutText.match(/\(([0-9.]+)\s*km\s*away\)/i)?.[1] || null;
+    cleanText.match(/Checkout .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    null;
 
-  const checkOutLocation =
-    checkoutText.match(/Checkout:\s*([^|]+)/i)?.[1]?.trim() || null;
+  const reasonMatches = [
+    ...cleanText.matchAll(
+      /Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi,
+    ),
+  ]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+
+  const sanitize = (rawStr) => {
+    if (!rawStr) return "";
+    return rawStr
+      .replace(/^Checkin location requires approval\.?\s*/i, "")
+      .replace(/^Checkout location requires approval\.?\s*/i, "")
+      .replace(/^Reason:\s*/i, "")
+      .replace(/\s*\([0-9.]+\s*km(?:\s*away)?\)\.?/i, "")
+      .replace(/\s*\|?\s*Pending admin approval\.?/gi, "")
+      .replace(/\s*\|?\s*Approved by admin\.?/gi, "")
+      .replace(/\s*\|?\s*Rejected by admin\.?/gi, "")
+      .trim();
+  };
+
+  const fullClean = sanitize(cleanText);
+
+  let checkInReason = "";
+  let checkOutReason = "";
+
+  if (reasonMatches.length > 0) {
+    checkInReason = sanitize(reasonMatches[0]);
+    if (reasonMatches.length > 1) {
+      checkOutReason = sanitize(reasonMatches[1]);
+    }
+  } else {
+    checkInReason = directReason || fullClean;
+  }
 
   return {
-    checkInReason,
+    reason: fullClean || directReason || "No reason provided.",
+    checkInReason: checkInReason || directReason || fullClean || "No check-in reason provided.",
+    checkOutReason: checkOutReason || "",
     checkInDistance,
-    checkInLocation,
-    checkOutReason,
     checkOutDistance,
-    checkOutLocation,
   };
 };
 
@@ -222,18 +242,6 @@ const TrackRequests = ({ isAdmin = false }) => {
     setLoadError("");
 
     try {
-      // ============================================================
-      // ADMIN
-      // ============================================================
-      // Admin must NOT call:
-      // /requests/my
-      // /leave/my
-      // /attendance/my-requests
-      //
-      // Admin uses only:
-      // GET /api/requests
-      // ============================================================
-
       if (isAdmin) {
         const result = await apiGet("/requests");
 
@@ -316,7 +324,7 @@ const TrackRequests = ({ isAdmin = false }) => {
 
               type: "ATTENDANCE",
 
-              subject: "Attendance location approval",
+              subject: "Attendance Location Approval",
 
               status:
                 request.status === "PENDING_APPROVAL"
@@ -328,6 +336,9 @@ const TrackRequests = ({ isAdmin = false }) => {
                       : request.status,
 
               createdAt: request.createdAt || request.date,
+
+              checkInTime: request.checkIn || request.createdAt || request.date,
+              checkOutTime: request.checkOut || (request.note?.toLowerCase().includes("checkout") ? request.updatedAt || request.createdAt : null),
 
               // IMPORTANT
               description: request.note || "",
@@ -545,7 +556,7 @@ const TrackRequests = ({ isAdmin = false }) => {
           </button>
         ))}
 
-        <div className="ml-auto flex gap-2">
+        <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap sm:flex-nowrap gap-2">
           {/* Year Filter */}
           {/* Request Type Filter */}
           <select
@@ -669,16 +680,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                   <span>{formatTime(request.createdAt)}</span>
                 </div>
 
-                {request.reviewNote && (
-                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-                    <p className="text-xs font-medium text-emerald-900">
-                      Admin Response:
-                    </p>
-                    <p className="mt-1 text-sm text-emerald-700">
-                      {request.reviewNote}
-                    </p>
-                  </div>
-                )}
+                
               </div>
             </div>
           ))}
@@ -688,32 +690,32 @@ const TrackRequests = ({ isAdmin = false }) => {
       {/* View Reason Modal */}
       {reasonModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
           onClick={() => setReasonModal(null)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl border border-border bg-background card-shadow"
+            className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border bg-background card-shadow"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-border p-6">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div>
-                <h2 className="font-display text-xl font-bold">Message</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <h2 className="font-display text-lg font-bold">Message</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {reasonModal.subject}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setReasonModal(null)}
-                className="rounded-lg p-2 text-muted-foreground hover:bg-secondary"
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* Modal Content */}
-            <div className="space-y-4 p-6">
+            <div className="space-y-4 p-5">
               {/* Status Badges */}
               <div className="flex flex-wrap gap-2">
                 <span
@@ -847,103 +849,64 @@ const TrackRequests = ({ isAdmin = false }) => {
                     );
 
                     return (
-                      <div className="space-y-3">
-                        {/* Check-In Reason */}
-                        {attendanceReason.checkInReason && (
+                      <div className="space-y-4">
+                        {/* 1. CHECK-IN DIV */}
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
+                          <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5 dark:border-emerald-900/40">
+                            <div className="flex items-center gap-2">
+                              <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                Check-In Details
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                              Check-In Time: {formatTime(reasonModal.checkInTime || reasonModal.createdAt)}
+                            </span>
+                          </div>
                           <div>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs font-semibold text-muted-foreground">
                               Check-In Reason
                             </p>
-
-                            <p className="text-sm font-medium text-foreground">
-                              {attendanceReason.checkInReason}
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+                              {attendanceReason.checkInReason || "No check-in reason provided."}
                             </p>
-                          </div>
-                        )}
-
-                        {/* Check-In Distance */}
-                        {attendanceReason.checkInDistance && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">
-                              Check-In Distance
-                            </p>
-
-                            <p className="text-sm font-medium text-foreground">
-                              {attendanceReason.checkInDistance} km
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Check-In Location */}
-                        {attendanceReason.checkInLocation && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">
-                              Check-In Location
-                            </p>
-
-                            <p className="text-sm font-medium text-foreground">
-                              {attendanceReason.checkInLocation}
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Check-Out Location */}
-                        {/* Check-Out Reason */}
-                        {attendanceReason.checkOutReason && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">
-                              Check-Out Reason
-                            </p>
-
-                            <p className="text-sm font-medium text-foreground">
-                              {attendanceReason.checkOutReason}
-                            </p>
-                          </div>
-                        )}
-                        {/* Check-Out Distance */}
-                        {attendanceReason.checkOutDistance && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">
-                              Check-Out Distance
-                            </p>
-
-                            <p className="text-sm font-medium text-foreground">
-                              {attendanceReason.checkOutDistance} km
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Check-Out Location */}
-                        {attendanceReason.checkOutLocation && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">
-                              Check-Out Location
-                            </p>
-
-                            <p className="text-sm font-medium text-foreground">
-                              {attendanceReason.checkOutLocation}
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Fallback Reason */}
-                        {!attendanceReason.checkInReason &&
-                          !attendanceReason.checkInLocation &&
-                          !attendanceReason.checkOutReason &&
-                          !attendanceReason.checkOutLocation &&
-                          !attendanceReason.checkInDistance &&
-                          !attendanceReason.checkOutDistance &&
-                          reasonModal.description && (
-                            <div>
-                              <p className="text-xs text-muted-foreground">
-                                Reason
+                            {(reasonModal.checkInDistance || attendanceReason.checkInDistance) && (
+                              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                Distance from office: {formatDistance(reasonModal.checkInDistance || attendanceReason.checkInDistance)} away
                               </p>
+                            )}
+                          </div>
+                        </div>
 
-                              <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
-                                {reasonModal.description}
-                              </p>
+                        {/* 2. CHECK-OUT DIV */}
+                        {(reasonModal.checkOutTime || attendanceReason.checkOutReason || attendanceReason.checkOutDistance || reasonModal.checkOutDistance) && (
+                          <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
+                            <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
+                              <div className="flex items-center gap-2">
+                                <Clock3 className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                                  Check-Out Details
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold text-rose-800 dark:text-rose-300">
+                                Check-Out Time: {formatTime(reasonModal.checkOutTime || reasonModal.updatedAt || reasonModal.createdAt)}
+                              </span>
                             </div>
-                          )}
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground">
+                                Check-Out Reason
+                              </p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+                                {attendanceReason.checkOutReason || "No check-out reason provided."}
+                              </p>
+                              {(reasonModal.checkOutDistance || attendanceReason.checkOutDistance) && (
+                                <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
+                                  Distance from office: {formatDistance(reasonModal.checkOutDistance || attendanceReason.checkOutDistance)} away
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()
@@ -1001,14 +964,24 @@ const TrackRequests = ({ isAdmin = false }) => {
                 </div>
               )}
 
-              {/* Admin Response */}
+              {/* Admin Response / Rejection Reason */}
               {reasonModal.reviewNote && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-900">
-                    <FileText className="h-4 w-4" />
-                    <span>Admin Response</span>
+                <div
+                  className={`rounded-xl border p-4 ${
+                    reasonModal.status === "REJECTED"
+                      ? "border-rose-200 bg-rose-50/80 dark:border-rose-900/40 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200"
+                      : "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200"
+                  }`}
+                >
+                  <div className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wider">
+                    <FileText className={`h-4 w-4 ${reasonModal.status === "REJECTED" ? "text-rose-600" : "text-emerald-600"}`} />
+                    <span>
+                      {reasonModal.status === "REJECTED"
+                        ? "Admin Rejection Reason"
+                        : "Admin Response"}
+                    </span>
                   </div>
-                  <p className="text-sm text-emerald-700">
+                  <p className="text-sm font-medium whitespace-pre-wrap break-words">
                     {reasonModal.reviewNote}
                   </p>
                 </div>
@@ -1016,11 +989,11 @@ const TrackRequests = ({ isAdmin = false }) => {
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-border p-6">
+            <div className="border-t border-border px-5 py-4">
               <button
                 type="button"
                 onClick={() => setReasonModal(null)}
-                className="w-full rounded-lg bg-secondary px-4 py-2.5 font-medium hover:bg-secondary/80"
+                className="w-full rounded-lg bg-secondary px-4 py-2 font-medium text-sm hover:bg-secondary/80"
               >
                 Close
               </button>

@@ -1,19 +1,16 @@
 import {
   LayoutDashboard,
-  ClipboardList,
   Fingerprint,
   Clock,
-  Plane,
-  CalendarDays,
-  ShieldCheck,
-  UserCog,
-  Contact,
   FileText,
-  BookOpen,
-  FolderKanban,
-  Wrench,
+  UserPlus,
+  BadgeCheck,
   MapPin,
   CalendarRange,
+  ShieldCheck,
+  BookOpen,
+  FolderKanban,
+  CalendarCheck
 } from "lucide-react";
 
 // Default modules always visible to employees
@@ -47,7 +44,7 @@ const defaultModules = [
     label: "Attendance",
     path: "/employee/attendance",
     icon: Clock,
-    description: "View your attendance history.",
+    description: "View your personal attendance history.",
     alwaysVisible: true,
   },
   {
@@ -76,86 +73,117 @@ const defaultModules = [
   // },
 ];
 
-// Admin modules that can be assigned to employees
+// Admin modules that can be delegated to employees via custom roles or permissions
 const adminModules = [
-  // {
-  //   key: "employee",
-  //   label: "Employee Management",
-  //   path: "/employee/employee-management",
-  //   icon: UserCog,
-  //   description: "Manage employee records.",
-  //   adminKey: "employee",
-  // },
-  // {
-  //   key: "customer",
-  //   label: "Customer Management",
-  //   path: "/employee/customer-management",
-  //   icon: Contact,
-  //   description: "Manage customer accounts.",
-  //   adminKey: "customer",
-  // },
-  // {
-  //   key: "requests",
-  //   label: "Requests",
-  //   path: "/employee/requests",
-  //   icon: FileText,
-  //   description: "View and manage requests.",
-  //   adminKey: "requests",
-  // },
-  // {
-  //   key: "leave-policy",
-  //   label: "Leave Policy",
-  //   path: "/employee/leave-policy",
-  //   icon: BookOpen,
-  //   description: "Leave types and policies.",
-  //   adminKey: "leave-policy",
-  // },
-  // {
-  //   key: "projects",
-  //   label: "Projects",
-  //   path: "/employee/projects",
-  //   icon: FolderKanban,
-  //   description: "Project management.",
-  //   adminKey: "projects",
-  // },
- 
-  // {
-  //   key: "shift-location",
-  //   label: "Shift & Location",
-  //   path: "/employee/shift-location",
-  //   icon: MapPin,
-  //   description: "Shift and location management.",
-  //   adminKey: "shift-location",
-  // },
-  // {
-  //   key: "roster",
-  //   label: "Roster",
-  //   path: "/employee/roster",
-  //   icon: CalendarRange,
-  //   description: "Employee scheduling.",
-  //   adminKey: "roster",
-  // },
+  {
+    key: "employee",
+    label: "Add Account",
+    path: "/employee/employee",
+    icon: UserPlus,
+    description: "Create user accounts and assign roles.",
+    adminKey: "employee",
+  },
+  {
+    key: "approvals",
+    label: "Approvals",
+    path: "/employee/approvals",
+    icon: BadgeCheck,
+    description: "Review and act on employee requests.",
+    adminKey: "approvals",
+  },
+  {
+    key: "attendance-management",
+    label: "Attendance Report",
+    path: "/employee/attendance-management",
+    icon: CalendarCheck,
+    description: "Company-wide attendance report.",
+    adminKey: "attendance-management",
+  },
+  {
+    key: "shift-location",
+    label: "Shift & Location",
+    path: "/employee/shift-location",
+    icon: MapPin,
+    description: "Shift and location management.",
+    adminKey: "shift-location",
+  },
+  {
+    key: "roster",
+    label: "Roster",
+    path: "/employee/roster",
+    icon: CalendarRange,
+    description: "Employee scheduling.",
+    adminKey: "roster",
+  },
+  {
+    key: "roles-access",
+    label: "Roles & Access",
+    path: "/employee/roles-access",
+    icon: ShieldCheck,
+    description: "Configure roles and permissions.",
+    adminKey: "roles-access",
+  },
+  {
+    key: "leave-policy",
+    label: "Leave Policy",
+    path: "/employee/leave-policy",
+    icon: BookOpen,
+    description: "Leave types and policies.",
+    adminKey: "leave-policy",
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    path: "/employee/projects",
+    icon: FolderKanban,
+    description: "Project management.",
+    adminKey: "projects",
+  },
 ];
 
 // All modules combined
 export const employeeModules = [...defaultModules, ...adminModules];
 
 /**
- * Get modules to display based on employee permissions
+ * Get modules to display based on account role permissions
  * @param {Object} permissions - Permission object from API
  * @returns {Array} - Array of module objects to display
  */
-export function getModulesByPermissions(permissions) {
-  // Always include default modules
-  const modules = [...defaultModules];
+export function getModulesByPermissions(permissions = {}) {
+  const permKeys = Object.keys(permissions);
 
-  // Add admin modules if employee has at least 'canView' permission
-  adminModules.forEach((module) => {
-    const perm = permissions[module.adminKey];
-    if (perm && perm.canView) {
-      modules.push(module);
+  // If no configured permissions returned (e.g. unassigned legacy account), use default base modules
+  if (permKeys.length === 0) {
+    return [...defaultModules];
+  }
+
+  // When an account has an assigned role, its access is strictly governed by the role's assigned modules
+  const allModules = [...defaultModules, ...adminModules];
+  const allowedModules = [];
+
+  allModules.forEach((module) => {
+    // Check direct key, or adminKey, or admin attendance fallback
+    const directPerm = permissions[module.key];
+    const adminPerm = module.adminKey ? permissions[module.adminKey] : null;
+    const hasAdminPower = permissions["employee"] || permissions["roles-access"] || permissions["approvals"];
+    const attendanceMgmtFallback = module.key === "attendance-management" && permissions["attendance"] && hasAdminPower;
+
+    const perm = directPerm || adminPerm || (attendanceMgmtFallback ? permissions["attendance"] : null);
+
+    if (perm && (perm.canView || perm === true)) {
+      if (!allowedModules.some((m) => m.key === module.key)) {
+        allowedModules.push(module);
+      }
     }
   });
 
-  return modules;
+  // Ensure dashboard / overview is always present as home if user has any active permissions
+  if (!allowedModules.some((m) => m.key === "overview")) {
+    const overviewMod = defaultModules.find((m) => m.key === "overview");
+    if (overviewMod && (permissions["overview"] || allowedModules.length > 0)) {
+      allowedModules.unshift(overviewMod);
+    }
+  }
+
+  return allowedModules;
 }

@@ -494,7 +494,7 @@ const Approvals = () => {
 
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [yearFilter, setYearFilter] = useState(String(currentYear));
-  const [monthFilter, setMonthFilter] = useState("ALL");
+  const [monthFilter, setMonthFilter] = useState(String(currentMonth));
   const [employeeFilter, setEmployeeFilter] = useState("ALL");
 
   const loadApprovals = async () => {

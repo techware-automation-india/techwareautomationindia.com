@@ -168,48 +168,72 @@ const getAttendanceReason = (note = "", reason = "") => {
   const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
   const cleanText = markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
 
+  // Extract distances
   const checkInDistance =
-    cleanText.match(/Checkin .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    cleanText.match(/Checkin[^|]*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
     cleanText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i)?.[1] ||
     null;
+
   const checkOutDistance =
-    cleanText.match(/Checkout .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    cleanText.match(/[Cc]heckout[^|]*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
     null;
 
-  const reasonMatches = [
-    ...cleanText.matchAll(
-      /Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi,
-    ),
-  ]
-    .map((match) => match[1].trim())
-    .filter(Boolean);
+  // Split by pipe to get checkin and checkout parts
+  const parts = cleanText.split("|").map(s => s.trim()).filter(Boolean);
 
   const sanitize = (rawStr) => {
     if (!rawStr) return "";
     return rawStr
-      .replace(/^Checkin location requires approval\.?\s*/i, "")
-      .replace(/^Checkout location requires approval\.?\s*/i, "")
-      .replace(/^Reason:\s*/i, "")
-      .replace(/\s*\([0-9.]+\s*km(?:\s*away)?\)\.?/i, "")
-      .replace(/\s*\|?\s*Pending admin approval\.?/gi, "")
-      .replace(/\s*\|?\s*Approved by admin\.?/gi, "")
-      .replace(/\s*\|?\s*Rejected by admin\.?/gi, "")
+      .replace(/^Checkin\s+(from|to|location)?[^.]*?\.\s*/i, "")
+      .replace(/^Checkout\s+(recorded|from|to|location)?[^.]*?\.\s*/i, "")
+      .replace(/^Checkin:/i, "")
+      .replace(/^Checkout:/i, "")
+      .replace(/^Check-?[io]ut?:\s*/i, "")
+      .replace(/Reason:\s*/i, "")
+      .replace(/\s*\([0-9.]+\s*km(?:\s*away)?\)\.?/gi, "")
+      .replace(/\s*Pending admin approval\.?/gi, "")
+      .replace(/\s*Approved by admin\.?/gi, "")
+      .replace(/\s*Rejected by admin\.?/gi, "")
+      .replace(/\s*Admin approved\.?/gi, "")
+      .replace(/\s*Admin rejected\.?/gi, "")
       .trim();
   };
 
-  const fullClean = sanitize(cleanText);
+  // Extract reasons from Reason: pattern
+  const reasonMatches = [
+    ...cleanText.matchAll(/Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin)\b|\s*\||$)/gi),
+  ]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
 
   let checkInReason = "";
   let checkOutReason = "";
 
-  if (reasonMatches.length > 0) {
+  // Check if note has both checkin and checkout parts (pipe separated)
+  const checkoutPart = parts.find(p =>
+    /checkout/i.test(p) || /check.?out/i.test(p)
+  );
+  const checkinPart = parts.find(p =>
+    /checkin/i.test(p) || /check.?in/i.test(p)
+  );
+
+  if (reasonMatches.length >= 2) {
     checkInReason = sanitize(reasonMatches[0]);
-    if (reasonMatches.length > 1) {
-      checkOutReason = sanitize(reasonMatches[1]);
+    checkOutReason = sanitize(reasonMatches[1]);
+  } else if (reasonMatches.length === 1) {
+    // Determine if it's checkin or checkout reason
+    if (checkoutPart && /Reason:/i.test(checkoutPart)) {
+      checkOutReason = sanitize(reasonMatches[0]);
+      checkInReason = directReason || sanitize(checkinPart || "");
+    } else {
+      checkInReason = sanitize(reasonMatches[0]);
     }
   } else {
-    checkInReason = directReason || fullClean;
+    checkInReason = directReason || sanitize(checkinPart || cleanText);
+    checkOutReason = sanitize(checkoutPart || "");
   }
+
+  const fullClean = sanitize(cleanText);
 
   return {
     reason: fullClean || directReason || "No reason provided.",
@@ -338,7 +362,7 @@ const TrackRequests = ({ isAdmin = false }) => {
               createdAt: request.createdAt || request.date,
 
               checkInTime: request.checkIn || request.createdAt || request.date,
-              checkOutTime: request.checkOut || (request.note?.toLowerCase().includes("checkout") ? request.updatedAt || request.createdAt : null),
+              checkOutTime: request.checkOut || null,
 
               // IMPORTANT
               description: request.note || "",
@@ -879,7 +903,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                         </div>
 
                         {/* 2. CHECK-OUT DIV */}
-                        {(reasonModal.checkOutTime || attendanceReason.checkOutReason || attendanceReason.checkOutDistance || reasonModal.checkOutDistance) && (
+                        {(reasonModal.checkOutTime || attendanceReason.checkOutReason || attendanceReason.checkOutDistance || reasonModal.checkOutDistance || reasonModal.checkOutLatitude) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
                             <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
                               <div className="flex items-center gap-2">
@@ -888,9 +912,11 @@ const TrackRequests = ({ isAdmin = false }) => {
                                   Check-Out Details
                                 </span>
                               </div>
-                              <span className="text-xs font-bold text-rose-800 dark:text-rose-300">
-                                Check-Out Time: {formatTime(reasonModal.checkOutTime || reasonModal.updatedAt || reasonModal.createdAt)}
-                              </span>
+                              {reasonModal.checkOutTime && (
+                                <span className="text-xs font-bold text-rose-800 dark:text-rose-300">
+                                  Check-Out Time: {formatTime(reasonModal.checkOutTime)}
+                                </span>
+                              )}
                             </div>
                             <div>
                               <p className="text-xs font-semibold text-muted-foreground">

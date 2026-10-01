@@ -305,8 +305,8 @@ const TrackRequests = ({ isAdmin = false }) => {
         requestResult.status === "fulfilled"
           ? (requestResult.value.requests || []).map((request) => ({
               ...request,
-
               forgotPunch: getForgotPunchData(request),
+              reviewedAt: request.reviewedAt || null,
             }))
           : [];
 
@@ -318,21 +318,16 @@ const TrackRequests = ({ isAdmin = false }) => {
         leaveResult.status === "fulfilled"
           ? (leaveResult.value.requests || []).map((request) => ({
               id: `leave-${request.id}`,
-
               type: "LEAVE",
-
               subject: `${request.leaveType?.name || "Leave"} request`,
-
               status: request.status,
-
               createdAt: request.createdAt,
-
+              reviewedAt: request.reviewedAt || null,
               description:
                 `${new Date(request.startDate).toLocaleDateString()} – ` +
                 `${new Date(request.endDate).toLocaleDateString()} · ` +
                 `${request.totalDays} day(s)` +
                 (request.reason ? `\nReason: ${request.reason}` : ""),
-
               reviewNote: request.reviewNote,
             }))
           : [];
@@ -384,6 +379,7 @@ const TrackRequests = ({ isAdmin = false }) => {
               checkOutDistance: request.checkOutDistance ?? null,
 
               reviewNote: request.reviewNote,
+              reviewedAt: request.updatedAt || null,
             }))
           : [];
 
@@ -1016,6 +1012,32 @@ const TrackRequests = ({ isAdmin = false }) => {
                   </p>
                 </div>
               )}
+
+              {/* Submitted & Reviewed At */}
+              <div className="rounded-xl border border-border bg-secondary/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Calendar className="h-3.5 w-3.5" />
+                    <span className="font-semibold">Submitted</span>
+                  </div>
+                  <span className="text-xs font-bold text-foreground">
+                    {formatDate(reasonModal.createdAt)} {formatTime(reasonModal.createdAt)}
+                  </span>
+                </div>
+                {reasonModal.reviewedAt && reasonModal.status !== "PENDING" && (
+                  <div className="flex items-center justify-between border-t border-border pt-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <Clock3 className={`h-3.5 w-3.5 ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`} />
+                      <span className={`font-semibold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                        {reasonModal.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                      </span>
+                    </div>
+                    <span className={`text-xs font-bold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                      {formatDate(reasonModal.reviewedAt)} {formatTime(reasonModal.reviewedAt)}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Modal Footer */}

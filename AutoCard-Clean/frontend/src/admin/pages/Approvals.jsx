@@ -221,6 +221,7 @@ const normalizeRequests = (items) =>
       item.employee?.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
     reviewNote: item.reviewNote || null,
+    reviewedAt: item.reviewedAt || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
@@ -240,6 +241,7 @@ const normalizeLeave = (items) =>
     employee: item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
     reviewNote: item.reviewNote || null,
+    reviewedAt: item.reviewedAt || null,
     status: item.status,
     createdAt: item.createdAt,
   }));
@@ -258,6 +260,7 @@ const normalizeAttendance = (items) =>
     employee: item.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
     reviewNote: item.note || null,
+    reviewedAt: item.updatedAt || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
@@ -844,7 +847,10 @@ const Approvals = () => {
                                   Reviewed
                                 </div>
                                 <div className="mt-0.5 font-bold text-foreground">
-                                  {formatDate(approval.createdAt)}
+                                  {formatDate(approval.reviewedAt || approval.createdAt)}
+                                </div>
+                                <div className="mt-0.5 text-muted-foreground">
+                                  {formatTimeIST(approval.reviewedAt || approval.createdAt)}
                                 </div>
                               </div>
                             </div>
@@ -1233,22 +1239,45 @@ const Approvals = () => {
                 </section>
               )}
 
-              {/* ================= SUBMITTED ================= */}
-              {reasonModal.createdAt && (
-                <div className="flex items-center justify-between rounded-2xl border border-border bg-secondary/20 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-
-                    <span className="text-sm font-semibold text-muted-foreground">
-                      Submitted
-                    </span>
+              {/* ================= SUBMITTED / REVIEWED ================= */}
+              <div className="flex flex-col gap-2 rounded-2xl border border-border bg-secondary/20 px-4 py-3">
+                {reasonModal.createdAt && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold text-muted-foreground">
+                        Submitted
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold text-foreground">
+                        {formatDate(reasonModal.createdAt)}
+                      </span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {formatTimeIST(reasonModal.createdAt)}
+                      </span>
+                    </div>
                   </div>
-
-                  <span className="text-sm font-bold text-foreground">
-                    {formatDate(reasonModal.createdAt)}
-                  </span>
-                </div>
-              )}
+                )}
+                {reasonModal.reviewedAt && reasonModal.status !== "PENDING" && (
+                  <div className="flex items-center justify-between border-t border-border pt-2">
+                    <div className="flex items-center gap-2">
+                      <Clock3 className={`h-4 w-4 ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`} />
+                      <span className={`text-sm font-semibold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                        {reasonModal.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-sm font-bold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                        {formatDate(reasonModal.reviewedAt)}
+                      </span>
+                      <span className={`ml-2 text-xs ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`}>
+                        {formatTimeIST(reasonModal.reviewedAt)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* ================= FOOTER ================= */}

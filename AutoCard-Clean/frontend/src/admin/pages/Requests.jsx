@@ -14,6 +14,18 @@ const fmt = (value) => {
   return `${day}/${month}/${year}`;
 };
 
+const fmtTime = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+};
+
 const statusStyles = {
   PENDING: "bg-amber-100 text-amber-700",
   APPROVED: "bg-emerald-100 text-emerald-700",
@@ -653,6 +665,11 @@ const loadRequests = async () => {
                               <div className="mt-0.5 font-bold text-foreground">
                                 {r.reviewedAt ? fmt(r.reviewedAt) : "—"}
                               </div>
+                              {r.reviewedAt && (
+                                <div className="mt-0.5 text-muted-foreground">
+                                  {fmtTime(r.reviewedAt)}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
@@ -709,9 +726,23 @@ const loadRequests = async () => {
               </div>
 
               {reasonRequest.createdAt && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Submitted</span>
-                  <span className="font-semibold text-foreground">{fmt(reasonRequest.createdAt)}</span>
+                <div className="space-y-2 rounded-xl border border-border bg-secondary/20 px-4 py-3">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="font-semibold">Submitted</span>
+                    <span className="font-bold text-foreground">
+                      {fmt(reasonRequest.createdAt)} {fmtTime(reasonRequest.createdAt)}
+                    </span>
+                  </div>
+                  {reasonRequest.reviewedAt && reasonRequest.status !== "PENDING" && (
+                    <div className={`flex items-center justify-between border-t border-border pt-2 text-xs`}>
+                      <span className={`font-semibold ${reasonRequest.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                        {reasonRequest.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                      </span>
+                      <span className={`font-bold ${reasonRequest.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                        {fmt(reasonRequest.reviewedAt)} {fmtTime(reasonRequest.reviewedAt)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

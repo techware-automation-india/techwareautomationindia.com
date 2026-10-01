@@ -58,7 +58,11 @@ export default function RolesTab() {
       return;
     }
 
-    const confirmMsg = `Are you sure you want to delete the role "${role.name}"?\n\nThis action cannot be undone.`;
+    const usersCount = role.userCount || role._count?.users || 0;
+    const confirmMsg = usersCount > 0
+      ? `Are you sure you want to delete the role "${role.name}"?\n\n⚠️ ${usersCount} user${usersCount === 1 ? " is" : "s are"} assigned this role. They will be unassigned automatically.\n\nThis action cannot be undone.`
+      : `Are you sure you want to delete the role "${role.name}"?\n\nThis action cannot be undone.`;
+
     if (!window.confirm(confirmMsg)) {
       return;
     }

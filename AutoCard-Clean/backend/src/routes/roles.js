@@ -227,12 +227,13 @@ router.delete("/:id", checkRolePermission("roles-access"), async (req, res) => {
       });
     }
 
-    // Check if role is assigned to any users
+    // If role is assigned to users, unassign them first then delete
     const usersCount = role._count.users;
     if (usersCount > 0) {
-      return res.status(409).json({
-        message: `Cannot delete role: ${usersCount} user${usersCount === 1 ? " is" : "s are"} assigned this role.`,
-        usersCount,
+      // Unassign this role from all users
+      await prisma.user.updateMany({
+        where: { roleId: id },
+        data: { roleId: null },
       });
     }
 
@@ -243,7 +244,7 @@ router.delete("/:id", checkRolePermission("roles-access"), async (req, res) => {
 
     // Return success confirmation
     res.json({
-      message: "Role deleted successfully.",
+      message: `Role deleted successfully.${usersCount > 0 ? ` ${usersCount} user${usersCount === 1 ? " was" : "s were"} unassigned from this role.` : ""}`,
     });
   } catch (err) {
     console.error("DELETE /api/roles/:id error:", err);

@@ -39,28 +39,35 @@ export default function AccessTab() {
   };
 
   const handleRoleAssignment = async (userId, roleId) => {
-    if (!roleId) return;
+    const isRemoving = !roleId || roleId === "";
     try {
-      await assignUserRole(userId, roleId);
-      const assignedRole = roles.find(r => r.id === roleId);
-      
+      await assignUserRole(userId, roleId || null);
+
       // Update local state immediately
-      setUsers(prevUsers => prevUsers.map(user => 
-        user.id === userId 
-          ? { 
-              ...user, 
-              roleId, 
-              customRole: assignedRole,
-              role: assignedRole?.name?.toUpperCase() === 'ADMIN' 
-                ? 'ADMIN' 
-                : (assignedRole?.name?.toUpperCase() === 'CUSTOMER' ? 'CUSTOMER' : 'EMPLOYEE')
-            }
-          : user
-      ));
-      
-      toast.success(`Role "${assignedRole?.name || 'role'}" assigned successfully!`);
+      setUsers(prevUsers => prevUsers.map(user => {
+        if (user.id !== userId) return user;
+        if (isRemoving) {
+          return { ...user, roleId: null, customRole: null };
+        }
+        const assignedRole = roles.find(r => r.id === roleId);
+        return {
+          ...user,
+          roleId,
+          customRole: assignedRole,
+          role: assignedRole?.name?.toUpperCase() === 'ADMIN'
+            ? 'ADMIN'
+            : (assignedRole?.name?.toUpperCase() === 'CUSTOMER' ? 'CUSTOMER' : 'EMPLOYEE'),
+        };
+      }));
+
+      if (isRemoving) {
+        toast.success('Role removed successfully!');
+      } else {
+        const assignedRole = roles.find(r => r.id === roleId);
+        toast.success(`Role "${assignedRole?.name || 'role'}" assigned successfully!`);
+      }
     } catch (err) {
-      toast.error(`Error: ${err.message || 'Failed to assign role'}`);
+      toast.error(`Error: ${err.message || 'Failed to update role'}`);
       console.error('Assign role error:', err);
     }
   };
@@ -187,7 +194,7 @@ export default function AccessTab() {
                         onChange={(e) => handleRoleAssignment(user.id, e.target.value)}
                         className="px-3 py-1.5 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
                       >
-                        <option value="">Select role...</option>
+                        <option value="">— Remove Role —</option>
                         {roles.map(role => (
                           <option key={role.id} value={role.id}>
                             {role.name}
@@ -222,7 +229,7 @@ export default function AccessTab() {
                     onChange={(e) => handleRoleAssignment(user.id, e.target.value)}
                     className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
                   >
-                    <option value="">Select role...</option>
+                    <option value="">— Remove Role —</option>
                     {roles.map(role => (
                       <option key={role.id} value={role.id}>
                         {role.name}

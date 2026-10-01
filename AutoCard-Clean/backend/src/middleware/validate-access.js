@@ -2,10 +2,11 @@ import { z } from "zod";
 
 /**
  * Zod schema for assigning a role to a user
+ * roleId can be a valid UUID (assign) or null/empty (unassign)
  * Validates: Requirement 7.2
  */
 export const assignRoleSchema = z.object({
-  roleId: z.string().uuid("Role ID must be a valid UUID")
+  roleId: z.string().uuid("Role ID must be a valid UUID").nullable().optional(),
 });
 
 /**

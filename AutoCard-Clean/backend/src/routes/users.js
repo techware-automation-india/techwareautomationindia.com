@@ -185,6 +185,31 @@ router.put(
         });
       }
 
+      // If roleId is null/empty — unassign role
+      if (!roleId) {
+        const updatedUser = await prisma.user.update({
+          where: { id },
+          data: { roleId: null },
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+            role: true,
+            roleId: true,
+            customRole: true,
+          },
+        });
+
+        return res.json({
+          id: updatedUser.id,
+          email: updatedUser.email,
+          fullName: updatedUser.fullName,
+          role: updatedUser.role,
+          roleId: null,
+          customRole: null,
+        });
+      }
+
       // Check if role exists
       const role = await prisma.roleTable.findUnique({
         where: { id: roleId },

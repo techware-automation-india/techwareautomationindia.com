@@ -722,3 +722,45 @@ model RoleModule {
   @@index([roleId])
   @@map("role_modules")
 }
+
+// ===========================================================================
+// INVENTORY
+// ===========================================================================
+
+model InventoryItem {
+  id          String   @id @default(uuid())
+  name        String
+  sku         String?  @unique
+  category    String?
+  quantity    Int      @default(0)
+  minStock    Int      @default(5)
+  unit        String   @default("pcs")
+  location    String?
+  description String?  @db.Text
+  costPrice   Float?
+  purchaseDate DateTime?
+  date        DateTime?
+  companyName String?
+  issues      InventoryIssue[]
+
+  @@map("inventory_items")
+}
+
+model InventoryIssue {
+  id               String         @id @default(uuid())
+  inventoryItemId  String?
+  inventoryItem    InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  itemName         String
+  assignedToPerson String
+  companyName      String?
+  projectName      String?
+  quantity         Int            @default(1)
+  issueDate        DateTime       @default(now())
+  returnDate       DateTime?
+  status           String         @default("ISSUED")
+  notes            String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@map("inventory_issues")
+}

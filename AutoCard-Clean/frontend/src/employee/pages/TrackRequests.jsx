@@ -379,6 +379,10 @@ const TrackRequests = ({ isAdmin = false }) => {
               checkOutLatitude: request.checkOutLatitude ?? null,
               checkOutLongitude: request.checkOutLongitude ?? null,
 
+              // Exact road distances from backend enrichAttendanceRecordsWithDistance
+              checkInDistance: request.checkInDistance ?? null,
+              checkOutDistance: request.checkOutDistance ?? null,
+
               reviewNote: request.reviewNote,
             }))
           : [];

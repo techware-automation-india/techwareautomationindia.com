@@ -1068,9 +1068,7 @@ const Approvals = () => {
 
                         {/* 2. CHECK-OUT DIV */}
                         {(reasonModal.checkOutTime ||
-                          attendanceDetails.checkOutReason !==
-                            "No check-out reason provided." ||
-                          attendanceDetails.checkOutDistance ||
+                          reasonModal.checkOutLatitude != null ||
                           reasonModal.checkOutDistance) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
                             <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">

@@ -903,7 +903,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                         </div>
 
                         {/* 2. CHECK-OUT DIV */}
-                        {(reasonModal.checkOutTime || attendanceReason.checkOutReason || attendanceReason.checkOutDistance || reasonModal.checkOutDistance || reasonModal.checkOutLatitude) && (
+                        {(reasonModal.checkOutTime || reasonModal.checkOutLatitude || reasonModal.checkOutDistance) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
                             <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
                               <div className="flex items-center gap-2">

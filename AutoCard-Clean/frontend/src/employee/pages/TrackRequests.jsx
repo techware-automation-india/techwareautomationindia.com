@@ -20,7 +20,9 @@ const statusStyles = {
   PENDING: "bg-amber-100 text-amber-700",
   PENDING_APPROVAL: "bg-amber-100 text-amber-700",
   APPROVED: "bg-emerald-100 text-emerald-700",
+  PRESENT: "bg-emerald-100 text-emerald-700",
   REJECTED: "bg-rose-100 text-rose-700",
+  ABSENT: "bg-rose-100 text-rose-700",
   CANCELLED: "bg-gray-100 text-gray-500",
 };
 
@@ -95,6 +97,18 @@ const openMap = (latitude, longitude, type = "location") => {
     "_blank",
     "noopener,noreferrer",
   );
+};
+
+const normalizeStatus = (status, note = "", reviewNote = "") => {
+  const s = String(status || "").toUpperCase();
+  const n = (String(note || "") + " " + String(reviewNote || "")).toLowerCase();
+
+  if (s === "PENDING_APPROVAL" || s === "PENDING") return "PENDING";
+  if (s === "APPROVED" || s === "PRESENT" || n.includes("approved")) return "APPROVED";
+  if (s === "REJECTED" || s === "ABSENT" || n.includes("rejected")) return "REJECTED";
+  if (s === "CANCELLED") return "CANCELLED";
+
+  return "PENDING";
 };
 
 const getRequestReason = (request) => {
@@ -305,6 +319,7 @@ const TrackRequests = ({ isAdmin = false }) => {
         requestResult.status === "fulfilled"
           ? (requestResult.value.requests || []).map((request) => ({
               ...request,
+              status: normalizeStatus(request.status, request.description || request.note, request.reviewNote),
               forgotPunch: getForgotPunchData(request),
               reviewedAt: request.reviewedAt || null,
             }))
@@ -320,7 +335,7 @@ const TrackRequests = ({ isAdmin = false }) => {
               id: `leave-${request.id}`,
               type: "LEAVE",
               subject: `${request.leaveType?.name || "Leave"} request`,
-              status: request.status,
+              status: normalizeStatus(request.status, request.reason, request.reviewNote),
               createdAt: request.createdAt,
               reviewedAt: request.reviewedAt || null,
               description:
@@ -345,16 +360,11 @@ const TrackRequests = ({ isAdmin = false }) => {
 
               subject: "Attendance Location Approval",
 
-              status:
-                request.status === "PENDING_APPROVAL"
-                  ? "PENDING"
-                  : request.note?.includes("Admin approved")
-                    ? "APPROVED"
-                    : request.note?.includes("Admin rejected")
-                      ? "REJECTED"
-                      : request.status,
+              status: normalizeStatus(request.status, request.note, request.reviewNote),
 
               createdAt: request.createdAt || request.date,
+
+              reviewedAt: request.status !== "PENDING_APPROVAL" ? (request.updatedAt || null) : null,
 
               checkInTime: request.checkIn || request.createdAt || request.date,
               checkOutTime: request.checkOut || null,
@@ -668,26 +678,6 @@ const TrackRequests = ({ isAdmin = false }) => {
                   >
                     View Reason
                   </button>
-
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      request.status === "PENDING"
-                        ? "bg-amber-100 text-amber-700"
-                        : request.status === "APPROVED"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : request.status === "REJECTED"
-                            ? "bg-rose-100 text-rose-700"
-                            : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {request.status === "PENDING"
-                      ? "Pending"
-                      : request.status === "APPROVED"
-                        ? "Approved"
-                        : request.status === "REJECTED"
-                          ? "Rejected"
-                          : request.status}
-                  </span>
                 </div>
               </div>
 

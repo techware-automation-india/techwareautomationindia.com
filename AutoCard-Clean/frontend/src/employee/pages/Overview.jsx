@@ -296,12 +296,19 @@ const Overview = () => {
                 ...request,
                 subject: "Attendance request",
                 type: "ATTENDANCE",
-                status: request.note?.includes("Approved by admin")
-                  ? "APPROVED"
-                  : request.note?.includes("Rejected by admin")
-                    ? "REJECTED"
-                    : "PENDING",
-                createdAt: request.updatedAt || request.date,
+                status:
+                  request.status === "APPROVED" ||
+                  request.status === "PRESENT" ||
+                  request.note?.toLowerCase().includes("approved") ||
+                  request.reviewNote?.toLowerCase().includes("approved")
+                    ? "APPROVED"
+                    : request.status === "REJECTED" ||
+                      request.status === "ABSENT" ||
+                      request.note?.toLowerCase().includes("rejected") ||
+                      request.reviewNote?.toLowerCase().includes("rejected")
+                      ? "REJECTED"
+                      : "PENDING",
+                createdAt: request.createdAt || request.date || request.updatedAt,
               }))
             : []),
 

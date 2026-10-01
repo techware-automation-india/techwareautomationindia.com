@@ -247,48 +247,52 @@ const normalizeLeave = (items) =>
   }));
 
 const normalizeAttendance = (items) =>
-  (items || []).map((item) => ({
-    id: item.id,
-    source: "ATTENDANCE",
-    title:
-      item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
-        ? "Attendance Location Approval"
-        : item.note?.includes("Forgot Punch")
-          ? "Forgot Punch Checkout Approval"
-          : "Attendance Approval",
-    description: item.note || "Employee attendance requires approval.",
-    employee: item.fullName || item.employee?.user?.fullName || "Employee",
-    employeeCode: item.employee?.employeeCode || "",
-    reviewNote: item.note || null,
-    reviewedAt: item.updatedAt || null,
-    checkInLatitude: item.checkInLatitude,
-    checkInLongitude: item.checkInLongitude,
-    checkOutLatitude: item.checkOutLatitude,
-    checkOutLongitude: item.checkOutLongitude,
-    checkInDistance: item.checkInDistance || null,
-    checkOutDistance: item.checkOutDistance || null,
-    checkInTime: item.checkInTime || item.createdAt || item.date,
-    checkOutTime:
-      item.checkOutTime ||
-      (item.note?.toLowerCase().includes("checkout")
-        ? item.updatedAt || item.createdAt
-        : null),
-    date: item.date,
-    status:
-      item.status === "PENDING_APPROVAL"
-        ? "PENDING"
-        : item.note?.includes("Admin approved") ||
-            item.note?.includes("Approved by admin")
-          ? "APPROVED"
-          : item.note?.includes("Admin rejected") ||
-              item.note?.includes("Rejected by admin")
-            ? "REJECTED"
-            : item.status === "PRESENT"
-              ? "APPROVED"
-              : "REJECTED",
-    createdAt: item.updatedAt || item.createdAt || item.date,
-    updatedAt: item.updatedAt,
-  }));
+  (items || []).map((item) => {
+    const isCheckoutApproval =
+      !!item.checkOut ||
+      (item.note?.includes("Checkout") && !item.note?.includes("Checkin"));
+
+    return {
+      id: item.id,
+      source: "ATTENDANCE",
+      title:
+        item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
+          ? isCheckoutApproval
+            ? "Checkout Location Approval"
+            : "Checkin Location Approval"
+          : item.note?.includes("Forgot Punch")
+            ? "Forgot Punch Checkout Approval"
+            : "Attendance Approval",
+      description: item.note || "Employee attendance requires approval.",
+      employee: item.fullName || item.employee?.user?.fullName || "Employee",
+      employeeCode: item.employee?.employeeCode || "",
+      reviewNote: item.note || null,
+      reviewedAt: item.updatedAt || null,
+      checkInLatitude: item.checkInLatitude,
+      checkInLongitude: item.checkInLongitude,
+      checkOutLatitude: item.checkOutLatitude,
+      checkOutLongitude: item.checkOutLongitude,
+      checkInDistance: item.checkInDistance || null,
+      checkOutDistance: item.checkOutDistance || null,
+      checkInTime: item.checkIn || item.checkInTime || item.createdAt || item.date,
+      checkOutTime: item.checkOut || item.checkOutTime || null,
+      date: item.date,
+      status:
+        item.status === "PENDING_APPROVAL"
+          ? "PENDING"
+          : item.note?.includes("Admin approved") ||
+              item.note?.includes("Approved by admin")
+            ? "APPROVED"
+            : item.note?.includes("Admin rejected") ||
+                item.note?.includes("Rejected by admin")
+              ? "REJECTED"
+              : item.status === "PRESENT"
+                ? "APPROVED"
+                : "REJECTED",
+      createdAt: item.createdAt || item.date || item.updatedAt,
+      updatedAt: item.updatedAt,
+    };
+  });
 
 const getAttendanceDetails = (note = "") => {
   const text = String(note || "").trim();
@@ -490,7 +494,7 @@ const Approvals = () => {
 
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [yearFilter, setYearFilter] = useState(String(currentYear));
-  const [monthFilter, setMonthFilter] = useState(String(currentMonth));
+  const [monthFilter, setMonthFilter] = useState("ALL");
   const [employeeFilter, setEmployeeFilter] = useState("ALL");
 
   const loadApprovals = async () => {
@@ -1080,11 +1084,7 @@ const Approvals = () => {
                               </div>
                               <span className="text-xs font-bold text-rose-800 dark:text-rose-300">
                                 Check-Out Time:{" "}
-                                {formatTimeIST(
-                                  reasonModal.checkOutTime ||
-                                    reasonModal.updatedAt ||
-                                    reasonModal.createdAt,
-                                )}
+                                {formatTimeIST(reasonModal.checkOutTime)}
                               </span>
                             </div>
                             <div>

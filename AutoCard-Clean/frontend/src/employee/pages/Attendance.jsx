@@ -1135,7 +1135,7 @@ const Attendance = () => {
                     const isToday =
                       year === today.getFullYear() &&
                       month === today.getMonth() + 1 &&
-                      new Date(r.date).getUTCDate() === today.getDate();
+                      getIndiaDayNumber(r.date) === today.getDate();
 
                     return (
                       <tr

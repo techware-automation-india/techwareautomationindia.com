@@ -257,16 +257,22 @@ const fmtDateDMY = (value) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
+  const day = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit" }).format(date);
+  const month = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", month: "2-digit" }).format(date);
+  const year = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", year: "numeric" }).format(date);
   return `${day}/${month}/${year}`;
 };
 
 const formatDateKey = (date) => {
+  if (!date) return "";
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
 };
 
 // Split the selected month into fixed date ranges:
@@ -622,17 +628,22 @@ const Attendance = () => {
 
   // Build a map of day-of-month -> record for quick lookup.
   const recordByDay = {};
+  const getISTDay = (val) => {
+    const dt = new Date(val);
+    if (Number.isNaN(dt.getTime())) return null;
+    return Number(new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric" }).format(dt));
+  };
   if (data) {
     for (const r of data.records) {
-      const d = new Date(r.date);
-      recordByDay[d.getUTCDate()] = r;
+      const day = getISTDay(r.date);
+      if (day != null) recordByDay[day] = r;
     }
   }
   const holidayByDay = {};
   if (data) {
     for (const h of data.holidays) {
-      const d = new Date(h.date);
-      holidayByDay[d.getUTCDate()] = h.name;
+      const day = getISTDay(h.date);
+      if (day != null) holidayByDay[day] = h.name;
     }
   }
 
@@ -654,7 +665,8 @@ const Attendance = () => {
     if (!date) return false;
     const d = new Date(date);
     if (Number.isNaN(d.getTime())) return false;
-    if (d.getUTCDay() === 0) return true;
+    const istDow = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(d);
+    if (istDow === "Sun") return true;
 
     const dateKey = formatDateKey(d);
     const holidays = isAllEmployees

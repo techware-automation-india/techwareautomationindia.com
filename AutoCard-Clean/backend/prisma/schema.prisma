@@ -108,6 +108,9 @@ model User {
   // Per-module permissions (EMPLOYEE role only).
   modulePermissions ModulePermission[]
 
+  notifications Notification[]
+  pushSubscriptions PushSubscription[]
+
   @@index([role])
   @@index([roleId])
   @@map("users")
@@ -763,4 +766,31 @@ model InventoryIssue {
   updatedAt        DateTime       @updatedAt
 
   @@map("inventory_issues")
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  message     String   @db.Text
+  type        String
+  referenceId String?
+  isRead      Boolean  @default(false)
+  data        Json?
+  createdAt   DateTime @default(now())
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @db.Text
+  p256dh    String   @db.Text
+  auth      String
+  createdAt DateTime @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
 }

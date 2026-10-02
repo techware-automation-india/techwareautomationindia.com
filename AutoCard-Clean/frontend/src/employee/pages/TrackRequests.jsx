@@ -185,7 +185,7 @@ const getAttendanceReason = (note = "", reason = "") => {
     if (!rawStr) return "";
     return rawStr
       .replace(/^Checkin\s+(from|to|location)?[^.]*?\.\s*/i, "")
-      .replace(/^Checkout\s+(recorded|from|to|location)?[^.]*?\.\s*/i, "")
+      .replace(/^Checkout\s+(recorded|from|to|location|outside)?[^.]*?\.\s*/i, "")
       .replace(/^Checkin:/i, "")
       .replace(/^Checkout:/i, "")
       .replace(/^Check-?[io]ut?:\s*/i, "")
@@ -199,15 +199,16 @@ const getAttendanceReason = (note = "", reason = "") => {
       .trim();
   };
 
-  // Extract reasons from Reason: pattern
-  const reasonMatches = [
-    ...cleanText.matchAll(/Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin)\b|\s*\||$)/gi),
-  ]
-    .map((match) => match[1].trim())
-    .filter(Boolean);
-
-  let checkInReason = "";
-  let checkOutReason = "";
+  // Extract Reason: from a single part (handles Reason: before or after approval markers)
+  const extractReason = (partText) => {
+    if (!partText) return "";
+    const m = partText.match(/Reason:\s*(.*?)(?=\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin)\b|\s*\||$)/i);
+    let extracted = m ? m[1].trim() : "";
+    if (extracted.endsWith(".")) {
+      extracted = extracted.slice(0, -1).trim();
+    }
+    return extracted;
+  };
 
   // Check if note has both checkin and checkout parts (pipe separated)
   const checkoutPart = parts.find(p =>
@@ -217,20 +218,22 @@ const getAttendanceReason = (note = "", reason = "") => {
     /checkin/i.test(p) || /check.?in/i.test(p)
   );
 
-  if (reasonMatches.length >= 2) {
-    checkInReason = sanitize(reasonMatches[0]);
-    checkOutReason = sanitize(reasonMatches[1]);
-  } else if (reasonMatches.length === 1) {
-    // Determine if it's checkin or checkout reason
-    if (checkoutPart && /Reason:/i.test(checkoutPart)) {
-      checkOutReason = sanitize(reasonMatches[0]);
-      checkInReason = directReason || sanitize(checkinPart || "");
-    } else {
-      checkInReason = sanitize(reasonMatches[0]);
-    }
-  } else {
-    checkInReason = directReason || sanitize(checkinPart || cleanText);
-    checkOutReason = sanitize(checkoutPart || "");
+  let checkInReason = "";
+  let checkOutReason = "";
+
+  // Extract reasons from each part independently
+  if (checkinPart) {
+    checkInReason = extractReason(checkinPart) || sanitize(checkinPart);
+  }
+  if (checkoutPart) {
+    checkOutReason = extractReason(checkoutPart);
+  }
+
+  // Fallback: if there's only one part (no pipe separator), use the whole text
+  if (!checkinPart && !checkoutPart) {
+    checkInReason = directReason || sanitize(cleanText);
+  } else if (!checkinPart) {
+    checkInReason = directReason || "";
   }
 
   const fullClean = sanitize(cleanText);

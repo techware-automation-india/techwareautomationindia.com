@@ -18,7 +18,8 @@ export const VALID_MODULES = [
   'leave-policy',
   'holidays',
   'projects',
-  'services'
+  'services',
+  'inventory'
 ];
 
 /**

@@ -13,6 +13,7 @@ import {
   Building2,
   CalendarRange,
   Fingerprint,
+  Package,
 } from "lucide-react";
 
 // Single source of truth for admin modules.
@@ -96,6 +97,13 @@ export const adminModules = [
   //   description: "Create projects and assign team members.",
   // },
   
+  {
+    key: "inventory",
+    label: "Inventory",
+    path: "/admin/inventory",
+    icon: Package,
+    description: "Manage company inventory items and stock levels.",
+  },
   {
     key: "roles-access",
     label: "Roles & Access",

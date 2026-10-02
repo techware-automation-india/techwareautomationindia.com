@@ -25,6 +25,7 @@ import rosterRouter from "./routes/rosterRoutes.js";
 import projectsRouter from "./routes/projects.js";
 import servicesRouter from "./routes/services.js";
 import supportRouter from "./routes/support.js";
+import inventoryRouter from "./routes/inventory.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -222,6 +223,7 @@ app.use("/api/roster", rosterRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/services", servicesRouter);
 app.use("/api/support", supportRouter);
+app.use("/api/inventory", inventoryRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

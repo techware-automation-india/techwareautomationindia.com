@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Bell, Inbox } from "lucide-react";
 import { apiGet } from "../../lib/api.js";
 import { adminModules } from "../modules.js";
 
 const Overview = () => {
+  const navigate = useNavigate();
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -60,7 +61,7 @@ const Overview = () => {
         <div className="relative">
           <button
             type="button"
-            onClick={() => setShowNotifications((visible) => !visible)}
+            onClick={() => navigate("/admin/approvals")}
             className={`relative rounded-lg border p-3 transition-colors hover:bg-secondary ${
               pendingCount > 0
                 ? "border-rose-200 text-rose-500 hover:text-rose-600"

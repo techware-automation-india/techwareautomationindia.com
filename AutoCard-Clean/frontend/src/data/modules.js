@@ -10,6 +10,7 @@ import {
   CalendarRange,
   BookOpen,
   FolderKanban,
+  Package,
 } from "lucide-react";
 
 export const MODULES = [
@@ -24,5 +25,6 @@ export const MODULES = [
   { key: 'shift-location', label: 'Shifts & Locations', icon: MapPin },
   { key: 'roster', label: 'Roster', icon: CalendarRange },
   { key: 'leave-policy', label: 'Leave Policy', icon: BookOpen },
+  { key: 'inventory', label: 'Inventory', icon: Package },
   { key: 'projects', label: 'Projects', icon: FolderKanban },
 ];

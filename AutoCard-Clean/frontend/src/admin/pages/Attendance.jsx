@@ -2903,34 +2903,32 @@ const Attendance = () => {
                             key={day}
                             type="button"
                             onClick={() => setSelectedDate(dateKey)}
-                            className={`min-h-[158px] bg-card p-3 text-left transition hover:bg-secondary/50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
+                            className={`min-h-[158px] flex flex-col bg-card p-3 text-left transition hover:bg-secondary/50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary ${
                               isToday ? "ring-2 ring-inset ring-primary" : ""
                             } ${isHolidayCell && !isWorkedRecord(rec) ? "bg-blue-500/10 dark:bg-blue-500/20" : ""}`}
                           >
-                            {/* Fixed Layout Container */}
-                            <div className="flex flex-col h-full">
-                              {/* Date and Status Row - Fixed at top */}
-                              <div className="flex items-center justify-between gap-2 mb-2">
-                                <span
-                                  className={`text-base font-bold leading-none ${
-                                    isToday ? "text-primary" : "text-foreground"
-                                  }`}
-                                >
-                                  {day}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  {isToday && (
-                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary leading-none">
-                                      Today
-                                    </span>
-                                  )}
-                                </div>
+                            {/* Date and Status Row - Fixed at top */}
+                            <div className="flex w-full items-center justify-between gap-2 mb-2 shrink-0">
+                              <span
+                                className={`text-base font-bold leading-none ${
+                                  isToday ? "text-primary" : "text-foreground"
+                                }`}
+                              >
+                                {day}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {isToday && (
+                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary leading-none">
+                                    Today
+                                  </span>
+                                )}
                               </div>
+                            </div>
 
-                              {/* Content Area - Fixed height and position */}
-                              <div className="flex-1">
-                                {rec ? (
-                                  <div className="space-y-1.5">
+                            {/* Content Area - Fixed height and position */}
+                            <div className="flex-1 w-full shrink-0">
+                              {rec ? (
+                                <div className="space-y-1.5 shrink-0">
                                     {/* Status Badge */}
                                     <div className="flex items-center gap-1.5">
                                       <span
@@ -3061,7 +3059,6 @@ const Attendance = () => {
                                   </div>
                                 )}
                               </div>
-                            </div>
                           </button>
                         );
                       })}

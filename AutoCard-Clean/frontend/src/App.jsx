@@ -36,7 +36,7 @@ import Services from "./admin/pages/Services.jsx";
 import RolesAccess from "./admin/pages/RolesAccess";
 import ShiftLocation from "./admin/pages/ShiftLocation.jsx";
 import Roster from "./admin/pages/Roster.jsx";
-import Inventory from "./admin/pages/Inventory.jsx";
+// import Inventory from "./admin/pages/Inventory.jsx";
 
 import EmployeeLayout from "./employee/EmployeeLayout.jsx";
 import EmployeeOverview from "./employee/pages/Overview.jsx";
@@ -146,10 +146,10 @@ const AppRoutes = () => {
           <Route path="roles-access" element={<RolesAccess />} />
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
-          <Route path="inventory" element={<Inventory />} />
+          {/* <Route path="inventory" element={<Inventory />} />
           <Route path="inventory/out-stock" element={<Inventory defaultTab="out-stock" />} />
           <Route path="inventory/low-stock" element={<Inventory defaultTab="low-stock" />} />
-          <Route path="inventory/issued" element={<Inventory defaultTab="issued" />} />
+          <Route path="inventory/issued" element={<Inventory defaultTab="issued" />} /> */}
         </Route>
 
         <Route path="/employee" element={<EmployeeLayout />}>

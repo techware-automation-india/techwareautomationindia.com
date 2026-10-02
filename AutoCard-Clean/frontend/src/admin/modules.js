@@ -97,13 +97,13 @@ export const adminModules = [
   //   description: "Create projects and assign team members.",
   // },
   
-  {
-    key: "inventory",
-    label: "Inventory",
-    path: "/admin/inventory",
-    icon: Package,
-    description: "Manage company inventory items and stock levels.",
-  },
+  // {
+  //   key: "inventory",
+  //   label: "Inventory",
+  //   path: "/admin/inventory",
+  //   icon: Package,
+  //   description: "Manage company inventory items and stock levels.",
+  // },
   {
     key: "roles-access",
     label: "Roles & Access",

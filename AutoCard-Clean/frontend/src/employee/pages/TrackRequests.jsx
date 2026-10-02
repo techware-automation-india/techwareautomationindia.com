@@ -252,12 +252,17 @@ const getAttendanceReason = (note = "", reason = "") => {
 
   const fullClean = sanitize(cleanText);
 
+  const isCheckInUnassigned = checkinPart ? /unassigned|outside|requires approval/i.test(checkinPart) : /unassigned|outside|requires approval/i.test(cleanText);
+  const isCheckOutUnassigned = checkoutPart ? /unassigned|outside|requires approval/i.test(checkoutPart) : false;
+
   return {
     reason: fullClean || directReason || "No reason provided.",
     checkInReason: checkInReason || directReason || fullClean || "No check-in reason provided.",
     checkOutReason: checkOutReason || "",
     checkInDistance,
     checkOutDistance,
+    isCheckInUnassigned,
+    isCheckOutUnassigned,
   };
 };
 
@@ -867,35 +872,37 @@ const TrackRequests = ({ isAdmin = false }) => {
                     return (
                       <div className="space-y-4">
                         {/* 1. CHECK-IN DIV */}
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
-                          <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5 dark:border-emerald-900/40">
-                            <div className="flex items-center gap-2">
-                              <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                                Check-In Details
+                        {attendanceReason.isCheckInUnassigned && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
+                            <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5 dark:border-emerald-900/40">
+                              <div className="flex items-center gap-2">
+                                <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                  Check-In Details
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                Check-In Time: {formatTime(reasonModal.checkInTime || reasonModal.createdAt)}
                               </span>
                             </div>
-                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                              Check-In Time: {formatTime(reasonModal.checkInTime || reasonModal.createdAt)}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground">
-                              Check-In Reason
-                            </p>
-                            <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                              {attendanceReason.checkInReason || "No check-in reason provided."}
-                            </p>
-                            {(reasonModal.checkInDistance || attendanceReason.checkInDistance) && (
-                              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                                Distance from office: {formatDistance(reasonModal.checkInDistance || attendanceReason.checkInDistance)} away
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground">
+                                Check-In Reason
                               </p>
-                            )}
+                              <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+                                {attendanceReason.checkInReason || "No check-in reason provided."}
+                              </p>
+                              {(reasonModal.checkInDistance || attendanceReason.checkInDistance) && (
+                                <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                  Distance from office: {formatDistance(reasonModal.checkInDistance || attendanceReason.checkInDistance)} away
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* 2. CHECK-OUT DIV */}
-                        {(reasonModal.checkOutTime || reasonModal.checkOutLatitude || reasonModal.checkOutDistance) && (
+                        {attendanceReason.isCheckOutUnassigned && (reasonModal.checkOutTime || reasonModal.checkOutLatitude || reasonModal.checkOutDistance) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
                             <div className="flex items-center justify-between border-b border-rose-200/60 pb-2.5 dark:border-rose-900/40">
                               <div className="flex items-center gap-2">
@@ -941,13 +948,18 @@ const TrackRequests = ({ isAdmin = false }) => {
               {(reasonModal.checkInLatitude ||
                 reasonModal.checkOutLatitude) && (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <MapPin className="h-4 w-4" />
-                    <span>Location</span>
-                  </div>
+                  {(
+                    (reasonModal.checkInLatitude && reasonModal.checkInLongitude && attendanceReason.isCheckInUnassigned) ||
+                    (reasonModal.checkOutLatitude && reasonModal.checkOutLongitude && attendanceReason.isCheckOutUnassigned)
+                  ) && (
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <MapPin className="h-4 w-4" />
+                      <span>Location</span>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     {reasonModal.checkInLatitude &&
-                      reasonModal.checkInLongitude && (
+                      reasonModal.checkInLongitude && attendanceReason.isCheckInUnassigned && (
                         <button
                           type="button"
                           onClick={() =>
@@ -963,7 +975,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                         </button>
                       )}
                     {reasonModal.checkOutLatitude &&
-                      reasonModal.checkOutLongitude && (
+                      reasonModal.checkOutLongitude && attendanceReason.isCheckOutUnassigned && (
                         <button
                           type="button"
                           onClick={() =>

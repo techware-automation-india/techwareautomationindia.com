@@ -304,62 +304,78 @@ const getAttendanceDetails = (note = "") => {
       checkOutReason: "No check-out reason provided.",
       checkInDistance: null,
       checkOutDistance: null,
+      isCheckInUnassigned: false,
+      isCheckOutUnassigned: false,
     };
   }
 
-  // 1. Check for marker [ATTENDANCE_CORRECTION]
   const markerIndex = text.indexOf("[ATTENDANCE_CORRECTION]");
-  let cleanText =
-    markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
+  const cleanText = markerIndex !== -1 ? text.substring(0, markerIndex).trim() : text;
 
-  // 2. Extract distance
+  // Extract distances
   const checkInDistance =
-    cleanText.match(
-      /Checkin .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i,
-    )?.[1] ||
+    cleanText.match(/Checkin[^|]*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
     cleanText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i)?.[1] ||
     null;
+
   const checkOutDistance =
-    cleanText.match(
-      /Checkout .*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i,
-    )?.[1] || null;
+    cleanText.match(/[Cc]heckout[^|]*?\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i)?.[1] ||
+    null;
 
-  // 3. Extract Reason: pattern
-  const reasonMatches = [
-    ...cleanText.matchAll(
-      /Reason:\s*(.*?)(?=\.?\s*(?:Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi,
-    ),
-  ]
-    .map((match) => match[1].trim())
-    .filter(Boolean);
+  // Split by pipe to get checkin and checkout parts
+  const parts = cleanText.split("|").map(s => s.trim()).filter(Boolean);
 
-  // Clean up any remaining preamble system text
   const sanitize = (rawStr) => {
     if (!rawStr) return "";
     return rawStr
-      .replace(/^Checkin location requires approval\.?\s*/i, "")
-      .replace(/^Checkout location requires approval\.?\s*/i, "")
-      .replace(/^Reason:\s*/i, "")
-      .replace(/\s*\([0-9.]+\s*km away\)\.?/i, "")
-      .replace(/\s*\|?\s*Pending admin approval\.?/gi, "")
-      .replace(/\s*\|?\s*Approved by admin\.?/gi, "")
-      .replace(/\s*\|?\s*Rejected by admin\.?/gi, "")
+      .replace(/^Checkin\s+(from|to|location|location requires approval)?[^.]*?\.\s*/i, "")
+      .replace(/^Checkout\s+(recorded|from|to|location|outside|location requires approval)?[^.]*?\.\s*/i, "")
+      .replace(/^Checkin:/i, "")
+      .replace(/^Checkout:/i, "")
+      .replace(/^Check-?[io]ut?:\s*/i, "")
+      .replace(/Reason:\s*/i, "")
+      .replace(/\s*\([0-9.]+\s*km(?:\s*away)?\)\.?/gi, "")
+      .replace(/\s*Pending admin approval\.?/gi, "")
+      .replace(/\s*Approved by admin\.?/gi, "")
+      .replace(/\s*Rejected by admin\.?/gi, "")
+      .replace(/\s*Admin approved\.?/gi, "")
+      .replace(/\s*Admin rejected\.?/gi, "")
       .trim();
   };
 
-  const fullClean = sanitize(cleanText);
+  // Extract Reason: from a single part
+  const extractReason = (partText) => {
+    if (!partText) return "";
+    const m = partText.match(/Reason:\s*(.*?)(?=\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin)\b|\s*\||$)/i);
+    let extracted = m ? m[1].trim() : "";
+    if (extracted.endsWith(".")) {
+      extracted = extracted.slice(0, -1).trim();
+    }
+    return extracted;
+  };
+
+  const checkoutPart = parts.find(p => /checkout/i.test(p) || /check.?out/i.test(p));
+  const checkinPart = parts.find(p => /checkin/i.test(p) || /check.?in/i.test(p));
 
   let checkInReason = "";
   let checkOutReason = "";
 
-  if (reasonMatches.length > 0) {
-    checkInReason = sanitize(reasonMatches[0]);
-    if (reasonMatches.length > 1) {
-      checkOutReason = sanitize(reasonMatches[1]);
-    }
-  } else {
-    checkInReason = fullClean;
+  if (checkinPart) {
+    checkInReason = extractReason(checkinPart) || sanitize(checkinPart);
   }
+  if (checkoutPart) {
+    checkOutReason = extractReason(checkoutPart);
+  }
+
+  if (!checkinPart && !checkoutPart) {
+    checkInReason = sanitize(cleanText);
+  } else if (!checkinPart) {
+    checkInReason = "";
+  }
+
+  const fullClean = sanitize(cleanText);
+  const isCheckInUnassigned = checkinPart ? /unassigned|outside|requires approval/i.test(checkinPart) : /unassigned|outside|requires approval/i.test(cleanText);
+  const isCheckOutUnassigned = checkoutPart ? /unassigned|outside|requires approval/i.test(checkoutPart) : false;
 
   return {
     reason: fullClean || "No reason provided.",
@@ -367,6 +383,8 @@ const getAttendanceDetails = (note = "") => {
     checkOutReason: checkOutReason || "No check-out reason provided.",
     checkInDistance,
     checkOutDistance,
+    isCheckInUnassigned,
+    isCheckOutUnassigned,
   };
 };
 
@@ -1027,51 +1045,53 @@ const Approvals = () => {
                     return (
                       <div className="space-y-4">
                         {/* 1. CHECK-IN DIV */}
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
-                          <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5 dark:border-emerald-900/40">
-                            <div className="flex items-center gap-2">
-                              <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                                Check-In Details
+                        {attendanceDetails?.isCheckInUnassigned && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
+                            <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5 dark:border-emerald-900/40">
+                              <div className="flex items-center gap-2">
+                                <Clock3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                  Check-In Details
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                Check-In Time:{" "}
+                                {formatTimeIST(
+                                  reasonModal.checkInTime ||
+                                    reasonModal.createdAt,
+                                )}
                               </span>
                             </div>
-                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                              Check-In Time:{" "}
-                              {formatTimeIST(
-                                reasonModal.checkInTime ||
-                                  reasonModal.createdAt,
-                              )}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground">
-                              Check-In Reason
-                            </p>
-                            <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                              {attendanceDetails.checkInReason}
-                            </p>
-                            {reasonModal.checkInDistance ||
-                            attendanceDetails.checkInDistance ? (
-                              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                                Distance from office:{" "}
-                                {formatDistance(
-                                  reasonModal.checkInDistance ||
-                                    attendanceDetails.checkInDistance,
-                                )}
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground">
+                                Check-In Reason
                               </p>
-                            ) : reasonModal.checkInLatitude != null &&
-                              reasonModal.checkInLongitude != null ? (
-                              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                                Distance from office: GPS Recorded (
-                                {reasonModal.checkInLatitude.toFixed(4)},{" "}
-                                {reasonModal.checkInLongitude.toFixed(4)})
+                              <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+                                {attendanceDetails.checkInReason}
                               </p>
-                            ) : null}
+                              {reasonModal.checkInDistance ||
+                              attendanceDetails.checkInDistance ? (
+                                <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                  Distance from office:{" "}
+                                  {formatDistance(
+                                    reasonModal.checkInDistance ||
+                                      attendanceDetails.checkInDistance,
+                                  )}
+                                </p>
+                              ) : reasonModal.checkInLatitude != null &&
+                                reasonModal.checkInLongitude != null ? (
+                                <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                  Distance from office: GPS Recorded (
+                                  {reasonModal.checkInLatitude.toFixed(4)},{" "}
+                                  {reasonModal.checkInLongitude.toFixed(4)})
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* 2. CHECK-OUT DIV */}
-                        {(reasonModal.checkOutTime ||
+                        {attendanceDetails?.isCheckOutUnassigned && (reasonModal.checkOutTime ||
                           reasonModal.checkOutLatitude != null ||
                           reasonModal.checkOutDistance) && (
                           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3">
@@ -1131,8 +1151,10 @@ const Approvals = () => {
               </section>
 
               {/* ================= ATTENDANCE LOCATION ================= */}
-              {(reasonModal.checkInLatitude != null ||
-                reasonModal.checkOutLatitude != null) && (
+              {(
+                (attendanceDetails?.isCheckInUnassigned && reasonModal.checkInLatitude != null) ||
+                (attendanceDetails?.isCheckOutUnassigned && reasonModal.checkOutLatitude != null)
+              ) && (
                 <section>
                   <div className="mb-2 flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" />
@@ -1144,7 +1166,7 @@ const Approvals = () => {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     {/* CHECK-IN */}
-                    {reasonModal.checkInLatitude != null &&
+                    {attendanceDetails?.isCheckInUnassigned && reasonModal.checkInLatitude != null &&
                       reasonModal.checkInLongitude != null && (
                         <button
                           type="button"
@@ -1180,7 +1202,7 @@ const Approvals = () => {
                       )}
 
                     {/* CHECK-OUT */}
-                    {reasonModal.checkOutLatitude != null &&
+                    {attendanceDetails?.isCheckOutUnassigned && reasonModal.checkOutLatitude != null &&
                       reasonModal.checkOutLongitude != null && (
                         <button
                           type="button"

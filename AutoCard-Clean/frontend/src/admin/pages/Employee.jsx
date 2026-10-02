@@ -83,6 +83,9 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
       const loadedRoles = rolesData?.roles || [];
       setRoles(loadedRoles);
       
+      // Auto-select default role
+      const defaultRole = loadedRoles.find((r) => r.isDefault || r.name.toLowerCase() === "employee");
+      
       // Auto-generate next employee code ONLY (format: TAI-001, TAI-002, etc.)
       let nextCode;
       
@@ -106,6 +109,7 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
       setForm(prev => ({ 
         ...prev, 
         employeeCode: nextCode,
+        roleId: prev.roleId || (defaultRole ? defaultRole.id : ""),
       }));
     } catch (err) {
       toast.error(err.message || "Failed to load accounts and roles.");

@@ -601,6 +601,11 @@ const Approvals = () => {
     }
   };
 
+  const attendanceDetails =
+    reasonModal?.source === "ATTENDANCE"
+      ? getAttendanceDetails(reasonModal.description)
+      : null;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1038,12 +1043,7 @@ const Approvals = () => {
                     </div>
                   </div>
                 ) : reasonModal.source === "ATTENDANCE" ? (
-                  (() => {
-                    const attendanceDetails = getAttendanceDetails(
-                      reasonModal.description,
-                    );
-                    return (
-                      <div className="space-y-4">
+                  <div className="space-y-4">
                         {/* 1. CHECK-IN DIV */}
                         {attendanceDetails?.isCheckInUnassigned && (
                           <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3">
@@ -1136,8 +1136,6 @@ const Approvals = () => {
                           </div>
                         )}
                       </div>
-                    );
-                  })()
                 ) : (
                   <div className="rounded-2xl border border-border bg-secondary/20 px-4 py-4">
                     <p className="mb-1 text-xs font-semibold text-muted-foreground">

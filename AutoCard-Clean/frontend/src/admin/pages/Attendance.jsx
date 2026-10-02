@@ -2379,30 +2379,30 @@ const Attendance = () => {
                                     </div>
 
                                     {rec.workedHours != null && (
-                                      <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
-                                        <span className="text-[11.4px] font-bold text-muted-foreground">
+                                      <div className="mt-2 flex items-start justify-between border-t border-border pt-2">
+                                        <span className="text-[11.4px] font-bold text-muted-foreground pt-0.5">
                                           Working Hours
                                         </span>
-                                        <span className="font-display text-[15.2px] font-bold text-primary">
-                                          {fmtWorkedHours(rec.workedHours)}
-                                        </span>
-                                      </div>
-                                    )}
-
-                                    {((isHoliday && isWorkedRecord(rec)) ||
-                                      Number(rec.workedHours) > 8) && (
-                                      <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-orange-200 dark:border-orange-800/40 bg-orange-100/95 dark:bg-orange-950/80 px-2 py-1 shadow-sm">
-                                        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">
-                                          OT
-                                        </span>
-
-                                        <span className="text-[11px] font-bold text-orange-700 dark:text-orange-300">
-                                          {fmtWorkedHours(
-                                            isHoliday
-                                              ? Number(rec.workedHours)
-                                              : Number(rec.workedHours) - 8,
+                                        <div className="flex flex-col items-end gap-1">
+                                          <span className="font-display text-[15.2px] font-bold text-primary">
+                                            {fmtWorkedHours(rec.workedHours)}
+                                          </span>
+                                          {((isHoliday && isWorkedRecord(rec)) ||
+                                            Number(rec.workedHours) > 8) && (
+                                            <div className="flex items-center gap-1 rounded-md border border-orange-200 dark:border-orange-800/40 bg-orange-100/95 dark:bg-orange-950/80 px-2 py-0.5 shadow-sm">
+                                              <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">
+                                                OT
+                                              </span>
+                                              <span className="text-[11px] font-bold text-orange-700 dark:text-orange-300">
+                                                {fmtWorkedHours(
+                                                  isHoliday
+                                                    ? Number(rec.workedHours)
+                                                    : Number(rec.workedHours) - 8,
+                                                )}
+                                              </span>
+                                            </div>
                                           )}
-                                        </span>
+                                        </div>
                                       </div>
                                     )}
 

@@ -2784,7 +2784,9 @@ router.get(
             checkIn: pendingCorrection?.checkInTime
               ? new Date(`${key}T${pendingCorrection.checkInTime}:00+05:30`)
               : existing.checkIn,
-            checkOut: existing.checkOut,
+            checkOut: pendingCorrection?.checkOutTime
+              ? new Date(`${key}T${pendingCorrection.checkOutTime}:00+05:30`)
+              : existing.checkOut,
             checkInLatitude: existing.checkInLatitude,
             checkInLongitude: existing.checkInLongitude,
             checkOutLatitude: existing.checkOutLatitude,
@@ -2843,18 +2845,20 @@ router.get(
           continue;
         }
 
-        if (pendingCorrection?.checkInTime) {
+        if (pendingCorrection?.checkInTime || pendingCorrection?.checkOutTime) {
           summary.PENDING_APPROVAL += 1;
           populatedRecords.push({
             id: null,
             date: new Date(current),
-            checkIn: new Date(
-              `${key}T${pendingCorrection.checkInTime}:00+05:30`,
-            ),
-            checkOut: null,
+            checkIn: pendingCorrection?.checkInTime
+              ? new Date(`${key}T${pendingCorrection.checkInTime}:00+05:30`)
+              : null,
+            checkOut: pendingCorrection?.checkOutTime
+              ? new Date(`${key}T${pendingCorrection.checkOutTime}:00+05:30`)
+              : null,
             status: "PENDING_APPROVAL",
             workedHours: null,
-            note: "Forgot Punch Check In pending approval.",
+            note: "Forgot Punch pending approval.",
           });
           continue;
         }

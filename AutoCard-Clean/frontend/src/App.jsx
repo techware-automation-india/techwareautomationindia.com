@@ -26,6 +26,7 @@ import Approvals from "./admin/pages/Approvals.jsx";
 import LeaveRequests from "./admin/pages/LeaveRequests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
+import LeavePolicyHome from "./admin/pages/LeavePolicyHome.jsx";
 import AdminMarkAttendance from "./admin/pages/MarkAttendance.jsx";
 
 import Attendance from "./admin/pages/Attendance.jsx";
@@ -135,9 +136,10 @@ const AppRoutes = () => {
             element={<AdminAttendanceCorrection />}
           />
           <Route path="approvals" element={<Approvals />} />
-          {/* <Route path="leave-requests" element={<LeaveRequests />} /> */}
-          {/* <Route path="leave-policy" element={<LeavePolicy />} /> */}
-          {/* <Route path="holidays" element={<Holidays />} /> */}
+          <Route path="leave-requests" element={<LeaveRequests />} />
+          <Route path="leave-policy" element={<LeavePolicyHome />} />
+          <Route path="leave-policy/types" element={<LeavePolicy />} />
+          <Route path="leave-policy/holidays" element={<Holidays />} />
           <Route path="mark-attendance" element={<AdminMarkAttendance />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="attendance-requests" element={<AttendanceRequests />} />

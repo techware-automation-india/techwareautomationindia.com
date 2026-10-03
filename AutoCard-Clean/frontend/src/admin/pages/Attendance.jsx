@@ -77,14 +77,9 @@ const fmtWorkedHours = (value) => {
   return `${h}h ${m}m`;
 };
 
-const fmtOvertimeHours = (record, isHoliday = false) => {
+const fmtOvertimeHours = (record) => {
   if (!record) return null;
-  const workedHours = Number(record.workedHours);
-  if (Number.isNaN(workedHours)) return null;
-  const overtimeHours = isHoliday ? workedHours : workedHours - 8;
-  if (overtimeHours <= 0) return null;
-  const otMinutes = Math.round(overtimeHours * 60);
-  const netOtMinutes = isHoliday ? otMinutes : Math.max(0, otMinutes - 15);
+  const netOtMinutes = getNumericOvertimeMinutes(record);
   if (netOtMinutes <= 0) return null;
   return fmtWorkedHours(netOtMinutes / 60);
 };
@@ -102,16 +97,16 @@ const getNumericWorkedMinutes = (record) => {
   return Math.round(hours * 60);
 };
 
-const getNumericOvertimeMinutes = (record, isHoliday = false) => {
+const getNumericOvertimeMinutes = (record) => {
   if (!record) return 0;
   const workedMinutes = getNumericWorkedMinutes(record);
   if (workedMinutes <= 0) return 0;
   const workedHours = workedMinutes / 60;
-  const overtimeHours = isHoliday ? workedHours : workedHours - 8;
-  if (overtimeHours <= 0) return 0;
+  if (workedHours <= 8) return 0;
+  const overtimeHours = workedHours - 8;
   const otMinutes = Math.round(overtimeHours * 60);
-  const netOtMinutes = isHoliday ? otMinutes : Math.max(0, otMinutes - 15);
-  return netOtMinutes > 0 ? netOtMinutes : 0;
+  const roundedOtMinutes = Math.floor(otMinutes / 15) * 15;
+  return roundedOtMinutes > 0 ? roundedOtMinutes : 0;
 };
 
 const fmtMinutesToHM = (totalMinutes) => {
@@ -1238,7 +1233,7 @@ const Attendance = () => {
                   <tbody className="divide-y divide-border">
                     {filteredRecords.map((rec) => {
                       const isHoliday = isHolidayDate(rec.date);
-                      const otHours = fmtOvertimeHours(rec, isHoliday);
+                      const otHours = fmtOvertimeHours(rec);
                       
                       return (
                         <tr
@@ -1256,7 +1251,7 @@ const Attendance = () => {
                             {fmtTime(rec.checkOut) ?? "—"}
                           </td>
                           <td className="py-3 pr-4">
-                            {fmtWorkedHours(rec.workedHours)}
+                            {fmtWorkedHours(Math.min(Number(rec.workedHours), 8))}
                           </td>
                           <td className="py-3 pr-4">
                             {otHours ? (
@@ -2379,32 +2374,26 @@ const Attendance = () => {
                                     </div>
 
                                     {rec.workedHours != null && (
-                                      <div className="mt-2 flex items-start justify-between border-t border-border pt-2">
-                                        <span className="text-[11.4px] font-bold text-muted-foreground pt-0.5">
-                                          Working Hours
-                                        </span>
-                                        <div className="flex flex-col items-end gap-1">
-                                          <span className="font-display text-[15.2px] font-bold text-primary">
-                                            {fmtWorkedHours(rec.workedHours)}
-                                          </span>
-                                          {((isHoliday && isWorkedRecord(rec)) ||
-                                            Number(rec.workedHours) > 8) && (
-                                            <div className="flex items-center gap-1 rounded-md border border-orange-200 dark:border-orange-800/40 bg-orange-100/95 dark:bg-orange-950/80 px-2 py-0.5 shadow-sm">
-                                              <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">
-                                                OT
-                                              </span>
-                                              <span className="text-[11px] font-bold text-orange-700 dark:text-orange-300">
-                                                {fmtWorkedHours(
-                                                  isHoliday
-                                                    ? Number(rec.workedHours)
-                                                    : Number(rec.workedHours) - 8,
-                                                )}
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
+                                       <div className="mt-2.5 rounded-xl bg-secondary/50 p-2.5">
+                                         <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+                                           <span className="text-muted-foreground">WORKED</span>
+                                           {fmtOvertimeHours(rec) && (
+                                             <span className="text-orange-600 dark:text-orange-400">OT</span>
+                                           )}
+                                         </div>
+
+                                         <div className="mt-1 flex items-center justify-between text-xs font-extrabold">
+                                           <span className="text-foreground">
+                                             {fmtWorkedHours(Math.min(Number(rec.workedHours), 8))}
+                                           </span>
+                                           {fmtOvertimeHours(rec) && (
+                                             <span className="text-orange-600 dark:text-orange-400">
+                                               {fmtOvertimeHours(rec)}
+                                             </span>
+                                           )}
+                                         </div>
+                                       </div>
+                                     )}
 
                                     {hasSubmittedReason(rec.note) && (
                                       <div className="mt-2 flex flex-wrap gap-1">
@@ -2727,7 +2716,9 @@ const Attendance = () => {
                                     </div>
                                     <div className="mt-1.5 text-base font-bold text-primary">
                                       {fmtWorkedHours(
-                                        selectedRecord.workedHours,
+                                        isHolidayDate(selectedRecord.date)
+                                          ? 0
+                                          : Math.min(Number(selectedRecord.workedHours), 8)
                                       )}
                                     </div>
                                   </div>
@@ -2737,19 +2728,7 @@ const Attendance = () => {
                                       Overtime
                                     </div>
                                     <div className="mt-1.5 text-base font-bold text-orange-700 dark:text-orange-300">
-                                      {isHolidayDate(selectedRecord.date)
-                                        ? isWorkedRecord(selectedRecord)
-                                          ? fmtWorkedHours(
-                                              selectedRecord.workedHours,
-                                            )
-                                          : "—"
-                                        : Number(selectedRecord.workedHours) > 8
-                                          ? fmtWorkedHours(
-                                              Number(
-                                                selectedRecord.workedHours,
-                                              ) - 8,
-                                            )
-                                          : "—"}
+                                      {fmtOvertimeHours(selectedRecord) || "�"}
                                     </div>
                                   </div>
                                 </div>
@@ -2882,10 +2861,7 @@ const Attendance = () => {
                             : isSunday
                               ? statusMeta.HOLIDAY
                               : null;
-                        const overtimeText = fmtOvertimeHours(
-                          rec,
-                          Boolean(holidayName),
-                        );
+                        const overtimeText = fmtOvertimeHours(rec);
                         const checkInLocationCode = getCalendarLocationCode(
                           rec?.note,
                           "check-in",
@@ -2992,7 +2968,7 @@ const Attendance = () => {
                                             Hours
                                           </span>
                                           <span className="text-right text-primary">
-                                            {fmtWorkedHours(rec.workedHours)}
+                                            {fmtWorkedHours(Math.min(Number(rec.workedHours), 8))}
                                           </span>
                                         </div>
                                       )}

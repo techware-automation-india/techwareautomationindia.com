@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft, ChevronDown } from "lucide-react";
 import { adminModules } from "./modules.js";
@@ -9,6 +9,7 @@ const AdminLayout = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileDropdownRef = useRef(null);
   const user = getAuthUser();
 
   // Redirect to login if not authenticated as admin — must be inside useEffect
@@ -18,6 +19,23 @@ const AdminLayout = () => {
       navigate("/login", { replace: true });
     }
   }, [navigate, user]);
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target)
+      ) {
+        setProfileOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const handleLogout = () => {
     clearAuth();
@@ -137,7 +155,7 @@ const AdminLayout = () => {
             <ThemeToggle />
 
             {/* Profile Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={profileDropdownRef}>
               <button
                 type="button"
                 onClick={() => setProfileOpen((prev) => !prev)}

@@ -948,18 +948,13 @@ const TrackRequests = ({ isAdmin = false }) => {
               {(reasonModal.checkInLatitude ||
                 reasonModal.checkOutLatitude) && (
                 <div className="space-y-2">
-                  {(
-                    (reasonModal.checkInLatitude && reasonModal.checkInLongitude && attendanceReason.isCheckInUnassigned) ||
-                    (reasonModal.checkOutLatitude && reasonModal.checkOutLongitude && attendanceReason.isCheckOutUnassigned)
-                  ) && (
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <MapPin className="h-4 w-4" />
-                      <span>Location</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <MapPin className="h-4 w-4" />
+                    <span>Location</span>
+                  </div>
                   <div className="flex gap-2">
                     {reasonModal.checkInLatitude &&
-                      reasonModal.checkInLongitude && attendanceReason.isCheckInUnassigned && (
+                      reasonModal.checkInLongitude && (
                         <button
                           type="button"
                           onClick={() =>
@@ -975,7 +970,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                         </button>
                       )}
                     {reasonModal.checkOutLatitude &&
-                      reasonModal.checkOutLongitude && attendanceReason.isCheckOutUnassigned && (
+                      reasonModal.checkOutLongitude && (
                         <button
                           type="button"
                           onClick={() =>

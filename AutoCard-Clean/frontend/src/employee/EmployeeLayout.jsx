@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Link,
   NavLink,
@@ -14,7 +14,6 @@ import {
   ClipboardList,
   Clock,
   ChevronDown,
-  
 } from "lucide-react";
 import { employeeModules, getModulesByPermissions } from "./modules.js";
 import { getAuthUser, clearAuth, updateAuthUser } from "../lib/auth.js";
@@ -28,6 +27,7 @@ const EmployeeLayout = () => {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileDropdownRef = useRef(null);
   const [user, setUser] = useState(null);
   const [assignedRoleName, setAssignedRoleName] = useState(() => {
     const authUser = getAuthUser();
@@ -36,6 +36,23 @@ const EmployeeLayout = () => {
   const [permissions, setPermissions] = useState({});
   const [visibleModules, setVisibleModules] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+
+  // Close profile dropdown when clicking anywhere outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target)
+      ) {
+        setProfileOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     const authUser = getAuthUser();
@@ -210,7 +227,7 @@ const EmployeeLayout = () => {
           <div className="flex items-center gap-3">
             <ThemeToggle />
 
-            <div className="relative">
+            <div className="relative" ref={profileDropdownRef}>
               {/* Profile Button */}
               <button
                 type="button"

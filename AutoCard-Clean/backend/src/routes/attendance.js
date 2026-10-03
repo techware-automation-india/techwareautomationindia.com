@@ -60,7 +60,8 @@ const calculateWorkedHours = (checkIn, checkOut) => {
   return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
 };
 
-// Anything above 8 hours is overtime. 15 minutes is deducted from total overtime (e.g. 9 hrs worked -> 1 hr raw OT - 15 mins = 45 mins OT).
+// Anything above 8 hours is overtime rounded to 15-minute intervals:
+// 0-14 min -> 0 min, 15-29 min -> 15 min, 30-44 min -> 30 min, 45-59 min -> 45 min
 const calculateOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -72,13 +73,13 @@ const calculateOvertimeHours = (workedHours) => {
 
   const rawOvertimeHours = hours - REGULAR_WORKING_HOURS;
   const rawOvertimeMinutes = Math.round(rawOvertimeHours * 60);
-  const netOvertimeMinutes = Math.max(0, rawOvertimeMinutes - 15);
+  const roundedOtMinutes = Math.floor(rawOvertimeMinutes / 15) * 15;
 
-  if (netOvertimeMinutes <= 0) {
+  if (roundedOtMinutes <= 0) {
     return 0;
   }
 
-  return parseFloat((netOvertimeMinutes / 60).toFixed(2));
+  return parseFloat((roundedOtMinutes / 60).toFixed(2));
 };
 
 const parseLocationString = (location) => {
@@ -421,6 +422,8 @@ router.get("/me", requireAuth, async (req, res) => {
           workedHours,
           overtimeHours,
           note: attendance.note,
+          createdAt: attendance.createdAt,
+          updatedAt: attendance.updatedAt,
         });
 
         continue;

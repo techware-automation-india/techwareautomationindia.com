@@ -1438,11 +1438,8 @@ async function reviewRequest(
                       "PRESENT",
 
                     note: [
-                      attendance.note ||
-                        "",
-
-                      "Forgot Punch approved.",
-
+                      attendance.note || "",
+                      `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}`,
                       note || "",
                     ]
                       .filter(Boolean)
@@ -1479,8 +1476,7 @@ async function reviewRequest(
                       "PRESENT",
 
                     note: [
-                      "Forgot Punch approved.",
-
+                      `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}`,
                       note || "",
                     ]
                       .filter(Boolean)

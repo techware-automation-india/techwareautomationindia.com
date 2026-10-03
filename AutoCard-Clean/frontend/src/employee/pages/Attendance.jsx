@@ -12,6 +12,9 @@ import {
   XCircle,
   CalendarDays,
   TrendingUp,
+  MessageSquare,
+  X,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
@@ -69,7 +72,8 @@ const getRegularHours = (workedHours) => {
   return Math.min(hours, REGULAR_HOURS);
 };
 
-// Calculate overtime from worked hours. 15 minutes is deducted from total overtime.
+// Calculate overtime from worked hours with 15-minute interval rounding:
+// 0-14 min -> 0 min, 15-29 min -> 15 min, 30-44 min -> 30 min, 45-59 min -> 45 min
 const getOvertimeHours = (workedHours) => {
   if (workedHours == null) return 0;
 
@@ -81,13 +85,114 @@ const getOvertimeHours = (workedHours) => {
 
   const rawOvertimeHours = hours - REGULAR_HOURS;
   const rawOvertimeMinutes = Math.round(rawOvertimeHours * 60);
-  const netOvertimeMinutes = Math.max(0, rawOvertimeMinutes - 15);
+  const roundedOtMinutes = Math.floor(rawOvertimeMinutes / 15) * 15;
 
-  if (netOvertimeMinutes <= 0) {
+  if (roundedOtMinutes <= 0) {
     return 0;
   }
 
-  return netOvertimeMinutes / 60;
+  return roundedOtMinutes / 60;
+};
+
+
+const isComplexNote = (note) => {
+  if (!note) return false;
+  const lower = note.toLowerCase();
+  return (
+    lower.includes("unassigned") ||
+    lower.includes("outside") ||
+    lower.includes("forgot punch") ||
+    lower.includes("pending") ||
+    lower.includes("reject") ||
+    lower.includes("approve") ||
+    lower.includes("reason")
+  );
+};
+
+const parseNoteSegment = (segment, record) => {
+  const text = segment.trim();
+  const lower = text.toLowerCase();
+
+  const isCheckIn = lower.includes("checkin") || lower.includes("check in");
+  const isCheckOut = lower.includes("checkout") || lower.includes("check out");
+  const isForgotPunch = lower.includes("forgot punch");
+
+  let type = "Attendance Note";
+  if (isForgotPunch) {
+    type = "Forgot Punch";
+  } else if (isCheckIn) {
+    type = "Check In Request";
+  } else if (isCheckOut) {
+    type = "Check Out Request";
+  }
+
+  // Extract Reason using TrackRequests style regex matching
+  let userReason = null;
+  const reasonMatch = text.match(/Reason:\s*(.*?)(?=\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin|Approved|Rejected)\b|\s*\||\.|$)/i);
+  if (reasonMatch && reasonMatch[1].trim()) {
+    userReason = reasonMatch[1].trim();
+  }
+
+  // Extract distance if present
+  const distMatch = text.match(/\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i);
+  const distance = distMatch ? distMatch[1].trim() : null;
+
+  let status = "INFO";
+  let statusLabel = null;
+  if (lower.includes("pending")) {
+    status = "PENDING";
+    statusLabel = "Pending Approval";
+  } else if (lower.includes("approved")) {
+    status = "APPROVED";
+    statusLabel = "Approved";
+  } else if (lower.includes("rejected")) {
+    status = "REJECTED";
+    statusLabel = "Rejected";
+  }
+
+  let locationInfo = null;
+  if (lower.includes("unassigned location")) {
+    const locM = text.match(/unassigned location:\s*([^.]+?)(?=\.|\s*Reason:|\s*Pending|$)/i);
+    const locName = locM ? locM[1].trim() : "Unassigned Location";
+    locationInfo = distance ? `${locName} (${distance} away)` : locName;
+  } else if (lower.includes("outside assigned location")) {
+    locationInfo = distance ? `Outside (${distance} away)` : "Outside Location";
+  }
+
+  let timeStr = null;
+  if (isCheckIn && record?.checkIn) {
+    timeStr = fmtTime(record.checkIn);
+  } else if (isCheckOut && record?.checkOut) {
+    timeStr = fmtTime(record.checkOut);
+  }
+
+  let cleanSummary = text
+    .replace(/^Checkin\s+(from|to|location)?[^.]*?\.\s*/i, "")
+    .replace(/^Checkout\s+(recorded|from|to|location|outside)?[^.]*?\.\s*/i, "")
+    .replace(/Forgot Punch\s*(approved|rejected|pending approval)?\.?/gi, "")
+    .replace(/\s*Pending admin approval\.?/gi, "")
+    .replace(/\s*Approved by admin\.?/gi, "")
+    .replace(/\s*Rejected by admin\.?/gi, "")
+    .replace(/\s*Admin approved\.?/gi, "")
+    .replace(/\s*Admin rejected\.?/gi, "")
+    .replace(/\s*Approved\.?/gi, "")
+    .replace(/\s*Rejected\.?/gi, "")
+    .trim();
+
+  return {
+    type,
+    isCheckIn,
+    isCheckOut,
+    isForgotPunch,
+    timeStr,
+    userReason,
+    status,
+    statusLabel,
+    locationInfo,
+    distance,
+    rawText: text,
+    cleanSummary,
+  };
 };
 
 const getIndiaDayNumber = (val) => {
@@ -179,7 +284,8 @@ const Attendance = () => {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
 
-  const [records, setRecords] = useState([]);
+  const [records, setRecords] = useState([]); 
+  const [selectedRecordForNote, setSelectedRecordForNote] = useState(null);
   const [holidays, setHolidays] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
@@ -390,21 +496,31 @@ const Attendance = () => {
                         </td>
 
                         <td className="px-5 py-3 min-w-[280px] max-w-[360px]">
-                          {r.note ? (
-                            <div className="space-y-1">
-                              {r.note.split("|").map((note, index) => (
-                                <div
-                                  key={index}
-                                  className="text-base font-medium text-foreground whitespace-normal break-words"
-                                >
-                                  {note.trim()}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-base text-muted-foreground">
-                              —
+                          {r.status === "ABSENT" ? (
+                            <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                              Absent
                             </span>
+                          ) : r.note ? (
+                            isComplexNote(r.note) ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRecordForNote(r)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                View Reason
+                              </button>
+                            ) : (
+                              <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
+                                {r.note.split("|").map((n, i) => (
+                                  <div key={i}>
+                                    {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <span className="text-base text-muted-foreground">�</span>
                           )}
                         </td>
                       </tr>
@@ -1194,21 +1310,31 @@ const Attendance = () => {
                         </td>
 
                         <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
-                          {r.note ? (
-                            <div className="space-y-1">
-                              {r.note.split("|").map((note, index) => (
-                                <div
-                                  key={index}
-                                  className="text-base font-medium text-foreground whitespace-nowrap"
-                                >
-                                  {note.trim()}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-base text-muted-foreground">
-                              —
+                          {r.status === "ABSENT" ? (
+                            <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                              Absent
                             </span>
+                          ) : r.note ? (
+                            isComplexNote(r.note) ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRecordForNote(r)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                View Reason
+                              </button>
+                            ) : (
+                              <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
+                                {r.note.split("|").map((n, i) => (
+                                  <div key={i}>
+                                    {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <span className="text-base text-muted-foreground">�</span>
                           )}
                         </td>
                       </tr>
@@ -1220,8 +1346,163 @@ const Attendance = () => {
           )}
         </div>
       )}
+      {/* Note Details Modal */}
+      {selectedRecordForNote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl card-shadow">
+            <button
+              onClick={() => setSelectedRecordForNote(null)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 hover:bg-secondary transition-colors text-muted-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                <MessageSquare className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-lg font-bold">Attendance Request Details</h3>
+                <p className="text-xs text-muted-foreground">
+                  {fmtDate(selectedRecordForNote.date)}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+              {selectedRecordForNote.note?.split("|").map((segment, idx) => {
+                const parsed = parseNoteSegment(segment, selectedRecordForNote);
+
+                return (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3"
+                  >
+                    {/* Header Row: Type & Status */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap pb-2.5 border-b border-border/60">
+                      <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                        {parsed.isCheckIn ? (
+                          <LogIn className="h-4 w-4 text-emerald-600" />
+                        ) : parsed.isCheckOut ? (
+                          <LogOut className="h-4 w-4 text-rose-600" />
+                        ) : (
+                          <Clock3 className="h-4 w-4 text-amber-600" />
+                        )}
+                        {parsed.type}
+                      </span>
+
+                      {parsed.statusLabel && (
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                            parsed.status === "PENDING"
+                              ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                              : parsed.status === "APPROVED"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                              : parsed.status === "REJECTED"
+                              ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300"
+                              : "bg-secondary text-muted-foreground"
+                          }`}
+                        >
+                          {parsed.status === "PENDING" && <Clock className="h-3 w-3" />}
+                          {parsed.status === "APPROVED" && <CheckCircle2 className="h-3 w-3" />}
+                          {parsed.status === "REJECTED" && <XCircle className="h-3 w-3" />}
+                          {parsed.statusLabel}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {/* Punch Time */}
+                      {parsed.timeStr && (
+                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                            Punch Time
+                          </div>
+                          <div className="font-bold text-foreground mt-0.5">
+                            {parsed.timeStr}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Location Info */}
+                      {parsed.locationInfo && (
+                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
+                            <MapPin className="h-3 w-3 text-primary" /> Location / Dist
+                          </div>
+                          <div className="font-bold text-foreground mt-0.5 truncate">
+                            {parsed.locationInfo}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Request Submitted Time */}
+                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                          Request Submitted Time
+                        </div>
+                        <div className="font-bold text-foreground mt-0.5">
+                          {selectedRecordForNote.createdAt
+                            ? `${fmtDate(selectedRecordForNote.createdAt)} ${fmtTime(selectedRecordForNote.createdAt)}`
+                            : parsed.timeStr
+                            ? `${fmtDate(selectedRecordForNote.date)} ${parsed.timeStr}`
+                            : `${fmtDate(selectedRecordForNote.date)} —`}
+                        </div>
+                      </div>
+
+                      {/* Request Approved / Reviewed Time */}
+                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                          {parsed.status === "APPROVED"
+                            ? "Approved Time"
+                            : parsed.status === "REJECTED"
+                            ? "Rejected Time"
+                            : "Approved / Status Date"}
+                        </div>
+                        <div className="font-bold text-foreground mt-0.5">
+                          {parsed.status === "APPROVED" || parsed.status === "REJECTED"
+                            ? selectedRecordForNote.updatedAt
+                              ? `${fmtDate(selectedRecordForNote.updatedAt)} ${fmtTime(selectedRecordForNote.updatedAt)}`
+                              : "—"
+                            : "Awaiting Approval"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Reason / Note Details */}
+                    <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
+                      <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
+                      </div>
+                      <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
+                        {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
+                      </div>
+                      {parsed.distance && (
+                        <div className="text-[11px] font-semibold text-primary pt-0.5">
+                          Distance from office: {parsed.distance} away
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setSelectedRecordForNote(null)}
+                className="rounded-lg bg-primary text-primary-foreground px-5 py-2 text-xs font-bold hover:opacity-90 transition-opacity"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default Attendance;
+

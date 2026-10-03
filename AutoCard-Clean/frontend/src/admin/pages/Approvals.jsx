@@ -380,7 +380,7 @@ const getAttendanceDetails = (note = "") => {
   return {
     reason: fullClean || "No reason provided.",
     checkInReason: checkInReason || fullClean || "No check-in reason provided.",
-    checkOutReason: checkOutReason || "No check-out reason provided.",
+    checkOutReason: checkOutReason || "No reason provided for check-out.",
     checkInDistance,
     checkOutDistance,
     isCheckInUnassigned,

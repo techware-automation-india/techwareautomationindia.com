@@ -1768,7 +1768,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
         ? `Checkout outside assigned location (${formatDistanceKm(
             distToUse,
           )} away). Pending admin approval.${reasonText}`
-        : `Checkout from unassigned location${distStr}. Pending admin approval.${reasonText}`;
+        : `Checkout from unassigned location${distStr}. Pending admin approval.${reasonText || " No reason provided."}`;
 
       const updatedNote = record.note
         ? `${record.note} | ${checkoutNote}`

@@ -1,18 +1,24 @@
-import { ArrowRight, ClipboardList, FileText, ScanLine } from "lucide-react";
+import { ArrowRight, ClipboardList, FileText, ScanLine, CalendarDays } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const requestServices = [
-  // {
-  //   label: "Track My Request",
-  //   description: "View and manage employee requests and their statuses.",
-  //   path: "/admin/requests/track",
-  //   icon: ClipboardList,
-  // },
+  {
+    label: "Track My Request",
+    description: "View all submitted requests and their current approval status.",
+    path: "/admin/requests/track",
+    icon: ClipboardList,
+  },
   {
     label: "Forgot Punch",
     description: "Review employee check-in and check-out correction requests.",
     path: "/admin/requests/forgot-punch",
     icon: ScanLine,
+  },
+  {
+    label: "Apply for Leave",
+    description: "Apply for leave as admin. Requests are auto-approved without review.",
+    path: "/admin/requests/apply-leave",
+    icon: CalendarDays,
   },
 ];
 

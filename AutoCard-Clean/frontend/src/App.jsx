@@ -22,8 +22,8 @@ import EmployeeList from "./admin/pages/EmployeeList.jsx";
 import RequestsHome from "./admin/pages/RequestsHome.jsx";
 import AdminTrackRequests from "./admin/pages/AdminTrackRequests.jsx";
 import AdminAttendanceCorrection from "./admin/pages/AdminAttendanceCorrection.jsx";
+import AdminApplyLeave from "./admin/pages/AdminApplyLeave.jsx";
 import Approvals from "./admin/pages/Approvals.jsx";
-import LeaveRequests from "./admin/pages/LeaveRequests.jsx";
 import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
 import Holidays from "./admin/pages/Holidays.jsx";
 import LeavePolicyHome from "./admin/pages/LeavePolicyHome.jsx";
@@ -135,8 +135,8 @@ const AppRoutes = () => {
             path="requests/forgot-punch"
             element={<AdminAttendanceCorrection />}
           />
+          <Route path="requests/apply-leave" element={<AdminApplyLeave />} />
           <Route path="approvals" element={<Approvals />} />
-          <Route path="leave-requests" element={<LeaveRequests />} />
           <Route path="leave-policy" element={<LeavePolicyHome />} />
           <Route path="leave-policy/types" element={<LeavePolicy />} />
           <Route path="leave-policy/holidays" element={<Holidays />} />

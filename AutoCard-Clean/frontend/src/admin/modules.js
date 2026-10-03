@@ -55,13 +55,6 @@ export const adminModules = [
     description: "Approve or reject pending employee requests.",
   },
   {
-    key: "leave-requests",
-    label: "Leave Requests",
-    path: "/admin/leave-requests",
-    icon: CalendarDays,
-    description: "Review and approve employee leave applications.",
-  },
-  {
     key: "leave-policy",
     label: "Leave Policy & Holiday",
     path: "/admin/leave-policy",

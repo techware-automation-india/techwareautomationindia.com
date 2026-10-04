@@ -33,8 +33,6 @@ const CategoryModal = ({
     }
   }, [categoryToEdit, isOpen]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;

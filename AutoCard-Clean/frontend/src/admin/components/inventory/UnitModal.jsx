@@ -7,8 +7,6 @@ const UnitModal = ({ isOpen, onClose, onUnitCreated }) => {
   const [unitName, setUnitName] = useState("");
   const [loading, setLoading] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     const trimmed = unitName.trim();
@@ -40,6 +38,8 @@ const UnitModal = ({ isOpen, onClose, onUnitCreated }) => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
 
   return (
     <div

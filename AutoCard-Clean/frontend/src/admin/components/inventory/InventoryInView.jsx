@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
-  Folder, FolderPlus, Package, Plus, Search, ChevronRight,
-  ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
-  FileText, LayoutGrid, List, RefreshCw, X, Box
+  Folder, FolderPlus, FolderTree, Package, Plus, Search, ChevronRight,
+  ChevronDown, ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
+  FileText, LayoutGrid, List, RefreshCw, X, Box, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiDelete } from "../../../lib/api.js";
@@ -28,19 +28,298 @@ const fmtDate = (d) => {
   return `${day}/${month}/${year} ${hours}:${mins}`;
 };
 
+// ─── Helper: Build Recursive Category Tree (Up to 4 Levels) ─────────────────
+const buildCategoryTree = (categoriesList) => {
+  if (!Array.isArray(categoriesList)) return [];
+  const map = new Map();
+  const roots = [];
+
+  // Pass 1: Clone and map all categories
+  categoriesList.forEach((cat) => {
+    map.set(cat.id, { ...cat, children: [] });
+  });
+
+  // Pass 2: Connect children to parents
+  categoriesList.forEach((cat) => {
+    const node = map.get(cat.id);
+    if (cat.parentId && map.has(cat.parentId)) {
+      map.get(cat.parentId).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  return roots;
+};
+
+// ─── Helper: Flatten Tree with Full Breadcrumb Path ─────────────────────────
+const flattenTreeWithPath = (tree, parentPath = "") => {
+  const result = [];
+  const traverse = (nodes, currentPath) => {
+    nodes.forEach((node) => {
+      const fullPath = currentPath ? `${currentPath} > ${node.name}` : node.name;
+      result.push({ ...node, fullPath });
+      if (node.children && node.children.length > 0) {
+        traverse(node.children, fullPath);
+      }
+    });
+  };
+  traverse(tree, parentPath);
+  return result;
+};
+
+// ─── Level Badge Component ──────────────────────────────────────────────────
+const getLevelBadge = (level) => {
+  switch (level) {
+    case 1:
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20">
+          Level 1 (Root)
+        </span>
+      );
+    case 2:
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20">
+          Level 2 (Sub)
+        </span>
+      );
+    case 3:
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">
+          Level 3 (Sub)
+        </span>
+      );
+    case 4:
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">
+          Level 4 (Final)
+        </span>
+      );
+    default:
+      return null;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Recursive Tree Node Component (Shows Indentation & Hierarchy Connectors)
+// ═══════════════════════════════════════════════════════════════════════════
+const CategoryTreeNode = ({
+  cat,
+  level = 1,
+  expandedMap,
+  toggleExpand,
+  onDrillDown,
+  onAddSubcategory,
+  onAddItem,
+  onEdit,
+  onDelete,
+  searchTerm,
+}) => {
+  const isExpanded = expandedMap[cat.id] ?? true;
+  const hasChildren = cat.children && cat.children.length > 0;
+  const childCount = cat.children?.length ?? cat._count?.children ?? 0;
+  const itemCount = cat._count?.items ?? cat.items?.length ?? 0;
+
+  // Highlight if matches search
+  const isMatch = searchTerm
+    ? cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (cat.code && cat.code.toLowerCase().includes(searchTerm.toLowerCase()))
+    : false;
+
+  return (
+    <div className="relative">
+      {/* Node Row */}
+      <div
+        className={`group flex items-center justify-between gap-3 p-3.5 rounded-xl border transition-all ${
+          isMatch
+            ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+            : level === 1
+            ? "bg-background border-border hover:border-primary/50 card-shadow"
+            : level === 2
+            ? "bg-secondary/40 border-border/80 hover:border-primary/40"
+            : level === 3
+            ? "bg-secondary/25 border-border/60 hover:border-amber-500/40"
+            : "bg-secondary/15 border-border/40 hover:border-rose-500/40"
+        }`}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Expand / Collapse Chevron */}
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => toggleExpand(cat.id)}
+              className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              title={isExpanded ? "Collapse" : "Expand"}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </button>
+          ) : (
+            <span className="w-6 h-6 flex items-center justify-center text-muted-foreground/30 text-xs">
+              •
+            </span>
+          )}
+
+          {/* Color-coded Folder Icon */}
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+              level === 1
+                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                : level === 2
+                ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20"
+                : level === 3
+                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+            }`}
+          >
+            <Folder className="h-4 w-4" />
+          </div>
+
+          {/* Name, Code & Level */}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                onClick={() => onDrillDown(cat)}
+                className="font-bold text-sm text-foreground hover:text-primary transition-colors cursor-pointer truncate"
+                title={`Click to open "${cat.name}"`}
+              >
+                {cat.name}
+              </span>
+
+              {cat.code && (
+                <span className="font-mono text-[11px] text-muted-foreground px-1.5 py-0.5 rounded bg-secondary border border-border/50">
+                  {cat.code}
+                </span>
+              )}
+
+              {getLevelBadge(level)}
+            </div>
+
+            {cat.description && (
+              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5 leading-relaxed">
+                {cat.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Counts & Action Buttons */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="px-2 py-0.5 rounded-full bg-secondary font-medium">
+              {childCount} {childCount === 1 ? "sub" : "subs"}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-secondary font-medium">
+              {itemCount} {itemCount === 1 ? "item" : "items"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {/* Open / Drill-Down Button */}
+            <button
+              type="button"
+              onClick={() => onDrillDown(cat)}
+              className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+              title="Open category folder"
+            >
+              <span>Open</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Add Subcategory (Levels 1 to 3 only) */}
+            {level < 4 && (
+              <button
+                type="button"
+                onClick={() => onAddSubcategory(cat)}
+                className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer shadow-xs"
+                title={`Add Subcategory (Level ${level + 1})`}
+              >
+                <FolderPlus className="h-3.5 w-3.5" />
+              </button>
+            )}
+
+            {/* Add Item directly to this category */}
+            <button
+              type="button"
+              onClick={() => onAddItem(cat)}
+              className="p-1.5 rounded-lg border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer shadow-xs"
+              title="Add item into this category"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Edit */}
+            <button
+              type="button"
+              onClick={() => onEdit(cat)}
+              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+              title="Edit category"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Delete */}
+            <button
+              type="button"
+              onClick={() => onDelete(cat)}
+              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+              title="Delete category"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Children branches (Indented with visual connector line) */}
+      {hasChildren && isExpanded && (
+        <div className="ml-5 pl-4 border-l-2 border-primary/20 space-y-2.5 mt-2.5">
+          {cat.children.map((child) => (
+            <CategoryTreeNode
+              key={child.id}
+              cat={child}
+              level={level + 1}
+              expandedMap={expandedMap}
+              toggleExpand={toggleExpand}
+              onDrillDown={onDrillDown}
+              onAddSubcategory={onAddSubcategory}
+              onAddItem={onAddItem}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              searchTerm={searchTerm}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Main InventoryInView Component
+// ═══════════════════════════════════════════════════════════════════════════
 const InventoryInView = ({ onBackToHub }) => {
   // Navigation stack: array of category objects [rootCategory, sub2, sub3, sub4]
   const [navPath, setNavPath] = useState([]);
+  const [allCategories, setAllCategories] = useState([]);
   const [categories, setCategories] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState("grid"); // 'grid' | 'table'
+  // Default to 'tree' view so the hierarchy is immediately visible!
+  const [viewMode, setViewMode] = useState("tree"); // 'tree' | 'grid' | 'table'
+  const [expandedNodes, setExpandedNodes] = useState({});
 
   // Modals state
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [modalParentCategory, setModalParentCategory] = useState(null);
   const [categoryToEdit, setCategoryToEdit] = useState(null);
+
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [itemTargetCategory, setItemTargetCategory] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
 
   // Delete confirmations
@@ -53,25 +332,65 @@ const InventoryInView = ({ onBackToHub }) => {
   const currentLevel = currentCategory ? (currentCategory.level || 1) : 0;
   const canAddSubcategory = currentLevel < 4;
 
-  // Load current view data
+  // Build recursive category tree from all categories
+  const categoryTree = useMemo(() => buildCategoryTree(allCategories), [allCategories]);
+
+  // Flattened tree for Table View with complete breadcrumb paths
+  const flattenedCategories = useMemo(
+    () => flattenTreeWithPath(categoryTree),
+    [categoryTree]
+  );
+
+  // Toggle node expand/collapse
+  const toggleExpand = (id) => {
+    setExpandedNodes((prev) => ({
+      ...prev,
+      [id]: !(prev[id] ?? true),
+    }));
+  };
+
+  const expandAll = () => {
+    const allExpanded = {};
+    allCategories.forEach((c) => {
+      allExpanded[c.id] = true;
+    });
+    setExpandedNodes(allExpanded);
+  };
+
+  const collapseAll = () => {
+    const allCollapsed = {};
+    allCategories.forEach((c) => {
+      allCollapsed[c.id] = false;
+    });
+    setExpandedNodes(allCollapsed);
+  };
+
+  // Load inventory data
   const loadData = async () => {
     setLoading(true);
     try {
+      // 1. Fetch all categories so tree and counts are always up-to-date
+      const catsRes = await apiGet("/inventory/categories");
+      const cats = catsRes?.categories || [];
+      setAllCategories(cats);
+
+      // 2. Filter categories for CURRENT level in Folder Cards View
       if (!currentCategory) {
-        // Root view: get level 1 categories and root items
-        const [catsRes, itemsRes] = await Promise.all([
-          apiGet("/inventory/categories"),
-          apiGet("/inventory/items?rootOnly=true"),
-        ]);
-        setCategories(catsRes.categories || []);
-        setItems(itemsRes.items || []);
+        // At Root level: only show Level 1 root categories (e.g. A and B)
+        const roots = cats.filter((c) => !c.parentId || c.level === 1);
+        setCategories(roots);
+
+        // Load root-level direct items
+        const itemsRes = await apiGet("/inventory/items?rootOnly=true");
+        setItems(itemsRes?.items || []);
       } else {
-        // Subcategory view: get details of current category (its children and direct items)
-        const res = await apiGet(`/inventory/categories/${currentCategory.id}`);
-        if (res?.category) {
-          setCategories(res.category.children || []);
-          setItems(res.category.items || []);
-        }
+        // Inside a category: only show direct children of currentCategory
+        const directChildren = cats.filter((c) => c.parentId === currentCategory.id);
+        setCategories(directChildren);
+
+        // Load direct items in this category
+        const itemsRes = await apiGet(`/inventory/items?categoryId=${currentCategory.id}`);
+        setItems(itemsRes?.items || []);
       }
     } catch (err) {
       toast.error(err.message || "Failed to load inventory data.");
@@ -87,7 +406,12 @@ const InventoryInView = ({ onBackToHub }) => {
   // Navigation handlers
   const handleDrillDown = (cat) => {
     setSearch("");
+    // In folder cards mode, drill into category
     setNavPath((prev) => [...prev, cat]);
+    // Switch to folder grid view when drilling into a folder
+    if (viewMode === "tree") {
+      setViewMode("grid");
+    }
   };
 
   const handleBreadcrumbClick = (index) => {
@@ -112,6 +436,10 @@ const InventoryInView = ({ onBackToHub }) => {
       await apiDelete(`/inventory/categories/${deleteCatTarget.id}`);
       toast.success("Category deleted.");
       setDeleteCatTarget(null);
+      // If we deleted the current category or an ancestor, reset nav
+      if (navPath.some((c) => c.id === deleteCatTarget.id)) {
+        setNavPath([]);
+      }
       loadData();
     } catch (err) {
       toast.error(err.message || "Failed to delete category.");
@@ -136,27 +464,31 @@ const InventoryInView = ({ onBackToHub }) => {
     }
   };
 
-  // Filtered categories and items
-  const q = search.trim().toLowerCase();
-  const filteredCategories = categories.filter((c) => {
-    if (!q) return true;
+  // Filter categories by search
+  const filteredCategories = categories.filter((cat) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
     return (
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.code || "").toLowerCase().includes(q) ||
-      (c.description || "").toLowerCase().includes(q)
+      cat.name.toLowerCase().includes(q) ||
+      (cat.code && cat.code.toLowerCase().includes(q)) ||
+      (cat.description && cat.description.toLowerCase().includes(q))
     );
   });
 
+  // Filter items by search
   const filteredItems = items.filter((i) => {
-    if (!q) return true;
-    const nameMatch = (i.name || "").toLowerCase().includes(q);
-    const codeMatch = (i.code || i.sku || "").toLowerCase().includes(q);
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const nameMatch = i.name.toLowerCase().includes(q);
+    const codeMatch =
+      (i.code && i.code.toLowerCase().includes(q)) ||
+      (i.sku && i.sku.toLowerCase().includes(q));
     let specMatch = false;
     if (Array.isArray(i.specifications)) {
       specMatch = i.specifications.some(
         (s) =>
-          (s?.key || "").toLowerCase().includes(q) ||
-          (s?.value || "").toLowerCase().includes(q)
+          (s?.key && s.key.toLowerCase().includes(q)) ||
+          (s?.value && s.value.toLowerCase().includes(q))
       );
     } else if (i.specifications && typeof i.specifications === "object") {
       specMatch = Object.entries(i.specifications).some(
@@ -167,38 +499,6 @@ const InventoryInView = ({ onBackToHub }) => {
     return nameMatch || codeMatch || specMatch;
   });
 
-  // Level Badge colors
-  const getLevelBadge = (level) => {
-    switch (level) {
-      case 1:
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20">
-            Level 1 (Root)
-          </span>
-        );
-      case 2:
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20">
-            Level 2 (Sub)
-          </span>
-        );
-      case 3:
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">
-            Level 3 (Sub)
-          </span>
-        );
-      case 4:
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">
-            Level 4 (Final)
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* ─── Breadcrumb Navigation & Back ─────────────────────────── */}
@@ -206,6 +506,7 @@ const InventoryInView = ({ onBackToHub }) => {
         <div className="flex items-center gap-2 flex-wrap text-sm">
           {navPath.length === 0 && onBackToHub && (
             <button
+              type="button"
               onClick={onBackToHub}
               className="mr-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="Back to Inventory Submodules"
@@ -217,6 +518,7 @@ const InventoryInView = ({ onBackToHub }) => {
 
           {navPath.length > 0 && (
             <button
+              type="button"
               onClick={handleBack}
               className="mr-2 p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="Go Back"
@@ -226,6 +528,7 @@ const InventoryInView = ({ onBackToHub }) => {
           )}
 
           <button
+            type="button"
             onClick={() => handleBreadcrumbClick(-1)}
             className={`font-semibold cursor-pointer hover:text-primary transition-colors ${
               navPath.length === 0 ? "text-primary" : "text-muted-foreground"
@@ -240,6 +543,7 @@ const InventoryInView = ({ onBackToHub }) => {
               <div key={crumb.id || idx} className="flex items-center gap-2">
                 <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
                 <button
+                  type="button"
                   onClick={() => handleBreadcrumbClick(idx)}
                   className={`font-semibold cursor-pointer transition-colors ${
                     isLast
@@ -258,6 +562,7 @@ const InventoryInView = ({ onBackToHub }) => {
         {/* Global actions in current level */}
         <div className="flex items-center gap-2.5">
           <button
+            type="button"
             onClick={loadData}
             className="p-2.5 rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title="Refresh View"
@@ -265,17 +570,19 @@ const InventoryInView = ({ onBackToHub }) => {
             <RefreshCw className="h-4 w-4" />
           </button>
 
-          {/* Add Subcategory button: ONLY if depth is less than 4 */}
+          {/* Add Category / Subcategory button */}
           {canAddSubcategory ? (
             <button
+              type="button"
               onClick={() => {
                 setCategoryToEdit(null);
+                setModalParentCategory(currentCategory);
                 setIsCategoryModalOpen(true);
               }}
               className="px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary text-sm font-semibold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
             >
               <FolderPlus className="h-4 w-4" />
-              {currentLevel === 0 ? "Add Category" : "Add Subcategory"}
+              {currentLevel === 0 ? "Add Root Category" : `Add Subcategory (Level ${currentLevel + 1})`}
             </button>
           ) : (
             <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
@@ -284,10 +591,12 @@ const InventoryInView = ({ onBackToHub }) => {
             </div>
           )}
 
-          {/* Add Item button: Available at ANY level */}
+          {/* Add Item button */}
           <button
+            type="button"
             onClick={() => {
               setItemToEdit(null);
+              setItemTargetCategory(currentCategory);
               setIsItemModalOpen(true);
             }}
             className="bg-[#1e3a5f] hover:bg-[#162b45] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
@@ -297,49 +606,87 @@ const InventoryInView = ({ onBackToHub }) => {
         </div>
       </div>
 
-      {/* ─── Search & View Controls ───────────────────────────────── */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      {/* ─── Search & View Switcher ───────────────────────────────── */}
+      <div className="flex items-center justify-between gap-4 flex-wrap bg-background border border-border rounded-2xl p-4 card-shadow">
         <div className="relative max-w-sm w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             placeholder={
-              currentLevel === 4
-                ? "Search items, specifications, codes..."
-                : "Search categories, subcategories, items..."
+              viewMode === "tree"
+                ? "Filter hierarchy tree categories..."
+                : currentLevel === 4
+                ? "Search items in this level..."
+                : "Search categories and items..."
             }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-2.5 pl-10 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full px-4 py-2 pl-10 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground mr-1">
-            {filteredCategories.length} categories • {filteredItems.length} items
-          </span>
-          <div className="border border-border rounded-xl p-1 flex items-center bg-secondary/30">
+        <div className="flex items-center gap-3">
+          {viewMode === "tree" && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <button
+                type="button"
+                onClick={expandAll}
+                className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                Expand All
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                Collapse All
+              </button>
+            </div>
+          )}
+
+          {/* View Mode Switcher: Tree View vs Folder Cards vs Table List */}
+          <div className="border border-border rounded-xl p-1 flex items-center bg-secondary/40 gap-1">
             <button
-              onClick={() => setViewMode("grid")}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === "grid"
-                  ? "bg-background text-primary shadow-xs"
+              type="button"
+              onClick={() => setViewMode("tree")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === "tree"
+                  ? "bg-background text-primary shadow-xs font-bold ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
               }`}
-              title="Grid View"
+              title="Interactive Hierarchy Tree View"
             >
-              <LayoutGrid className="h-4 w-4" />
+              <FolderTree className="h-3.5 w-3.5" />
+              <span>Hierarchy Tree</span>
             </button>
+
             <button
-              onClick={() => setViewMode("table")}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === "table"
-                  ? "bg-background text-primary shadow-xs"
+              type="button"
+              onClick={() => setViewMode("grid")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === "grid"
+                  ? "bg-background text-primary shadow-xs font-bold ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
               }`}
-              title="Table View"
+              title="Folder Cards (Drill-Down)"
             >
-              <List className="h-4 w-4" />
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Folder Cards</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === "table"
+                  ? "bg-background text-primary shadow-xs font-bold ring-1 ring-border"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Hierarchical Table View"
+            >
+              <List className="h-3.5 w-3.5" />
+              <span>Table List</span>
             </button>
           </div>
         </div>
@@ -351,11 +698,215 @@ const InventoryInView = ({ onBackToHub }) => {
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <span className="text-sm">Loading inventory hierarchy...</span>
         </div>
+      ) : viewMode === "tree" ? (
+        /* ═══════════════════════════════════════════════════════════════ */
+        /* VIEW MODE 1: HIERARCHY TREE VIEW (Complete Visual Tree)         */
+        /* ═══════════════════════════════════════════════════════════════ */
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FolderTree className="h-5 w-5 text-primary" />
+              <h3 className="font-display text-base font-bold text-foreground">
+                Inventory Hierarchy Structure
+              </h3>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold border border-primary/20">
+                {allCategories.length} total categories
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              Expand branches to see subcategories up to 4 levels
+            </span>
+          </div>
+
+          {categoryTree.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-secondary/10 p-12 text-center text-muted-foreground text-sm">
+              <FolderTree className="h-10 w-10 mx-auto mb-3 opacity-30 text-primary" />
+              <p className="font-semibold text-foreground">No Categories Found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Click "+ Add Root Category" above to create your first Level 1 category.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {categoryTree.map((rootNode) => (
+                <CategoryTreeNode
+                  key={rootNode.id}
+                  cat={rootNode}
+                  level={1}
+                  expandedMap={expandedNodes}
+                  toggleExpand={toggleExpand}
+                  onDrillDown={handleDrillDown}
+                  onAddSubcategory={(parent) => {
+                    setCategoryToEdit(null);
+                    setModalParentCategory(parent);
+                    setIsCategoryModalOpen(true);
+                  }}
+                  onAddItem={(targetCat) => {
+                    setItemToEdit(null);
+                    setItemTargetCategory(targetCat);
+                    setIsItemModalOpen(true);
+                  }}
+                  onEdit={(cat) => {
+                    setCategoryToEdit(cat);
+                    setModalParentCategory(null);
+                    setIsCategoryModalOpen(true);
+                  }}
+                  onDelete={(cat) => setDeleteCatTarget(cat)}
+                  searchTerm={search}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Quick Info Bar */}
+          <div className="rounded-xl border border-border bg-secondary/30 p-4 text-xs text-muted-foreground flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-foreground">Color Legend:</span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Level 1 (Root)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Level 2 (Sub)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Level 3 (Sub)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Level 4 (Final)
+              </span>
+            </div>
+            <span>Click "Open" on any category to view its direct items.</span>
+          </div>
+        </div>
+      ) : viewMode === "table" ? (
+        /* ═══════════════════════════════════════════════════════════════ */
+        /* VIEW MODE 2: TABLE LIST VIEW (Indented Hierarchy Table)        */
+        /* ═══════════════════════════════════════════════════════════════ */
+        <div className="rounded-2xl border border-border bg-background card-shadow overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-secondary/70 border-b border-border text-xs uppercase font-bold text-muted-foreground">
+                <tr>
+                  <th className="py-3 px-4">Category Name & Hierarchy Path</th>
+                  <th className="py-3 px-4">Level</th>
+                  <th className="py-3 px-4">Code</th>
+                  <th className="py-3 px-4">Subcategories</th>
+                  <th className="py-3 px-4">Items</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {flattenedCategories.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground text-sm">
+                      No categories defined yet.
+                    </td>
+                  </tr>
+                ) : (
+                  flattenedCategories.map((cat) => {
+                    const childCount = cat.children?.length ?? cat._count?.children ?? 0;
+                    const itemCount = cat._count?.items ?? cat.items?.length ?? 0;
+                    return (
+                      <tr key={cat.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="py-3 px-4">
+                          <div
+                            className="flex items-center gap-2"
+                            style={{ paddingLeft: `${(cat.level - 1) * 20}px` }}
+                          >
+                            <Folder className="h-4 w-4 text-primary shrink-0" />
+                            <span
+                              onClick={() => handleDrillDown(cat)}
+                              className="font-bold text-foreground hover:text-primary cursor-pointer"
+                            >
+                              {cat.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground hidden lg:inline">
+                              ({cat.fullPath})
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">{getLevelBadge(cat.level)}</td>
+                        <td className="py-3 px-4 font-mono text-xs text-muted-foreground">
+                          {cat.code || "—"}
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-xs">
+                          {childCount}
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-xs">
+                          {itemCount}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDrillDown(cat)}
+                              className="p-1.5 rounded-lg border border-border hover:bg-secondary text-xs text-muted-foreground hover:text-foreground"
+                              title="Open folder"
+                            >
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                            {cat.level < 4 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCategoryToEdit(null);
+                                  setModalParentCategory(cat);
+                                  setIsCategoryModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10"
+                                title="Add subcategory"
+                              >
+                                <FolderPlus className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setItemToEdit(null);
+                                setItemTargetCategory(cat);
+                                setIsItemModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
+                              title="Add item"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCategoryToEdit(cat);
+                                setModalParentCategory(null);
+                                setIsCategoryModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600"
+                              title="Edit"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteCatTarget(cat)}
+                              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
+        /* ═══════════════════════════════════════════════════════════════ */
+        /* VIEW MODE 3: FOLDER CARDS VIEW (Drill-Down for Current Level)  */
+        /* ═══════════════════════════════════════════════════════════════ */
         <div className="space-y-8">
-          {/* ═══════════════════════════════════════════════════════════ */}
-          {/* Subcategories Section (Hidden at Level 4)                    */}
-          {/* ═══════════════════════════════════════════════════════════ */}
+          {/* Subcategories Section (Hidden at Level 4) */}
           {canAddSubcategory && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -363,10 +914,10 @@ const InventoryInView = ({ onBackToHub }) => {
                   <Folder className="h-5 w-5 text-primary" />
                   <h3 className="font-display text-base font-bold text-foreground">
                     {currentLevel === 0
-                      ? "Categories (Level 1)"
-                      : `Subcategories (Level ${currentLevel + 1})`}
+                      ? "Categories (Level 1 Root)"
+                      : `Subcategories in "${currentCategory.name}" (Level ${currentLevel + 1})`}
                   </h3>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-semibold">
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-semibold">
                     {filteredCategories.length}
                   </span>
                 </div>
@@ -379,8 +930,8 @@ const InventoryInView = ({ onBackToHub }) => {
                     {search
                       ? "No categories matching your search query."
                       : currentLevel === 0
-                      ? "No categories defined yet. Click '+ Add Category' to create the first root category."
-                      : "No subcategories created under this category yet."}
+                      ? "No root categories defined yet. Click '+ Add Root Category' above."
+                      : `No subcategories created under "${currentCategory.name}" yet.`}
                   </p>
                 </div>
               ) : (
@@ -433,21 +984,24 @@ const InventoryInView = ({ onBackToHub }) => {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <button
+                              type="button"
                               onClick={() => {
                                 setCategoryToEdit(cat);
+                                setModalParentCategory(null);
                                 setIsCategoryModalOpen(true);
                               }}
                               className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
                               title="Edit Category"
                             >
-                              <Edit3 className="h-3.5 w-3.5" />
+                              <Edit3 className="h-4 w-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => setDeleteCatTarget(cat)}
-                              className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-rose-600 transition-colors cursor-pointer"
+                              className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
                               title="Delete Category"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
@@ -459,9 +1013,7 @@ const InventoryInView = ({ onBackToHub }) => {
             </div>
           )}
 
-          {/* ═══════════════════════════════════════════════════════════ */}
-          {/* Items Section                                               */}
-          {/* ═══════════════════════════════════════════════════════════ */}
+          {/* Items Section at Current Level */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -471,7 +1023,7 @@ const InventoryInView = ({ onBackToHub }) => {
                     ? `Items in "${currentCategory.name}"`
                     : "Direct Inventory Items (Root Level)"}
                 </h3>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-semibold">
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-semibold">
                   {filteredItems.length}
                 </span>
               </div>
@@ -486,8 +1038,7 @@ const InventoryInView = ({ onBackToHub }) => {
                     : "No items added at this level yet. Click '+ Add Item' to create an item with specifications and photo."}
                 </p>
               </div>
-            ) : viewMode === "grid" ? (
-              /* Items Grid View */
+            ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredItems.map((item) => {
                   const specsArr = Array.isArray(item.specifications)
@@ -502,7 +1053,7 @@ const InventoryInView = ({ onBackToHub }) => {
                       className="rounded-2xl border border-border bg-background p-4 card-shadow flex flex-col justify-between hover:border-[#1e3a5f]/50 transition-all group"
                     >
                       <div>
-                        {/* Photo Thumbnail or Placeholder */}
+                        {/* Photo Thumbnail */}
                         <div className="w-full h-36 rounded-xl bg-secondary/40 border border-border/60 overflow-hidden flex items-center justify-center mb-3 relative">
                           {item.photoUrl ? (
                             <img
@@ -517,41 +1068,35 @@ const InventoryInView = ({ onBackToHub }) => {
                             </div>
                           )}
 
-                          {/* Quantity pill */}
-                          <div className="absolute top-2 right-2 px-2.5 py-1 rounded-full text-xs font-bold bg-background/90 backdrop-blur-xs border border-border shadow-xs text-foreground">
+                          <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-background/90 backdrop-blur-xs border border-border text-[11px] font-bold text-foreground shadow-xs">
                             {item.quantity} {item.unit || "Nos"}
-                          </div>
+                          </span>
                         </div>
 
-                        {/* Item Code & Name */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
-                              {item.code || item.sku || "NO-CODE"}
-                            </span>
-                            <h4 className="font-display text-base font-bold text-foreground mt-1.5 line-clamp-1 group-hover:text-primary transition-colors">
-                              {item.name}
-                            </h4>
-                          </div>
-                        </div>
+                        {/* Title & Code */}
+                        <h4 className="font-display text-sm font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                          {item.name}
+                        </h4>
+                        {(item.code || item.sku) && (
+                          <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                            {item.code || item.sku}
+                          </p>
+                        )}
 
-                        {/* 5 Key-Value Specifications */}
+                        {/* 5 Specifications Table Preview */}
                         {specsArr.length > 0 && (
-                          <div className="mt-3 pt-2.5 border-t border-border/60 space-y-1">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">
-                              Specifications:
-                            </span>
-                            <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
-                              {specsArr.slice(0, 5).map((s, idx) => (
+                          <div className="mt-3 border border-border/60 rounded-lg overflow-hidden bg-secondary/20">
+                            <div className="divide-y divide-border/40 text-[11px]">
+                              {specsArr.slice(0, 5).map((sp, sIdx) => (
                                 <div
-                                  key={idx}
-                                  className="text-xs flex items-center justify-between bg-secondary/40 px-2 py-1 rounded-md text-foreground"
+                                  key={sIdx}
+                                  className="grid grid-cols-12 py-1 px-2.5 items-center"
                                 >
-                                  <span className="font-medium text-muted-foreground truncate max-w-[45%]">
-                                    {s.key}:
+                                  <span className="col-span-5 font-semibold text-muted-foreground truncate">
+                                    {sp.key}
                                   </span>
-                                  <span className="font-semibold text-foreground truncate max-w-[50%]">
-                                    {s.value}
+                                  <span className="col-span-7 font-mono text-foreground truncate pl-1">
+                                    {sp.value}
                                   </span>
                                 </div>
                               ))}
@@ -560,134 +1105,37 @@ const InventoryInView = ({ onBackToHub }) => {
                         )}
                       </div>
 
-                      {/* Footer: Date & Actions */}
-                      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="text-[11px] truncate">
-                          {fmtDate(item.updatedAt || item.createdAt)}
+                      {/* Footer Actions */}
+                      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>
+                          Updated: {fmtDate(item.updatedAt || item.createdAt)}
                         </span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => {
                               setItemToEdit(item);
+                              setItemTargetCategory(currentCategory);
                               setIsItemModalOpen(true);
                             }}
-                            className="p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
-                            title="Edit Item Details & Stock"
+                            className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                            title="Edit Item"
                           >
-                            <Edit3 className="h-3.5 w-3.5" />
+                            <Edit3 className="h-4 w-4" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => setDeleteItemTarget(item)}
-                            className="p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-rose-600 transition-colors cursor-pointer"
+                            className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
                             title="Delete Item"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
                     </div>
                   );
                 })}
-              </div>
-            ) : (
-              /* Items Table View */
-              <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border bg-secondary/40">
-                        <th className="px-5 py-3.5 font-semibold">Photo</th>
-                        <th className="px-5 py-3.5 font-semibold">Code</th>
-                        <th className="px-5 py-3.5 font-semibold">Item Name</th>
-                        <th className="px-5 py-3.5 font-semibold">Specifications</th>
-                        <th className="px-5 py-3.5 font-semibold">Quantity</th>
-                        <th className="px-5 py-3.5 font-semibold">Unit</th>
-                        <th className="px-5 py-3.5 font-semibold">Last Updated</th>
-                        <th className="px-5 py-3.5 font-semibold text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filteredItems.map((item) => {
-                        const specsArr = Array.isArray(item.specifications)
-                          ? item.specifications
-                          : item.specifications && typeof item.specifications === "object"
-                          ? Object.entries(item.specifications).map(([k, v]) => ({ key: k, value: v }))
-                          : [];
-
-                        return (
-                          <tr key={item.id} className="hover:bg-secondary/30 transition-colors">
-                            <td className="px-5 py-3">
-                              <div className="w-10 h-10 rounded-lg bg-secondary/60 border border-border overflow-hidden flex items-center justify-center">
-                                {item.photoUrl ? (
-                                  <img
-                                    src={resolveImageUrl(item.photoUrl)}
-                                    alt={item.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <Package className="h-4 w-4 text-muted-foreground" />
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 text-xs font-mono font-bold text-primary">
-                              {item.code || item.sku || "—"}
-                            </td>
-                            <td className="px-5 py-3 font-semibold text-foreground whitespace-nowrap">
-                              {item.name}
-                            </td>
-                            <td className="px-5 py-3 text-xs max-w-xs">
-                              <div className="flex flex-wrap gap-1">
-                                {specsArr.slice(0, 3).map((s, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="px-2 py-0.5 rounded bg-secondary text-muted-foreground font-mono text-[11px]"
-                                  >
-                                    {s.key}: {s.value}
-                                  </span>
-                                ))}
-                                {specsArr.length > 3 && (
-                                  <span className="text-[11px] text-muted-foreground">
-                                    +{specsArr.length - 3} more
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 font-bold text-foreground">
-                              {item.quantity}
-                            </td>
-                            <td className="px-5 py-3 text-xs text-muted-foreground">
-                              {item.unit || "Nos"}
-                            </td>
-                            <td className="px-5 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                              {fmtDate(item.updatedAt || item.createdAt)}
-                            </td>
-                            <td className="px-5 py-3 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => {
-                                    setItemToEdit(item);
-                                    setIsItemModalOpen(true);
-                                  }}
-                                  className="p-1.5 rounded-lg text-muted-foreground hover:text-blue-600 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                                  title="Edit"
-                                >
-                                  <Edit3 className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => setDeleteItemTarget(item)}
-                                  className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )}
           </div>
@@ -697,19 +1145,27 @@ const InventoryInView = ({ onBackToHub }) => {
       {/* ─── Modals ───────────────────────────────────────────────── */}
       <CategoryModal
         isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        parentCategory={currentCategory}
+        onClose={() => {
+          setIsCategoryModalOpen(false);
+          setModalParentCategory(null);
+        }}
+        parentCategory={modalParentCategory || currentCategory}
         categoryToEdit={categoryToEdit}
         onSuccess={loadData}
       />
 
       <ItemCardModal
         isOpen={isItemModalOpen}
-        onClose={() => setIsItemModalOpen(false)}
+        onClose={() => {
+          setIsItemModalOpen(false);
+          setItemTargetCategory(null);
+        }}
         item={itemToEdit}
-        categoryId={currentCategory?.id || null}
+        categoryId={itemTargetCategory?.id || currentCategory?.id || null}
         categoryName={
-          currentCategory
+          itemTargetCategory
+            ? itemTargetCategory.name
+            : currentCategory
             ? navPath.map((c) => c.name).join(" > ")
             : "Root Level"
         }
@@ -725,6 +1181,7 @@ const InventoryInView = ({ onBackToHub }) => {
                 Delete Category
               </h3>
               <button
+                type="button"
                 onClick={() => setDeleteCatTarget(null)}
                 className="rounded-lg p-1 text-muted-foreground hover:bg-secondary cursor-pointer"
               >
@@ -738,12 +1195,14 @@ const InventoryInView = ({ onBackToHub }) => {
             </p>
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
+                type="button"
                 onClick={() => setDeleteCatTarget(null)}
                 className="px-4 py-2 text-sm font-semibold rounded-xl border border-border hover:bg-secondary cursor-pointer"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleDeleteCategory}
                 disabled={deleting}
                 className="px-4 py-2 text-sm font-semibold rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
@@ -764,6 +1223,7 @@ const InventoryInView = ({ onBackToHub }) => {
                 Delete Item
               </h3>
               <button
+                type="button"
                 onClick={() => setDeleteItemTarget(null)}
                 className="rounded-lg p-1 text-muted-foreground hover:bg-secondary cursor-pointer"
               >
@@ -778,12 +1238,14 @@ const InventoryInView = ({ onBackToHub }) => {
             </p>
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
+                type="button"
                 onClick={() => setDeleteItemTarget(null)}
                 className="px-4 py-2 text-sm font-semibold rounded-xl border border-border hover:bg-secondary cursor-pointer"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleDeleteItem}
                 disabled={deleting}
                 className="px-4 py-2 text-sm font-semibold rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
@@ -799,4 +1261,3 @@ const InventoryInView = ({ onBackToHub }) => {
 };
 
 export default InventoryInView;
-

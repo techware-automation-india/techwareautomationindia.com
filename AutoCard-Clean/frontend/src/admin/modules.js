@@ -1,23 +1,21 @@
 import {
   LayoutDashboard,
   UserPlus,
-  Users,
   Inbox,
-  ClipboardList,
   BadgeCheck,
-  CalendarDays,
+  Fingerprint,
+  Calendar,
   Clock,
+  BookOpen,
   FolderKanban,
-  Wrench,
+  Package,
   ShieldCheck,
   Building2,
   CalendarRange,
-  Fingerprint,
-  Package,
 } from "lucide-react";
 
 // Single source of truth for admin modules.
-// Sidebar navigation and routes are both generated from this list.
+// Exactly aligns with the 13 modules manageable in Roles & Access.
 export const adminModules = [
   {
     key: "overview",
@@ -33,13 +31,6 @@ export const adminModules = [
     icon: UserPlus,
     description: "Create user accounts and assign roles.",
   },
-  // {
-  //   key: "customer",
-  //   label: "Customer",
-  //   path: "/admin/customer",
-  //   icon: Users,
-  //   description: "Create and manage customer records.",
-  // },
   {
     key: "requests",
     label: "Requests",
@@ -54,27 +45,6 @@ export const adminModules = [
     icon: BadgeCheck,
     description: "Approve or reject pending employee requests.",
   },
-  // {
-  //   key: "leave-requests",
-  //   label: "Leave Requests",
-  //   path: "/admin/leave-requests",
-  //   icon: CalendarDays,
-  //   description: "Review and approve employee leave applications.",
-  // },
-  // {
-  //   key: "leave-policy",
-  //   label: "Leave Policy",
-  //   path: "/admin/leave-policy",
-  //   icon: ClipboardList,
-  //   description: "Define leave types, balances, and rules.",
-  // },
-  // {
-  //   key: "holidays",
-  //   label: "Holidays",
-  //   path: "/admin/holidays",
-  //   icon: CalendarDays,
-  //   description: "Manage the company holiday calendar.",
-  // },
   {
     key: "mark-attendance",
     label: "Mark Attendance",
@@ -84,26 +54,39 @@ export const adminModules = [
   },
   {
     key: "attendance",
-    label: "Attendance",
+    label: "My Attendance",
+    path: "/admin/my-attendance",
+    icon: Calendar,
+    description: "View your personal attendance history.",
+  },
+  {
+    key: "attendance-management",
+    label: "Team Attendance",
     path: "/admin/attendance",
     icon: Clock,
-    description: "Track and review employee attendance.",
+    description: "Track and review company-wide employee attendance.",
   },
-  // {
-  //   key: "projects",
-  //   label: "Projects",
-  //   path: "/admin/projects",
-  //   icon: FolderKanban,
-  //   description: "Create projects and assign team members.",
-  // },
-  
-  // {
-  //   key: "inventory",
-  //   label: "Inventory",
-  //   path: "/admin/inventory",
-  //   icon: Package,
-  //   description: "Manage company inventory items and stock levels.",
-  // },
+  {
+    key: "leave-policy",
+    label: "Leave Policy",
+    path: "/admin/leave-policy",
+    icon: BookOpen,
+    description: "Define leave types, balances, and rules.",
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    path: "/admin/projects",
+    icon: FolderKanban,
+    description: "Create projects and assign team members.",
+  },
+  {
+    key: "inventory",
+    label: "Inventory",
+    path: "/admin/inventory",
+    icon: Package,
+    description: "Manage company inventory items and stock levels.",
+  },
   {
     key: "roles-access",
     label: "Roles & Access",
@@ -126,3 +109,15 @@ export const adminModules = [
     description: "Plan and assign employee work rosters.",
   },
 ];
+
+export const getAdminModulesByPermissions = (permissions) => {
+  if (!permissions || Object.keys(permissions).length === 0) {
+    return adminModules;
+  }
+  return adminModules.filter((module) => {
+    if (module.key === "overview") return true;
+    if (permissions[module.key]?.canView || permissions[module.key] === true) return true;
+    return false;
+  });
+};
+

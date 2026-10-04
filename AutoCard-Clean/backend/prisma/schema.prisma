@@ -730,22 +730,56 @@ model RoleModule {
 // INVENTORY
 // ===========================================================================
 
-model InventoryItem {
-  id          String   @id @default(uuid())
+model InventoryCategory {
+  id          String              @id @default(uuid())
   name        String
-  sku         String?  @unique
-  category    String?
-  quantity    Int      @default(0)
-  minStock    Int      @default(5)
-  unit        String   @default("pcs")
-  location    String?
-  description String?  @db.Text
-  costPrice   Float?
-  purchaseDate DateTime?
-  date        DateTime?
-  companyName String?
-  issues      InventoryIssue[]
+  code        String?             @unique
+  description String?             @db.Text
+  level       Int                 @default(1) // 1 = Root, 2 = Sub 1, 3 = Sub 2, 4 = Sub 3 (Max level)
+  parentId    String?
+  parent      InventoryCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children    InventoryCategory[] @relation("CategoryHierarchy")
+  items       InventoryItem[]     @relation("CategoryItems")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
+  @@index([parentId])
+  @@index([level])
+  @@map("inventory_categories")
+}
+
+model InventoryUnit {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("inventory_units")
+}
+
+model InventoryItem {
+  id             String             @id @default(uuid())
+  name           String
+  code           String?            @unique
+  sku            String?            @unique
+  categoryId     String?
+  categoryRef    InventoryCategory? @relation("CategoryItems", fields: [categoryId], references: [id], onDelete: SetNull)
+  category       String?            // Legacy string category support
+  photoUrl       String?            @db.Text
+  specifications Json?              // Up to 5 key-value pairs stored as JSON
+  quantity       Float              @default(0)
+  minStock       Int                @default(5)
+  unit           String             @default("Nos")
+  location       String?
+  description    String?            @db.Text
+  costPrice      Float?
+  purchaseDate   DateTime?
+  date           DateTime?
+  companyName    String?
+  issues         InventoryIssue[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([categoryId])
   @@map("inventory_items")
 }
 

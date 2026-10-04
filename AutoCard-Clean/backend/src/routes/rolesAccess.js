@@ -19,6 +19,7 @@ const employeeModules = [
   { key: "holidays", label: "Holidays" },
   { key: "projects", label: "Projects" },
   { key: "services", label: "Services" },
+  { key: "inventory", label: "Inventory" },
   { key: "roles-access", label: "Roles & Access" },
   { key: "shift-location", label: "Shift & Location" },
   { key: "roster", label: "Roster" },
@@ -66,24 +67,6 @@ function buildPermissionMap(rows) {
 }
 
 router.get("/me/permissions", requireAuth, async (req, res) => {
-  if (req.user?.role === "ADMIN") {
-    const adminPerms = {};
-    for (const m of employeeModules) {
-      adminPerms[m.key] = {
-        canView: true,
-        canCreate: true,
-        canEdit: true,
-        canDelete: true,
-      };
-    }
-    return res.json({
-      role: "ADMIN",
-      modules: employeeModules,
-      permissions: adminPerms,
-      hasConfiguredPermissions: true,
-    });
-  }
-
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
@@ -96,10 +79,6 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
       },
     });
 
-    const legacyPermissions = await prisma.modulePermission.findMany({ where: { userId: req.user.id } });
-    const permissionMap = buildPermissionMap(legacyPermissions);
-
-    // If user has a customRole with modules, merge them into permissionMap
     let roleModules = user?.customRole?.modules || [];
     if (roleModules.length === 0 && user?.roleId) {
       roleModules = await prisma.roleModule.findMany({
@@ -107,16 +86,38 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
       });
     }
 
-    for (const m of roleModules) {
-      permissionMap[m.moduleKey] = {
-        canView: true,
-        canCreate: true,
-        canEdit: true,
-        canDelete: true,
-      };
+    const legacyPermissions = await prisma.modulePermission.findMany({ where: { userId: req.user.id } });
+    const permissionMap = buildPermissionMap(legacyPermissions);
+
+    if (roleModules.length > 0) {
+      for (const m of roleModules) {
+        permissionMap[m.moduleKey] = {
+          canView: true,
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+        };
+      }
+      if (req.user?.role === "ADMIN") {
+        permissionMap["overview"] = {
+          canView: true,
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+        };
+      }
+    } else if (req.user?.role === "ADMIN") {
+      for (const m of employeeModules) {
+        permissionMap[m.key] = {
+          canView: true,
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+        };
+      }
     }
 
-    const hasConfiguredPermissions = legacyPermissions.length > 0 || (user?.customRole?.modules?.length || 0) > 0 || roleModules.length > 0;
+    const hasConfiguredPermissions = legacyPermissions.length > 0 || roleModules.length > 0;
 
     let roleName = user?.customRole?.name || null;
     if (!roleName && user?.roleId) {

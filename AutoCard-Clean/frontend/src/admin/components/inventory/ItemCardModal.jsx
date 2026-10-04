@@ -56,9 +56,16 @@ const ItemCardModal = ({
     const fetchUnits = async () => {
       try {
         const res = await apiGet("/inventory/units");
-        if (res?.units) {
-          setUnitsList(res.units);
+        if (res?.units && Array.isArray(res.units)) {
+          const names = res.units
+            .map((u) => (typeof u === "string" ? u : u?.name))
+            .filter(Boolean);
+          if (names.length > 0) {
+            setUnitsList(names);
+            return;
+          }
         }
+        setUnitsList(["Nos", "Pcs", "Kg", "Grams", "Liters", "Meters", "Boxes", "Sets", "Rolls", "Packets"]);
       } catch {
         // Fallback default units if API fails
         setUnitsList(["Nos", "Pcs", "Kg", "Grams", "Liters", "Meters", "Boxes", "Sets", "Rolls", "Packets"]);
@@ -151,9 +158,12 @@ const ItemCardModal = ({
     setUploadingPhoto(true);
     try {
       const res = await apiUpload("/inventory/upload", formData);
-      if (res?.url) {
-        setPhotoUrl(res.url);
+      const uploaded = res?.photoUrl || res?.url;
+      if (uploaded) {
+        setPhotoUrl(uploaded);
         toast.success("Photo uploaded successfully.");
+      } else {
+        toast.error("Upload succeeded but no photo URL was returned.");
       }
     } catch (err) {
       toast.error(err.message || "Failed to upload photo.");
@@ -436,11 +446,14 @@ const ItemCardModal = ({
                   onChange={(e) => setUnit(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/40 cursor-pointer"
                 >
-                  {unitsList.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
+                  {unitsList.map((u, idx) => {
+                    const unitName = typeof u === "string" ? u : u?.name || String(u);
+                    return (
+                      <option key={unitName || idx} value={unitName}>
+                        {unitName}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

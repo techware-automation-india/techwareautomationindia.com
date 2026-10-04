@@ -184,12 +184,12 @@ const ItemCardModal = ({
     if (submitting) return;
 
     if (!name.trim()) {
-      toast.error("Item name is required.");
+      toast.error("Item Name is mandatory and must be filled.");
       return;
     }
 
     if (!code.trim()) {
-      toast.error("Item code is required.");
+      toast.error("Item Code is mandatory and must be filled.");
       return;
     }
 
@@ -255,19 +255,24 @@ const ItemCardModal = ({
 
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Target Category Notice */}
-          {categoryName && (
-            <div className="px-3.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary font-medium flex items-center gap-2">
-              <span>Category Destination:</span>
-              <span className="font-semibold">{categoryName}</span>
+          {/* Target Category Notice & Mandatory Legend */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            {categoryName ? (
+              <div className="px-3.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary font-medium flex items-center gap-2">
+                <span>Category Destination:</span>
+                <span className="font-semibold">{categoryName}</span>
+              </div>
+            ) : <div />}
+            <div className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
+              Fields marked with <span className="text-rose-500 font-bold text-sm leading-none">*</span> are mandatory
             </div>
-          )}
+          </div>
 
           {/* Row 1: Name and Code */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-foreground mb-1.5">
-                Name
+                Name <span className="text-rose-500 font-bold ml-0.5 text-base leading-none" title="Mandatory field">*</span>
               </label>
               <input
                 type="text"
@@ -280,7 +285,7 @@ const ItemCardModal = ({
             </div>
             <div>
               <label className="block text-sm font-bold text-foreground mb-1.5">
-                Code
+                Code <span className="text-rose-500 font-bold ml-0.5 text-base leading-none" title="Mandatory field">*</span>
               </label>
               <input
                 type="text"

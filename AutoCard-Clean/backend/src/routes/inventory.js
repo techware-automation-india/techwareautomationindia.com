@@ -347,15 +347,17 @@ router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
     }
 
     const itemCode = (code || sku || "").trim();
-    if (itemCode) {
-      const dup = await prisma.inventoryItem.findFirst({
-        where: {
-          OR: [{ code: itemCode }, { sku: itemCode }],
-        },
-      });
-      if (dup) {
-        return res.status(409).json({ message: `Item Code / SKU "${itemCode}" already exists.` });
-      }
+    if (!itemCode) {
+      return res.status(400).json({ message: "Item code is required." });
+    }
+
+    const dup = await prisma.inventoryItem.findFirst({
+      where: {
+        OR: [{ code: itemCode }, { sku: itemCode }],
+      },
+    });
+    if (dup) {
+      return res.status(409).json({ message: `Item Code / SKU "${itemCode}" already exists.` });
     }
 
     // Ensure specifications is valid JSON/array (up to 5 key-values)
@@ -418,7 +420,15 @@ router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => 
       date,
     } = req.body;
 
+    if (name !== undefined && (!name || typeof name !== "string" || !name.trim())) {
+      return res.status(400).json({ message: "Item name cannot be empty." });
+    }
+
     const itemCode = (code !== undefined ? code : sku !== undefined ? sku : existing.code || existing.sku || "").trim();
+    if ((code !== undefined || sku !== undefined) && !itemCode) {
+      return res.status(400).json({ message: "Item code cannot be empty." });
+    }
+
     if (itemCode && itemCode !== existing.code && itemCode !== existing.sku) {
       const dup = await prisma.inventoryItem.findFirst({
         where: {

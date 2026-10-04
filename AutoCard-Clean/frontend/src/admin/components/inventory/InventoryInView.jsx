@@ -1261,3 +1261,4 @@ const InventoryInView = ({ onBackToHub }) => {
 };
 
 export default InventoryInView;
+

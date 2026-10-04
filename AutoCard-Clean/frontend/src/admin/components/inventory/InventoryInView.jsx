@@ -1174,8 +1174,16 @@ const InventoryInView = ({ onBackToHub }) => {
 
       {/* Delete Category Modal */}
       {deleteCatTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-4 shadow-2xl">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDeleteCatTarget(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-bold text-foreground">
                 Delete Category
@@ -1216,8 +1224,16 @@ const InventoryInView = ({ onBackToHub }) => {
 
       {/* Delete Item Modal */}
       {deleteItemTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-4 shadow-2xl">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDeleteItemTarget(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-bold text-foreground">
                 Delete Item

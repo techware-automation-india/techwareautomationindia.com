@@ -129,6 +129,18 @@ const ItemCardModal = ({
     }
   }, [item, isOpen]);
 
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSpecChange = (index, field, val) => {
@@ -234,8 +246,18 @@ const ItemCardModal = ({
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto">
-      <div className="w-full max-w-2xl rounded-2xl bg-card border border-border shadow-2xl overflow-hidden my-6">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-2xl rounded-2xl bg-card border border-border shadow-2xl overflow-hidden my-6"
+      >
         {/* Header Bar matching Reference Mockup */}
         <div className="bg-[#1e3a5f] px-6 py-4 flex items-center justify-between text-white">
           <div className="flex items-center gap-3">

@@ -82,9 +82,28 @@ const CategoryModal = ({
     }
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-5 shadow-2xl">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-5 shadow-2xl"
+      >
         <div className="flex items-center justify-between border-b border-border pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">

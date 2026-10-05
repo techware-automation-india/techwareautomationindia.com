@@ -494,15 +494,36 @@ router.get("/me", requireAuth, async (req, res) => {
       }
     }
 
+    const sundayHolidays = [];
+    const dbHolidayDateKeys = new Set(holidays.map((h) => formatDateKey(h.date)));
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayStr = String(day).padStart(2, "0");
+      const key = `${year}-${monthStr}-${dayStr}`;
+      const curDate = new Date(`${key}T12:00:00+05:30`);
+      if (curDate.getDay() === 0 && !dbHolidayDateKeys.has(key)) {
+        sundayHolidays.push({
+          date: new Date(`${key}T00:00:00+05:30`),
+          name: "Sunday (Weekly Off)",
+          holidayType: "OPTIONAL",
+          isOptional: true,
+        });
+      }
+    }
+
+    const allHolidays = [...holidays, ...sundayHolidays].sort(
+      (a, b) => new Date(a.date) - new Date(b.date)
+    );
+
     res.json({
       year,
       month,
       records: populatedRecords,
-      holidays: holidays.map((h) => ({
+      holidays: allHolidays.map((h) => ({
         date: h.date,
         name: h.name,
-        holidayType: h.holidayType,
-        isOptional: h.isOptional,
+        holidayType: h.holidayType || "OPTIONAL",
+        isOptional: h.isOptional ?? true,
       })),
       summary,
     });
@@ -3001,6 +3022,29 @@ router.get(
         }
       }
 
+      const sundayHolidays = [];
+      const dbHolidayKeys = new Set(holidays.map((h) => formatDateKey(h.date)));
+      for (
+        let current = new Date(start);
+        current < end;
+        current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1))
+      ) {
+        if (!isWorkingDay(current)) {
+          const key = formatDateKey(current);
+          if (!dbHolidayKeys.has(key)) {
+            sundayHolidays.push({
+              date: new Date(current),
+              name: "Sunday (Weekly Off)",
+              holidayType: "OPTIONAL",
+              isOptional: true,
+            });
+          }
+        }
+      }
+      const allHolidays = [...holidays, ...sundayHolidays].sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+      );
+
       res.json({
         employee: {
           id: employee.id,
@@ -3011,11 +3055,11 @@ router.get(
         year,
         month,
         records: populatedRecords,
-        holidays: holidays.map((h) => ({
+        holidays: allHolidays.map((h) => ({
           date: h.date,
           name: h.name,
-          holidayType: h.holidayType,
-          isOptional: h.isOptional,
+          holidayType: h.holidayType || "OPTIONAL",
+          isOptional: h.isOptional ?? true,
         })),
         summary,
       });

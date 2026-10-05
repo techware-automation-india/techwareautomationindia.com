@@ -50,17 +50,50 @@ const updateHolidaySchema = z.object({
   description: z.string().max(500).optional(),
 });
 
+// Helper: Auto-generate Sunday holidays for a date range
+const getSundaysInRange = (startDate, endDate) => {
+  const sundays = [];
+  const cur = new Date(startDate);
+  cur.setUTCHours(0, 0, 0, 0);
+
+  const end = new Date(endDate);
+  end.setUTCHours(23, 59, 59, 999);
+
+  while (cur <= end) {
+    if (cur.getUTCDay() === 0) { // 0 = Sunday
+      const dateStr = cur.toISOString().slice(0, 10);
+      sundays.push({
+        id: `sunday-${dateStr}`,
+        name: "Sunday (Weekly Off)",
+        date: new Date(cur),
+        holidayType: "OPTIONAL",
+        isOptional: true,
+        isRecurring: true,
+        description: "Auto-generated weekly off holiday",
+      });
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return sundays;
+};
+
 // GET /api/holidays - List all holidays (authenticated users)
 router.get("/", async (req, res) => {
   console.log("📥 [GET /api/holidays] Request received");
   
   try {
-    const { fiscalYear } = req.query;
+    const { fiscalYear, includeSundays } = req.query;
+    const autoSundays = includeSundays !== "false";
     
     let holidays;
+    let rangeStart;
+    let rangeEnd;
+
     if (fiscalYear) {
       const year = parseInt(fiscalYear);
       const { startDate, endDate } = getFiscalYearRange(year);
+      rangeStart = startDate;
+      rangeEnd = endDate;
       
       holidays = await prisma.holiday.findMany({
         where: {
@@ -73,14 +106,33 @@ router.get("/", async (req, res) => {
           date: "asc",
         },
       });
-      console.log(`✅ [GET /api/holidays] Found ${holidays.length} holidays for fiscal year ${year}`);
+      console.log(`✅ [GET /api/holidays] Found ${holidays.length} DB holidays for fiscal year ${year}`);
     } else {
+      const currentYear = getCurrentFiscalYear();
+      const { startDate, endDate } = getFiscalYearRange(currentYear);
+      rangeStart = startDate;
+      rangeEnd = endDate;
+
       holidays = await prisma.holiday.findMany({
         orderBy: {
           date: "asc",
         },
       });
-      console.log(`✅ [GET /api/holidays] Found ${holidays.length} total holidays`);
+      console.log(`✅ [GET /api/holidays] Found ${holidays.length} total DB holidays`);
+    }
+
+    if (autoSundays && rangeStart && rangeEnd) {
+      const dbDateKeys = new Set(
+        holidays.map((h) => new Date(h.date).toISOString().slice(0, 10))
+      );
+
+      const generatedSundays = getSundaysInRange(rangeStart, rangeEnd).filter(
+        (s) => !dbDateKeys.has(s.date.toISOString().slice(0, 10))
+      );
+
+      holidays = [...holidays, ...generatedSundays].sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+      );
     }
 
     res.json({ holidays });

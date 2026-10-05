@@ -1116,7 +1116,7 @@ const Attendance = () => {
                               )}`}
                             />
                             <span className="text-[10px] font-bold truncate">
-                              {(r?.status === "HOLIDAY" || isHolidayCell) ? (hol || r?.note || "Holiday") : meta.label}
+                              {(r?.status === "HOLIDAY" || isHolidayCell) ? (hol || r?.note || (isSunday ? "Sunday (Weekly Off)" : "Holiday")) : meta.label}
                             </span>
                           </div>
 

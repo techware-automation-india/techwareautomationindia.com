@@ -56,14 +56,6 @@ const defaultModules = [
     description: "Submit and track requests.",
     alwaysVisible: true,
   },
-  {
-    key: "academic-calendar",
-    label: "Academic Calendar",
-    path: "/employee/academic-calendar",
-    icon: CalendarDays,
-    description: "View academic calendar and important dates.",
-    alwaysVisible: true,
-  },
   // {
   //   key: "leave",
   //   label: "Leave",
@@ -84,6 +76,14 @@ const defaultModules = [
 
 // Admin modules that can be delegated to employees via custom roles or permissions
 const adminModules = [
+  {
+    key: "academic-calendar",
+    label: "Academic Calendar",
+    path: "/employee/academic-calendar",
+    icon: CalendarDays,
+    description: "View academic calendar and important dates.",
+    adminKey: "academic-calendar",
+  },
   {
     key: "employee",
     label: "Add Account",

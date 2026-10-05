@@ -33,6 +33,7 @@ export const MODULES = [
   { key: 'shift-location', label: 'Shifts & Locations', icon: MapPin },
   { key: 'roster', label: 'Roster', icon: CalendarRange },
   { key: 'leave-policy', label: 'Leave Policy & Holiday', icon: ClipboardList },
+  { key: 'academic-calendar', label: 'Academic Calendar', icon: CalendarDays },
   { key: 'inventory', label: 'Inventory', icon: Package },
   { key: 'projects', label: 'Projects', icon: FolderKanban },
 ];

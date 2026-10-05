@@ -237,6 +237,169 @@ router.get("/", checkRolePermission(["projects", "overview"]), async (req, res) 
   }
 });
 
+// GET /api/projects/my-assigned - Get projects assigned to the logged-in employee
+router.get("/my-assigned", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Resolve employee profile for current user
+    const employeeProfile = await prisma.employeeProfile.findUnique({
+      where: { userId },
+    });
+
+    const isEmployee = req.user.role === "EMPLOYEE";
+    const isAdmin = req.user.role === "ADMIN";
+
+    let where = { isArchived: false };
+
+    if (!isAdmin) {
+      if (!employeeProfile) {
+        return res.json({
+          projects: [],
+          stats: { totalProjects: 0, pendingTasks: 0, inProgressTasks: 0, completedTasks: 0 },
+        });
+      }
+
+      where = {
+        isArchived: false,
+        OR: [
+          { assignments: { some: { employeeId: employeeProfile.id } } },
+          { managerId: employeeProfile.id },
+          { managerId: userId },
+        ],
+      };
+    }
+
+    const projects = await prisma.project.findMany({
+      where,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            userId: true,
+            companyName: true,
+            phone: true,
+            user: {
+              select: { id: true, fullName: true, email: true },
+            },
+          },
+        },
+        assignments: {
+          include: {
+            employee: {
+              select: {
+                id: true,
+                userId: true,
+                employeeCode: true,
+                user: { select: { id: true, fullName: true, email: true } },
+              },
+            },
+          },
+        },
+        tasks: {
+          orderBy: { orderIndex: "asc" },
+        },
+        documents: {
+          orderBy: { uploadedAt: "desc" },
+        },
+        _count: {
+          select: { tasks: true, documents: true, comments: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const myEmpId = employeeProfile?.id;
+
+    let totalPendingTasks = 0;
+    let totalInProgressTasks = 0;
+    let totalCompletedTasks = 0;
+
+    const formatted = projects.map((p) => {
+      const myAssignment = p.assignments.find(
+        (a) => a.employeeId === myEmpId || a.employee?.userId === userId
+      );
+      const myRole = myAssignment
+        ? myAssignment.roleOnProject
+        : p.managerId === myEmpId || p.managerId === userId
+        ? "Project Manager"
+        : "Team Member";
+
+      // Filter tasks assigned to this employee
+      const myTasks = p.tasks.filter((t) => {
+        if (isAdmin) return true;
+        return t.assignedToId === myEmpId || t.assignedToId === userId;
+      });
+
+      myTasks.forEach((t) => {
+        if (t.status === "COMPLETED") totalCompletedTasks++;
+        else if (t.status === "IN_PROGRESS") totalInProgressTasks++;
+        else totalPendingTasks++;
+      });
+
+      return {
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        description: p.description,
+        status: p.status,
+        priority: p.priority,
+        progress: p.progress,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        myRole,
+        customer: p.customer
+          ? {
+              name: p.customer.user?.fullName || p.customer.companyName || "Client",
+              companyName: p.customer.companyName,
+              email: p.customer.user?.email || "",
+              phone: p.customer.phone,
+            }
+          : null,
+        myTasks: myTasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          completedAt: t.completedAt,
+        })),
+        allTasksCount: p.tasks.length,
+        allTasksCompleted: p.tasks.filter((t) => t.status === "COMPLETED").length,
+        team: p.assignments.map((a) => ({
+          id: a.id,
+          name: a.employee?.user?.fullName || "Employee",
+          email: a.employee?.user?.email || "",
+          role: a.roleOnProject || "Member",
+        })),
+        documents: p.documents.map((d) => ({
+          id: d.id,
+          name: d.fileName,
+          size: d.fileSize,
+          type: d.fileType,
+          url: d.fileUrl,
+          uploadedAt: d.uploadedAt,
+        })),
+        createdAt: p.createdAt,
+      };
+    });
+
+    res.json({
+      projects: formatted,
+      stats: {
+        totalProjects: formatted.length,
+        pendingTasks: totalPendingTasks,
+        inProgressTasks: totalInProgressTasks,
+        completedTasks: totalCompletedTasks,
+      },
+    });
+  } catch (err) {
+    console.error("Get my-assigned projects error:", err);
+    res.status(500).json({ message: "Failed to load assigned projects." });
+  }
+});
+
 // GET /api/projects/:id - Get single project with full details
 router.get("/:id", checkRolePermission(["projects", "overview"]), async (req, res) => {
   try {
@@ -792,6 +955,66 @@ router.put("/:projectId/tasks/:taskId", checkRolePermission(["projects", "overvi
   } catch (err) {
     console.error("Update task error:", err);
     res.status(500).json({ message: "Failed to update task." });
+  }
+});
+
+// PATCH /api/projects/:projectId/tasks/:taskId/status - Update task status (for assigned employee)
+router.patch("/:projectId/tasks/:taskId/status", async (req, res) => {
+  try {
+    const { projectId, taskId } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ["TODO", "IN_PROGRESS", "IN_REVIEW", "COMPLETED", "BLOCKED"];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ message: "Invalid status value." });
+    }
+
+    const task = await prisma.projectTask.findFirst({
+      where: { id: taskId, projectId },
+    });
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found." });
+    }
+
+    const updatedTask = await prisma.projectTask.update({
+      where: { id: taskId },
+      data: {
+        status,
+        completedAt: status === "COMPLETED" ? new Date() : null,
+      },
+    });
+
+    // Recalculate project progress
+    const allTasks = await prisma.projectTask.findMany({
+      where: { projectId },
+      select: { status: true },
+    });
+
+    let newProgress = 0;
+    if (allTasks.length > 0) {
+      const completed = allTasks.filter((t) => t.status === "COMPLETED").length;
+      newProgress = Math.round((completed / allTasks.length) * 100);
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { progress: newProgress },
+      });
+    }
+
+    // Activity log
+    await prisma.projectActivity.create({
+      data: {
+        projectId,
+        userId: req.user.id,
+        activityType: "status_changed",
+        description: `Task "${task.title}" status updated to ${status}`,
+      },
+    });
+
+    res.json({ task: updatedTask, projectProgress: newProgress });
+  } catch (err) {
+    console.error("Update task status error:", err);
+    res.status(500).json({ message: "Failed to update task status." });
   }
 });
 

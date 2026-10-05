@@ -538,6 +538,16 @@ router.get("/me/projects", async (req, res) => {
             status: true,
           },
         },
+        documents: {
+          select: {
+            id: true,
+            fileName: true,
+            fileSize: true,
+            fileType: true,
+            fileUrl: true,
+            uploadedAt: true,
+          },
+        },
         _count: {
           select: {
             tasks: true,
@@ -569,6 +579,7 @@ router.get("/me/projects", async (req, res) => {
         completed: p.tasks.filter(t => t.status === 'COMPLETED').length,
         inProgress: p.tasks.filter(t => t.status === 'IN_PROGRESS').length,
       },
+      documents: p.documents || [],
       documentsCount: p._count.documents,
       commentsCount: p._count.comments,
       createdAt: p.createdAt,

@@ -55,6 +55,14 @@ const defaultModules = [
     description: "Submit and track requests.",
     alwaysVisible: true,
   },
+  {
+    key: "projects",
+    label: "Assigned Projects",
+    path: "/employee/projects",
+    icon: FolderKanban,
+    description: "View your assigned projects and update task progress.",
+    alwaysVisible: true,
+  },
   // {
   //   key: "leave",
   //   label: "Leave",

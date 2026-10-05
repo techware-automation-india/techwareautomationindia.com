@@ -29,10 +29,10 @@ export const customerModules = [
   },
   {
     key: "projects",
-    label: "Projects",
+    label: "My Projects",
     path: "/customer/projects",
     icon: FolderKanban,
-    description: "View your assigned projects and progress.",
+    description: "Track your projects, milestones, and documentation.",
   },
   {
     key: "requests",

@@ -61,18 +61,17 @@ import EmployeeRoster from "./employee/pages/Roster.jsx";
 import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 
-// CUSTOMER PANEL COMMENTED OUT
-// import CustomerLayout from "./customer/CustomerLayout.jsx";
-// import CustomerOverview from "./customer/pages/Overview.jsx";
-// import CustomerProfile from "./customer/pages/Profile.jsx";
-// import CustomerProjects from "./customer/pages/Projects.jsx";
-// import CustomerRequests from "./customer/pages/Requests.jsx";
-// import CustomerDocuments from "./customer/pages/Documents.jsx";
-// import CustomerSupport from "./customer/pages/Support.jsx";
-// import CustomerNotifications from "./customer/pages/Notifications.jsx";
-// import CustomerSettings from "./customer/pages/Settings.jsx";
+import CustomerLayout from "./customer/CustomerLayout.jsx";
+import CustomerOverview from "./customer/pages/Overview.jsx";
+import CustomerProfile from "./customer/pages/Profile.jsx";
+import CustomerProjects from "./customer/pages/Projects.jsx";
+import CustomerRequests from "./customer/pages/Requests.jsx";
+import CustomerDocuments from "./customer/pages/Documents.jsx";
+import CustomerSupport from "./customer/pages/Support.jsx";
+import CustomerNotifications from "./customer/pages/Notifications.jsx";
+import CustomerSettings from "./customer/pages/Settings.jsx";
 
-const dashboardPrefixes = ["/admin", "/employee" /*, "/customer" */];
+const dashboardPrefixes = ["/admin", "/employee", "/customer"];
 
 const AppRoutes = () => {
   const location = useLocation();
@@ -271,19 +270,16 @@ const AppRoutes = () => {
           {/* <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} /> */}
         </Route>
 
-        {/* CUSTOMER ROUTES COMMENTED OUT */}
-        {/* <Route path="/customer" element={<CustomerLayout />}>
+        <Route path="/customer" element={<CustomerLayout />}>
           <Route index element={<CustomerOverview />} />
           <Route path="profile" element={<CustomerProfile />} />
           <Route path="projects" element={<CustomerProjects />} />
           <Route path="requests" element={<CustomerRequests />} />
-          
           <Route path="documents" element={<CustomerDocuments />} />
-         
           <Route path="support" element={<CustomerSupport />} />
           <Route path="notifications" element={<CustomerNotifications />} />
           <Route path="settings" element={<CustomerSettings />} />
-        </Route> */}
+        </Route>
 
         <Route path="*" element={<NotFound />} />
       </Routes>

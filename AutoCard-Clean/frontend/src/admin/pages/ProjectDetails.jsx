@@ -26,7 +26,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api.js";
+import { apiGet, apiPost, apiPatch, apiDelete, apiPut } from "../../lib/api.js";
+import { ProjectModal } from "./Projects.jsx";
 
 const ProjectDetails = () => {
   const { id } = useParams();
@@ -34,25 +35,47 @@ const ProjectDetails = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // Load project data
-  useEffect(() => {
-    const loadProject = async () => {
-      setLoading(true);
-      try {
-        const data = await apiGet(`/projects/${id}`);
-        setProject(data.project);
-      } catch (error) {
-        console.error("Failed to load project:", error);
-        toast.error(error.message || "Failed to load project details");
-        navigate("/admin/projects");
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadProject = async () => {
+    try {
+      const data = await apiGet(`/projects/${id}`);
+      setProject(data.project);
+    } catch (error) {
+      console.error("Failed to load project:", error);
+      toast.error(error.message || "Failed to load project details");
+      navigate("/admin/projects");
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadProject();
-  }, [id, navigate]);
+  }, [id]);
+
+  const handleArchiveProject = async () => {
+    if (!project) return;
+    try {
+      await apiPatch(`/projects/${id}/archive`, { isArchived: !project.isArchived });
+      toast.success(project.isArchived ? "Project unarchived!" : "Project archived!");
+      setProject((prev) => ({ ...prev, isArchived: !prev.isArchived }));
+    } catch (err) {
+      toast.error(err.message || "Failed to archive project");
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!confirm("Are you sure you want to delete this project?")) return;
+    try {
+      await apiDelete(`/projects/${id}`);
+      toast.success("Project deleted successfully!");
+      navigate("/admin/projects");
+    } catch (err) {
+      toast.error(err.message || "Failed to delete project");
+    }
+  };
 
   const getStatusColor = (status) => {
     const colors = {
@@ -144,11 +167,12 @@ const ProjectDetails = () => {
                   {project.priority}
                 </span>
               </div>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                 <span className="font-mono font-semibold text-primary">{project.code}</span>
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5" />
-                  {new Date(project.startDate).toLocaleDateString()} - {new Date(project.endDate).toLocaleDateString()}
+                  {project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} -{" "}
+                  {project.endDate ? new Date(project.endDate).toLocaleDateString() : "No end date"}
                 </span>
                 <span className="flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" />
@@ -161,21 +185,30 @@ const ProjectDetails = () => {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-sm font-medium">
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-sm font-medium"
+          >
             <Edit2 className="h-4 w-4" />
             Edit
           </button>
-          
+
           <div className="relative group">
             <button className="p-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors">
               <MoreVertical className="h-4 w-4" />
             </button>
             <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-background shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-              <button className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors text-left">
+              <button
+                onClick={handleArchiveProject}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors text-left"
+              >
                 <Archive className="h-4 w-4" />
-                Archive Project
+                {project.isArchived ? "Unarchive Project" : "Archive Project"}
               </button>
-              <button className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive transition-colors text-left">
+              <button
+                onClick={handleDeleteProject}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive transition-colors text-left"
+              >
                 <Trash2 className="h-4 w-4" />
                 Delete Project
               </button>
@@ -200,12 +233,13 @@ const ProjectDetails = () => {
           />
         </div>
         <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-          <span>{project.tasks?.filter(t => t.status === "COMPLETED").length || 0} of {project.tasks?.length || 0} tasks completed</span>
           <span>
-            {project.endDate 
+            {project.tasks?.filter((t) => t.status === "COMPLETED").length || 0} of {project.tasks?.length || 0} tasks completed
+          </span>
+          <span>
+            {project.endDate
               ? `${Math.ceil((new Date(project.endDate) - new Date()) / (1000 * 60 * 60 * 24))} days remaining`
-              : "No deadline"
-            }
+              : "No deadline"}
           </span>
         </div>
       </div>
@@ -227,9 +261,11 @@ const ProjectDetails = () => {
                 <tab.icon className="h-4 w-4" />
                 {tab.label}
                 {tab.count !== undefined && (
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                    activeTab === tab.id ? "bg-primary text-white" : "bg-secondary"
-                  }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      activeTab === tab.id ? "bg-primary text-white" : "bg-secondary"
+                    }`}
+                  >
                     {tab.count}
                   </span>
                 )}
@@ -247,6 +283,15 @@ const ProjectDetails = () => {
           {activeTab === "comments" && <CommentsTab project={project} setProject={setProject} />}
         </div>
       </div>
+
+      {/* Edit Project Modal */}
+      {showEditModal && (
+        <ProjectModal
+          project={project}
+          onClose={() => setShowEditModal(false)}
+          onSave={loadProject}
+        />
+      )}
     </div>
   );
 };
@@ -265,9 +310,9 @@ const OverviewTab = ({ project }) => {
   };
 
   const tasksByStatus = {
-    TODO: project.tasks?.filter(t => t.status === "TODO").length || 0,
-    IN_PROGRESS: project.tasks?.filter(t => t.status === "IN_PROGRESS").length || 0,
-    COMPLETED: project.tasks?.filter(t => t.status === "COMPLETED").length || 0,
+    TODO: project.tasks?.filter((t) => t.status === "TODO").length || 0,
+    IN_PROGRESS: project.tasks?.filter((t) => t.status === "IN_PROGRESS").length || 0,
+    COMPLETED: project.tasks?.filter((t) => t.status === "COMPLETED").length || 0,
   };
 
   return (
@@ -329,7 +374,9 @@ const OverviewTab = ({ project }) => {
           {/* Description */}
           <div className="rounded-xl border border-border p-5">
             <h3 className="font-semibold mb-3">Project Description</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{project.description}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {project.description || "No description provided."}
+            </p>
           </div>
 
           {/* Timeline */}
@@ -338,16 +385,25 @@ const OverviewTab = ({ project }) => {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Start Date</span>
-                <span className="text-sm font-medium">{new Date(project.startDate).toLocaleDateString()}</span>
+                <span className="text-sm font-medium">
+                  {project.startDate ? new Date(project.startDate).toLocaleDateString() : "Not set"}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">End Date</span>
-                <span className="text-sm font-medium">{new Date(project.endDate).toLocaleDateString()}</span>
+                <span className="text-sm font-medium">
+                  {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Not set"}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Duration</span>
                 <span className="text-sm font-medium">
-                  {Math.ceil((new Date(project.endDate) - new Date(project.startDate)) / (1000 * 60 * 60 * 24))} days
+                  {project.startDate && project.endDate
+                    ? `${Math.max(
+                        0,
+                        Math.ceil((new Date(project.endDate) - new Date(project.startDate)) / (1000 * 60 * 60 * 24))
+                      )} days`
+                    : "N/A"}
                 </span>
               </div>
             </div>
@@ -360,8 +416,15 @@ const OverviewTab = ({ project }) => {
           <div className="rounded-xl border border-border p-5">
             <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide">Customer</h3>
             <div className="space-y-2">
-              <div className="font-semibold">{project.customer?.user?.fullName || project.customer?.companyName || "No customer"}</div>
-              <div className="text-sm text-muted-foreground">{project.customer?.user?.email || project.customer?.email || ""}</div>
+              <div className="font-semibold">
+                {project.customer?.name ||
+                  project.customer?.user?.fullName ||
+                  project.customer?.companyName ||
+                  "No customer"}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {project.customer?.email || project.customer?.user?.email || ""}
+              </div>
               {project.customer?.phone && (
                 <div className="text-sm text-muted-foreground">{project.customer.phone}</div>
               )}
@@ -371,7 +434,9 @@ const OverviewTab = ({ project }) => {
           {/* Project Manager */}
           {project.managerId && (
             <div className="rounded-xl border border-border p-5">
-              <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide">Project Manager</h3>
+              <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide">
+                Project Manager
+              </h3>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
                   PM
@@ -398,7 +463,11 @@ const OverviewTab = ({ project }) => {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Status</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                    project.status
+                  )}`}
+                >
                   {project.status.replace("_", " ")}
                 </span>
               </div>
@@ -414,15 +483,6 @@ const OverviewTab = ({ project }) => {
 const TasksTab = ({ project, setProject }) => {
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: "", priority: "MEDIUM", assigneeId: "", dueDate: "" });
-
-  const getTaskStatusColor = (status) => {
-    const colors = {
-      TODO: "bg-gray-100 text-gray-700 border-gray-200",
-      IN_PROGRESS: "bg-blue-100 text-blue-700 border-blue-200",
-      COMPLETED: "bg-green-100 text-green-700 border-green-200",
-    };
-    return colors[status] || "bg-gray-100 text-gray-700 border-gray-200";
-  };
 
   const getPriorityColor = (priority) => {
     const colors = {
@@ -441,28 +501,62 @@ const TasksTab = ({ project, setProject }) => {
     }
 
     try {
-      await apiPost(`/projects/${project.id}/tasks`, newTask);
+      const res = await apiPost(`/projects/${project.id}/tasks`, newTask);
       toast.success("Task added successfully!");
       setShowAddTask(false);
       setNewTask({ title: "", priority: "MEDIUM", assigneeId: "", dueDate: "" });
-      // Reload project data
-      window.location.reload();
+      if (res.task && setProject) {
+        setProject((prev) => ({
+          ...prev,
+          tasks: [...(prev.tasks || []), res.task],
+        }));
+      }
     } catch (error) {
       toast.error(error.message || "Failed to add task");
     }
   };
 
+  const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    try {
+      await apiPut(`/projects/${project.id}/tasks/${taskId}`, { status: newStatus });
+      toast.success("Task status updated");
+      if (setProject) {
+        setProject((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
+        }));
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to update task");
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await apiDelete(`/projects/${project.id}/tasks/${taskId}`);
+      toast.success("Task deleted");
+      if (setProject) {
+        setProject((prev) => ({
+          ...prev,
+          tasks: prev.tasks.filter((t) => t.id !== taskId),
+        }));
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to delete task");
+    }
+  };
+
   const tasks = project.tasks || [];
   const tasksByStatus = {
-    TODO: tasks.filter(t => t.status === "TODO"),
-    IN_PROGRESS: tasks.filter(t => t.status === "IN_PROGRESS"),
-    COMPLETED: tasks.filter(t => t.status === "COMPLETED"),
+    TODO: tasks.filter((t) => t.status === "TODO"),
+    IN_PROGRESS: tasks.filter((t) => t.status === "IN_PROGRESS"),
+    COMPLETED: tasks.filter((t) => t.status === "COMPLETED"),
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Tasks ({project.tasks.length})</h3>
+        <h3 className="font-semibold">Tasks ({tasks.length})</h3>
         <button
           onClick={() => setShowAddTask(!showAddTask)}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm"
@@ -482,7 +576,7 @@ const TasksTab = ({ project, setProject }) => {
               <input
                 type="text"
                 value={newTask.title}
-                onChange={(e) => setNewTask({...newTask, title: e.target.value})}
+                onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                 placeholder="Enter task title..."
                 className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
@@ -491,7 +585,7 @@ const TasksTab = ({ project, setProject }) => {
               <label className="block text-sm font-medium mb-2">Priority</label>
               <select
                 value={newTask.priority}
-                onChange={(e) => setNewTask({...newTask, priority: e.target.value})}
+                onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
                 className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 <option value="LOW">Low</option>
@@ -505,7 +599,7 @@ const TasksTab = ({ project, setProject }) => {
               <input
                 type="date"
                 value={newTask.dueDate}
-                onChange={(e) => setNewTask({...newTask, dueDate: e.target.value})}
+                onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
                 className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
@@ -513,13 +607,13 @@ const TasksTab = ({ project, setProject }) => {
               <label className="block text-sm font-medium mb-2">Assignee</label>
               <select
                 value={newTask.assigneeId}
-                onChange={(e) => setNewTask({...newTask, assigneeId: e.target.value})}
+                onChange={(e) => setNewTask({ ...newTask, assigneeId: e.target.value })}
                 className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 <option value="">Select team member...</option>
                 {project.assignments?.map((assignment) => (
-                  <option key={assignment.id} value={assignment.employeeId}>
-                    {assignment.employee?.fullName || "Unknown"}
+                  <option key={assignment.id} value={assignment.employeeId || assignment.employee?.id}>
+                    {assignment.employee?.fullName || assignment.employee?.user?.fullName || "Employee"}
                   </option>
                 ))}
               </select>
@@ -544,14 +638,14 @@ const TasksTab = ({ project, setProject }) => {
 
       {/* Tasks by Status */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {Object.entries(tasksByStatus).map(([status, tasks]) => (
+        {Object.entries(tasksByStatus).map(([status, groupTasks]) => (
           <div key={status} className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="font-semibold text-sm">{status.replace("_", " ")}</h4>
-              <span className="text-xs text-muted-foreground">{tasks.length} tasks</span>
+              <span className="text-xs text-muted-foreground">{groupTasks.length} tasks</span>
             </div>
             <div className="space-y-2">
-              {tasks.map((task) => (
+              {groupTasks.map((task) => (
                 <div key={task.id} className="rounded-lg border border-border p-4 bg-background hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <h5 className="font-medium text-sm">{task.title}</h5>
@@ -559,13 +653,31 @@ const TasksTab = ({ project, setProject }) => {
                       {task.priority}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
                     <span>{task.assignee?.fullName || "Unassigned"}</span>
                     <span>{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "No date"}</span>
                   </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-border">
+                    <select
+                      value={task.status}
+                      onChange={(e) => handleUpdateTaskStatus(task.id, e.target.value)}
+                      className="text-xs rounded border border-border bg-background px-2 py-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <option value="TODO">To Do</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="COMPLETED">Completed</option>
+                    </select>
+                    <button
+                      onClick={() => handleDeleteTask(task.id)}
+                      className="p-1 hover:bg-destructive/10 text-destructive rounded transition-colors"
+                      title="Delete task"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
-              {tasks.length === 0 && (
+              {groupTasks.length === 0 && (
                 <div className="text-center py-8 text-sm text-muted-foreground border-2 border-dashed border-border rounded-lg">
                   No tasks
                 </div>
@@ -581,6 +693,62 @@ const TasksTab = ({ project, setProject }) => {
 // Team Tab Component
 const TeamTab = ({ project, setProject }) => {
   const [showAddMember, setShowAddMember] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [roleOnProject, setRoleOnProject] = useState("Team Member");
+  const [savingMember, setSavingMember] = useState(false);
+
+  useEffect(() => {
+    if (showAddMember && employees.length === 0) {
+      apiGet("/employees")
+        .then((res) => setEmployees(res.employees || []))
+        .catch(() => {});
+    }
+  }, [showAddMember]);
+
+  const handleAddMember = async () => {
+    if (!selectedEmpId) {
+      toast.error("Please select an employee");
+      return;
+    }
+
+    setSavingMember(true);
+    try {
+      const res = await apiPost(`/projects/${project.id}/team`, {
+        employeeId: selectedEmpId,
+        roleOnProject,
+      });
+      toast.success("Team member added!");
+      setShowAddMember(false);
+      setSelectedEmpId("");
+      if (setProject && res.assignment) {
+        setProject((prev) => ({
+          ...prev,
+          assignments: [...(prev.assignments || []), res.assignment],
+        }));
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to add team member");
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const handleRemoveMember = async (assignmentId) => {
+    if (!confirm("Are you sure you want to remove this team member?")) return;
+    try {
+      await apiDelete(`/projects/${project.id}/team/${assignmentId}`);
+      toast.success("Team member removed!");
+      if (setProject) {
+        setProject((prev) => ({
+          ...prev,
+          assignments: (prev.assignments || []).filter((a) => a.id !== assignmentId),
+        }));
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to remove member");
+    }
+  };
 
   const team = project.assignments || [];
 
@@ -597,28 +765,88 @@ const TeamTab = ({ project, setProject }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {team.map((assignment) => (
-          <div key={assignment.id} className="rounded-xl border border-border p-5 bg-background hover:shadow-md transition-shadow">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg shrink-0">
-                {assignment.employee?.fullName?.split(" ").map(n => n[0]).join("").toUpperCase() || "?"}
-              </div>
-              <div className="flex-1">
-                <h4 className="font-semibold">{assignment.employee?.fullName || "Unknown"}</h4>
-                <p className="text-sm text-muted-foreground mb-1">{assignment.employee?.email || ""}</p>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                  {assignment.roleOnProject || "Team Member"}
-                </span>
-              </div>
-              <button className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors">
-                <Trash2 className="h-4 w-4" />
-              </button>
+      {/* Add Member Box */}
+      {showAddMember && (
+        <div className="rounded-xl border border-border p-5 bg-secondary/20 space-y-4">
+          <h4 className="font-semibold text-sm">Assign New Team Member</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium mb-1">Select Employee *</label>
+              <select
+                value={selectedEmpId}
+                onChange={(e) => setSelectedEmpId(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+              >
+                <option value="">Choose employee...</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.employeeProfileId || emp.id}>
+                    {emp.fullName} ({emp.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Role on Project</label>
+              <input
+                type="text"
+                value={roleOnProject}
+                onChange={(e) => setRoleOnProject(e.target.value)}
+                placeholder="e.g. Frontend Developer, Designer"
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+              />
             </div>
           </div>
-        ))}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAddMember}
+              disabled={savingMember}
+              className="px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+            >
+              {savingMember ? "Adding..." : "Add Member"}
+            </button>
+            <button
+              onClick={() => setShowAddMember(false)}
+              className="px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {team.map((assignment) => {
+          const emp = assignment.employee;
+          const name = emp?.fullName || emp?.user?.fullName || "Employee";
+          const email = emp?.email || emp?.user?.email || "";
+          const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase() || "?";
+
+          return (
+            <div key={assignment.id} className="rounded-xl border border-border p-5 bg-background hover:shadow-md transition-shadow">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg shrink-0">
+                  {initials}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold truncate">{name}</h4>
+                  <p className="text-sm text-muted-foreground mb-1 truncate">{email}</p>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                    {assignment.roleOnProject || "Team Member"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleRemoveMember(assignment.id)}
+                  className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                  title="Remove from project"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
         {team.length === 0 && (
-          <div className="col-span-2 text-center py-12 text-muted-foreground">
+          <div className="col-span-2 text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
             No team members assigned yet
           </div>
         )}
@@ -633,10 +861,12 @@ const DocumentsTab = ({ project, setProject }) => {
     return <FileText className="h-5 w-5 text-primary" />;
   };
 
+  const docs = project.documents || [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Documents ({project.documents.length})</h3>
+        <h3 className="font-semibold">Documents ({docs.length})</h3>
         <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm">
           <Upload className="h-4 w-4" />
           Upload Document
@@ -644,33 +874,40 @@ const DocumentsTab = ({ project, setProject }) => {
       </div>
 
       <div className="space-y-2">
-        {project.documents.map((doc) => (
+        {docs.map((doc) => (
           <div key={doc.id} className="rounded-lg border border-border p-4 bg-background hover:shadow-md transition-shadow">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                {getFileIcon(doc.type)}
+                {getFileIcon(doc.fileType)}
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className="font-medium text-sm truncate">{doc.name}</h4>
+                <h4 className="font-medium text-sm truncate">{doc.fileName || doc.name}</h4>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                  <span>{doc.size}</span>
+                  <span>{doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB` : "N/A"}</span>
                   <span>•</span>
-                  <span>{doc.uploadedBy}</span>
-                  <span>•</span>
-                  <span>{doc.uploadedAt}</span>
+                  <span>{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : ""}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button className="p-2 hover:bg-secondary rounded-lg transition-colors">
-                  <Download className="h-4 w-4" />
-                </button>
-                <button className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                {doc.fileUrl && (
+                  <a
+                    href={doc.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-2 hover:bg-secondary rounded-lg transition-colors"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                )}
               </div>
             </div>
           </div>
         ))}
+        {docs.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
+            No documents uploaded yet
+          </div>
+        )}
       </div>
     </div>
   );
@@ -681,20 +918,24 @@ const ActivityTab = ({ project }) => {
   const getActivityIcon = (type) => {
     const icons = {
       task_completed: CheckCircle2,
-      team_added: Users,
+      member_added: Users,
       status_changed: Activity,
+      updated: Activity,
+      created: FolderKanban,
       document_uploaded: FileText,
     };
     const Icon = icons[type] || Activity;
     return <Icon className="h-4 w-4" />;
   };
 
+  const activities = project.activities || [];
+
   return (
     <div className="space-y-4">
       <h3 className="font-semibold">Activity Timeline</h3>
-      
+
       <div className="space-y-4">
-        {project.activities.map((activity) => (
+        {activities.map((activity) => (
           <div key={activity.id} className="flex gap-4">
             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-primary">
               {getActivityIcon(activity.type)}
@@ -708,6 +949,11 @@ const ActivityTab = ({ project }) => {
             </div>
           </div>
         ))}
+        {activities.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed border-border rounded-xl">
+            No activities recorded yet
+          </div>
+        )}
       </div>
     </div>
   );
@@ -716,17 +962,33 @@ const ActivityTab = ({ project }) => {
 // Comments Tab Component
 const CommentsTab = ({ project, setProject }) => {
   const [newComment, setNewComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!newComment.trim()) {
       toast.error("Comment cannot be empty");
       return;
     }
 
-    // Add comment logic here
-    toast.success("Comment added!");
-    setNewComment("");
+    setSubmitting(true);
+    try {
+      const res = await apiPost(`/projects/${project.id}/comments`, { content: newComment });
+      toast.success("Comment added!");
+      setNewComment("");
+      if (setProject && res.comment) {
+        setProject((prev) => ({
+          ...prev,
+          comments: [res.comment, ...(prev.comments || [])],
+        }));
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to add comment");
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const comments = project.comments || [];
 
   return (
     <div className="space-y-6">
@@ -737,39 +999,45 @@ const CommentsTab = ({ project, setProject }) => {
           onChange={(e) => setNewComment(e.target.value)}
           placeholder="Write a comment..."
           rows={3}
-          className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+          className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none text-sm"
         />
         <div className="flex items-center justify-end gap-2 mt-3">
           <button
             onClick={handleAddComment}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm"
+            disabled={submitting}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
           >
             <Send className="h-4 w-4" />
-            Post Comment
+            {submitting ? "Posting..." : "Post Comment"}
           </button>
         </div>
       </div>
 
       {/* Comments List */}
       <div className="space-y-4">
-        <h3 className="font-semibold">Comments ({project.comments.length})</h3>
-        
-        {project.comments.map((comment) => (
+        <h3 className="font-semibold">Comments ({comments.length})</h3>
+
+        {comments.map((comment) => (
           <div key={comment.id} className="rounded-lg border border-border p-4 bg-background">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm shrink-0">
-                {comment.user.split(" ").map(n => n[0]).join("").toUpperCase()}
+                {(comment.user || "U").split(" ").map((n) => n[0]).join("").toUpperCase()}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="font-semibold text-sm">{comment.user}</span>
                   <span className="text-xs text-muted-foreground">{comment.timestamp}</span>
                 </div>
-                <p className="text-sm text-muted-foreground">{comment.message}</p>
+                <p className="text-sm text-muted-foreground">{comment.message || comment.content}</p>
               </div>
             </div>
           </div>
         ))}
+        {comments.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed border-border rounded-xl">
+            No comments yet. Start the conversation!
+          </div>
+        )}
       </div>
     </div>
   );

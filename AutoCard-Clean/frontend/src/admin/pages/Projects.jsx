@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api.js";
 
 // Project Modal Component
-const ProjectModal = ({ project, onClose, onSave }) => {
+export const ProjectModal = ({ project, onClose, onSave }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: project?.name || "",
@@ -28,23 +28,60 @@ const ProjectModal = ({ project, onClose, onSave }) => {
     description: project?.description || "",
     status: project?.status || "PLANNING",
     priority: project?.priority || "MEDIUM",
-    startDate: project?.startDate?.split('T')[0] || "",
-    endDate: project?.endDate?.split('T')[0] || "",
-    customerId: project?.customerId || "",
+    startDate: project?.startDate ? project.startDate.split("T")[0] : "",
+    endDate: project?.endDate ? project.endDate.split("T")[0] : "",
+    customerId: project?.customerId || project?.customer?.id || "",
     managerId: project?.managerId || "",
-    teamMembers: project?.assignments?.map(a => a.employeeId) || [],
+    teamMembers: project?.assignments?.map((a) => a.employeeId || a.employee?.id) || [],
   });
 
   const [customers, setCustomers] = useState([]);
   const [employees, setEmployees] = useState([]);
+
+  // Sync formData when project prop changes
+  useEffect(() => {
+    if (project) {
+      setFormData({
+        name: project.name || "",
+        code: project.code || "",
+        description: project.description || "",
+        status: project.status || "PLANNING",
+        priority: project.priority || "MEDIUM",
+        startDate: project.startDate ? project.startDate.split("T")[0] : "",
+        endDate: project.endDate ? project.endDate.split("T")[0] : "",
+        customerId: project.customerId || project.customer?.id || "",
+        managerId: project.managerId || "",
+        teamMembers: project.assignments?.map((a) => a.employeeId || a.employee?.id) || [],
+      });
+    } else {
+      setFormData({
+        name: "",
+        code: "",
+        description: "",
+        status: "PLANNING",
+        priority: "MEDIUM",
+        startDate: "",
+        endDate: "",
+        customerId: "",
+        managerId: "",
+        teamMembers: [],
+      });
+    }
+  }, [project]);
 
   // Load customers and employees on mount
   useEffect(() => {
     const loadData = async () => {
       try {
         const [customersData, employeesData] = await Promise.all([
-          apiGet("/customers"),
-          apiGet("/employees")
+          apiGet("/customers").catch((err) => {
+            console.error("Customers fetch error:", err);
+            return { customers: [] };
+          }),
+          apiGet("/employees").catch((err) => {
+            console.error("Employees fetch error:", err);
+            return { employees: [] };
+          }),
         ]);
         setCustomers(customersData.customers || []);
         setEmployees(employeesData.employees || []);
@@ -100,15 +137,31 @@ const ProjectModal = ({ project, onClose, onSave }) => {
   };
 
   const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const toggleTeamMember = (memberId) => {
-    setFormData(prev => ({
+  const isMemberSelected = (emp) => {
+    const empId = emp.id;
+    const profileId = emp.employeeProfileId;
+    return (
+      formData.teamMembers.includes(empId) ||
+      (profileId && formData.teamMembers.includes(profileId))
+    );
+  };
+
+  const toggleTeamMember = (emp) => {
+    const targetId = emp.employeeProfileId || emp.id;
+    const isSelected = isMemberSelected(emp);
+    setFormData((prev) => ({
       ...prev,
-      teamMembers: prev.teamMembers.includes(memberId)
-        ? prev.teamMembers.filter(id => id !== memberId)
-        : [...prev.teamMembers, memberId]
+      teamMembers: isSelected
+        ? prev.teamMembers.filter(
+            (id) =>
+              id !== emp.id &&
+              id !== emp.employeeProfileId &&
+              id !== emp.userId
+          )
+        : [...prev.teamMembers, targetId],
     }));
   };
 
@@ -255,8 +308,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 >
                   <option value="">Select customer...</option>
                   {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.user?.fullName || customer.companyName || customer.email}
+                    <option key={customer.id} value={customer.customerProfileId || customer.id}>
+                      {customer.fullName || customer.user?.fullName || customer.companyName || customer.email}
                     </option>
                   ))}
                 </select>
@@ -272,7 +325,7 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 >
                   <option value="">Select manager...</option>
                   {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
+                    <option key={emp.id} value={emp.employeeProfileId || emp.id}>
                       {emp.fullName}
                     </option>
                   ))}
@@ -291,8 +344,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                   >
                     <input
                       type="checkbox"
-                      checked={formData.teamMembers.includes(emp.id)}
-                      onChange={() => toggleTeamMember(emp.id)}
+                      checked={isMemberSelected(emp)}
+                      onChange={() => toggleTeamMember(emp)}
                       className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
                     />
                     <div className="flex-1">
@@ -555,20 +608,43 @@ const Projects = () => {
                   <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
                 </div>
 
-                <div className="relative group">
-                  <button className="p-2 hover:bg-secondary rounded-lg transition-colors">
+                <div
+                  className="relative group"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="p-2 hover:bg-secondary rounded-lg transition-colors"
+                  >
                     <MoreVertical className="h-4 w-4" />
                   </button>
-                  <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-background shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                  <div
+                    className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-background shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
                     <Link
                       to={`/admin/project/${project.id}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors"
                     >
                       <Eye className="h-4 w-4" />
                       View Details
                     </Link>
-                    <button 
-                      onClick={() => {
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setEditingProject(project);
                         setShowCreateModal(true);
                       }}
@@ -577,15 +653,25 @@ const Projects = () => {
                       <Edit2 className="h-4 w-4" />
                       Edit Project
                     </button>
-                    <button 
-                      onClick={() => handleArchiveProject(project.id, project.isArchived)}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleArchiveProject(project.id, project.isArchived);
+                      }}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors text-left"
                     >
                       <Archive className="h-4 w-4" />
                       {project.isArchived ? "Unarchive" : "Archive"}
                     </button>
-                    <button 
-                      onClick={() => handleDeleteProject(project.id)}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDeleteProject(project.id);
+                      }}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive transition-colors text-left"
                     >
                       <Trash2 className="h-4 w-4" />

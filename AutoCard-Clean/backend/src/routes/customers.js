@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
@@ -53,8 +53,8 @@ const createCustomerSchema = z.object({
 });
 
 // GET /api/customers - list all customers with their profile.
-router.get("/", checkRolePermission("employee"), async (_req, res) => {
-  console.log("ðŸ“¥ [GET /api/customers] Request received");
+router.get("/", checkRolePermission(["employee", "projects"]), async (_req, res) => {
+  console.log("📥 [GET /api/customers] Request received");
   try {
     const customers = await prisma.user.findMany({
       where: { role: "CUSTOMER" },
@@ -62,10 +62,12 @@ router.get("/", checkRolePermission("employee"), async (_req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    console.log(`âœ… [GET /api/customers] Found ${customers.length} customers`);
+    console.log(`✅ [GET /api/customers] Found ${customers.length} customers`);
 
     const result = customers.map((u) => ({
       id: u.id,
+      userId: u.id,
+      customerProfileId: u.customerProfile?.id ?? null,
       fullName: u.fullName,
       email: u.email,
       isActive: u.isActive,

@@ -24,6 +24,7 @@ import locationRouter from "./routes/locationRoutes.js";
 import rosterRouter from "./routes/rosterRoutes.js";
 import projectsRouter from "./routes/projects.js";
 import servicesRouter from "./routes/services.js";
+import customersRouter from "./routes/customers.js";
 import supportRouter from "./routes/support.js";
 import inventoryRouter from "./routes/inventory.js";
 
@@ -206,7 +207,7 @@ if (process.env.VERCEL !== "1") {
 // API Routes
 app.use("/api/auth", authRouter);
 app.use("/api/employees", employeesRouter);
-// app.use("/api/customers", customersRouter); // CUSTOMER ROUTES COMMENTED OUT
+app.use("/api/customers", customersRouter);
 app.use("/api/onboarding", onboardingRouter);
 app.use("/api/requests", requestsRouter);
 app.use("/api/leave-types", leaveTypesRouter);

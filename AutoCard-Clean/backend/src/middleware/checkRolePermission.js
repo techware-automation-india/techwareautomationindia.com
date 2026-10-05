@@ -13,6 +13,25 @@ export function checkRolePermission(moduleKey) {
         });
       }
 
+      // Check live database user role and customRole
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { 
+          role: true, 
+          roleId: true,
+          customRole: { select: { name: true } }
+        },
+      });
+
+      if (!dbUser) {
+        return res.status(401).json({ message: "User not found." });
+      }
+
+      // If user is Admin (either default role or customRole named Admin), grant full access
+      if (dbUser.role === "ADMIN" || dbUser.customRole?.name?.toUpperCase() === "ADMIN") {
+        return next();
+      }
+
       const inputKeys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
 
       const keySet = new Set(inputKeys);
@@ -24,18 +43,17 @@ export function checkRolePermission(moduleKey) {
           keySet.add("shift-and-location");
           keySet.add("shift_location");
         }
+        if (k === "approvals" || (typeof k === "string" && k.startsWith("approvals-"))) {
+          keySet.add("approvals");
+          keySet.add("approvals-attendance");
+          keySet.add("approvals-forgot-punch");
+          keySet.add("approvals-leave");
+        }
       }
       const keys = Array.from(keySet);
 
-      // 1. Resolve roleId (from token or live DB lookup)
-      let roleId = req.user.roleId;
-      if (!roleId) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: req.user.id },
-          select: { roleId: true },
-        });
-        roleId = dbUser?.roleId || null;
-      }
+      // 1. Resolve roleId (from live DB lookup)
+      const roleId = dbUser.roleId || req.user.roleId;
 
       if (roleId) {
         const hasAccess = await prisma.roleModule.findFirst({

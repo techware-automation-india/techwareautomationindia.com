@@ -7,16 +7,24 @@ import { z } from "zod";
 export const VALID_MODULES = [
   'overview',
   'employee',
+  'customer',
   'requests',
   'approvals',
+  'approvals-attendance',
+  'approvals-forgot-punch',
+  'approvals-leave',
   'mark-attendance',
   'attendance',
   'attendance-management',
   'roles-access',
   'shift-location',
   'roster',
+  'leave',
   'leave-policy',
   'holidays',
+  'academic-holidays',
+  'academic-calendar',
+  'onboarding',
   'projects',
   'services',
   'inventory'
@@ -37,16 +45,14 @@ export const roleNameSchema = z.string()
 
 /**
  * Zod schema for validating module keys array
- * - Must be an array of strings
- * - Each string must be a valid module key from VALID_MODULES
+ * Accepts string keys or object keys ({ moduleKey: "..." }) and transforms them to string arrays
  */
-export const moduleKeysSchema = z.array(z.string())
-  .refine(
-    (keys) => keys.every(key => VALID_MODULES.includes(key)),
-    {
-      message: `Module keys must be from the valid modules list: ${VALID_MODULES.join(', ')}`
-    }
-  );
+export const moduleKeysSchema = z.array(
+  z.union([
+    z.string(),
+    z.object({ moduleKey: z.string() }).transform(m => m.moduleKey)
+  ])
+).transform((keys) => keys.filter((k) => typeof k === 'string' && k.trim().length > 0));
 
 /**
  * Zod schema for creating a new role

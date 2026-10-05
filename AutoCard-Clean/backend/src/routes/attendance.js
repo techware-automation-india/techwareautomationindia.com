@@ -383,9 +383,7 @@ router.get("/me", requireAuth, async (req, res) => {
 
       while (curDate <= endDateObj) {
         const curKey = getIndiaDateKey(curDate);
-        if (isWorkingDay(curKey)) {
-          leaveByDate.set(curKey, leave);
-        }
+        leaveByDate.set(curKey, leave);
         curDate.setDate(curDate.getDate() + 1);
       }
     }
@@ -401,7 +399,16 @@ router.get("/me", requireAuth, async (req, res) => {
       const attendance = attendanceByDate.get(key);
 
       if (attendance) {
-        const status = attendance.status;
+        let status = attendance.status;
+        let note = attendance.note;
+
+        if (leaveByDate.has(key) && status !== "PRESENT") {
+          status = "ON_LEAVE";
+          note = `Approved leave: ${leaveByDate.get(key).leaveType?.name || leaveByDate.get(key).leaveType?.code || "Leave"}`;
+        } else if (holidayByDate.has(key) && status !== "PRESENT") {
+          status = "HOLIDAY";
+          note = holidayByDate.get(key);
+        }
 
         if (summary[status] !== undefined) {
           summary[status] += 1;
@@ -421,7 +428,7 @@ router.get("/me", requireAuth, async (req, res) => {
           status,
           workedHours,
           overtimeHours,
-          note: attendance.note,
+          note,
           createdAt: attendance.createdAt,
           updatedAt: attendance.updatedAt,
         });
@@ -429,16 +436,17 @@ router.get("/me", requireAuth, async (req, res) => {
         continue;
       }
 
-      if (!isWorkingDay(key)) {
-        summary.HOLIDAY += 1;
+      if (leaveByDate.has(key)) {
+        const leave = leaveByDate.get(key);
+        summary.ON_LEAVE += 1;
         populatedRecords.push({
           id: null,
           date: new Date(`${key}T00:00:00+05:30`),
           checkIn: null,
           checkOut: null,
-          status: "HOLIDAY",
+          status: "ON_LEAVE",
           workedHours: null,
-          note: holidayByDate.get(key) || "Weekly Off (Sunday)",
+          note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
         });
         continue;
       }
@@ -457,17 +465,16 @@ router.get("/me", requireAuth, async (req, res) => {
         continue;
       }
 
-      if (leaveByDate.has(key)) {
-        const leave = leaveByDate.get(key);
-        summary.ON_LEAVE += 1;
+      if (!isWorkingDay(key)) {
+        summary.HOLIDAY += 1;
         populatedRecords.push({
           id: null,
           date: new Date(`${key}T00:00:00+05:30`),
           checkIn: null,
           checkOut: null,
-          status: "ON_LEAVE",
+          status: "HOLIDAY",
           workedHours: null,
-          note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
+          note: "Weekly Off (Sunday)",
         });
         continue;
       }
@@ -491,7 +498,12 @@ router.get("/me", requireAuth, async (req, res) => {
       year,
       month,
       records: populatedRecords,
-      holidays: holidays.map((h) => ({ date: h.date, name: h.name })),
+      holidays: holidays.map((h) => ({
+        date: h.date,
+        name: h.name,
+        holidayType: h.holidayType,
+        isOptional: h.isOptional,
+      })),
       summary,
     });
   } catch (err) {
@@ -535,17 +547,45 @@ router.get("/me/today", requireAuth, async (req, res) => {
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
-    const record = await prisma.attendance.findFirst({
-      where: {
-        employeeId: profile.id,
-        date: {
-          gte: today,
-          lte: tomorrow,
+    const [record, approvedLeave] = await Promise.all([
+      prisma.attendance.findFirst({
+        where: {
+          employeeId: profile.id,
+          date: {
+            gte: today,
+            lte: tomorrow,
+          },
         },
-      },
-    });
+      }),
+      prisma.leaveRequest.findFirst({
+        where: {
+          employeeId: profile.id,
+          status: "APPROVED",
+          startDate: { lte: tomorrow },
+          endDate: { gte: today },
+        },
+        include: { leaveType: { select: { name: true, code: true } } },
+      }),
+    ]);
 
-    res.json({ record: record ?? null });
+    let finalRecord = record;
+    if (!finalRecord && approvedLeave) {
+      finalRecord = {
+        id: null,
+        employeeId: profile.id,
+        date: today,
+        status: "ON_LEAVE",
+        note: `Approved leave: ${approvedLeave.leaveType?.name || approvedLeave.leaveType?.code || "Leave"}`,
+      };
+    } else if (finalRecord && approvedLeave && finalRecord.status !== "PRESENT") {
+      finalRecord = {
+        ...finalRecord,
+        status: "ON_LEAVE",
+        note: `Approved leave: ${approvedLeave.leaveType?.name || approvedLeave.leaveType?.code || "Leave"}`,
+      };
+    }
+
+    res.json({ record: finalRecord ?? null, approvedLeave: approvedLeave ?? null });
   } catch (err) {
     console.error("Employee get today attendance error:", err);
     res.status(500).json({ message: "Failed to load today's attendance." });
@@ -641,6 +681,22 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     }
 
     const nextDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
+
+    const approvedLeaveForDate = await prisma.leaveRequest.findFirst({
+      where: {
+        employeeId: profile.id,
+        status: "APPROVED",
+        startDate: { lt: nextDate },
+        endDate: { gte: selectedDate },
+      },
+      include: { leaveType: { select: { name: true } } },
+    });
+
+    if (approvedLeaveForDate) {
+      return res.status(400).json({
+        message: `Forgot Punch request cannot be submitted for ${date} because you were on approved leave (${approvedLeaveForDate.leaveType?.name || "Leave"}).`,
+      });
+    }
 
     // --------------------------------------------------
     // FIND EXISTING ATTENDANCE
@@ -960,6 +1016,22 @@ router.post("/checkin", requireAuth, async (req, res) => {
     const now = new Date();
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
+
+    const approvedLeaveToday = await prisma.leaveRequest.findFirst({
+      where: {
+        employeeId: profile.id,
+        status: "APPROVED",
+        startDate: { lte: today },
+        endDate: { gte: today },
+      },
+      include: { leaveType: { select: { name: true } } },
+    });
+
+    if (approvedLeaveToday) {
+      return res.status(400).json({
+        message: `Check-in is disabled because you are on approved leave today (${approvedLeaveToday.leaveType?.name || "Leave"}).`,
+      });
+    }
 
     // ----------------------------------------------------------
     // REQUEST BODY
@@ -1436,6 +1508,16 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
+    const approvedLeaveToday = await prisma.leaveRequest.findFirst({
+      where: {
+        employeeId: profile.id,
+        status: "APPROVED",
+        startDate: { lte: today },
+        endDate: { gte: today },
+      },
+      include: { leaveType: { select: { name: true } } },
+    });
+
     // --------------------------------------------------------
     // REQUEST BODY
     // --------------------------------------------------------
@@ -1458,6 +1540,12 @@ router.post("/checkout", requireAuth, async (req, res) => {
         },
       },
     });
+
+    if (approvedLeaveToday && (!record || !record.checkIn)) {
+      return res.status(400).json({
+        message: `Check-out is disabled because you are on approved leave today (${approvedLeaveToday.leaveType?.name || "Leave"}).`,
+      });
+    }
 
     // ========================================================
     // ADMIN CHECKOUT
@@ -1980,7 +2068,7 @@ router.get("/pending-approvals", async (req, res) => {
   // Allow ADMIN with permission OR any EMPLOYEE to see their own pending
   if (req.user.role === "ADMIN") {
     const hasPermission = await requireAdminOrModulePermission(
-      ["attendance", "approvals", "attendance-management"],
+      ["approvals-attendance", "attendance", "approvals", "attendance-management"],
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return;
@@ -2059,7 +2147,7 @@ router.get("/my-requests", requireRole("EMPLOYEE"), async (req, res) => {
 // GET /api/attendance/admin/requests - all attendance approval history
 router.get(
   "/admin/requests",
-  requireAdminOrModulePermission(["attendance", "approvals", "attendance-management"], "canView"),
+  requireAdminOrModulePermission(["approvals-attendance", "attendance", "approvals", "attendance-management"], "canView"),
   async (req, res) => {
     try {
       const rawRecords = await prisma.attendance.findMany({
@@ -2071,6 +2159,9 @@ router.get(
             { note: { contains: "Admin approved" } },
             { note: { contains: "Admin rejected" } },
             { note: { contains: "unassigned location" } },
+            { note: { contains: "unassigned" } },
+            { note: { contains: "Unassigned" } },
+            { note: { contains: "outside" } },
             { note: { contains: "requires approval" } },
             { status: "PENDING_APPROVAL" },
           ],
@@ -2386,7 +2477,7 @@ router.get("/register/weekly", async (req, res) => {
       let current = normalizeUTCDate(leave.startDate);
       const last = normalizeUTCDate(leave.endDate);
       while (current <= last) {
-        if (current >= start && current < end && isWorkingDay(current)) {
+        if (current >= start && current < end) {
           leaveByEmployeeAndDate.set(
             `${leave.employeeId}:${formatDateKey(current)}`,
             leave,
@@ -2429,22 +2520,24 @@ router.get("/register/weekly", async (req, res) => {
         let note = "No attendance record.";
 
         if (attendance) {
-          status = attendance.status;
+          status = (leave && attendance.status !== "PRESENT") ? "ON_LEAVE" : attendance.status;
           checkIn = attendance.checkIn;
           checkOut = attendance.checkOut;
           workedHours =
             attendance.workedHours ??
             calculateWorkedHours(attendance.checkIn, attendance.checkOut);
-          note = attendance.note || null;
-        } else if (!isWorkingDay(date)) {
-          status = "HOLIDAY";
-          note = "Weekly off.";
-        } else if (holiday) {
-          status = "HOLIDAY";
-          note = holiday.name;
+          note = (leave && status === "ON_LEAVE")
+            ? `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`
+            : (attendance.note || null);
         } else if (leave) {
           status = "ON_LEAVE";
           note = `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`;
+        } else if (holiday) {
+          status = "HOLIDAY";
+          note = holiday.name;
+        } else if (!isWorkingDay(date)) {
+          status = "HOLIDAY";
+          note = "Weekly off.";
         }
 
         if (pendingCorrection?.checkInTime) {
@@ -2486,6 +2579,12 @@ router.get("/register/weekly", async (req, res) => {
       totalEmployees: employees.length,
       summary,
       records,
+      holidays: holidays.map((h) => ({
+        date: h.date,
+        name: h.name,
+        holidayType: h.holidayType,
+        isOptional: h.isOptional,
+      })),
     });
   } catch (err) {
     console.error("Get weekly attendance register error:", err);
@@ -2537,7 +2636,7 @@ router.get(
 
 router.post(
   ["/approve/:id", "/:id/approve"],
-  requireAdminOrModulePermission(["attendance", "approvals", "attendance-management"], "canEdit"),
+  requireAdminOrModulePermission(["approvals-attendance", "attendance", "approvals", "attendance-management"], "canEdit"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -2561,9 +2660,18 @@ router.post(
 
       const workedHours = calculateWorkedHours(record.checkIn, record.checkOut);
 
+      const reviewer = req.user?.id
+        ? await prisma.user.findUnique({
+            where: { id: req.user.id },
+            select: { fullName: true },
+          })
+        : null;
+      const reviewerName = reviewer?.fullName || (req.user.role === "ADMIN" ? "Admin" : "Employee");
+
+      const approvalText = `Approved by ${reviewerName}.`;
       const updatedNote = record.note
-        ? `${record.note} | Admin approved.`
-        : "Admin approved.";
+        ? `${record.note} | ${approvalText}`
+        : approvalText;
 
       const updated = await prisma.attendance.update({
         where: { id },
@@ -2596,7 +2704,7 @@ router.post(
 
 router.post(
   ["/reject/:id", "/:id/reject"],
-  requireAdminOrModulePermission(["attendance", "approvals", "attendance-management"], "canEdit"),
+  requireAdminOrModulePermission(["approvals-attendance", "attendance", "approvals", "attendance-management"], "canEdit"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -2621,9 +2729,17 @@ router.post(
         });
       }
 
+      const reviewer = req.user?.id
+        ? await prisma.user.findUnique({
+            where: { id: req.user.id },
+            select: { fullName: true },
+          })
+        : null;
+      const reviewerName = reviewer?.fullName || (req.user.role === "ADMIN" ? "Admin" : "Employee");
+
       const rejectionNote = reason
-        ? `Admin rejected: ${reason}`
-        : "Admin rejected.";
+        ? `Rejected by ${reviewerName}: ${reason}`
+        : `Rejected by ${reviewerName}.`;
 
       const updatedNote = record.note
         ? `${record.note} | ${rejectionNote}`
@@ -2740,9 +2856,7 @@ router.get(
         let current = normalizeUTCDate(leave.startDate);
         const last = normalizeUTCDate(leave.endDate);
         while (current <= last) {
-          if (isWorkingDay(current)) {
-            leaveByDate.set(formatDateKey(current), leave);
-          }
+          leaveByDate.set(formatDateKey(current), leave);
           current = new Date(
             Date.UTC(
               current.getUTCFullYear(),
@@ -2777,9 +2891,14 @@ router.get(
         const holidayNote = holidayObj?.name || (isSunday ? "Weekly Off (Sunday)" : null);
 
         if (existing) {
-          const status = pendingCorrection
+          let status = pendingCorrection
             ? "PENDING_APPROVAL"
             : existing.status;
+
+          if (leaveByDate.has(key) && existing.status !== "PRESENT" && !pendingCorrection) {
+            status = "ON_LEAVE";
+          }
+
           if (summary[status] !== undefined) summary[status] += 1;
           populatedRecords.push({
             id: existing.id,
@@ -2800,21 +2919,24 @@ router.get(
               calculateWorkedHours(existing.checkIn, existing.checkOut),
             note: pendingCorrection
               ? `${existing.note || ""}${existing.note ? " | " : ""}Forgot Punch Check In pending approval.`
-              : existing.note || holidayNote,
+              : (leaveByDate.has(key) && status === "ON_LEAVE"
+                  ? `Approved leave: ${leaveByDate.get(key).leaveType?.name || leaveByDate.get(key).leaveType?.code || "Leave"}`
+                  : existing.note || holidayNote),
           });
           continue;
         }
 
-        if (!isWorkingDay(current)) {
-          summary.HOLIDAY += 1;
+        if (leaveByDate.has(key)) {
+          const leave = leaveByDate.get(key);
+          summary.ON_LEAVE += 1;
           populatedRecords.push({
             id: null,
             date: new Date(current),
             checkIn: null,
             checkOut: null,
-            status: "HOLIDAY",
+            status: "ON_LEAVE",
             workedHours: null,
-            note: holidayByDate.get(key)?.name || "Weekly Off (Sunday)",
+            note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
           });
           continue;
         }
@@ -2833,17 +2955,16 @@ router.get(
           continue;
         }
 
-        if (leaveByDate.has(key)) {
-          const leave = leaveByDate.get(key);
-          summary.ON_LEAVE += 1;
+        if (!isWorkingDay(current)) {
+          summary.HOLIDAY += 1;
           populatedRecords.push({
             id: null,
             date: new Date(current),
             checkIn: null,
             checkOut: null,
-            status: "ON_LEAVE",
+            status: "HOLIDAY",
             workedHours: null,
-            note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
+            note: "Weekly Off (Sunday)",
           });
           continue;
         }
@@ -2890,7 +3011,12 @@ router.get(
         year,
         month,
         records: populatedRecords,
-        holidays: holidays.map((h) => ({ date: h.date, name: h.name })),
+        holidays: holidays.map((h) => ({
+          date: h.date,
+          name: h.name,
+          holidayType: h.holidayType,
+          isOptional: h.isOptional,
+        })),
         summary,
       });
     } catch (err) {

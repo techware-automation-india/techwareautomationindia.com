@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Check, X, Inbox } from "lucide-react";
+import { Loader2, RefreshCw, Check, X, Inbox, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 
@@ -21,6 +22,7 @@ const statusStyles = {
 };
 
 const LeaveRequests = () => {
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState(null);
@@ -58,6 +60,9 @@ const LeaveRequests = () => {
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4">
+        <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
           <Inbox className="h-6 w-6 text-primary" />
         </div>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, CalendarDays, Send } from "lucide-react";
+import { ArrowLeft, CalendarDays, Send, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { apiPost } from "../../lib/api.js";
+import { apiGet, apiPost } from "../../lib/api.js";
 
 const getIndiaNow = () => {
   const now = new Date();
@@ -57,6 +57,44 @@ const AttendanceCorrection = ({ correctionType }) => {
   const [checkInLocation, setCheckInLocation] = useState("");
   const [checkOutLocation, setCheckOutLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [approvedLeaves, setApprovedLeaves] = useState([]);
+
+  useEffect(() => {
+    const fetchLeaves = async () => {
+      try {
+        const res = await apiGet("/leave/my");
+        const list = Array.isArray(res?.requests) ? res.requests : [];
+        setApprovedLeaves(list.filter((r) => r.status === "APPROVED"));
+      } catch (err) {
+        console.warn("Failed to fetch leave history:", err.message);
+      }
+    };
+    fetchLeaves();
+  }, []);
+
+  const getApprovedLeaveForDate = (selectedDateStr) => {
+    if (!selectedDateStr || approvedLeaves.length === 0) return null;
+
+    return approvedLeaves.find((leave) => {
+      const startKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(leave.startDate));
+
+      const endKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(leave.endDate));
+
+      return selectedDateStr >= startKey && selectedDateStr <= endKey;
+    });
+  };
+
+  const onLeaveForDate = getApprovedLeaveForDate(date);
 
   useEffect(() => {
     const refreshIndiaNow = () => {
@@ -84,6 +122,14 @@ const AttendanceCorrection = ({ correctionType }) => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (onLeaveForDate) {
+      toast.error(
+        `Cannot submit Forgot Punch for ${date} because you were on approved leave.`,
+      );
+      return;
+    }
+
     if (!reason.trim()) {
       toast.error("Please enter a reason.");
       return;
@@ -194,8 +240,23 @@ const AttendanceCorrection = ({ correctionType }) => {
                 }
               }
             }}
-            className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+            className={`mt-2 w-full rounded-lg border px-3 py-2.5 text-sm ${
+              onLeaveForDate
+                ? "border-purple-300 bg-purple-50/50 dark:border-purple-800 dark:bg-purple-950/20"
+                : "border-border bg-background"
+            }`}
           />
+          {onLeaveForDate && (
+            <div className="mt-2 rounded-xl border border-purple-200 bg-purple-50 dark:border-purple-900/40 dark:bg-purple-950/30 p-3.5 text-xs text-purple-900 dark:text-purple-200">
+              <div className="font-bold flex items-center gap-1.5 text-purple-800 dark:text-purple-300">
+                <AlertCircle className="h-4 w-4 text-purple-600 shrink-0" />
+                Date Frozen — On Approved Leave ({onLeaveForDate.leaveType?.name || "Leave"})
+              </div>
+              <div className="mt-1 leading-relaxed">
+                You were on approved leave on {date}. Forgot Punch request cannot be submitted for approved leave dates.
+              </div>
+            </div>
+          )}
         </label>
         <label className="block text-sm font-medium">
           {punchType === "check-out" ? "Check Out Time" : "Check In Time"}
@@ -271,11 +332,11 @@ const AttendanceCorrection = ({ correctionType }) => {
         </label>
         <button
           type="submit"
-          disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          disabled={submitting || Boolean(onLeaveForDate)}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="h-4 w-4" />
-          {submitting ? "Submitting..." : "Submit Request"}
+          {submitting ? "Submitting..." : onLeaveForDate ? "Date Frozen (On Leave)" : "Submit Request"}
         </button>
       </form>
     </div>

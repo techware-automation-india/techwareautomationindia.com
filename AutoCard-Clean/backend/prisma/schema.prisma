@@ -336,7 +336,9 @@ model LeaveType {
   id          String   @id @default(uuid())
   name        String   @unique
   code        String   @unique
-  daysPerYear Int      @default(0)
+  daysPerYear Int      @default(0)          // Total leaves per year
+  maxConsecutiveDays    Int? @default(0)    // Max consecutive days in one request (0 = no limit)
+  minAdvanceNoticeDays  Int? @default(0)    // Employee must apply X days before leave starts (0 = same day ok)
   description String?
   isPaid      Boolean  @default(true)
   isActive    Boolean  @default(true)

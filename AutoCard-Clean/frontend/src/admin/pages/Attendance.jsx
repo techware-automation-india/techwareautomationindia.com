@@ -12,6 +12,7 @@ import {
   AlertCircle,
   MapPin,
   Printer,
+  ArrowLeft,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -1238,33 +1239,46 @@ const Attendance = () => {
                       return (
                         <tr
                           key={rec.id}
-                          className="hover:bg-secondary/50 transition-colors"
+                          className={rec.status === "ON_LEAVE" ? "bg-violet-500/5 dark:bg-violet-500/10 transition-colors" : "hover:bg-secondary/50 transition-colors"}
                         >
-                          <td className="py-3 pr-4">{fmtDateDMY(rec.date)}</td>
+                          <td className="py-3 pr-4 font-medium">{fmtDateDMY(rec.date)}</td>
                           <td className="py-3 pr-4">
-                            {statusMeta[rec.status]?.label || rec.status}
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                              {statusMeta[rec.status]?.label || rec.status}
+                            </span>
                           </td>
-                          <td className="py-3 pr-4">
-                            {fmtTime(rec.checkIn) ?? "—"}
-                          </td>
-                          <td className="py-3 pr-4">
-                            {fmtTime(rec.checkOut) ?? "—"}
-                          </td>
-                          <td className="py-3 pr-4">
-                            {fmtWorkedHours(Math.min(Number(rec.workedHours), 8))}
-                          </td>
-                          <td className="py-3 pr-4">
-                            {otHours ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
-                                {otHours}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="py-3 pr-4 max-w-xl truncate">
-                            {rec.note || "—"}
-                          </td>
+                          {rec.status === "ON_LEAVE" ? (
+                            <td colSpan={5} className="py-3 pr-4">
+                              <div className="w-full rounded-xl bg-violet-500/10 dark:bg-violet-500/20 border border-violet-200 dark:border-violet-800/40 px-3.5 py-2 text-xs font-semibold text-violet-700 dark:text-violet-300 flex items-center justify-between">
+                                <span className="font-bold">On Leave</span>
+                                <span className="text-violet-600 dark:text-violet-400 font-medium">{rec.note || "Approved Leave"}</span>
+                              </div>
+                            </td>
+                          ) : (
+                            <>
+                              <td className="py-3 pr-4">
+                                {fmtTime(rec.checkIn) ?? "—"}
+                              </td>
+                              <td className="py-3 pr-4">
+                                {fmtTime(rec.checkOut) ?? "—"}
+                              </td>
+                              <td className="py-3 pr-4">
+                                {fmtWorkedHours(Math.min(Number(rec.workedHours), 8))}
+                              </td>
+                              <td className="py-3 pr-4">
+                                {otHours ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                                    {otHours}
+                                  </span>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="py-3 pr-4 max-w-xl truncate">
+                                {rec.note || "—"}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       );
                     })}
@@ -1299,6 +1313,9 @@ const Attendance = () => {
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4">
+        <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
           <Clock className="h-6 w-6 text-primary" />
         </div>
@@ -2265,9 +2282,9 @@ const Attendance = () => {
                                 }`}
                               >
                                 {isHoliday && !isWorkedRecord(rec) ? (
-                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20">
-                                    <div className="text-lg font-bold text-blue-700 dark:text-blue-300">
-                                      Holiday
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20 text-center p-2">
+                                    <div className="text-xs font-bold text-blue-700 dark:text-blue-300 line-clamp-2 px-1">
+                                      {holidayName || rec?.note || (date.getUTCDay() === 0 ? "Sunday" : "Holiday")}
                                     </div>
                                   </div>
                                 ) : isAbsent ? (
@@ -2276,6 +2293,19 @@ const Attendance = () => {
                                       <div className="text-lg font-bold text-rose-700 dark:text-rose-300">
                                         Absent
                                       </div>
+                                    </div>
+                                  </div>
+                                ) : rec?.status === "ON_LEAVE" ? (
+                                  <div className="flex min-h-[125px] items-center justify-center rounded-xl border border-violet-200 dark:border-violet-800/40 bg-violet-500/10 dark:bg-violet-500/20 p-2 text-center">
+                                    <div>
+                                      <div className="text-base font-bold text-violet-700 dark:text-violet-300">
+                                        On Leave
+                                      </div>
+                                      {rec.note && (
+                                        <div className="mt-1 text-xs font-medium text-violet-600 dark:text-violet-400 line-clamp-2" title={rec.note}>
+                                          {rec.note}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 ) : rec ? (
@@ -2300,8 +2330,8 @@ const Attendance = () => {
                                       </span>
 
                                       {isHoliday && (
-                                        <span className="rounded-md border border-blue-200 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300">
-                                          Holiday
+                                        <span className="rounded-md border border-blue-200 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300 truncate max-w-[90px]" title={holidayName || rec?.note || (date.getUTCDay() === 0 ? "Sunday" : "Holiday")}>
+                                          {holidayName || rec?.note || (date.getUTCDay() === 0 ? "Sunday" : "Holiday")}
                                         </span>
                                       )}
 
@@ -2608,13 +2638,15 @@ const Attendance = () => {
                                     "bg-muted-foreground"
                                   }`}
                                 />
-                                {statusMeta[selectedRecord.status]?.label ||
-                                  selectedRecord.status}
+                                {selectedRecord.status === "HOLIDAY"
+                                  ? selectedRecord.note || "Holiday"
+                                  : statusMeta[selectedRecord.status]?.label ||
+                                    selectedRecord.status}
                               </span>
                             ) : selectedHolidayName ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20 px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300">
                                 <span className="h-2 w-2 rounded-full bg-blue-500" />
-                                Holiday
+                                {selectedHolidayName}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 dark:border-rose-800/40 bg-rose-500/10 dark:bg-rose-500/20 px-3 py-1.5 text-xs font-bold text-rose-700 dark:text-rose-300">
@@ -2742,7 +2774,7 @@ const Attendance = () => {
                                     {selectedHolidayName && (
                                       <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-950/20 p-3">
                                         <div className="text-[10px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-                                          Holiday
+                                          Weekly Off
                                         </div>
                                         <div className="mt-1 text-sm font-semibold text-blue-800 dark:text-blue-300">
                                           {selectedHolidayName}
@@ -2904,6 +2936,18 @@ const Attendance = () => {
                             {/* Content Area - Fixed height and position */}
                             <div className="flex-1 w-full shrink-0">
                               {rec ? (
+                                rec.status === "ON_LEAVE" ? (
+                                  <div className="flex flex-col items-center justify-center min-h-[85px] w-full rounded-xl border border-violet-200 dark:border-violet-800/40 bg-violet-500/10 dark:bg-violet-500/20 p-2 text-center">
+                                    <span className="text-xs font-bold text-violet-700 dark:text-violet-300">
+                                      On Leave
+                                    </span>
+                                    {rec.note && (
+                                      <span className="mt-1 text-[10px] font-medium text-violet-600 dark:text-violet-400 line-clamp-2" title={rec.note}>
+                                        {rec.note}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
                                 <div className="space-y-1.5 shrink-0">
                                     {/* Status Badge */}
                                     <div className="flex items-center gap-1.5">
@@ -3000,7 +3044,8 @@ const Attendance = () => {
                                       </span>
                                     )}
                                   </div>
-                                ) : holidayName ? (
+                                )
+                              ) : holidayName ? (
                                   <div className="space-y-2">
                                     <div className="flex items-center gap-1.5">
                                       <span className="h-3 w-3 rounded-full bg-blue-500" />
@@ -3020,7 +3065,7 @@ const Attendance = () => {
                                     <div className="flex items-center gap-1.5">
                                       <span className="h-3 w-3 rounded-full bg-blue-500" />
                                       <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                                        Holiday
+                                        Weekly Off
                                       </span>
                                     </div>
                                     <div

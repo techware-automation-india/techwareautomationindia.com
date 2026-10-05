@@ -21,8 +21,12 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
 
   useEffect(() => {
     if (isOpen && mode === 'edit' && role) {
-      setName(role.name);
-      setSelectedModules(role.modules?.map(m => m.moduleKey || m) || []);
+      setName(role.name || '');
+      const rawModules = Array.isArray(role.modules) ? role.modules : [];
+      const extractedKeys = rawModules
+        .map((m) => (typeof m === 'string' ? m : m?.moduleKey))
+        .filter((k) => typeof k === 'string' && k.trim().length > 0);
+      setSelectedModules(extractedKeys);
     } else if (isOpen && mode === 'create') {
       setName('');
       setSelectedModules([]);

@@ -15,7 +15,9 @@ import {
   MessageSquare,
   X,
   MapPin,
+  ArrowLeft,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
 
@@ -279,6 +281,7 @@ const StatCard = ({ icon: Icon, label, value, bg, text }) => (
 // ── component ─────────────────────────────────────────────────────────────────
 
 const Attendance = () => {
+  const navigate = useNavigate();
   const today = new Date();
 
   const [year, setYear] = useState(today.getFullYear());
@@ -344,10 +347,14 @@ const Attendance = () => {
   }
 
   const holidayByDay = {};
+  const holidayTypeByDay = {};
 
   for (const h of holidays) {
     const d = getIndiaDayNumber(h.date);
-    if (d) holidayByDay[d] = h.name;
+    if (d) {
+      holidayByDay[d] = h.name;
+      holidayTypeByDay[d] = h.holidayType || "FESTIVAL";
+    }
   }
 
   // ── worked & overtime calculations ──
@@ -469,7 +476,7 @@ const Attendance = () => {
                           <span
                             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
                           >
-                            {meta.label}
+                            {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}
                           </span>
                         </td>
 
@@ -726,6 +733,9 @@ const Attendance = () => {
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <Clock className="h-6 w-6 text-primary" />
           </div>
@@ -1106,11 +1116,11 @@ const Attendance = () => {
                               )}`}
                             />
                             <span className="text-[10px] font-bold truncate">
-                              {meta.label}
+                              {(r?.status === "HOLIDAY" || isHolidayCell) ? (hol || r?.note || "Holiday") : meta.label}
                             </span>
                           </div>
 
-                          {r && !isHolidayCell && (
+                          {r && !isHolidayCell && r.status !== "ON_LEAVE" && (
                             <>
                               {/* In / Out */}
                               <div className="grid grid-cols-2 gap-1.5">
@@ -1162,12 +1172,27 @@ const Attendance = () => {
                             </>
                           )}
 
+                          {r && r.status === "ON_LEAVE" && (
+                            <div
+                              className="rounded-lg bg-purple-50 border border-purple-100 px-2 py-1.5 text-[10px] font-semibold text-purple-700 truncate"
+                              title={r?.note || "On Leave"}
+                            >
+                              {r?.note || "Approved Leave"}
+                            </div>
+                          )}
+
                           {isHolidayCell && (
                             <div
-                              className="rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-1.5 text-[10px] font-semibold text-indigo-700 truncate"
-                              title={hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
+                              className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold truncate ${
+                                holidayTypeByDay[day] === "FESTIVAL" || (hol && !hol.includes("Sunday") && !hol.includes("Weekly"))
+                                  ? "bg-purple-50 dark:bg-purple-950/30 border-purple-200 text-purple-700 dark:text-purple-300"
+                                  : holidayTypeByDay[day] === "NATIONAL"
+                                  ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 text-emerald-700 dark:text-emerald-300"
+                                  : "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-100 text-indigo-700 dark:text-indigo-300"
+                              }`}
+                              title={hol || r?.note || (isSunday ? "Weekly Off (Sunday)" : "Holiday")}
                             >
-                              {hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
+                              {hol || r?.note || (isSunday ? "Weekly Off (Sunday)" : "Holiday")}
                             </div>
                           )}
                         </div>
@@ -1274,69 +1299,85 @@ const Attendance = () => {
                           <span
                             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
                           >
-                            {meta.label}
+                            {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}
                           </span>
                         </td>
 
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <LogIn className="h-3.5 w-3.5 text-emerald-600" />
+                        {r.status === "ON_LEAVE" ? (
+                          <td colSpan={5} className="px-5 py-3">
+                            <div className="w-full rounded-xl bg-purple-500/15 dark:bg-purple-500/25 border border-purple-200 dark:border-purple-800/40 px-4 py-2.5 text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center justify-between">
+                              <span className="flex items-center gap-2 font-bold text-sm">
+                                <CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                On Leave
+                              </span>
+                              <span className="text-purple-700 dark:text-purple-300 font-medium">
+                                {r.note || "Approved Leave"}
+                              </span>
+                            </div>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-5 py-3 whitespace-nowrap">
+                              <span className="flex items-center gap-1.5">
+                                <LogIn className="h-3.5 w-3.5 text-emerald-600" />
 
-                            {fmtTime(r.checkIn)}
-                          </span>
-                        </td>
+                                {fmtTime(r.checkIn)}
+                              </span>
+                            </td>
 
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                            <td className="px-5 py-3 whitespace-nowrap">
+                              <span className="flex items-center gap-1.5">
+                                <LogOut className="h-3.5 w-3.5 text-rose-600" />
 
-                            {fmtTime(r.checkOut)}
-                          </span>
-                        </td>
+                                {fmtTime(r.checkOut)}
+                              </span>
+                            </td>
 
-                        <td className="px-5 py-3 font-medium">
-                          {fmtWorkedHours(getRegularHours(r.workedHours))}
-                        </td>
+                            <td className="px-5 py-3 font-medium">
+                              {fmtWorkedHours(getRegularHours(r.workedHours))}
+                            </td>
 
-                        <td className="px-5 py-3">
-                          {overtime > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
-                              <Clock3 className="h-3.5 w-3.5" />
-                              {fmtWorkedHours(overtime)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
+                            <td className="px-5 py-3">
+                              {overtime > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
+                                  <Clock3 className="h-3.5 w-3.5" />
+                                  {fmtWorkedHours(overtime)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
 
-                        <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
-                          {r.status === "ABSENT" ? (
-                            <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
-                              Absent
-                            </span>
-                          ) : r.note ? (
-                            isComplexNote(r.note) ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedRecordForNote(r)}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
-                              >
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                View Reason
-                              </button>
-                            ) : (
-                              <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
-                                {r.note.split("|").map((n, i) => (
-                                  <div key={i}>
-                                    {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
+                            <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
+                              {r.status === "ABSENT" ? (
+                                <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                                  Absent
+                                </span>
+                              ) : r.note ? (
+                                isComplexNote(r.note) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedRecordForNote(r)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                                  >
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    View Reason
+                                  </button>
+                                ) : (
+                                  <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
+                                    {r.note.split("|").map((n, i) => (
+                                      <div key={i}>
+                                        {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
-                            )
-                          ) : (
-                            <span className="text-base text-muted-foreground">�</span>
-                          )}
-                        </td>
+                                )
+                              ) : (
+                                <span className="text-base text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}

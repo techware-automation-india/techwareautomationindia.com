@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Calendar,
+  ScanLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
@@ -279,6 +280,7 @@ const MarkAttendance = () => {
   const navigate = useNavigate();
 
   const [record, setRecord] = useState(null);
+  const [approvedLeave, setApprovedLeave] = useState(null);
 
   const [correctionRequest, setCorrectionRequest] = useState(null);
 
@@ -329,6 +331,7 @@ const MarkAttendance = () => {
       ]);
 
       setRecord(attendanceResult.record ?? null);
+      setApprovedLeave(attendanceResult.approvedLeave ?? null);
 
       const requests = Array.isArray(requestResult?.requests)
         ? requestResult.requests
@@ -814,8 +817,10 @@ const MarkAttendance = () => {
    * OPEN
    */
 
+  const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
+
   const canCheckIn =
-    !hasCheckedIn && !isCorrectionPending && !isCorrectionApproved;
+    !hasCheckedIn && !isCorrectionPending && !isCorrectionApproved && !isOnLeaveToday;
 
   /*
    * CHECK OUT
@@ -836,7 +841,8 @@ const MarkAttendance = () => {
   const canCheckOut =
     (hasCheckedIn || (isCorrectionPending && !!forgotPunchCheckIn)) &&
     !hasCheckedOut &&
-    !isCorrectionRejected;
+    !isCorrectionRejected &&
+    !isOnLeaveToday;
 
   // =======================================================
   // STATUS BADGE
@@ -900,15 +906,26 @@ const MarkAttendance = () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => loadToday()}
-          disabled={loading}
-          className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
-          title="Refresh"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/employee/requests/forgot-punch")}
+            className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-4 py-2 flex items-center gap-2 transition-all hover:shadow-md active:scale-[0.99] text-sm"
+          >
+            <ScanLine className="h-4 w-4" />
+            <span>Forgot Punch</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => loadToday()}
+            disabled={loading}
+            className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
       {/* =================================================
@@ -971,6 +988,22 @@ const MarkAttendance = () => {
               </span>
             )}
           </div>
+
+          {/* =================================================
+              ON LEAVE TODAY
+          ================================================= */}
+
+          {isOnLeaveToday && (
+            <div className="rounded-xl border border-purple-200 bg-purple-50 dark:border-purple-900/40 dark:bg-purple-950/30 px-4 py-3.5 text-sm text-purple-900 dark:text-purple-200">
+              <div className="flex items-center gap-2 font-bold text-base text-purple-800 dark:text-purple-300">
+                <Calendar className="h-5 w-5 text-purple-600" />
+                On Leave Today ({approvedLeave?.leaveType?.name || record?.note?.replace("Approved leave: ", "") || "Approved Leave"})
+              </div>
+              <div className="mt-1 text-xs text-purple-700 dark:text-purple-300">
+                Your leave application is approved. Attendance check-in and check-out are frozen for today.
+              </div>
+            </div>
+          )}
 
           {/* =================================================
               PENDING
@@ -1162,13 +1195,15 @@ const MarkAttendance = () => {
                 focus:outline-none
 
                 ${
-                  hasCheckedIn
-                    ? "bg-emerald-500 text-white cursor-not-allowed"
-                    : isCorrectionPending
-                      ? "bg-amber-100 text-amber-700 border border-amber-200 cursor-not-allowed"
-                      : isCorrectionApproved
-                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-not-allowed"
-                        : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
+                  isOnLeaveToday
+                    ? "bg-purple-100 text-purple-700 border border-purple-200 cursor-not-allowed"
+                    : hasCheckedIn
+                      ? "bg-emerald-500 text-white cursor-not-allowed"
+                      : isCorrectionPending
+                        ? "bg-amber-100 text-amber-700 border border-amber-200 cursor-not-allowed"
+                        : isCorrectionApproved
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-not-allowed"
+                          : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
                 }
 
                 disabled:opacity-70
@@ -1180,6 +1215,12 @@ const MarkAttendance = () => {
                   <Loader2 className="h-5 w-5 animate-spin" />
 
                   <span>Getting Location...</span>
+                </>
+              ) : isOnLeaveToday ? (
+                <>
+                  <Calendar className="h-5 w-5 text-purple-600" />
+
+                  <span>On Leave Today</span>
                 </>
               ) : hasCheckedIn ? (
                 <>
@@ -1234,17 +1275,19 @@ const MarkAttendance = () => {
                 focus:outline-none
 
                 ${
-                  hasCheckedOut
-                    ? "bg-rose-100 border border-rose-200 text-rose-700 cursor-not-allowed"
-                    : isCorrectionRejected
-                      ? "bg-secondary/40 border border-border text-muted-foreground cursor-not-allowed"
-                      : isCorrectionPending
-                        ? "bg-rose-600 text-white hover:bg-rose-700 hover:shadow-md active:scale-[0.99]"
-                        : isCorrectionApproved
+                  isOnLeaveToday
+                    ? "bg-purple-50 border border-purple-200 text-purple-400 cursor-not-allowed"
+                    : hasCheckedOut
+                      ? "bg-rose-100 border border-rose-200 text-rose-700 cursor-not-allowed"
+                      : isCorrectionRejected
+                        ? "bg-secondary/40 border border-border text-muted-foreground cursor-not-allowed"
+                        : isCorrectionPending
                           ? "bg-rose-600 text-white hover:bg-rose-700 hover:shadow-md active:scale-[0.99]"
-                          : canCheckOut
+                          : isCorrectionApproved
                             ? "bg-rose-600 text-white hover:bg-rose-700 hover:shadow-md active:scale-[0.99]"
-                            : "bg-secondary/40 border border-border text-muted-foreground"
+                            : canCheckOut
+                              ? "bg-rose-600 text-white hover:bg-rose-700 hover:shadow-md active:scale-[0.99]"
+                              : "bg-secondary/40 border border-border text-muted-foreground"
                 }
 
                 disabled:opacity-70
@@ -1256,6 +1299,12 @@ const MarkAttendance = () => {
                   <Loader2 className="h-5 w-5 animate-spin" />
 
                   <span>Getting Location...</span>
+                </>
+              ) : isOnLeaveToday ? (
+                <>
+                  <Calendar className="h-5 w-5 text-purple-400" />
+
+                  <span>On Leave</span>
                 </>
               ) : hasCheckedOut ? (
                 <>

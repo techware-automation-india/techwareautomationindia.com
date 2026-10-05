@@ -2,7 +2,7 @@ import {
   ArrowRight,
   ClipboardList,
   FileText,
-  Plane,
+  CalendarDays,
   ScanLine,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -28,12 +28,12 @@ const Requests = () => {
         <h2 className="font-display text-lg font-semibold">Request Services</h2>
         <div className="grid gap-4 md:grid-cols-3">
           {[
-            // {
-            //   label: "Leave",
-            //   description: "Apply for leave and track approvals.",
-            //   path: "/employee/leave",
-            //   icon: Plane,
-            // },
+            {
+              label: "Apply for Leave",
+              description: "Submit leave application and track approval status.",
+              path: "/employee/requests/apply-leave",
+              icon: CalendarDays,
+            },
             {
               label: "Forgot Punch",
               description:

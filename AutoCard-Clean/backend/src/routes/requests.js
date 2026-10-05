@@ -560,6 +560,24 @@ router.post("/my", async (req, res) => {
         });
       }
 
+      const reqDate = new Date(`${correction.date}T00:00:00+05:30`);
+      const reqDateNext = new Date(reqDate.getTime() + 24 * 60 * 60 * 1000);
+      const approvedLeaveForReq = await prisma.leaveRequest.findFirst({
+        where: {
+          employeeId: employee.id,
+          status: "APPROVED",
+          startDate: { lt: reqDateNext },
+          endDate: { gte: reqDate },
+        },
+        include: { leaveType: { select: { name: true } } },
+      });
+
+      if (approvedLeaveForReq) {
+        return res.status(400).json({
+          message: `Forgot Punch request cannot be submitted for ${correction.date} because you were on approved leave (${approvedLeaveForReq.leaveType?.name || "Leave"}).`,
+        });
+      }
+
       if (
         ![
           "check-in",
@@ -878,7 +896,7 @@ router.post("/my", async (req, res) => {
 
 router.get(
   "/",
-  checkRolePermission(["requests", "approvals", "attendance", "attendance-management"]),
+  checkRolePermission(["approvals-forgot-punch", "requests", "approvals", "attendance", "attendance-management"]),
 
   async (req, res) => {
     try {
@@ -902,6 +920,12 @@ router.get(
           where,
 
           include: {
+            reviewedBy: {
+              select: {
+                fullName: true,
+                email: true,
+              },
+            },
             employee: {
               include: {
                 user: {
@@ -950,6 +974,9 @@ router.get(
 
             reviewedAt:
               request.reviewedAt,
+
+            reviewedBy:
+              request.reviewedBy?.fullName || null,
 
             createdAt:
               request.createdAt,
@@ -1007,7 +1034,7 @@ router.get(
 
 router.get(
   "/:id/profile",
-  checkRolePermission(["requests", "approvals"]),
+  checkRolePermission(["approvals-forgot-punch", "requests", "approvals"]),
 
   async (req, res) => {
     try {
@@ -1585,7 +1612,7 @@ async function reviewRequest(
 
 router.post(
   "/:id/approve",
-  checkRolePermission(["requests", "approvals"]),
+  checkRolePermission(["approvals-forgot-punch", "requests", "approvals"]),
 
   (req, res) =>
     reviewRequest(
@@ -1607,7 +1634,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-  checkRolePermission(["requests", "approvals"]),
+  checkRolePermission(["approvals-forgot-punch", "requests", "approvals"]),
 
   (req, res) =>
     reviewRequest(

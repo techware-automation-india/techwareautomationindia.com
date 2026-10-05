@@ -9,6 +9,9 @@ import {
   CheckCircle2,
   RefreshCw,
   Calendar,
+  ScanLine,
+  AlertCircle,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
@@ -156,6 +159,7 @@ const getGPSLocation = () =>
 const AdminMarkAttendance = () => {
   const navigate = useNavigate();
   const [record, setRecord] = useState(null);
+  const [approvedLeave, setApprovedLeave] = useState(null);
   const [loading, setLoading] = useState(true);
   const [checkingIn, setCheckingIn] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
@@ -179,6 +183,7 @@ const AdminMarkAttendance = () => {
     try {
       const data = await apiGet("/attendance/me/today");
       setRecord(data.record);
+      setApprovedLeave(data.approvedLeave);
     } catch (err) {
       toast.error(err.message || "Failed to load today's attendance.");
     } finally {
@@ -254,8 +259,14 @@ const AdminMarkAttendance = () => {
     }
   };
 
+  const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
+
   const handleCheckIn = async () => {
     if (checkingIn || capturingLocation) return;
+    if (isOnLeaveToday) {
+      toast.error("Check-in is frozen for approved leave days.");
+      return;
+    }
 
     setCheckingIn(true);
     setCapturingLocation(true);
@@ -362,14 +373,26 @@ const AdminMarkAttendance = () => {
             </p>
           </div>
         </div>
-        <button
-          onClick={loadToday}
-          disabled={loading}
-          className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
-          title="Refresh"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/admin/requests/forgot-punch")}
+            className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-4 py-2 flex items-center gap-2 transition-all hover:shadow-md active:scale-[0.99] text-sm"
+          >
+            <ScanLine className="h-4 w-4" />
+            <span>Forgot Punch</span>
+          </button>
+
+          <button
+            onClick={loadToday}
+            disabled={loading}
+            className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl bg-secondary/50 border border-border p-4 text-sm text-muted-foreground">
@@ -477,20 +500,39 @@ const AdminMarkAttendance = () => {
             </div>
           )}
 
+          {/* Approved Leave freeze alert banner */}
+          {isOnLeaveToday && (
+            <div className="rounded-xl border border-purple-200 bg-purple-50 dark:border-purple-900/40 dark:bg-purple-950/30 p-4 text-xs text-purple-900 dark:text-purple-200 flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-purple-600 shrink-0" />
+              <div>
+                <p className="font-bold text-sm text-purple-800 dark:text-purple-300">
+                  On Approved Leave ({approvedLeave?.leaveType?.name || record?.note || "Leave"})
+                </p>
+                <p className="mt-0.5">
+                  You are on approved leave today. Mark Attendance check-in button is frozen for leave days.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Check-In button */}
           {!hasCheckedIn && (
             <button
               onClick={handleCheckIn}
-              disabled={checkingIn || capturingLocation}
+              disabled={checkingIn || capturingLocation || isOnLeaveToday}
               className="w-full cta-gradient text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {checkingIn || capturingLocation ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : isOnLeaveToday ? (
+                <Ban className="h-5 w-5 text-purple-200" />
               ) : (
                 <LogIn className="h-5 w-5" />
               )}
               {checkingIn || capturingLocation
                 ? "Capturing Location…"
+                : isOnLeaveToday
+                ? "Check-In Frozen (On Approved Leave)"
                 : "Check In"}
             </button>
           )}

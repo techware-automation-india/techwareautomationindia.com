@@ -1,10 +1,13 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
 import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
+
+// All holiday routes require authentication
+router.use(requireAuth);
 
 // Helper: Get fiscal year range (April 1 - March 31)
 const getFiscalYearRange = (year) => {
@@ -19,6 +22,13 @@ const getCurrentFiscalYear = () => {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   return currentMonth <= 3 ? currentYear - 1 : currentYear;
+};
+
+// Helper: Normalize date to UTC start of day
+const normalizeDate = (val) => {
+  if (!val) return null;
+  const str = typeof val === "string" ? val.slice(0, 10) : new Date(val).toISOString().slice(0, 10);
+  return new Date(`${str}T00:00:00.000Z`);
 };
 
 // Validation schemas
@@ -41,15 +51,14 @@ const updateHolidaySchema = z.object({
 });
 
 // GET /api/holidays - List all holidays (authenticated users)
-router.get("/", requireAuth, async (req, res) => {
-  console.log("ðŸ“¥ [GET /api/holidays] Request received");
+router.get("/", async (req, res) => {
+  console.log("📥 [GET /api/holidays] Request received");
   
   try {
     const { fiscalYear } = req.query;
     
     let holidays;
     if (fiscalYear) {
-      // Get holidays for specific fiscal year
       const year = parseInt(fiscalYear);
       const { startDate, endDate } = getFiscalYearRange(year);
       
@@ -64,47 +73,63 @@ router.get("/", requireAuth, async (req, res) => {
           date: "asc",
         },
       });
-      console.log(`âœ… [GET /api/holidays] Found ${holidays.length} holidays for fiscal year ${year}`);
+      console.log(`✅ [GET /api/holidays] Found ${holidays.length} holidays for fiscal year ${year}`);
     } else {
-      // Get all holidays
       holidays = await prisma.holiday.findMany({
         orderBy: {
           date: "asc",
         },
       });
-      console.log(`âœ… [GET /api/holidays] Found ${holidays.length} total holidays`);
+      console.log(`✅ [GET /api/holidays] Found ${holidays.length} total holidays`);
     }
 
     res.json({ holidays });
   } catch (err) {
-    console.error("âŒ [GET /api/holidays] Error:", err);
+    console.error("❌ [GET /api/holidays] Error:", err);
     res.status(500).json({ message: "Failed to load holidays." });
   }
 });
 
+// GET /api/holidays/fiscal-year - Get current fiscal year info
+router.get("/fiscal-year", async (_req, res) => {
+  try {
+    const currentFiscalYear = getCurrentFiscalYear();
+    const { startDate, endDate } = getFiscalYearRange(currentFiscalYear);
+    
+    res.json({
+      currentFiscalYear,
+      fiscalYearLabel: `${currentFiscalYear}-${currentFiscalYear + 1}`,
+      startDate,
+      endDate,
+    });
+  } catch (err) {
+    console.error("❌ [GET /api/holidays/fiscal-year] Error:", err);
+    res.status(500).json({ message: "Failed to get fiscal year info." });
+  }
+});
+
 // POST /api/holidays - Create a new holiday (Admin or with permission)
-router.post("/", checkRolePermission("attendance"), async (req, res) => {
-  console.log("ðŸ“¥ [POST /api/holidays] Request received:", JSON.stringify(req.body, null, 2));
+router.post("/", checkRolePermission(["holidays", "leave-policy", "attendance"]), async (req, res) => {
+  console.log("📥 [POST /api/holidays] Request received:", JSON.stringify(req.body, null, 2));
   
   const parsed = createHolidaySchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    console.log("âŒ [POST /api/holidays] Validation failed:", firstError.message);
+    console.log("❌ [POST /api/holidays] Validation failed:", firstError.message);
     return res.status(400).json({ message: firstError.message });
   }
 
   try {
     const { name, date, holidayType, isOptional, isRecurring, description } = parsed.data;
-    const holidayDate = new Date(date);
+    const holidayDate = normalizeDate(date);
 
-    // Check for duplicate
     const existing = await prisma.holiday.findUnique({
       where: { date: holidayDate },
     });
 
     if (existing) {
       return res.status(409).json({ 
-        message: `A holiday already exists on ${holidayDate.toISOString().split('T')[0]}` 
+        message: `A holiday already exists on ${date.slice(0, 10)}` 
       });
     }
 
@@ -119,30 +144,33 @@ router.post("/", checkRolePermission("attendance"), async (req, res) => {
       },
     });
 
-    console.log(`âœ… [POST /api/holidays] Holiday created: ${name} on ${date}`);
+    console.log(`✅ [POST /api/holidays] Holiday created: ${name} on ${date}`);
     res.status(201).json({ holiday });
   } catch (err) {
-    console.error("âŒ [POST /api/holidays] Error:", err);
+    console.error("❌ [POST /api/holidays] Error:", err);
+    if (err.code === "P2002") {
+      return res.status(409).json({ message: "A holiday already exists on this date." });
+    }
     res.status(500).json({ message: "Failed to create holiday." });
   }
 });
 
 // PUT /api/holidays/:id - Update a holiday (Admin or with permission)
-router.put("/:id", checkRolePermission("attendance"), async (req, res) => {
+router.put("/:id", checkRolePermission(["holidays", "leave-policy", "attendance"]), async (req, res) => {
   const { id } = req.params;
-  console.log(`ðŸ“¥ [PUT /api/holidays/${id}] Request received:`, JSON.stringify(req.body, null, 2));
+  console.log(`📥 [PUT /api/holidays/${id}] Request received:`, JSON.stringify(req.body, null, 2));
   
   const parsed = updateHolidaySchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    console.log(`âŒ [PUT /api/holidays/${id}] Validation failed:`, firstError.message);
+    console.log(`❌ [PUT /api/holidays/${id}] Validation failed:`, firstError.message);
     return res.status(400).json({ message: firstError.message });
   }
 
   try {
     const updateData = { ...parsed.data };
     if (updateData.date) {
-      updateData.date = new Date(updateData.date);
+      updateData.date = normalizeDate(updateData.date);
     }
 
     const holiday = await prisma.holiday.update({
@@ -150,53 +178,38 @@ router.put("/:id", checkRolePermission("attendance"), async (req, res) => {
       data: updateData,
     });
     
-    console.log(`âœ… [PUT /api/holidays/${id}] Holiday updated successfully`);
+    console.log(`✅ [PUT /api/holidays/${id}] Holiday updated successfully`);
     res.json({ holiday });
   } catch (err) {
-    console.error(`âŒ [PUT /api/holidays/${id}] Error:`, err);
+    console.error(`❌ [PUT /api/holidays/${id}] Error:`, err);
     if (err.code === "P2025") {
       return res.status(404).json({ message: "Holiday not found." });
+    }
+    if (err.code === "P2002") {
+      return res.status(409).json({ message: "A holiday already exists on this date." });
     }
     res.status(500).json({ message: "Failed to update holiday." });
   }
 });
 
 // DELETE /api/holidays/:id - Delete a holiday (Admin or with permission)
-router.delete("/:id", checkRolePermission("attendance"), async (req, res) => {
+router.delete("/:id", checkRolePermission(["holidays", "leave-policy", "attendance"]), async (req, res) => {
   const { id } = req.params;
-  console.log(`ðŸ“¥ [DELETE /api/holidays/${id}] Request received`);
+  console.log(`📥 [DELETE /api/holidays/${id}] Request received`);
   
   try {
     await prisma.holiday.delete({
       where: { id },
     });
     
-    console.log(`âœ… [DELETE /api/holidays/${id}] Holiday deleted successfully`);
+    console.log(`✅ [DELETE /api/holidays/${id}] Holiday deleted successfully`);
     res.json({ message: "Holiday deleted successfully." });
   } catch (err) {
-    console.error(`âŒ [DELETE /api/holidays/${id}] Error:`, err);
+    console.error(`❌ [DELETE /api/holidays/${id}] Error:`, err);
     if (err.code === "P2025") {
       return res.status(404).json({ message: "Holiday not found." });
     }
     res.status(500).json({ message: "Failed to delete holiday." });
-  }
-});
-
-// GET /api/holidays/fiscal-year - Get current fiscal year info
-router.get("/fiscal-year", requireAuth, async (_req, res) => {
-  try {
-    const currentFiscalYear = getCurrentFiscalYear();
-    const { startDate, endDate } = getFiscalYearRange(currentFiscalYear);
-    
-    res.json({
-      currentFiscalYear,
-      fiscalYearLabel: `${currentFiscalYear}-${currentFiscalYear + 1}`,
-      startDate,
-      endDate,
-    });
-  } catch (err) {
-    console.error("âŒ [GET /api/holidays/fiscal-year] Error:", err);
-    res.status(500).json({ message: "Failed to get fiscal year info." });
   }
 });
 

@@ -1,63 +1,80 @@
 import { ArrowRight, ClipboardList, FileText, ScanLine, CalendarDays } from "lucide-react";
 import { Link } from "react-router-dom";
+import { getAuthUser } from "../../lib/auth.js";
 
-const requestServices = [
-  {
-    label: "Track My Request",
-    description: "View all submitted requests and their current approval status.",
-    path: "/admin/requests/track",
-    icon: ClipboardList,
-  },
-  {
-    label: "Forgot Punch",
-    description: "Review employee check-in and check-out correction requests.",
-    path: "/admin/requests/forgot-punch",
-    icon: ScanLine,
-  },
-  {
+const RequestsHome = () => {
+  // Get the current logged-in user
+  const user = getAuthUser();
+  
+  // Check if the actual role is ADMIN (not just someone with leave access)
+  const isActualAdmin = user?.role === "ADMIN";
+
+  // Base request services available to all
+  const baseRequestServices = [
+    {
+      label: "Track My Request",
+      description: "View all submitted requests and their current approval status.",
+      path: "/admin/requests/track",
+      icon: ClipboardList,
+    },
+    {
+      label: "Forgot Punch",
+      description: "Review employee check-in and check-out correction requests.",
+      path: "/admin/requests/forgot-punch",
+      icon: ScanLine,
+    },
+  ];
+
+  // Admin-only service (Apply for Leave)
+  const adminOnlyService = {
     label: "Apply for Leave",
     description: "Apply for leave as admin. Requests are auto-approved without review.",
     path: "/admin/requests/apply-leave",
     icon: CalendarDays,
-  },
-];
+  };
 
-const RequestsHome = () => (
-  <div className="space-y-8">
-    <div className="flex items-center gap-4">
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-        <FileText className="h-6 w-6 text-primary" />
-      </div>
-      <div>
-        <h1 className="font-display text-2xl font-bold">Requests</h1>
-        <p className="text-sm text-muted-foreground">
-          Review employee requests and attendance corrections.
-        </p>
-      </div>
-    </div>
+  // Conditionally add "Apply for Leave" only if user is actual ADMIN
+  const requestServices = isActualAdmin 
+    ? [...baseRequestServices, adminOnlyService]
+    : baseRequestServices;
 
-    <div className="space-y-4">
-      <h2 className="font-display text-lg font-semibold">Request Services</h2>
-      <div className="grid gap-4 md:grid-cols-2">
-        {requestServices.map(({ label, description, path, icon: Icon }) => (
-          <Link
-            key={path}
-            to={path}
-            className="group rounded-2xl border border-border bg-background p-5 card-shadow transition-colors hover:border-primary/40 hover:bg-primary/[0.03]"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <Icon className="h-5 w-5 text-primary" />
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+          <FileText className="h-6 w-6 text-primary" />
+        </div>
+        <div>
+          <h1 className="font-display text-2xl font-bold">Requests</h1>
+          <p className="text-sm text-muted-foreground">
+            Review employee requests and attendance corrections.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="font-display text-lg font-semibold">Request Services</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          {requestServices.map(({ label, description, path, icon: Icon }) => (
+            <Link
+              key={path}
+              to={path}
+              className="group rounded-2xl border border-border bg-background p-5 card-shadow transition-colors hover:border-primary/40 hover:bg-primary/[0.03]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <Icon className="h-5 w-5 text-primary" />
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
               </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
-            </div>
-            <h3 className="mt-4 font-semibold">{label}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-          </Link>
-        ))}
+              <h3 className="mt-4 font-semibold">{label}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default RequestsHome;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, Loader2, RefreshCw } from "lucide-react";
+import { CalendarDays, Loader2, RefreshCw, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
 
@@ -33,6 +34,7 @@ const StatCard = ({ icon: Icon, label, value, tone }) => {
 };
 
 const Holidays = () => {
+  const navigate = useNavigate();
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fiscalYearInfo, setFiscalYearInfo] = useState(null);
@@ -108,6 +110,9 @@ const Holidays = () => {
     <div className="space-y-8 max-w-7xl">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <CalendarDays className="h-6 w-6 text-primary" />
           </div>

@@ -49,12 +49,13 @@ import EmployeeAttendance from "./employee/pages/Attendance.jsx";
 import EmployeeLeave from "./employee/pages/Leave.jsx";
 import EmployeeHolidays from "./employee/pages/Holidays.jsx";
 import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
+import AcademicCalendar from "./employee/pages/AcademicCalendar.jsx";
 // CUSTOMER MANAGEMENT COMMENTED OUT
 // import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
 import EmployeeRequests from "./employee/pages/Requests.jsx";
 import AttendanceCorrection from "./employee/pages/AttendanceCorrection.jsx";
 import TrackRequests from "./employee/pages/TrackRequests.jsx";
-import EmployeeLeavePolicy from "./employee/pages/LeavePolicy.jsx";
+import EmployeeApplyLeave from "./employee/pages/EmployeeApplyLeave.jsx";
 import EmployeeProjects from "./employee/pages/Projects.jsx";
 import EmployeeServices from "./employee/pages/Services.jsx";
 import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
@@ -160,11 +161,21 @@ const AppRoutes = () => {
 
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />
+          <Route path="academic-calendar" element={<AcademicCalendar />} />
           <Route path="requests" element={<EmployeeRequests />} />
           <Route path="requests/track" element={<TrackRequests />} />
           <Route
             path="requests/forgot-punch"
             element={<AttendanceCorrection />}
+          />
+          <Route path="requests/apply-leave" element={<EmployeeApplyLeave />} />
+          <Route
+            path="leave"
+            element={
+              <RequireOnboarding>
+                <EmployeeLeave />
+              </RequireOnboarding>
+            }
           />
           <Route
             path="leave"
@@ -223,14 +234,6 @@ const AppRoutes = () => {
             }
           />
           <Route
-            path="leave-policy"
-            element={
-              <RequireOnboarding>
-                <EmployeeLeavePolicy />
-              </RequireOnboarding>
-            }
-          />
-          <Route
             path="projects"
             element={
               <RequireOnboarding>
@@ -262,14 +265,30 @@ const AppRoutes = () => {
               </RequireOnboarding>
             }
           />
-          {/* <Route path="holidays" element={<RequireOnboarding><EmployeeHolidays /></RequireOnboarding>} /> */}
-          {/* <Route path="access-modules" element={<RequireOnboarding><EmployeeAccessModules /></RequireOnboarding>} /> */}
-          {/* CUSTOMER MANAGEMENT ROUTE COMMENTED OUT */}
-          {/* <Route path="customer-management" element={<RequireOnboarding><CustomerManagement /></RequireOnboarding>} /> */}
-          {/* <Route path="leave-policy" element={<RequireOnboarding><EmployeeLeavePolicy /></RequireOnboarding>} /> */}
-          {/* <Route path="projects" element={<RequireOnboarding><EmployeeProjects /></RequireOnboarding>} /> */}
-
-          {/* <Route path="shift-location" element={<RequireOnboarding><EmployeeShiftLocation /></RequireOnboarding>} /> */}
+          <Route
+            path="leave-policy"
+            element={
+              <RequireOnboarding>
+                <LeavePolicyHome />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="leave-policy/types"
+            element={
+              <RequireOnboarding>
+                <LeavePolicy />
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="leave-policy/holidays"
+            element={
+              <RequireOnboarding>
+                <Holidays />
+              </RequireOnboarding>
+            }
+          />
           {/* <Route path="roster" element={<RequireOnboarding><EmployeeRoster /></RequireOnboarding>} /> */}
         </Route>
 

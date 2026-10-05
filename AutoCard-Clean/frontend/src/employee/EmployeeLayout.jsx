@@ -75,21 +75,36 @@ const EmployeeLayout = () => {
 
     const loadPermissions = async () => {
       try {
+        setLoadingPermissions(true);
+
         const data = await apiGet("/roles-access/me/permissions");
         const perms = data?.permissions || {};
+        
+        localStorage.setItem('employee_permissions', JSON.stringify(perms));
+        localStorage.setItem('employee_permissions_timestamp', String(Date.now()));
+        
         setPermissions(perms);
         const modules = getModulesByPermissions(perms);
         setVisibleModules(modules);
         if (data?.roleName) {
-          console.log("👤 [Employee Layout] Assigned role loaded:", data.roleName);
-          setAssignedRoleName(data.roleName);
-          setUser((prev) => (prev ? { ...prev, roleName: data.roleName } : prev));
+          setAssignedRoleName((prev) => (prev !== data.roleName ? data.roleName : prev));
           updateAuthUser({ roleName: data.roleName });
         }
       } catch (err) {
-        console.error("Failed to load permissions:", err);
-        // Fallback to default modules if permission loading fails
-        setVisibleModules(employeeModules);
+        if (err.message === "Authentication required." || err.status === 401) {
+          clearAuth();
+          navigate("/login", { replace: true });
+          return;
+        }
+        console.warn("Failed to load permissions, falling back to cached or default modules:", err.message);
+        const cachedPerms = localStorage.getItem('employee_permissions');
+        if (cachedPerms) {
+          const perms = JSON.parse(cachedPerms);
+          setPermissions(perms);
+          setVisibleModules(getModulesByPermissions(perms));
+        } else {
+          setVisibleModules(employeeModules);
+        }
       } finally {
         setLoadingPermissions(false);
       }
@@ -100,6 +115,9 @@ const EmployeeLayout = () => {
 
   const handleLogout = () => {
     console.log("🚪 [Employee Layout] Logging out");
+    // Clear permissions cache on logout
+    localStorage.removeItem('employee_permissions');
+    localStorage.removeItem('employee_permissions_timestamp');
     clearAuth();
     navigate("/");
   };
@@ -206,8 +224,8 @@ const EmployeeLayout = () => {
       )}
 
       {/* Main content */}
-      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden lg:ml-64 flex flex-col min-h-screen">
-        <header className="h-16 bg-background border-b border-border flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30">
+      <div className="flex-1 min-w-0 max-w-full overflow-x-hidden lg:ml-64 lg:max-w-[calc(100vw-16rem)] flex flex-col min-h-screen">
+        <header className="fixed top-0 left-0 right-0 lg:left-64 h-16 bg-background/95 backdrop-blur-md border-b border-border flex items-center justify-between px-4 lg:px-8 z-30">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileOpen(true)}
@@ -341,7 +359,7 @@ const EmployeeLayout = () => {
           </div>
         </header>
 
-        <main className="flex-1 min-w-0 max-w-full overflow-x-hidden p-4 lg:p-8">
+        <main className="flex-1 min-w-0 max-w-full overflow-x-hidden px-4 pb-4 pt-20 lg:px-8 lg:pb-8 lg:pt-20">
           {/* Onboarding Status Banner */}
           {user?.onboardingStatus === "PENDING" && (
             <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">

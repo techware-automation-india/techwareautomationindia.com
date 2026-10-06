@@ -144,6 +144,8 @@ const AppRoutes = () => {
           <Route path="attendance-requests" element={<AttendanceRequests />} />
           <Route path="projects" element={<Projects />} />
           <Route path="project/:id" element={<ProjectDetails />} />
+          <Route path="assigned-projects" element={<EmployeeProjects />} />
+          <Route path="my-projects" element={<CustomerProjects />} />
           <Route path="roles-access" element={<RolesAccess />} />
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />

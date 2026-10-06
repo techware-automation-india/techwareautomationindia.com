@@ -83,14 +83,14 @@ export const adminModules = [
   {
     key: "assigned-projects",
     label: "Assigned Projects",
-    path: "/employee/projects",
+    path: "/admin/assigned-projects",
     icon: FolderKanban,
     description: "Employee view of assigned projects and tasks.",
   },
   {
     key: "my-projects",
     label: "My Projects (Customer)",
-    path: "/customer/projects",
+    path: "/admin/my-projects",
     icon: FolderKanban,
     description: "Customer view of machinery projects and documentation.",
   },

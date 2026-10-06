@@ -488,12 +488,9 @@ router.get("/me/dashboard", async (req, res) => {
 // GET /api/customers/me/projects - Get customer's projects
 router.get("/me/projects", async (req, res) => {
   try {
+    const userId = req.user.id;
     const isAdmin = req.user.role === "ADMIN";
     const isCustomer = req.user.role === "CUSTOMER";
-
-    if (!isCustomer && !isAdmin) {
-      return res.status(403).json({ message: "Access denied. Customer or Admin role required." });
-    }
 
     let customerProfile = null;
     if (isCustomer) {
@@ -502,7 +499,7 @@ router.get("/me/projects", async (req, res) => {
       });
 
       if (!customerProfile) {
-        return res.status(404).json({ message: "Customer profile not found." });
+        return res.json({ projects: [], stats: { total: 0, inProgress: 0, completed: 0 } });
       }
     }
 
@@ -584,19 +581,19 @@ router.get("/me/projects", async (req, res) => {
       progress: p.progress,
       startDate: p.startDate,
       endDate: p.endDate,
-      team: p.assignments.map(a => ({
-        name: a.employee.user.fullName,
-        email: a.employee.user.email,
-        role: a.roleOnProject,
+      team: (p.assignments || []).map(a => ({
+        name: a.employee?.user?.fullName || "Team Member",
+        email: a.employee?.user?.email || "",
+        role: a.roleOnProject || "Member",
       })),
       tasks: {
-        total: p._count.tasks,
-        completed: p.tasks.filter(t => t.status === 'COMPLETED').length,
-        inProgress: p.tasks.filter(t => t.status === 'IN_PROGRESS').length,
+        total: p._count?.tasks ?? p.tasks?.length ?? 0,
+        completed: (p.tasks || []).filter(t => t.status === 'COMPLETED').length,
+        inProgress: (p.tasks || []).filter(t => t.status === 'IN_PROGRESS').length,
       },
       documents: p.documents || [],
-      documentsCount: p._count.documents,
-      commentsCount: p._count.comments,
+      documentsCount: p._count?.documents ?? p.documents?.length ?? 0,
+      commentsCount: p._count?.comments ?? 0,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
     }));
@@ -613,24 +610,27 @@ router.get("/me/projects/:id", async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
+    const isCustomer = req.user.role === "CUSTOMER";
 
-    if (req.user.role !== "CUSTOMER") {
-      return res.status(403).json({ message: "Access denied. Customer role required." });
-    }
+    let where = {
+      id,
+      isArchived: false,
+    };
 
-    const customerProfile = await prisma.customerProfile.findUnique({
-      where: { userId },
-    });
+    if (isCustomer) {
+      const customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+      });
 
-    if (!customerProfile) {
-      return res.status(404).json({ message: "Customer profile not found." });
+      if (!customerProfile) {
+        return res.status(404).json({ message: "Customer profile not found." });
+      }
+
+      where.customerId = customerProfile.id;
     }
 
     const project = await prisma.project.findFirst({
-      where: {
-        id,
-        customerId: customerProfile.id,
-      },
+      where,
       include: {
         assignments: {
           include: {

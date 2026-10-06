@@ -499,14 +499,14 @@ const Projects = () => {
 
         <div className="flex items-center gap-2 flex-wrap">
           <Link
-            to="/employee/projects"
+            to="/admin/assigned-projects"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-secondary hover:text-primary transition-colors text-muted-foreground shadow-sm"
           >
             <Users className="h-3.5 w-3.5 text-primary" />
             Assigned Projects (Employee View)
           </Link>
           <Link
-            to="/customer/projects"
+            to="/admin/my-projects"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-secondary hover:text-primary transition-colors text-muted-foreground shadow-sm"
           >
             <FolderKanban className="h-3.5 w-3.5 text-blue-500" />

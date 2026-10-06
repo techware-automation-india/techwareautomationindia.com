@@ -29,6 +29,10 @@ const CustomerLayout = () => {
     // Fetch customer permissions
     const loadPermissions = async () => {
       try {
+        if (authUser.role === "ADMIN") {
+          setVisibleModules(customerModules);
+          return;
+        }
         const data = await apiGet("/roles-access/me/permissions");
         if (data?.permissions) {
           const filtered = getCustomerModulesByPermissions(data.permissions);

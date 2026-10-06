@@ -359,39 +359,47 @@ export default router;
 router.get("/me/dashboard", async (req, res) => {
   try {
     const userId = req.user.id;
+    const isAdmin = req.user.role === "ADMIN";
+    const isCustomer = req.user.role === "CUSTOMER";
 
-    if (req.user.role !== "CUSTOMER") {
-      return res.status(403).json({ message: "Access denied. Customer role required." });
+    if (!isCustomer && !isAdmin) {
+      return res.status(403).json({ message: "Access denied. Customer or Admin role required." });
     }
 
-    // Get customer profile
-    const customerProfile = await prisma.customerProfile.findUnique({
-      where: { userId },
-    });
+    let customerProfile = null;
+    if (isCustomer) {
+      customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+      });
 
-    if (!customerProfile) {
-      return res.status(404).json({ message: "Customer profile not found." });
+      if (!customerProfile) {
+        return res.status(404).json({ message: "Customer profile not found." });
+      }
     }
 
     // Get projects count
+    const projectsWhere = { isArchived: false };
+    if (customerProfile) {
+      projectsWhere.customerId = customerProfile.id;
+    }
+
     const projectsStats = await prisma.project.groupBy({
       by: ['status'],
-      where: {
-        customerId: customerProfile.id,
-        isArchived: false,
-      },
+      where: projectsWhere,
       _count: true,
     });
+
+    const requestsWhere = customerProfile ? { customerId: customerProfile.id } : {};
 
     const [pendingRequests, recentRequests] = await Promise.all([
       prisma.customerServiceRequest.count({
         where: {
-          customerId: customerProfile.id,
+          ...requestsWhere,
           status: { in: ["PENDING", "IN_PROGRESS"] },
         },
       }),
       prisma.customerServiceRequest.findMany({
-        where: { customerId: customerProfile.id },
+        where: requestsWhere,
         include: {
           service: {
             select: {
@@ -480,26 +488,33 @@ router.get("/me/dashboard", async (req, res) => {
 // GET /api/customers/me/projects - Get customer's projects
 router.get("/me/projects", async (req, res) => {
   try {
-    const userId = req.user.id;
+    const isAdmin = req.user.role === "ADMIN";
+    const isCustomer = req.user.role === "CUSTOMER";
 
-    if (req.user.role !== "CUSTOMER") {
-      return res.status(403).json({ message: "Access denied. Customer role required." });
+    if (!isCustomer && !isAdmin) {
+      return res.status(403).json({ message: "Access denied. Customer or Admin role required." });
     }
 
-    const customerProfile = await prisma.customerProfile.findUnique({
-      where: { userId },
-    });
+    let customerProfile = null;
+    if (isCustomer) {
+      customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+      });
 
-    if (!customerProfile) {
-      return res.status(404).json({ message: "Customer profile not found." });
+      if (!customerProfile) {
+        return res.status(404).json({ message: "Customer profile not found." });
+      }
     }
 
     const { status, search } = req.query;
 
     const where = {
-      customerId: customerProfile.id,
       isArchived: false,
     };
+
+    if (customerProfile) {
+      where.customerId = customerProfile.id;
+    }
 
     if (status && status !== 'ALL') {
       where.status = status;

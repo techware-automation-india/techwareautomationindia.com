@@ -56,12 +56,20 @@ const defaultModules = [
     alwaysVisible: true,
   },
   {
-    key: "projects",
+    key: "assigned-projects",
     label: "Assigned Projects",
     path: "/employee/projects",
     icon: FolderKanban,
     description: "View your assigned projects and update task progress.",
-    alwaysVisible: true,
+    aliases: ["projects", "assigned-projects"],
+  },
+  {
+    key: "my-projects",
+    label: "My Projects",
+    path: "/customer/projects",
+    icon: FolderKanban,
+    description: "View machinery projects and documentation.",
+    aliases: ["my-projects", "customer-projects"],
   },
   // {
   //   key: "leave",
@@ -140,12 +148,13 @@ const adminModules = [
     adminKey: "leave-policy",
   },
   {
-    key: "projects",
-    label: "Projects",
+    key: "assigned-projects",
+    label: "Assigned Projects",
     path: "/employee/projects",
     icon: FolderKanban,
-    description: "Project management.",
+    description: "Project management and assigned tasks.",
     adminKey: "projects",
+    aliases: ["projects", "assigned-projects"],
   },
 ];
 
@@ -170,17 +179,42 @@ export function getModulesByPermissions(permissions = {}) {
   const allowedModules = [];
 
   allModules.forEach((module) => {
-    // Check direct key, or adminKey, or admin attendance fallback
-    const directPerm = permissions[module.key];
-    const adminPerm = module.adminKey ? permissions[module.adminKey] : null;
+    // Check direct key, or adminKey, or aliases, or admin attendance fallback
+    let perm = permissions[module.key];
+
+    if (!perm && module.adminKey) {
+      perm = permissions[module.adminKey];
+    }
+
+    if (!perm && module.aliases) {
+      for (const alias of module.aliases) {
+        if (permissions[alias]) {
+          perm = permissions[alias];
+          break;
+        }
+      }
+    }
+
+    // Special mapping for assigned-projects and projects
+    if (!perm && (module.key === "assigned-projects" || module.key === "projects")) {
+      perm = permissions["assigned-projects"] || permissions["projects"];
+    }
+
     const hasAdminPower = permissions["employee"] || permissions["roles-access"] || permissions["approvals"];
     const attendanceMgmtFallback = module.key === "attendance-management" && permissions["attendance"] && hasAdminPower;
-
-    const perm = directPerm || adminPerm || (attendanceMgmtFallback ? permissions["attendance"] : null);
+    if (attendanceMgmtFallback) {
+      perm = permissions["attendance"];
+    }
 
     if (perm && (perm.canView || perm === true)) {
-      if (!allowedModules.some((m) => m.key === module.key)) {
-        allowedModules.push(module);
+      const alreadyAdded = allowedModules.some(
+        (m) => m.key === module.key || (m.path === module.path && m.path === "/employee/projects")
+      );
+      if (!alreadyAdded) {
+        const modToAdd = module.path === "/employee/projects"
+          ? { ...module, label: "Assigned Projects", key: "assigned-projects" }
+          : module;
+        allowedModules.push(modToAdd);
       }
     }
   });

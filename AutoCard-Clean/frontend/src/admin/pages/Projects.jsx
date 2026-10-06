@@ -497,13 +497,29 @@ const Projects = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Create Project
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            to="/employee/projects"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-secondary hover:text-primary transition-colors text-muted-foreground shadow-sm"
+          >
+            <Users className="h-3.5 w-3.5 text-primary" />
+            Assigned Projects (Employee View)
+          </Link>
+          <Link
+            to="/customer/projects"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-secondary hover:text-primary transition-colors text-muted-foreground shadow-sm"
+          >
+            <FolderKanban className="h-3.5 w-3.5 text-blue-500" />
+            My Projects (Customer View)
+          </Link>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm ml-1"
+          >
+            <Plus className="h-4 w-4" />
+            Create Project
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

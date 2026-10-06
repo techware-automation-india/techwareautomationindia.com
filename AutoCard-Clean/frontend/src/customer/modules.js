@@ -72,3 +72,36 @@ export const customerModules = [
     description: "Manage your account settings.",
   },
 ];
+
+/**
+ * Get customer modules to display based on permissions
+ * @param {Object} permissions - Permission map from API
+ * @returns {Array} - Filtered modules
+ */
+export function getCustomerModulesByPermissions(permissions = {}) {
+  const permKeys = Object.keys(permissions);
+
+  // If no role permissions configured, show default customer modules
+  if (permKeys.length === 0) {
+    return customerModules;
+  }
+
+  return customerModules.filter((module) => {
+    // Overview and profile always accessible
+    if (module.key === "overview" || module.key === "profile" || module.key === "settings") {
+      return true;
+    }
+
+    const direct = permissions[module.key]?.canView || permissions[module.key] === true;
+    const projectPerm =
+      module.key === "projects" &&
+      (permissions["my-projects"]?.canView ||
+        permissions["my-projects"] === true ||
+        permissions["projects"]?.canView ||
+        permissions["projects"] === true ||
+        permissions["customer-projects"]?.canView ||
+        permissions["customer-projects"] === true);
+
+    return direct || projectPerm;
+  });
+}

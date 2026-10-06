@@ -18,6 +18,9 @@ export const VALID_MODULES = [
   'leave-policy',
   'holidays',
   'projects',
+  'assigned-projects',
+  'my-projects',
+  'customer-projects',
   'services',
   'inventory'
 ];

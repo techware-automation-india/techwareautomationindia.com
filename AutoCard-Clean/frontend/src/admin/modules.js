@@ -81,6 +81,20 @@ export const adminModules = [
     description: "Create projects and assign team members.",
   },
   {
+    key: "assigned-projects",
+    label: "Assigned Projects",
+    path: "/employee/projects",
+    icon: FolderKanban,
+    description: "Employee view of assigned projects and tasks.",
+  },
+  {
+    key: "my-projects",
+    label: "My Projects (Customer)",
+    path: "/customer/projects",
+    icon: FolderKanban,
+    description: "Customer view of machinery projects and documentation.",
+  },
+  {
     key: "inventory",
     label: "Inventory",
     path: "/admin/inventory",
@@ -115,7 +129,7 @@ export const getAdminModulesByPermissions = (permissions) => {
     return adminModules;
   }
   return adminModules.filter((module) => {
-    if (module.key === "overview") return true;
+    if (module.key === "overview" || module.key === "projects" || module.key === "assigned-projects" || module.key === "my-projects") return true;
     if (permissions[module.key]?.canView || permissions[module.key] === true) return true;
     return false;
   });

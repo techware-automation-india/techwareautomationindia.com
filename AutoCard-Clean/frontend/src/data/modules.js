@@ -26,5 +26,7 @@ export const MODULES = [
   { key: 'roster', label: 'Roster', icon: CalendarRange },
   { key: 'leave-policy', label: 'Leave Policy', icon: BookOpen },
   { key: 'inventory', label: 'Inventory', icon: Package },
-  { key: 'projects', label: 'Projects', icon: FolderKanban },
+  { key: 'projects', label: 'Projects (Master Admin)', icon: FolderKanban },
+  { key: 'assigned-projects', label: 'Assigned Projects', icon: FolderKanban },
+  { key: 'my-projects', label: 'My Projects', icon: FolderKanban },
 ];

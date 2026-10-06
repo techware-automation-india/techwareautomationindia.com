@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Menu, X, LogOut, ChevronLeft } from "lucide-react";
-import { customerModules } from "./modules.js";
+import { customerModules, getCustomerModulesByPermissions } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
+import { apiGet } from "../lib/api.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
@@ -12,17 +13,33 @@ const CustomerLayout = () => {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [visibleModules, setVisibleModules] = useState(customerModules);
 
   useEffect(() => {
     const authUser = getAuthUser();
 
-    if (!authUser || authUser.role !== "CUSTOMER") {
+    if (!authUser || (authUser.role !== "CUSTOMER" && authUser.role !== "ADMIN")) {
       clearAuth();
       navigate("/login", { replace: true });
       return;
     }
 
     setUser(authUser);
+
+    // Fetch customer permissions
+    const loadPermissions = async () => {
+      try {
+        const data = await apiGet("/roles-access/me/permissions");
+        if (data?.permissions) {
+          const filtered = getCustomerModulesByPermissions(data.permissions);
+          setVisibleModules(filtered);
+        }
+      } catch (err) {
+        console.error("Failed to load customer permissions:", err);
+      }
+    };
+
+    loadPermissions();
   }, [navigate, location.pathname]);
 
   const handleLogout = () => {
@@ -55,7 +72,7 @@ const CustomerLayout = () => {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {customerModules.map(({ key, label, path, icon: Icon }) => (
+        {visibleModules.map(({ key, label, path, icon: Icon }) => (
           <NavLink
             key={key}
             to={path}

@@ -1,7 +1,8 @@
+import "dotenv/config";
 import jwt from "jsonwebtoken";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN;
 
 // Sign a JWT for an authenticated user.
 export function signToken(payload) {

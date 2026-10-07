@@ -3,6 +3,7 @@ import {
   UserPlus,
   Inbox,
   BadgeCheck,
+  ClipboardList,
   Fingerprint,
   Calendar,
   Clock,
@@ -46,6 +47,13 @@ export const adminModules = [
     description: "Approve or reject pending employee requests.",
   },
   {
+    key: "leave-policy",
+    label: "Leave Policy & Holiday",
+    path: "/admin/leave-policy",
+    icon: ClipboardList,
+    description: "Manage leave types, balances, rules and company holidays.",
+  },
+  {
     key: "mark-attendance",
     label: "Mark Attendance",
     path: "/admin/mark-attendance",
@@ -65,13 +73,6 @@ export const adminModules = [
     path: "/admin/attendance",
     icon: Clock,
     description: "Track and review company-wide employee attendance.",
-  },
-  {
-    key: "leave-policy",
-    label: "Leave Policy",
-    path: "/admin/leave-policy",
-    icon: BookOpen,
-    description: "Define leave types, balances, and rules.",
   },
   {
     key: "projects",

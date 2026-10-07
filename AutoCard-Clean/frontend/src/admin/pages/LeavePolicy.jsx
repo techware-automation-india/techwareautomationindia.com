@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ClipboardList, Loader2, RefreshCw, Plus, Pencil, Trash2, AlertTriangle, X } from "lucide-react";
+import { ClipboardList, Loader2, RefreshCw, Plus, Pencil, Trash2, AlertTriangle, X, ArrowLeft } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPut, apiDelete } from "../../lib/api.js";
 
@@ -7,6 +8,8 @@ const emptyForm = {
   name: "",
   code: "",
   daysPerYear: "",
+  maxConsecutiveDays: "",
+  minAdvanceNoticeDays: "",
   description: "",
   isPaid: true,
   isActive: true,
@@ -17,6 +20,9 @@ const inputClass =
   "w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
 
 const LeavePolicy = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const backPath = location.pathname.startsWith("/employee") ? "/employee/leave-policy" : "/admin/leave-policy";
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
@@ -58,6 +64,8 @@ const LeavePolicy = () => {
       name: lt.name,
       code: lt.code,
       daysPerYear: String(lt.daysPerYear),
+      maxConsecutiveDays: lt.maxConsecutiveDays != null ? String(lt.maxConsecutiveDays) : "",
+      minAdvanceNoticeDays: lt.minAdvanceNoticeDays != null ? String(lt.minAdvanceNoticeDays) : "",
       description: lt.description || "",
       isPaid: lt.isPaid,
       isActive: lt.isActive,
@@ -74,6 +82,8 @@ const LeavePolicy = () => {
       name: form.name,
       code: form.code,
       daysPerYear: form.daysPerYear,
+      maxConsecutiveDays: form.maxConsecutiveDays !== "" ? Number(form.maxConsecutiveDays) : 0,
+      minAdvanceNoticeDays: form.minAdvanceNoticeDays !== "" ? Number(form.minAdvanceNoticeDays) : 0,
       description: form.description || undefined,
       isPaid: form.isPaid,
       isActive: form.isActive,
@@ -115,6 +125,9 @@ const LeavePolicy = () => {
   return (
     <div className="space-y-8 max-w-4xl">
       <div className="flex items-center gap-4">
+        <button type="button" onClick={() => navigate(backPath)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
           <ClipboardList className="h-6 w-6 text-primary" />
         </div>
@@ -148,6 +161,36 @@ const LeavePolicy = () => {
           <div>
             <label className="text-sm font-medium mb-1.5 block">Days Per Year <span className="text-destructive">*</span></label>
             <input type="number" className={inputClass} value={form.daysPerYear} onChange={(e) => setForm((p) => ({ ...p, daysPerYear: e.target.value }))} min={0} max={365} placeholder="e.g. 20" required />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              Max Consecutive Days
+              <span className="ml-1 text-xs text-muted-foreground font-normal">(0 = no limit)</span>
+            </label>
+            <input
+              type="number"
+              className={inputClass}
+              value={form.maxConsecutiveDays}
+              onChange={(e) => setForm((p) => ({ ...p, maxConsecutiveDays: e.target.value }))}
+              min={0}
+              max={365}
+              placeholder="e.g. 3 (max 3 days at a time)"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              Min Advance Notice Days
+              <span className="ml-1 text-xs text-muted-foreground font-normal">(0 = same day ok)</span>
+            </label>
+            <input
+              type="number"
+              className={inputClass}
+              value={form.minAdvanceNoticeDays}
+              onChange={(e) => setForm((p) => ({ ...p, minAdvanceNoticeDays: e.target.value }))}
+              min={0}
+              max={365}
+              placeholder="e.g. 2 (apply 2 days before)"
+            />
           </div>
           <div className="flex items-end gap-6 pb-1">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">

@@ -27,6 +27,7 @@ import servicesRouter from "./routes/services.js";
 import customersRouter from "./routes/customers.js";
 import supportRouter from "./routes/support.js";
 import inventoryRouter from "./routes/inventory.js";
+import toolSettingsRouter from "./routes/toolSettings.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -225,6 +226,7 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/services", servicesRouter);
 app.use("/api/support", supportRouter);
 app.use("/api/inventory", inventoryRouter);
+app.use("/api/tools-settings", toolSettingsRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

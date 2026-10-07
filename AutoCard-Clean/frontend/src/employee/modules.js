@@ -8,9 +8,11 @@ import {
   MapPin,
   CalendarRange,
   ShieldCheck,
-  BookOpen,
   FolderKanban,
-  CalendarCheck
+  CalendarCheck,
+  CalendarDays,
+  ClipboardList,
+  Wrench,
 } from "lucide-react";
 
 // Default modules always visible to employees
@@ -23,6 +25,7 @@ const defaultModules = [
     description: "Your personal dashboard overview.",
     alwaysVisible: true,
   },
+ 
   // {
   //   key: "onboarding",
   //   label: "Onboarding Form",
@@ -92,6 +95,14 @@ const defaultModules = [
 // Admin modules that can be delegated to employees via custom roles or permissions
 const adminModules = [
   {
+    key: "academic-calendar",
+    label: "Academic Calendar",
+    path: "/employee/academic-calendar",
+    icon: CalendarDays,
+    description: "View academic calendar and important dates.",
+    adminKey: "academic-calendar",
+  },
+  {
     key: "employee",
     label: "Add Account",
     path: "/employee/employee",
@@ -104,7 +115,7 @@ const adminModules = [
     label: "Approvals",
     path: "/employee/approvals",
     icon: BadgeCheck,
-    description: "Review and act on employee requests.",
+    description: "Review and approve employee requests.",
     adminKey: "approvals",
   },
   {
@@ -141,10 +152,10 @@ const adminModules = [
   },
   {
     key: "leave-policy",
-    label: "Leave Policy",
+    label: "Leave Policy & Holiday",
     path: "/employee/leave-policy",
-    icon: BookOpen,
-    description: "Leave types and policies.",
+    icon: ClipboardList,
+    description: "Manage leave types, balances, rules and company holidays.",
     adminKey: "leave-policy",
   },
   {
@@ -174,12 +185,20 @@ export function getModulesByPermissions(permissions = {}) {
     return [...defaultModules];
   }
 
-  // When an account has an assigned role, its access is strictly governed by the role's assigned modules
+  // Combine default and admin modules
   const allModules = [...defaultModules, ...adminModules];
   const allowedModules = [];
 
   allModules.forEach((module) => {
-    // Check direct key, or adminKey, or aliases, or admin attendance fallback
+    // Overview (Dashboard) and My Tools are default base modules always visible to employees
+    if (module.key === "overview" || module.key === "my-tools") {
+      if (!allowedModules.some((m) => m.path === module.path || m.key === module.key)) {
+        allowedModules.push(module);
+      }
+      return;
+    }
+
+    // Check direct key, or adminKey, or aliases, or sub-approval fallback
     let perm = permissions[module.key];
 
     if (!perm && module.adminKey) {
@@ -200,13 +219,36 @@ export function getModulesByPermissions(permissions = {}) {
       perm = permissions["assigned-projects"] || permissions["projects"];
     }
 
+    if (!perm && module.key === "my-projects") {
+      perm = permissions["my-projects"] || permissions["customer-projects"];
+    }
+
     const hasAdminPower = permissions["employee"] || permissions["roles-access"] || permissions["approvals"];
     const attendanceMgmtFallback = module.key === "attendance-management" && permissions["attendance"] && hasAdminPower;
-    if (attendanceMgmtFallback) {
+    
+    // Approvals access check (main key or any sub-type key)
+    const hasSubApprovalPerm = module.key === "approvals" && (
+      permissions["approvals"] ||
+      permissions["approvals-leave"] || 
+      permissions["approvals-attendance"] || 
+      permissions["approvals-forgot-punch"]
+    );
+
+    if (attendanceMgmtFallback && !perm) {
       perm = permissions["attendance"];
     }
 
-    if (perm && (perm.canView || perm === true)) {
+    if (hasSubApprovalPerm && !perm) {
+      perm = hasSubApprovalPerm;
+    }
+
+    const isAllowed = perm && (
+      perm.canView === true || 
+      perm === true || 
+      (typeof perm === "object" && Object.values(perm).some(Boolean))
+    );
+
+    if (isAllowed) {
       const alreadyAdded = allowedModules.some(
         (m) => m.key === module.key || (m.path === module.path && m.path === "/employee/projects")
       );
@@ -218,14 +260,6 @@ export function getModulesByPermissions(permissions = {}) {
       }
     }
   });
-
-  // Ensure dashboard / overview is always present as home if user has any active permissions
-  if (!allowedModules.some((m) => m.key === "overview")) {
-    const overviewMod = defaultModules.find((m) => m.key === "overview");
-    if (overviewMod && (permissions["overview"] || allowedModules.length > 0)) {
-      allowedModules.unshift(overviewMod);
-    }
-  }
 
   return allowedModules;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import {
   Building2,
   Clock,
@@ -14,7 +14,9 @@ import {
   Search,
   ToggleLeft,
   ToggleRight,
+  ArrowLeft,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api.js";
 import { formatTime12Hour } from "../../lib/timeFormat.js";
@@ -1008,12 +1010,16 @@ const TABS = [
 ];
 
 const ShiftLocation = () => {
+  const navigate = useNavigate();
   const [tab, setTab] = useState("shifts");
 
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Page header */}
       <div className="flex items-center gap-4">
+        <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
           <Building2 className="h-6 w-6 text-primary" />
         </div>

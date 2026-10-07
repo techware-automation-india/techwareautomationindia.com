@@ -2,8 +2,9 @@ import {
   ArrowRight,
   ClipboardList,
   FileText,
-  Plane,
+  CalendarDays,
   ScanLine,
+  Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -28,18 +29,25 @@ const Requests = () => {
         <h2 className="font-display text-lg font-semibold">Request Services</h2>
         <div className="grid gap-4 md:grid-cols-3">
           {[
-            // {
-            //   label: "Leave",
-            //   description: "Apply for leave and track approvals.",
-            //   path: "/employee/leave",
-            //   icon: Plane,
-            // },
+            {
+              label: "Apply for Leave",
+              description: "Submit leave application and track approval status.",
+              path: "/employee/requests/apply-leave",
+              icon: CalendarDays,
+            },
             {
               label: "Forgot Punch",
               description:
                 "Request a correction for a missed check-in or check-out.",
               path: "/employee/requests/forgot-punch",
               icon: ScanLine,
+            },
+            {
+              label: "Request Tools / Inventory",
+              description:
+                "Submit inventory requests for Taking (issue) or Return of tools & equipment.",
+              path: "/employee/requests/tools-inventory",
+              icon: Wrench,
             },
             {
               label: "Track My Request",

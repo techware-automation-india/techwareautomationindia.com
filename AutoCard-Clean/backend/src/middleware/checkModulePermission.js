@@ -32,6 +32,12 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
             keySet.add("shift-and-location");
             keySet.add("shift_location");
           }
+          if (k === "approvals" || (typeof k === "string" && k.startsWith("approvals-"))) {
+            keySet.add("approvals");
+            keySet.add("approvals-attendance");
+            keySet.add("approvals-forgot-punch");
+            keySet.add("approvals-leave");
+          }
         }
         const keys = Array.from(keySet);
 

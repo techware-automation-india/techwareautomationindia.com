@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -21,6 +21,16 @@ const leaveTypeSchema = z.object({
     .union([z.string(), z.number()])
     .transform((v) => Number(v))
     .refine((v) => Number.isFinite(v) && v >= 0 && v <= 365, "Days per year must be 0-365."),
+  maxConsecutiveDays: z
+    .union([z.string(), z.number()])
+    .transform((v) => (v === "" || v == null ? 0 : Number(v)))
+    .refine((v) => Number.isFinite(v) && v >= 0 && v <= 365, "Max consecutive days must be 0-365.")
+    .optional(),
+  minAdvanceNoticeDays: z
+    .union([z.string(), z.number()])
+    .transform((v) => (v === "" || v == null ? 0 : Number(v)))
+    .refine((v) => Number.isFinite(v) && v >= 0 && v <= 365, "Min advance notice must be 0-365.")
+    .optional(),
   description: z.string().trim().max(300).optional().or(z.literal("")),
   isPaid: z.boolean().optional(),
   isActive: z.boolean().optional(),
@@ -60,6 +70,8 @@ router.post("/", checkRolePermission("requests"), async (req, res) => {
         name: d.name,
         code,
         daysPerYear: d.daysPerYear,
+        maxConsecutiveDays: d.maxConsecutiveDays ?? 0,
+        minAdvanceNoticeDays: d.minAdvanceNoticeDays ?? 0,
         description: d.description || null,
         isPaid: d.isPaid ?? true,
         isActive: d.isActive ?? true,
@@ -103,6 +115,8 @@ router.put("/:id", checkRolePermission("requests"), async (req, res) => {
         name: d.name,
         code,
         daysPerYear: d.daysPerYear,
+        maxConsecutiveDays: d.maxConsecutiveDays ?? current.maxConsecutiveDays ?? 0,
+        minAdvanceNoticeDays: d.minAdvanceNoticeDays ?? current.minAdvanceNoticeDays ?? 0,
         description: d.description || null,
         isPaid: d.isPaid ?? current.isPaid,
         isActive: d.isActive ?? current.isActive,

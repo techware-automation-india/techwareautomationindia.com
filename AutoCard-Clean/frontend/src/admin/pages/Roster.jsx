@@ -14,7 +14,9 @@ import {
   Clock,
   MapPin,
   X,
+  ArrowLeft,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiDelete } from "../../lib/api.js";
 import { formatTimeRange } from "../../lib/timeFormat.js";
@@ -96,6 +98,7 @@ const inputClass =
 
 // ── Main component ────────────────────────────────────────────────────────────
 const Roster = () => {
+  const navigate = useNavigate();
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(
     today.getMonth() + 1,
@@ -358,6 +361,9 @@ const Roster = () => {
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <CalendarRange className="h-6 w-6 text-primary" />
           </div>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, CalendarDays, Send } from "lucide-react";
+import { ArrowLeft, CalendarDays, Send, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { apiPost } from "../../lib/api.js";
+import { apiGet, apiPost } from "../../lib/api.js";
 
 const getIndiaNow = () => {
   const now = new Date();
@@ -45,6 +45,46 @@ const AdminAttendanceCorrection = () => {
   const [checkOutLocation, setCheckOutLocation] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+
+  const [approvedLeaves, setApprovedLeaves] = useState([]);
+
+  // Fetch user's approved leave requests
+  useEffect(() => {
+    const fetchLeaves = async () => {
+      try {
+        const res = await apiGet("/leave/my");
+        const list = Array.isArray(res?.requests) ? res.requests : [];
+        setApprovedLeaves(list.filter((r) => r.status === "APPROVED"));
+      } catch (err) {
+        console.warn("Failed to fetch leave history:", err.message);
+      }
+    };
+    fetchLeaves();
+  }, []);
+
+  const getApprovedLeaveForDate = (selectedDateStr) => {
+    if (!selectedDateStr || approvedLeaves.length === 0) return null;
+
+    return approvedLeaves.find((leave) => {
+      const startKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(leave.startDate));
+
+      const endKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(leave.endDate));
+
+      return selectedDateStr >= startKey && selectedDateStr <= endKey;
+    });
+  };
+
+  const onLeaveForDate = getApprovedLeaveForDate(date);
 
   // ---------------------------------------------
   // Current India time refresh
@@ -151,6 +191,13 @@ const AdminAttendanceCorrection = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (onLeaveForDate) {
+      toast.error(
+        `Cannot save attendance for ${date} because you were on approved leave.`,
+      );
+      return;
+    }
 
     if (!date) {
       toast.error("Please select a date.");
@@ -352,8 +399,23 @@ const AdminAttendanceCorrection = () => {
             value={date}
             max={indiaNow.date}
             onChange={handleDateChange}
-            className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+            className={`mt-2 w-full rounded-lg border px-3 py-2.5 text-sm ${
+              onLeaveForDate
+                ? "border-purple-300 bg-purple-50/50 dark:border-purple-800 dark:bg-purple-950/20"
+                : "border-border bg-background"
+            }`}
           />
+          {onLeaveForDate && (
+            <div className="mt-2 rounded-xl border border-purple-200 bg-purple-50 dark:border-purple-900/40 dark:bg-purple-950/30 p-3.5 text-xs text-purple-900 dark:text-purple-200">
+              <div className="font-bold flex items-center gap-1.5 text-purple-800 dark:text-purple-300">
+                <AlertCircle className="h-4 w-4 text-purple-600 shrink-0" />
+                Date Frozen — On Approved Leave ({onLeaveForDate.leaveType?.name || "Leave"})
+              </div>
+              <div className="mt-1 leading-relaxed">
+                You were on approved leave on {date}. Attendance correction cannot be saved for approved leave dates.
+              </div>
+            </div>
+          )}
         </label>
 
         {/* Check In */}
@@ -439,12 +501,12 @@ const AdminAttendanceCorrection = () => {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || Boolean(onLeaveForDate)}
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Send className="h-4 w-4" />
 
-          {submitting ? "Saving..." : "Save Attendance"}
+          {submitting ? "Saving..." : onLeaveForDate ? "Date Frozen (On Leave)" : "Save Attendance"}
         </button>
       </form>
     </div>

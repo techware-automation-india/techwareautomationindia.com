@@ -13,9 +13,13 @@ import {
   Briefcase,
   MapPin,
   MessageSquareText,
+  ArrowLeft,
+  Shield,
 } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
+import { getAuthUser } from "../../lib/auth.js";
 
 const statusStyles = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -222,6 +226,7 @@ const normalizeRequests = (items) =>
     employeeCode: item.employee?.employeeCode || "",
     reviewNote: item.reviewNote || null,
     reviewedAt: item.reviewedAt || null,
+    reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
     checkInLatitude: item.checkInLatitude,
     checkInLongitude: item.checkInLongitude,
     checkOutLatitude: item.checkOutLatitude,
@@ -242,6 +247,7 @@ const normalizeLeave = (items) =>
     employeeCode: item.employee?.employeeCode || "",
     reviewNote: item.reviewNote || null,
     reviewedAt: item.reviewedAt || null,
+    reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
     status: item.status,
     createdAt: item.createdAt,
   }));
@@ -268,6 +274,7 @@ const normalizeAttendance = (items) =>
       employeeCode: item.employee?.employeeCode || "",
       reviewNote: item.note || null,
       reviewedAt: item.updatedAt || null,
+      reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
       checkInLatitude: item.checkInLatitude,
       checkInLongitude: item.checkInLongitude,
       checkOutLatitude: item.checkOutLatitude,
@@ -380,7 +387,7 @@ const getAttendanceDetails = (note = "") => {
   return {
     reason: fullClean || "No reason provided.",
     checkInReason: checkInReason || fullClean || "No check-in reason provided.",
-    checkOutReason: checkOutReason || "No check-out reason provided.",
+    checkOutReason: checkOutReason || "No reason provided for check-out.",
     checkInDistance,
     checkOutDistance,
     isCheckInUnassigned,
@@ -496,39 +503,75 @@ const getAdminRejectionReason = (reviewNote = "") => {
   return text;
 };
 
+const getReviewerInfo = (approval) => {
+  if (!approval) return "Admin";
+
+  if (approval.reviewedBy) {
+    if (typeof approval.reviewedBy === "string" && approval.reviewedBy.trim()) {
+      return approval.reviewedBy.trim();
+    }
+    if (typeof approval.reviewedBy === "object" && approval.reviewedBy?.fullName) {
+      return approval.reviewedBy.fullName;
+    }
+  }
+
+  const text = String(approval.reviewNote || approval.description || "").trim();
+
+  const matchName = text.match(/(?:Approved|Rejected)\s+by\s+([^:|\.]+)/i);
+  if (matchName && matchName[1]) {
+    const name = matchName[1].trim();
+    if (name) return name;
+  }
+
+  const matchAdmin = text.match(/Admin\s+(?:approved|rejected)/i);
+  if (matchAdmin) return "Admin";
+
+  return "Admin";
+};
+
 
 const Approvals = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const authUser = getAuthUser();
+  const isAdmin = authUser?.role === "ADMIN";
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState(null);
   const [reasonModal, setReasonModal] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [permissions, setPermissions] = useState(null);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
 
-  // Set default filters to current month/year
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
-
+  // Set default filters to ALL so all requests display immediately
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [yearFilter, setYearFilter] = useState(String(currentYear));
-  const [monthFilter, setMonthFilter] = useState(String(currentMonth));
+  const [yearFilter, setYearFilter] = useState("ALL");
+  const [monthFilter, setMonthFilter] = useState("ALL");
   const [employeeFilter, setEmployeeFilter] = useState("ALL");
+  
+  // Get type filter from URL params (for granular approval modules)
+  const typeFilter = searchParams.get("type"); // 'attendance', 'forgot-punch', or 'leave'
 
   const loadApprovals = async () => {
     setLoading(true);
     try {
-      const [requestResult, leaveResult, attendanceResult] = await Promise.all([
+      // Load all three APIs with Promise.allSettled so individual failures don't block others
+      const [requestResult, leaveResult, attendanceResult] = await Promise.allSettled([
         apiGet("/requests"),
         apiGet("/leave/admin/all"),
         apiGet("/attendance/admin/requests"),
       ]);
 
+      const requests = requestResult.status === "fulfilled" ? (requestResult.value?.requests || []) : [];
+      const leave = leaveResult.status === "fulfilled" ? (leaveResult.value?.requests || []) : [];
+      const attendance = attendanceResult.status === "fulfilled" ? (attendanceResult.value?.records || []) : [];
+
       setApprovals(
         [
-          ...normalizeRequests(requestResult.requests),
-          ...normalizeLeave(leaveResult.requests),
-          ...normalizeAttendance(attendanceResult.records),
+          ...normalizeRequests(requests),
+          ...normalizeLeave(leave),
+          ...normalizeAttendance(attendance),
         ].sort(
           (first, second) =>
             new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
@@ -541,9 +584,47 @@ const Approvals = () => {
       setLoading(false);
     }
   };
-
+  
+  // Load permissions and approvals in parallel
   useEffect(() => {
-    loadApprovals();
+    const loadData = async () => {
+      try {
+        // Try cached permissions first
+        const cachedPerms = localStorage.getItem('employee_permissions');
+        const cachedTimestamp = localStorage.getItem('employee_permissions_timestamp');
+        const now = Date.now();
+        
+        // Use cache if less than 5 minutes old
+        if (cachedPerms && cachedTimestamp && (now - parseInt(cachedTimestamp)) < 5 * 60 * 1000) {
+          setPermissions(JSON.parse(cachedPerms));
+          setLoadingPermissions(false);
+          
+          // Refresh in background
+          apiGet("/roles-access/me/permissions").then(data => {
+            const newPerms = data?.permissions || {};
+            localStorage.setItem('employee_permissions', JSON.stringify(newPerms));
+            localStorage.setItem('employee_permissions_timestamp', String(Date.now()));
+            setPermissions(newPerms);
+          }).catch(() => {});
+        } else {
+          // Load fresh permissions
+          const permData = await apiGet("/roles-access/me/permissions").catch(() => ({ permissions: {} }));
+          const perms = permData.permissions || {};
+          localStorage.setItem('employee_permissions', JSON.stringify(perms));
+          localStorage.setItem('employee_permissions_timestamp', String(Date.now()));
+          setPermissions(perms);
+          setLoadingPermissions(false);
+        }
+        
+        // Load approvals (always fresh)
+        await loadApprovals();
+      } catch (err) {
+        console.error("Failed to load data:", err);
+        setPermissions({});
+        setLoadingPermissions(false);
+      }
+    };
+    loadData();
   }, []);
 
   const years = [
@@ -569,7 +650,42 @@ const Approvals = () => {
       monthFilter === "ALL" || String(createdAt.getMonth() + 1) === monthFilter;
     const matchesEmployee =
       employeeFilter === "ALL" || approval.employee === employeeFilter;
-    return matchesStatus && matchesYear && matchesMonth && matchesEmployee;
+    
+    // Apply type filter from URL params (for granular approval modules)
+    let matchesType = true;
+    if (typeFilter === "attendance") {
+      matchesType = approval.source === "ATTENDANCE";
+    } else if (typeFilter === "forgot-punch") {
+      matchesType = approval.source === "REQUEST";
+    } else if (typeFilter === "leave") {
+      matchesType = approval.source === "LEAVE";
+    }
+    
+    // Apply permission-based filtering
+    let matchesPermission = true;
+    if (!loadingPermissions && permissions) {
+      const hasMainApprovals = permissions["approvals"]?.canView || permissions["approvals"] === true;
+      const subAttendance = permissions["approvals-attendance"]?.canView || permissions["approvals-attendance"] === true;
+      const subForgotPunch = permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true;
+      const subLeave = permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true;
+
+      const hasAnySubPerm = subAttendance || subForgotPunch || subLeave;
+
+      if (hasAnySubPerm) {
+        if (approval.source === "ATTENDANCE" && !subAttendance) {
+          matchesPermission = false;
+        } else if (approval.source === "REQUEST" && !subForgotPunch) {
+          matchesPermission = false;
+        } else if (approval.source === "LEAVE" && !subLeave) {
+          matchesPermission = false;
+        }
+      } else if (!hasMainApprovals) {
+        // If neither specific sub-permissions nor main approvals exist, filter out
+        matchesPermission = false;
+      }
+    }
+    
+    return matchesStatus && matchesYear && matchesMonth && matchesEmployee && matchesType && matchesPermission;
   });
 
   const review = async (approval, decision, reason = "") => {
@@ -610,14 +726,54 @@ const Approvals = () => {
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <BadgeCheck className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold">Approvals</h1>
+            <h1 className="font-display text-2xl font-bold">
+              {typeFilter === "attendance" 
+                ? "Attendance Approvals" 
+                : typeFilter === "forgot-punch" 
+                ? "Forgot Punch Approvals" 
+                : typeFilter === "leave" 
+                ? "Leave Approvals" 
+                : "Approvals"}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Approve or reject pending employee requests in one place.
+              {typeFilter === "attendance" 
+                ? "Approve or reject attendance and location requests." 
+                : typeFilter === "forgot-punch" 
+                ? "Approve or reject forgot punch correction requests." 
+                : typeFilter === "leave" 
+                ? "Approve or reject employee leave requests." 
+                : "Approve or reject pending employee requests in one place."}
             </p>
+            {/* Permission indicator */}
+            {!loadingPermissions && permissions && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {(permissions["approvals-attendance"]?.canView || permissions["approvals-attendance"] === true) && (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                    <Shield className="h-3 w-3" />
+                    Attendance
+                  </span>
+                )}
+                {(permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true) && (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                    <Shield className="h-3 w-3" />
+                    Forgot Punch
+                  </span>
+                )}
+                {(permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true) && (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                    <Shield className="h-3 w-3" />
+                    Leave
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <button
@@ -687,7 +843,7 @@ const Approvals = () => {
             Showing {filteredApprovals.length} of {approvals.length}
           </span>
         </div>
-        {loading ? (
+        {loading || loadingPermissions ? (
           <div className="flex min-h-[260px] items-center justify-center text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading
             approvals...
@@ -868,16 +1024,18 @@ const Approvals = () => {
                               </div>
                             </>
                           ) : (
-                            <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center">
+                            <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center min-w-[140px]">
                               <div className="text-xs">
                                 <div className="font-semibold text-muted-foreground">
-                                  Reviewed
+                                  {approval.status === "APPROVED" ? "Approved" : "Rejected"}
                                 </div>
-                                <div className="mt-0.5 font-bold text-foreground">
-                                  {formatDate(approval.reviewedAt || approval.createdAt)}
-                                </div>
-                                <div className="mt-0.5 text-muted-foreground">
-                                  {formatTimeIST(approval.reviewedAt || approval.createdAt)}
+                                {isAdmin && (
+                                  <div className="mt-0.5 font-bold text-foreground truncate max-w-[150px]" title={`By: ${getReviewerInfo(approval)}`}>
+                                    By: {getReviewerInfo(approval)}
+                                  </div>
+                                )}
+                                <div className="mt-1 text-[11px] text-muted-foreground">
+                                  {formatDate(approval.reviewedAt || approval.createdAt)} • {formatTimeIST(approval.reviewedAt || approval.createdAt)}
                                 </div>
                               </div>
                             </div>
@@ -1277,23 +1435,42 @@ const Approvals = () => {
                     </div>
                   </div>
                 )}
-                {reasonModal.reviewedAt && reasonModal.status !== "PENDING" && (
-                  <div className="flex items-center justify-between border-t border-border pt-2">
-                    <div className="flex items-center gap-2">
-                      <Clock3 className={`h-4 w-4 ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`} />
-                      <span className={`text-sm font-semibold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
-                        {reasonModal.status === "APPROVED" ? "Approved At" : "Rejected At"}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-sm font-bold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
-                        {formatDate(reasonModal.reviewedAt)}
-                      </span>
-                      <span className={`ml-2 text-xs ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`}>
-                        {formatTimeIST(reasonModal.reviewedAt)}
-                      </span>
-                    </div>
-                  </div>
+                {reasonModal.status !== "PENDING" && (
+                  <>
+                    {isAdmin && (
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <div className="flex items-center gap-2">
+                          <UserRound className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-semibold text-muted-foreground">
+                            {reasonModal.status === "APPROVED" ? "Approved By" : "Rejected By"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-foreground">
+                            {getReviewerInfo(reasonModal)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {reasonModal.reviewedAt && (
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <div className="flex items-center gap-2">
+                          <Clock3 className={`h-4 w-4 ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`} />
+                          <span className={`text-sm font-semibold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                            {reasonModal.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-sm font-bold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                            {formatDate(reasonModal.reviewedAt)}
+                          </span>
+                          <span className={`ml-2 text-xs ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {formatTimeIST(reasonModal.reviewedAt)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

@@ -15,7 +15,9 @@ import {
   MessageSquare,
   X,
   MapPin,
+  ArrowLeft,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
 
@@ -61,25 +63,33 @@ const fmtWorkedHours = (value) => {
   return `${h}h ${m}m`;
 };
 
-const getRegularHours = (workedHours) => {
+const getRegularHours = (workedHours, isHolidayOrSunday = false) => {
+  if (workedHours == null) return 0;
+
+  const hours = Number(workedHours);
+
+  if (Number.isNaN(hours) || hours <= 0) return 0;
+  if (isHolidayOrSunday) return 0;
+
+  return Math.min(hours, REGULAR_HOURS);
+};
+
+// Calculate overtime from worked hours with 15-minute interval rounding:
+// On Sundays or Holidays (Festival / National / Optional), ALL working time counts as overtime.
+const getOvertimeHours = (workedHours, isHolidayOrSunday = false) => {
   if (workedHours == null) return 0;
 
   const hours = Number(workedHours);
 
   if (Number.isNaN(hours) || hours <= 0) return 0;
 
-  // Maximum regular work = 1 hour
-  return Math.min(hours, REGULAR_HOURS);
-};
+  if (isHolidayOrSunday) {
+    const rawOtMinutes = Math.round(hours * 60);
+    const roundedOtMinutes = Math.floor(rawOtMinutes / 15) * 15;
+    return roundedOtMinutes > 0 ? roundedOtMinutes / 60 : 0;
+  }
 
-// Calculate overtime from worked hours with 15-minute interval rounding:
-// 0-14 min -> 0 min, 15-29 min -> 15 min, 30-44 min -> 30 min, 45-59 min -> 45 min
-const getOvertimeHours = (workedHours) => {
-  if (workedHours == null) return 0;
-
-  const hours = Number(workedHours);
-
-  if (Number.isNaN(hours) || hours <= REGULAR_HOURS) {
+  if (hours <= REGULAR_HOURS) {
     return 0;
   }
 
@@ -279,6 +289,7 @@ const StatCard = ({ icon: Icon, label, value, bg, text }) => (
 // ── component ─────────────────────────────────────────────────────────────────
 
 const Attendance = () => {
+  const navigate = useNavigate();
   const today = new Date();
 
   const [year, setYear] = useState(today.getFullYear());
@@ -344,26 +355,38 @@ const Attendance = () => {
   }
 
   const holidayByDay = {};
+  const holidayTypeByDay = {};
 
   for (const h of holidays) {
     const d = getIndiaDayNumber(h.date);
-    if (d) holidayByDay[d] = h.name;
+    if (d) {
+      holidayByDay[d] = h.name;
+      holidayTypeByDay[d] = h.holidayType || "FESTIVAL";
+    }
   }
 
   // ── worked & overtime calculations ──
 
+  const isHolidayOrSundayRecord = (r) => {
+    if (!r) return false;
+    const d = getIndiaDayNumber(r.date);
+    if (!d) return false;
+    const dayOfWeek = new Date(year, month - 1, d).getDay();
+    return dayOfWeek === 0 || Boolean(holidayByDay[d]) || r.status === "HOLIDAY";
+  };
+
   const totalWorked = records.reduce(
-    (acc, r) => acc + getRegularHours(r.workedHours),
+    (acc, r) => acc + getRegularHours(r.workedHours, isHolidayOrSundayRecord(r)),
     0,
   );
 
   const totalOvertime = records.reduce(
-    (acc, r) => acc + getOvertimeHours(r.workedHours),
+    (acc, r) => acc + (r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolidayOrSundayRecord(r))),
     0,
   );
 
   const totalOvertimeDays = records.filter(
-    (r) => getOvertimeHours(r.workedHours) > 0,
+    (r) => (r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolidayOrSundayRecord(r))) > 0,
   ).length;
 
   const filteredRecords = selectedStatus
@@ -469,7 +492,7 @@ const Attendance = () => {
                           <span
                             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
                           >
-                            {meta.label}
+                            {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}
                           </span>
                         </td>
 
@@ -726,6 +749,9 @@ const Attendance = () => {
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <Clock className="h-6 w-6 text-primary" />
           </div>
@@ -1059,11 +1085,9 @@ const Attendance = () => {
                       ? STATUS_META.HOLIDAY
                       : null;
 
-                  const overtime = r
-                    ? getOvertimeHours(r.workedHours)
-                    : 0;
-
-                  const isHolidayCell = !r || r.status === "HOLIDAY";
+                  const isSunOrHolCell = isSunday || Boolean(hol) || r?.status === "HOLIDAY";
+                  const hasPunchData = r && r.status !== "ON_LEAVE" && (r.checkIn || r.checkOut || Number(r.workedHours) > 0);
+                  const cellOvertime = r ? (r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolCell)) : 0;
 
                   return (
                     <div
@@ -1106,11 +1130,11 @@ const Attendance = () => {
                               )}`}
                             />
                             <span className="text-[10px] font-bold truncate">
-                              {meta.label}
+                              {(r?.status === "HOLIDAY" || !r) ? (hol || r?.note || (isSunday ? "Sunday (Weekly Off)" : "Holiday")) : meta.label}
                             </span>
                           </div>
 
-                          {r && !isHolidayCell && (
+                          {hasPunchData && (
                             <>
                               {/* In / Out */}
                               <div className="grid grid-cols-2 gap-1.5">
@@ -1143,18 +1167,20 @@ const Attendance = () => {
                                   </div>
                                   <div className="text-[10px] font-bold">
                                     {fmtWorkedHours(
-                                      getRegularHours(r.workedHours),
+                                      isSunOrHolCell
+                                        ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
+                                        : getRegularHours(r.workedHours)
                                     )}
                                   </div>
                                 </div>
 
-                                {overtime > 0 && (
+                                {cellOvertime > 0 && (
                                   <div className="text-right">
                                     <div className="text-[8px] uppercase tracking-wide text-orange-600">
                                       OT
                                     </div>
                                     <div className="text-[10px] font-bold text-orange-700">
-                                      {fmtWorkedHours(overtime)}
+                                      {fmtWorkedHours(cellOvertime)}
                                     </div>
                                   </div>
                                 )}
@@ -1162,12 +1188,27 @@ const Attendance = () => {
                             </>
                           )}
 
+                          {r && r.status === "ON_LEAVE" && (
+                            <div
+                              className="rounded-lg bg-purple-50 border border-purple-100 px-2 py-1.5 text-[10px] font-semibold text-purple-700 truncate"
+                              title={r?.note || "On Leave"}
+                            >
+                              {r?.note || "Approved Leave"}
+                            </div>
+                          )}
+
                           {isHolidayCell && (
                             <div
-                              className="rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-1.5 text-[10px] font-semibold text-indigo-700 truncate"
-                              title={hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
+                              className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold truncate ${
+                                holidayTypeByDay[day] === "FESTIVAL" || (hol && !hol.includes("Sunday") && !hol.includes("Weekly"))
+                                  ? "bg-purple-50 dark:bg-purple-950/30 border-purple-200 text-purple-700 dark:text-purple-300"
+                                  : holidayTypeByDay[day] === "NATIONAL"
+                                  ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 text-emerald-700 dark:text-emerald-300"
+                                  : "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-100 text-indigo-700 dark:text-indigo-300"
+                              }`}
+                              title={hol || r?.note || (isSunday ? "Weekly Off (Sunday)" : "Holiday")}
                             >
-                              {hol || r?.note || (isSunday ? "Sunday Holiday" : "Holiday")}
+                              {hol || r?.note || (isSunday ? "Weekly Off (Sunday)" : "Holiday")}
                             </div>
                           )}
                         </div>
@@ -1246,7 +1287,11 @@ const Attendance = () => {
                   {records.map((r) => {
                     const meta = STATUS_META[r.status] ?? STATUS_META.PRESENT;
 
-                    const overtime = getOvertimeHours(r.workedHours);
+                    const isSunOrHolRow = new Date(r.date).getDay() === 0 || r.status === "HOLIDAY" || Boolean(holidayByDay[getIndiaDayNumber(r.date)]);
+                    const rowOvertime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolRow);
+                    const rowWorkedTotal = isSunOrHolRow
+                      ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
+                      : getRegularHours(r.workedHours);
 
                     const isToday =
                       year === today.getFullYear() &&
@@ -1274,69 +1319,85 @@ const Attendance = () => {
                           <span
                             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
                           >
-                            {meta.label}
+                            {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}
                           </span>
                         </td>
 
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <LogIn className="h-3.5 w-3.5 text-emerald-600" />
+                        {r.status === "ON_LEAVE" ? (
+                          <td colSpan={5} className="px-5 py-3">
+                            <div className="w-full rounded-xl bg-purple-500/15 dark:bg-purple-500/25 border border-purple-200 dark:border-purple-800/40 px-4 py-2.5 text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center justify-between">
+                              <span className="flex items-center gap-2 font-bold text-sm">
+                                <CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                On Leave
+                              </span>
+                              <span className="text-purple-700 dark:text-purple-300 font-medium">
+                                {r.note || "Approved Leave"}
+                              </span>
+                            </div>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-5 py-3 whitespace-nowrap">
+                              <span className="flex items-center gap-1.5">
+                                <LogIn className="h-3.5 w-3.5 text-emerald-600" />
 
-                            {fmtTime(r.checkIn)}
-                          </span>
-                        </td>
+                                {fmtTime(r.checkIn)}
+                              </span>
+                            </td>
 
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                            <td className="px-5 py-3 whitespace-nowrap">
+                              <span className="flex items-center gap-1.5">
+                                <LogOut className="h-3.5 w-3.5 text-rose-600" />
 
-                            {fmtTime(r.checkOut)}
-                          </span>
-                        </td>
+                                {fmtTime(r.checkOut)}
+                              </span>
+                            </td>
 
-                        <td className="px-5 py-3 font-medium">
-                          {fmtWorkedHours(getRegularHours(r.workedHours))}
-                        </td>
+                            <td className="px-5 py-3 font-medium">
+                              {fmtWorkedHours(rowWorkedTotal)}
+                            </td>
 
-                        <td className="px-5 py-3">
-                          {overtime > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
-                              <Clock3 className="h-3.5 w-3.5" />
-                              {fmtWorkedHours(overtime)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
+                            <td className="px-5 py-3">
+                              {rowOvertime > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
+                                  <Clock3 className="h-3.5 w-3.5" />
+                                  {fmtWorkedHours(rowOvertime)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
 
-                        <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
-                          {r.status === "ABSENT" ? (
-                            <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
-                              Absent
-                            </span>
-                          ) : r.note ? (
-                            isComplexNote(r.note) ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedRecordForNote(r)}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
-                              >
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                View Reason
-                              </button>
-                            ) : (
-                              <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
-                                {r.note.split("|").map((n, i) => (
-                                  <div key={i}>
-                                    {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
+                            <td className="px-5 py-3 min-w-[300px] max-w-[400px]">
+                              {r.status === "ABSENT" ? (
+                                <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                                  Absent
+                                </span>
+                              ) : r.note ? (
+                                isComplexNote(r.note) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedRecordForNote(r)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                                  >
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    View Reason
+                                  </button>
+                                ) : (
+                                  <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
+                                    {r.note.split("|").map((n, i) => (
+                                      <div key={i}>
+                                        {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
-                            )
-                          ) : (
-                            <span className="text-base text-muted-foreground">�</span>
-                          )}
-                        </td>
+                                )
+                              ) : (
+                                <span className="text-base text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}

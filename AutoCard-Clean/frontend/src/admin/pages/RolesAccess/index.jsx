@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import RolesTab from "./RolesTab";
 import AccessTab from "./AccessTab";
 
 export default function RolesAccess() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('roles');
 
   // Load active tab from sessionStorage on mount
@@ -26,6 +28,9 @@ export default function RolesAccess() {
       <div className="bg-card border-b border-border">
         <div className="px-6 py-4">
           <div className="flex items-center gap-3 mb-4">
+            <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
             <div className="p-2 bg-primary/10 rounded-lg">
               <ShieldCheck className="h-6 w-6 text-primary" />
             </div>

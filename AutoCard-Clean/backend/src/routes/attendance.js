@@ -60,14 +60,24 @@ const calculateWorkedHours = (checkIn, checkOut) => {
   return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
 };
 
-// Anything above 8 hours is overtime rounded to 15-minute intervals:
-// 0-14 min -> 0 min, 15-29 min -> 15 min, 30-44 min -> 30 min, 45-59 min -> 45 min
-const calculateOvertimeHours = (workedHours) => {
+// Anything above 8 hours on normal days is overtime rounded to 15-minute intervals.
+// On Sundays or Holidays (Festival / National / Optional), ALL working time counts as overtime.
+const calculateOvertimeHours = (workedHours, isHolidayOrSunday = false) => {
   if (workedHours == null) return 0;
 
   const hours = Number(workedHours);
 
-  if (!Number.isFinite(hours) || hours <= REGULAR_WORKING_HOURS) {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return 0;
+  }
+
+  if (isHolidayOrSunday) {
+    const rawMinutes = Math.round(hours * 60);
+    const roundedOtMinutes = Math.floor(rawMinutes / 15) * 15;
+    return roundedOtMinutes > 0 ? parseFloat((roundedOtMinutes / 60).toFixed(2)) : 0;
+  }
+
+  if (hours <= REGULAR_WORKING_HOURS) {
     return 0;
   }
 
@@ -311,6 +321,30 @@ const isWorkingDay = (date) => {
   return d.getDay() !== 0; // skip Sundays as non-working
 };
 
+const isHolidayOrSundayDate = async (date) => {
+  if (!date) return false;
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const dateKey = getIndiaDateKey(d);
+  if (!dateKey) return false;
+
+  const istDate = new Date(`${dateKey}T12:00:00+05:30`);
+  if (istDate.getDay() === 0) return true; // Sunday
+
+  const isoStr = d.toISOString().slice(0, 10);
+  const holiday = await prisma.holiday.findFirst({
+    where: {
+      OR: [
+        { date: new Date(`${dateKey}T00:00:00+05:30`) },
+        { date: new Date(`${isoStr}T00:00:00.000Z`) },
+      ],
+    },
+  });
+
+  return Boolean(holiday);
+};
+
 // ============================================================================
 // EMPLOYEE SELF-SERVICE ROUTES  (requireAuth only, no role guard)
 // ============================================================================
@@ -418,7 +452,8 @@ router.get("/me", requireAuth, async (req, res) => {
           attendance.workedHours ??
           calculateWorkedHours(attendance.checkIn, attendance.checkOut);
 
-        const overtimeHours = calculateOvertimeHours(workedHours);
+        const isHolOrSun = !isWorkingDay(key) || holidayByDate.has(key);
+        const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
 
         populatedRecords.push({
           id: attendance.id,
@@ -905,8 +940,9 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     if (finalCheckIn && finalCheckOut) {
+      const isHolOrSun = await isHolidayOrSundayDate(selectedDate);
       updates.workedHours = calculateWorkedHours(finalCheckIn, finalCheckOut);
-      updates.overtimeHours = calculateOvertimeHours(updates.workedHours);
+      updates.overtimeHours = calculateOvertimeHours(updates.workedHours, isHolOrSun);
     } else {
       updates.workedHours = null;
       updates.overtimeHours = null;
@@ -1616,7 +1652,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
       // ------------------------------------------------------
 
       const workedHours = calculateWorkedHours(record.checkIn, now);
-      const overtimeHours = calculateOvertimeHours(workedHours);
+      const isHolOrSun = await isHolidayOrSundayDate(today);
+      const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
 
       // ------------------------------------------------------
       // UPDATE ADMIN ATTENDANCE
@@ -1844,7 +1881,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
     // --------------------------------------------------------
 
     const workedHours = calculateWorkedHours(record.checkIn, now);
-    const overtimeHours = calculateOvertimeHours(workedHours);
+    const isHolOrSun = await isHolidayOrSundayDate(today);
+    const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
 
     const isOutside = !!comparisonLocation && distance > allowedRadius;
 
@@ -2680,6 +2718,8 @@ router.post(
       }
 
       const workedHours = calculateWorkedHours(record.checkIn, record.checkOut);
+      const isHolOrSun = await isHolidayOrSundayDate(record.date);
+      const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
 
       const reviewer = req.user?.id
         ? await prisma.user.findUnique({
@@ -2700,6 +2740,7 @@ router.post(
         data: {
           status: "PRESENT",
           workedHours,
+          overtimeHours,
           note: fitAttendanceNote(updatedNote),
         },
       });

@@ -16,7 +16,7 @@ router.use(requireAuth);
 // Returns: Array of users with role information
 // ============================================================================
 
-router.get("/with-roles", checkRolePermission("roles-access"), async (req, res) => {
+router.get("/with-roles", checkRolePermission(["roles-access", "employee", "overview"]), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -76,7 +76,7 @@ router.get("/with-roles", checkRolePermission("roles-access"), async (req, res) 
 // Requirements: 8.4, 14.3, 14.4
 // ============================================================================
 
-router.get("/by-role/:roleId", checkRolePermission("roles-access"), async (req, res) => {
+router.get("/by-role/:roleId", checkRolePermission(["roles-access", "employee", "overview"]), async (req, res) => {
   try {
     const { roleId } = req.params;
 
@@ -167,7 +167,7 @@ router.get("/by-role/:roleId", checkRolePermission("roles-access"), async (req, 
 
 router.put(
   "/:id/role",
-  checkRolePermission("roles-access"),
+  checkRolePermission(["roles-access", "employee", "overview"]),
   validateAssignRole,
   async (req, res) => {
     try {

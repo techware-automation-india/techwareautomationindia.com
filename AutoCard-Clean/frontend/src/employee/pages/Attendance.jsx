@@ -63,25 +63,33 @@ const fmtWorkedHours = (value) => {
   return `${h}h ${m}m`;
 };
 
-const getRegularHours = (workedHours) => {
+const getRegularHours = (workedHours, isHolidayOrSunday = false) => {
+  if (workedHours == null) return 0;
+
+  const hours = Number(workedHours);
+
+  if (Number.isNaN(hours) || hours <= 0) return 0;
+  if (isHolidayOrSunday) return 0;
+
+  return Math.min(hours, REGULAR_HOURS);
+};
+
+// Calculate overtime from worked hours with 15-minute interval rounding:
+// On Sundays or Holidays (Festival / National / Optional), ALL working time counts as overtime.
+const getOvertimeHours = (workedHours, isHolidayOrSunday = false) => {
   if (workedHours == null) return 0;
 
   const hours = Number(workedHours);
 
   if (Number.isNaN(hours) || hours <= 0) return 0;
 
-  // Maximum regular work = 1 hour
-  return Math.min(hours, REGULAR_HOURS);
-};
+  if (isHolidayOrSunday) {
+    const rawOtMinutes = Math.round(hours * 60);
+    const roundedOtMinutes = Math.floor(rawOtMinutes / 15) * 15;
+    return roundedOtMinutes > 0 ? roundedOtMinutes / 60 : 0;
+  }
 
-// Calculate overtime from worked hours with 15-minute interval rounding:
-// 0-14 min -> 0 min, 15-29 min -> 15 min, 30-44 min -> 30 min, 45-59 min -> 45 min
-const getOvertimeHours = (workedHours) => {
-  if (workedHours == null) return 0;
-
-  const hours = Number(workedHours);
-
-  if (Number.isNaN(hours) || hours <= REGULAR_HOURS) {
+  if (hours <= REGULAR_HOURS) {
     return 0;
   }
 
@@ -359,18 +367,26 @@ const Attendance = () => {
 
   // ── worked & overtime calculations ──
 
+  const isHolidayOrSundayRecord = (r) => {
+    if (!r) return false;
+    const d = getIndiaDayNumber(r.date);
+    if (!d) return false;
+    const dayOfWeek = new Date(year, month - 1, d).getDay();
+    return dayOfWeek === 0 || Boolean(holidayByDay[d]) || r.status === "HOLIDAY";
+  };
+
   const totalWorked = records.reduce(
-    (acc, r) => acc + getRegularHours(r.workedHours),
+    (acc, r) => acc + getRegularHours(r.workedHours, isHolidayOrSundayRecord(r)),
     0,
   );
 
   const totalOvertime = records.reduce(
-    (acc, r) => acc + getOvertimeHours(r.workedHours),
+    (acc, r) => acc + (r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolidayOrSundayRecord(r))),
     0,
   );
 
   const totalOvertimeDays = records.filter(
-    (r) => getOvertimeHours(r.workedHours) > 0,
+    (r) => (r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolidayOrSundayRecord(r))) > 0,
   ).length;
 
   const filteredRecords = selectedStatus
@@ -1069,11 +1085,9 @@ const Attendance = () => {
                       ? STATUS_META.HOLIDAY
                       : null;
 
-                  const overtime = r
-                    ? getOvertimeHours(r.workedHours)
-                    : 0;
-
-                  const isHolidayCell = !r || r.status === "HOLIDAY";
+                  const isSunOrHolCell = isSunday || Boolean(hol) || r?.status === "HOLIDAY";
+                  const hasPunchData = r && r.status !== "ON_LEAVE" && (r.checkIn || r.checkOut || Number(r.workedHours) > 0);
+                  const cellOvertime = r ? (r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolCell)) : 0;
 
                   return (
                     <div
@@ -1116,11 +1130,11 @@ const Attendance = () => {
                               )}`}
                             />
                             <span className="text-[10px] font-bold truncate">
-                              {(r?.status === "HOLIDAY" || isHolidayCell) ? (hol || r?.note || (isSunday ? "Sunday (Weekly Off)" : "Holiday")) : meta.label}
+                              {(r?.status === "HOLIDAY" || !r) ? (hol || r?.note || (isSunday ? "Sunday (Weekly Off)" : "Holiday")) : meta.label}
                             </span>
                           </div>
 
-                          {r && !isHolidayCell && r.status !== "ON_LEAVE" && (
+                          {hasPunchData && (
                             <>
                               {/* In / Out */}
                               <div className="grid grid-cols-2 gap-1.5">
@@ -1153,18 +1167,20 @@ const Attendance = () => {
                                   </div>
                                   <div className="text-[10px] font-bold">
                                     {fmtWorkedHours(
-                                      getRegularHours(r.workedHours),
+                                      isSunOrHolCell
+                                        ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
+                                        : getRegularHours(r.workedHours)
                                     )}
                                   </div>
                                 </div>
 
-                                {overtime > 0 && (
+                                {cellOvertime > 0 && (
                                   <div className="text-right">
                                     <div className="text-[8px] uppercase tracking-wide text-orange-600">
                                       OT
                                     </div>
                                     <div className="text-[10px] font-bold text-orange-700">
-                                      {fmtWorkedHours(overtime)}
+                                      {fmtWorkedHours(cellOvertime)}
                                     </div>
                                   </div>
                                 )}
@@ -1271,7 +1287,11 @@ const Attendance = () => {
                   {records.map((r) => {
                     const meta = STATUS_META[r.status] ?? STATUS_META.PRESENT;
 
-                    const overtime = getOvertimeHours(r.workedHours);
+                    const isSunOrHolRow = new Date(r.date).getDay() === 0 || r.status === "HOLIDAY" || Boolean(holidayByDay[getIndiaDayNumber(r.date)]);
+                    const rowOvertime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolRow);
+                    const rowWorkedTotal = isSunOrHolRow
+                      ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
+                      : getRegularHours(r.workedHours);
 
                     const isToday =
                       year === today.getFullYear() &&
@@ -1334,14 +1354,14 @@ const Attendance = () => {
                             </td>
 
                             <td className="px-5 py-3 font-medium">
-                              {fmtWorkedHours(getRegularHours(r.workedHours))}
+                              {fmtWorkedHours(rowWorkedTotal)}
                             </td>
 
                             <td className="px-5 py-3">
-                              {overtime > 0 ? (
+                              {rowOvertime > 0 ? (
                                 <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
                                   <Clock3 className="h-3.5 w-3.5" />
-                                  {fmtWorkedHours(overtime)}
+                                  {fmtWorkedHours(rowOvertime)}
                                 </span>
                               ) : (
                                 <span className="text-muted-foreground">—</span>

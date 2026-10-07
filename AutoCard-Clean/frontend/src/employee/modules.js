@@ -12,6 +12,7 @@ import {
   CalendarCheck,
   CalendarDays,
   ClipboardList,
+  Wrench,
 } from "lucide-react";
 
 // Default modules always visible to employees
@@ -24,6 +25,7 @@ const defaultModules = [
     description: "Your personal dashboard overview.",
     alwaysVisible: true,
   },
+ 
   // {
   //   key: "onboarding",
   //   label: "Onboarding Form",
@@ -171,9 +173,9 @@ export function getModulesByPermissions(permissions = {}) {
   const allowedModules = [];
 
   allModules.forEach((module) => {
-    // Only overview (Dashboard) is strictly alwaysVisible when a role is assigned
-    if (module.key === "overview") {
-      if (!allowedModules.some((m) => m.path === module.path)) {
+    // Overview (Dashboard) and My Tools are default base modules always visible to employees
+    if (module.key === "overview" || module.key === "my-tools") {
+      if (!allowedModules.some((m) => m.path === module.path || m.key === module.key)) {
         allowedModules.push(module);
       }
       return;

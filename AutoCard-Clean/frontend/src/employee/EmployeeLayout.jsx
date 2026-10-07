@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Clock,
   ChevronDown,
+  Wrench,
 } from "lucide-react";
 import { employeeModules, getModulesByPermissions } from "./modules.js";
 import { getAuthUser, clearAuth, updateAuthUser } from "../lib/auth.js";
@@ -335,7 +336,22 @@ const EmployeeLayout = () => {
                     </span>
                   </div>
 
-                  {/* My Profile route hidden/commented for employee panel. */}
+                  {/* My Tools Button */}
+                  <div className="p-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileOpen(false);
+                        navigate("/employee/my-tools");
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                        <Wrench className="w-4 h-4" />
+                      </div>
+                      My Tools
+                    </button>
+                  </div>
 
                   {/* Logout */}
                   <div className="p-2 border-t border-border">

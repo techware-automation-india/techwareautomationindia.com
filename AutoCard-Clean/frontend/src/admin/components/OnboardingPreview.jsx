@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   X, Loader2, User, Briefcase, FileText, Check,
   Mail, Phone, MapPin, Heart, CreditCard, GraduationCap, Calendar,
-  Globe, Droplet, Award, Building2, ExternalLink, Eye, Timer,
+  Globe, Droplet, Award, Building2, ExternalLink, Eye, Timer, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPut } from "../../lib/api.js";
@@ -504,6 +504,15 @@ const OnboardingPreview = ({
               <div className="sm:col-span-2">
                 <EditableField label="Skills" value={editForm.skills} multiline onChange={(v) => handleEditField("skills", v)} />
               </div>
+              <div className="sm:col-span-2">
+                <EditableField
+                  label="Company Assigned Tools & Equipment (Mechanical / Electrical)"
+                  value={editForm.assignedTools}
+                  multiline
+                  placeholder="e.g. Multimeter, Bosch Drill, Screwdriver Sets, Safety Gear, Grinder, Wrenches"
+                  onChange={(v) => handleEditField("assignedTools", v)}
+                />
+              </div>
             </Section>
 
             <Section icon={FileText} title="Documents & Identification" subtitle="Upload official records and document files" accent="primary">
@@ -690,6 +699,27 @@ const OnboardingPreview = ({
                   <Item label="Skills" value={profile.skills} />
                 </div>
               )}
+            </Section>
+
+            {/* Company Assigned Tools & Equipment */}
+            <Section icon={Wrench} title="Company Assigned Tools & Equipment" subtitle="Mechanical / Electrical tools assigned to this worker" accent="amber">
+              <div className="sm:col-span-2">
+                {profile.assignedTools ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {profile.assignedTools.split(/,\s*|\n+/).filter(Boolean).map((tool, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-semibold"
+                      >
+                        <Wrench className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                        {tool.trim()}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground/70 italic">No tools or equipment currently assigned.</p>
+                )}
+              </div>
             </Section>
 
             {/* Overtime */}

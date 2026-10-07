@@ -54,9 +54,10 @@ const AdminApplyLeave = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // History Modal State
+  // History & Holiday Modal State
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyTarget, setHistoryTarget] = useState(null);
+  const [showHolidaysModal, setShowHolidaysModal] = useState(false);
 
   const [form, setForm] = useState({
     leaveTypeId: "",
@@ -305,14 +306,18 @@ const AdminApplyLeave = () => {
 
             {/* Card Footer Link */}
             <div className="pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>All Holidays ({holidays.length || 56})</span>
-              </div>
               <button
                 type="button"
-                onClick={() => navigate("/admin/holidays")}
-                className="hover:text-primary font-medium transition-colors flex items-center gap-0.5"
+                onClick={() => setShowHolidaysModal(true)}
+                className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+              >
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>All Holidays ({holidays.length || 0})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowHolidaysModal(true)}
+                className="hover:text-primary font-semibold transition-colors flex items-center gap-0.5 cursor-pointer"
               >
                 View &gt;
               </button>
@@ -520,6 +525,118 @@ const AdminApplyLeave = () => {
                 type="button"
                 onClick={() => setShowHistoryModal(false)}
                 className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-secondary transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Company Holiday List Modal */}
+      {showHolidaysModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-3xl rounded-2xl bg-background border border-border shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-border flex items-center justify-between bg-secondary/30">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <CalendarDays className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-bold text-foreground">
+                    Company Holiday List
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Showing all registered holidays ({holidays.length} total)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHolidaysModal(false)}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body Table */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {holidays.length === 0 ? (
+                <div className="py-12 text-center text-xs text-muted-foreground flex flex-col items-center justify-center">
+                  <CalendarDays className="h-8 w-8 mb-2 opacity-30 text-muted-foreground" />
+                  No holidays configured in the system.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border bg-secondary/40">
+                        <th className="px-4 py-3 font-semibold">#</th>
+                        <th className="px-4 py-3 font-semibold">Holiday Name</th>
+                        <th className="px-4 py-3 font-semibold">Date</th>
+                        <th className="px-4 py-3 font-semibold">Day</th>
+                        <th className="px-4 py-3 font-semibold text-right">Type</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {holidays.map((h, idx) => {
+                        const dateObj = new Date(h.date);
+                        const dayName = Number.isNaN(dateObj.getTime())
+                          ? "—"
+                          : ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dateObj.getDay()];
+
+                        return (
+                          <tr key={h.id || idx} className="hover:bg-secondary/20 transition-colors">
+                            <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
+                              {idx + 1}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-foreground">
+                              {h.name}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground font-medium whitespace-nowrap">
+                              {formatDateStr(h.date)}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {dayName}
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                  h.isOptional || h.holidayType === "OPTIONAL"
+                                    ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+                                    : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                }`}
+                              >
+                                {h.isOptional || h.holidayType === "OPTIONAL" ? "Optional" : "Mandatory"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-border bg-secondary/10 flex items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHolidaysModal(false);
+                  navigate("/admin/holidays");
+                }}
+                className="px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-xs hover:opacity-90 transition-opacity"
+              >
+                Manage Full Holiday Settings →
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowHolidaysModal(false)}
+                className="px-4 py-2 rounded-xl border border-border text-sm font-medium hover:bg-secondary transition-colors"
               >
                 Close
               </button>

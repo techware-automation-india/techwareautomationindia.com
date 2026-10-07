@@ -333,6 +333,7 @@ router.put("/employee/:userId", requireAuth, checkRolePermission("employee"), as
       totalExperienceYears: toNumberOrNull(req.body.totalExperienceYears),
       previousemployer: toNull(req.body.previousemployer),
       skills: toNull(req.body.skills),
+      assignedTools: req.body.assignedTools !== undefined ? toNull(req.body.assignedTools) : profile.assignedTools,
       nationalIdNumber: req.body.nationalIdNumber || profile.nationalIdNumber,
       taxIdNumber: toNull(req.body.taxIdNumber),
       passportNumber: toNull(req.body.passportNumber),

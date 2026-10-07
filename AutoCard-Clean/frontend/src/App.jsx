@@ -37,6 +37,7 @@ import Services from "./admin/pages/Services.jsx";
 import RolesAccess from "./admin/pages/RolesAccess";
 import ShiftLocation from "./admin/pages/ShiftLocation.jsx";
 import Roster from "./admin/pages/Roster.jsx";
+import ToolsSettings from "./admin/pages/ToolsSettings.jsx";
 // import Inventory from "./admin/pages/Inventory.jsx";
 
 import EmployeeLayout from "./employee/EmployeeLayout.jsx";
@@ -46,6 +47,7 @@ import EmployeeChangePassword from "./employee/pages/ChangePassword.jsx";
 import EmployeeOnboarding from "./employee/pages/Onboarding.jsx";
 import EmployeeMarkAttendance from "./employee/pages/MarkAttendance.jsx";
 import EmployeeAttendance from "./employee/pages/Attendance.jsx";
+import MyTools from "./employee/pages/MyTools.jsx";
 import EmployeeLeave from "./employee/pages/Leave.jsx";
 import EmployeeHolidays from "./employee/pages/Holidays.jsx";
 import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
@@ -56,6 +58,7 @@ import EmployeeRequests from "./employee/pages/Requests.jsx";
 import AttendanceCorrection from "./employee/pages/AttendanceCorrection.jsx";
 import TrackRequests from "./employee/pages/TrackRequests.jsx";
 import EmployeeApplyLeave from "./employee/pages/EmployeeApplyLeave.jsx";
+import RequestToolsInventory from "./employee/pages/RequestToolsInventory.jsx";
 import EmployeeProjects from "./employee/pages/Projects.jsx";
 import EmployeeServices from "./employee/pages/Services.jsx";
 import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
@@ -138,6 +141,7 @@ const AppRoutes = () => {
           />
           <Route path="requests/apply-leave" element={<AdminApplyLeave />} />
           <Route path="approvals" element={<Approvals />} />
+          <Route path="holidays" element={<Holidays />} />
           <Route path="leave-policy" element={<LeavePolicyHome />} />
           <Route path="leave-policy/types" element={<LeavePolicy />} />
           <Route path="leave-policy/holidays" element={<Holidays />} />
@@ -149,6 +153,7 @@ const AppRoutes = () => {
           <Route path="roles-access" element={<RolesAccess />} />
           <Route path="shift-location" element={<ShiftLocation />} />
           <Route path="roster" element={<Roster />} />
+          <Route path="tools-settings" element={<ToolsSettings />} />
           {/* <Route path="inventory" element={<Inventory />} />
           <Route path="inventory/out-stock" element={<Inventory defaultTab="out-stock" />} />
           <Route path="inventory/low-stock" element={<Inventory defaultTab="low-stock" />} />
@@ -159,6 +164,7 @@ const AppRoutes = () => {
           <Route index element={<EmployeeOverview />} />
           {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
 
+          <Route path="my-tools" element={<MyTools />} />
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />
           <Route path="academic-calendar" element={<AcademicCalendar />} />
@@ -169,6 +175,7 @@ const AppRoutes = () => {
             element={<AttendanceCorrection />}
           />
           <Route path="requests/apply-leave" element={<EmployeeApplyLeave />} />
+          <Route path="requests/tools-inventory" element={<RequestToolsInventory />} />
           <Route
             path="leave"
             element={

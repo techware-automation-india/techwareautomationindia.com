@@ -4,6 +4,7 @@ import {
   FileText,
   CalendarDays,
   ScanLine,
+  Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -40,6 +41,13 @@ const Requests = () => {
                 "Request a correction for a missed check-in or check-out.",
               path: "/employee/requests/forgot-punch",
               icon: ScanLine,
+            },
+            {
+              label: "Request Tools / Inventory",
+              description:
+                "Submit inventory requests for Taking (issue) or Return of tools & equipment.",
+              path: "/employee/requests/tools-inventory",
+              icon: Wrench,
             },
             {
               label: "Track My Request",

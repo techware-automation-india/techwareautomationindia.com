@@ -75,7 +75,7 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card text-card-foreground border border-border rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-card text-card-foreground border border-border rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <h2 className="text-xl font-semibold text-card-foreground">
@@ -112,22 +112,20 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
             )}
           </div>
 
-          {/* Module Selector (only in edit mode) */}
-          {mode === 'edit' && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-3">
-                Module Access
-              </label>
-              <ModuleSelector
-                selectedModules={selectedModules}
-                onChange={setSelectedModules}
-                disabled={loading}
-              />
-              <p className="text-xs text-muted-foreground mt-2">
-                Select which modules this role can access
-              </p>
-            </div>
-          )}
+          {/* Module Selector (both create and edit modes) */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-3">
+              Module & Sub-Module Access
+            </label>
+            <ModuleSelector
+              selectedModules={selectedModules}
+              onChange={setSelectedModules}
+              disabled={loading}
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              Select which modules and sub-modules this role can access
+            </p>
+          </div>
 
           {/* Error Message */}
           {error && (

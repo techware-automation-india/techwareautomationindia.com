@@ -480,9 +480,9 @@ router.get("/my", async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-router.post("/my", async (req, res) => {
+router.post(["/my", "/"], async (req, res) => {
   console.log("======================================");
-  console.log("📥 POST /api/requests/my");
+  console.log("📥 POST /api/requests");
   console.log("👤 USER:", req.user);
   console.log("📦 BODY:", req.body);
   console.log("======================================");
@@ -524,6 +524,33 @@ router.post("/my", async (req, res) => {
 
         errors: parsed.error.flatten(),
       });
+    }
+
+    if (req.user.role !== "ADMIN") {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { roleId: true, customRole: { select: { name: true } } },
+      });
+      if (dbUser?.roleId && dbUser?.customRole?.name?.toUpperCase() !== "ADMIN") {
+        const roleModules = await prisma.roleModule.findMany({
+          where: { roleId: dbUser.roleId },
+          select: { moduleKey: true },
+        });
+        const userKeys = new Set(roleModules.map((m) => m.moduleKey));
+        if (parsed.data.type === "CORRECTION") {
+          if (!userKeys.has("requests-forgot-punch") && !userKeys.has("requests")) {
+            return res.status(403).json({
+              message: "Access denied. Forgot Punch service is not enabled for your role.",
+            });
+          }
+        } else if (parsed.data.type === "EQUIPMENT") {
+          if (!userKeys.has("requests-tools-inventory") && !userKeys.has("requests")) {
+            return res.status(403).json({
+              message: "Access denied. Tools & Inventory Request service is not enabled for your role.",
+            });
+          }
+        }
+      }
     }
 
 
@@ -1154,6 +1181,48 @@ async function reviewRequest(
       });
     }
 
+    if (req.user.role !== "ADMIN") {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+          role: true,
+          roleId: true,
+          customRole: { select: { name: true } },
+        },
+      });
+
+      const isUserAdmin = dbUser?.role === "ADMIN" || dbUser?.customRole?.name?.toUpperCase() === "ADMIN";
+
+      if (!isUserAdmin) {
+        const roleModules = dbUser?.roleId
+          ? await prisma.roleModule.findMany({
+              where: { roleId: dbUser.roleId },
+              select: { moduleKey: true },
+            })
+          : [];
+        const userKeys = new Set(roleModules.map((m) => m.moduleKey));
+
+        if (request.type === "CORRECTION") {
+          const canApproveCorrection = userKeys.has("approvals-forgot-punch") || userKeys.has("approvals");
+          if (!canApproveCorrection) {
+            return res.status(403).json({
+              message: "Access denied. You do not have permission to review Forgot Punch requests.",
+            });
+          }
+        } else if (request.type === "EQUIPMENT") {
+          const canApproveEquipment =
+            userKeys.has("approvals-tools-inventory") ||
+            userKeys.has("approvals-tools") ||
+            userKeys.has("approvals");
+          if (!canApproveEquipment) {
+            return res.status(403).json({
+              message: "Access denied. You do not have permission to review Tools & Inventory requests.",
+            });
+          }
+        }
+      }
+    }
+
     /*
     |--------------------------------------------------------------------------
     | REJECT
@@ -1612,7 +1681,7 @@ async function reviewRequest(
 
 router.post(
   "/:id/approve",
-  checkRolePermission(["approvals-forgot-punch", "requests", "approvals"]),
+  checkRolePermission(["approvals-forgot-punch", "approvals-tools-inventory", "approvals-tools", "approvals"]),
 
   (req, res) =>
     reviewRequest(
@@ -1634,7 +1703,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-  checkRolePermission(["approvals-forgot-punch", "requests", "approvals"]),
+  checkRolePermission(["approvals-forgot-punch", "approvals-tools-inventory", "approvals-tools", "approvals"]),
 
   (req, res) =>
     reviewRequest(

@@ -170,7 +170,7 @@ const applySchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
-router.post("/apply", requireAuth, async (req, res) => {
+router.post("/apply", requireAuth, checkRolePermission(["requests-apply-leave", "requests", "leave"]), async (req, res) => {
   const parsed = applySchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -323,7 +323,7 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
 // ─── ADMIN ROUTES ────────────────────────────────────────────────────────────
 
 // GET /api/leave/admin/all  – all leave requests with employee info
-router.get("/admin/all", requireAuth, checkRolePermission(["approvals-leave", "approvals", "requests", "leave-policy", "leave", "attendance"]), async (req, res) => {
+router.get("/admin/all", requireAuth, checkRolePermission(["approvals-leave", "approvals"]), async (req, res) => {
   try {
     const { status } = req.query;
     const where = {};
@@ -351,7 +351,7 @@ router.get("/admin/all", requireAuth, checkRolePermission(["approvals-leave", "a
 });
 
 // POST /api/leave/admin/:id/approve
-router.post("/admin/:id/approve", requireAuth, checkRolePermission(["approvals-leave", "approvals", "requests", "leave-policy", "leave", "attendance"]), async (req, res) => {
+router.post("/admin/:id/approve", requireAuth, checkRolePermission(["approvals-leave", "approvals"]), async (req, res) => {
   const { id } = req.params;
   const { note } = req.body;
 
@@ -405,7 +405,7 @@ router.post("/admin/:id/approve", requireAuth, checkRolePermission(["approvals-l
 });
 
 // POST /api/leave/admin/:id/reject
-router.post("/admin/:id/reject", requireAuth, checkRolePermission(["approvals-leave", "approvals", "requests", "leave-policy", "leave", "attendance"]), async (req, res) => {
+router.post("/admin/:id/reject", requireAuth, checkRolePermission(["approvals-leave", "approvals"]), async (req, res) => {
   const { id } = req.params;
   const { note } = req.body;
 

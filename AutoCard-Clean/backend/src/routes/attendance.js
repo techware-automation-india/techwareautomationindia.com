@@ -2,6 +2,7 @@ import { Router } from "express";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { requireAdminOrModulePermission } from "../middleware/checkModulePermission.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -993,7 +994,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 // POST /api/attendance/checkin
 // ============================================================
 
-router.post("/checkin", requireAuth, async (req, res) => {
+router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "attendance"]), async (req, res) => {
   // Allow ADMIN and EMPLOYEE
   if (req.user.role !== "ADMIN" && req.user.role !== "EMPLOYEE") {
     return res.status(403).json({
@@ -1491,7 +1492,7 @@ router.get("/checkin-location", requireAuth, async (req, res) => {
 // POST /api/attendance/checkout
 // ============================================================
 
-router.post("/checkout", requireAuth, async (req, res) => {
+router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "attendance"]), async (req, res) => {
   // Allow ADMIN and EMPLOYEE
   if (req.user.role !== "ADMIN" && req.user.role !== "EMPLOYEE") {
     return res.status(403).json({
@@ -2654,7 +2655,7 @@ router.get("/register/weekly", async (req, res) => {
 // GET /api/attendance/pending - list pending approval attendance records (ADMIN)
 router.get(
   "/pending",
-  requireAdminOrModulePermission("attendance", "canView"),
+  checkRolePermission(["approvals-attendance", "approvals"]),
   async (req, res) => {
     try {
       const pending = await prisma.attendance.findMany({
@@ -2695,7 +2696,7 @@ router.get(
 
 router.post(
   ["/approve/:id", "/:id/approve"],
-  requireAdminOrModulePermission(["approvals-attendance", "attendance", "approvals", "attendance-management"], "canEdit"),
+  checkRolePermission(["approvals-attendance", "approvals"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -2766,7 +2767,7 @@ router.post(
 
 router.post(
   ["/reject/:id", "/:id/reject"],
-  requireAdminOrModulePermission(["approvals-attendance", "attendance", "approvals", "attendance-management"], "canEdit"),
+  checkRolePermission(["approvals-attendance", "approvals"]),
   async (req, res) => {
     try {
       const { id } = req.params;

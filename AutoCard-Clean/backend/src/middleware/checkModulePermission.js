@@ -23,8 +23,9 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
       if (user.role === "EMPLOYEE") {
         const inputKeys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
 
-        const keySet = new Set(inputKeys);
+        const keySet = new Set();
         for (const k of inputKeys) {
+          keySet.add(k);
           if (k === "shift-location" || k === "shift" || k === "location") {
             keySet.add("shift-location");
             keySet.add("shift");
@@ -32,11 +33,27 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
             keySet.add("shift-and-location");
             keySet.add("shift_location");
           }
-          if (k === "approvals" || (typeof k === "string" && k.startsWith("approvals-"))) {
+          if (typeof k === "string" && k.startsWith("approvals-")) {
             keySet.add("approvals");
-            keySet.add("approvals-attendance");
-            keySet.add("approvals-forgot-punch");
-            keySet.add("approvals-leave");
+            if (k === "approvals-tools-inventory") {
+              keySet.add("approvals-tools");
+            }
+          }
+          if (typeof k === "string" && k.startsWith("requests-")) {
+            keySet.add("requests");
+            if (k === "requests-apply-leave") {
+              keySet.add("leave");
+            }
+          }
+          if (typeof k === "string" && k.startsWith("leave-policy-")) {
+            keySet.add("leave-policy");
+            if (k === "leave-policy-holidays") {
+              keySet.add("holidays");
+              keySet.add("academic-holidays");
+            }
+          }
+          if (typeof k === "string" && k.startsWith("inventory-")) {
+            keySet.add("inventory");
           }
         }
         const keys = Array.from(keySet);

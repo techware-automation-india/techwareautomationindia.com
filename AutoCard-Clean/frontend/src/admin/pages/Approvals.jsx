@@ -921,7 +921,16 @@ const Approvals = () => {
   const [employeeFilter, setEmployeeFilter] = useState("ALL");
   
   // Get type filter from URL params (for granular approval modules)
-  const typeFilter = searchParams.get("type"); // 'attendance', 'forgot-punch', or 'leave'
+  const urlTypeFilter = searchParams.get("type"); // 'attendance', 'forgot-punch', 'tools-inventory', or 'leave'
+  const [categoryFilter, setCategoryFilter] = useState(urlTypeFilter || "ALL");
+
+  useEffect(() => {
+    if (urlTypeFilter) {
+      setCategoryFilter(urlTypeFilter);
+    }
+  }, [urlTypeFilter]);
+
+  const effectiveCategory = categoryFilter !== "ALL" ? categoryFilter : (urlTypeFilter || "ALL");
 
   const loadApprovals = async () => {
     setLoading(true);
@@ -1033,13 +1042,16 @@ const Approvals = () => {
     const matchesEmployee =
       employeeFilter === "ALL" || approval.employee === employeeFilter;
     
-    // Apply type filter from URL params (for granular approval modules)
+    // Apply type filter from category dropdown or URL params
     let matchesType = true;
-    if (typeFilter === "attendance") {
+    const effectiveCategory = categoryFilter !== "ALL" ? categoryFilter : (urlTypeFilter || "ALL");
+    if (effectiveCategory === "attendance") {
       matchesType = approval.source === "ATTENDANCE";
-    } else if (typeFilter === "forgot-punch") {
-      matchesType = approval.source === "REQUEST";
-    } else if (typeFilter === "leave") {
+    } else if (effectiveCategory === "forgot-punch") {
+      matchesType = approval.source === "REQUEST" && approval.type === "CORRECTION";
+    } else if (effectiveCategory === "tools-inventory" || effectiveCategory === "tools" || effectiveCategory === "equipment") {
+      matchesType = approval.source === "REQUEST" && approval.type === "EQUIPMENT";
+    } else if (effectiveCategory === "leave") {
       matchesType = approval.source === "LEAVE";
     }
     
@@ -1134,20 +1146,24 @@ const Approvals = () => {
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold">
-              {typeFilter === "attendance" 
+              {effectiveCategory === "attendance" 
                 ? "Attendance Approvals" 
-                : typeFilter === "forgot-punch" 
+                : effectiveCategory === "forgot-punch" 
                 ? "Forgot Punch / Time Edit Approvals" 
-                : typeFilter === "leave" 
+                : effectiveCategory === "tools-inventory" || effectiveCategory === "tools"
+                ? "Tools & Inventory Approvals"
+                : effectiveCategory === "leave" 
                 ? "Leave Approvals" 
                 : "Approvals"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {typeFilter === "attendance" 
+              {effectiveCategory === "attendance" 
                 ? "Approve or reject attendance and location requests." 
-                : typeFilter === "forgot-punch" 
+                : effectiveCategory === "forgot-punch" 
                 ? "Review employee check in, check out and time edit requests." 
-                : typeFilter === "leave" 
+                : effectiveCategory === "tools-inventory" || effectiveCategory === "tools"
+                ? "Manage tools, equipment and inventory taking / return requests."
+                : effectiveCategory === "leave" 
                 ? "Approve or reject employee leave requests." 
                 : "Approve or reject pending employee requests in one place."}
             </p>
@@ -1189,6 +1205,18 @@ const Approvals = () => {
 
       <div className="rounded-2xl border border-border bg-background card-shadow overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
+          <select
+            value={categoryFilter}
+            onChange={(event) => setCategoryFilter(event.target.value)}
+            className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
+            aria-label="Filter approvals by category"
+          >
+            <option value="ALL">All Categories</option>
+            <option value="leave">Leave Approvals</option>
+            <option value="forgot-punch">Forgot Punch / Time Edit</option>
+            <option value="attendance">Unassigned Location</option>
+            <option value="tools-inventory">Tools & Inventory</option>
+          </select>
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}

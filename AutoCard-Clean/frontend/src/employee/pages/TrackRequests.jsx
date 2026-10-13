@@ -1935,39 +1935,51 @@ const TrackRequests = ({ isAdmin = false }) => {
 
             {/* Modal Footer */}
             <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
-              {reasonModal.status === "APPROVED" &&
+              {reasonModal.type === "EQUIPMENT" &&
+                reasonModal.status === "APPROVED" &&
                 !reasonModal.reviewNote?.includes("[PRODUCT_FOUND]") &&
-                !reasonModal.reviewNote?.includes("[ON_HOLD]") && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const id = reasonModal.id;
-                        setReasonModal(null);
-                        handleMarkProductFound(id);
-                      }}
-                      disabled={markingId === reasonModal.id || notFoundLoading}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2 font-bold text-xs text-white hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 min-w-[110px] shadow-sm cursor-pointer ring-2 ring-emerald-500/30"
-                    >
-                      <PackageCheck className="h-3.5 w-3.5" />
-                      Product Found
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const target = reasonModal;
-                        setReasonModal(null);
-                        setNotFoundModal(target);
-                        setNotFoundReason("");
-                      }}
-                      disabled={markingId === reasonModal.id || notFoundLoading}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-rose-300 bg-white dark:bg-background px-3 py-2 font-bold text-xs text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 min-w-[110px] cursor-pointer"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Item Not Found
-                    </button>
-                  </>
-                )}
+                !reasonModal.reviewNote?.includes("[ON_HOLD]") && (() => {
+                  const isModalReturn =
+                    (typeof reasonModal.description === "string" && reasonModal.description.toLowerCase().includes("action type: return")) ||
+                    (typeof reasonModal.subject === "string" && reasonModal.subject.toLowerCase().includes("inventory return")) ||
+                    (typeof reasonModal.title === "string" && reasonModal.title.toLowerCase().includes("return"));
+
+                  if (isModalReturn) {
+                    return null;
+                  }
+
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const id = reasonModal.id;
+                          setReasonModal(null);
+                          handleMarkProductFound(id);
+                        }}
+                        disabled={markingId === reasonModal.id || notFoundLoading}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2 font-bold text-xs text-white hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 min-w-[110px] shadow-sm cursor-pointer ring-2 ring-emerald-500/30"
+                      >
+                        <PackageCheck className="h-3.5 w-3.5" />
+                        Product Found
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = reasonModal;
+                          setReasonModal(null);
+                          setNotFoundModal(target);
+                          setNotFoundReason("");
+                        }}
+                        disabled={markingId === reasonModal.id || notFoundLoading}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-rose-300 bg-white dark:bg-background px-3 py-2 font-bold text-xs text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 min-w-[110px] cursor-pointer"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Item Not Found
+                      </button>
+                    </>
+                  );
+                })()}
               <button
                 type="button"
                 onClick={() => setReasonModal(null)}

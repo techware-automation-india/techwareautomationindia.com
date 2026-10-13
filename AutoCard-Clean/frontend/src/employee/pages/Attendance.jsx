@@ -1129,6 +1129,7 @@ const Attendance = () => {
                     day === today.getDate();
 
                   const isSunOrHolCell = isSunday || Boolean(hol) || r?.status === "HOLIDAY";
+                  const isHolidayCell = isSunOrHolCell;
                   const isShortDayCell =
                     r &&
                     (r.isShortDay ||

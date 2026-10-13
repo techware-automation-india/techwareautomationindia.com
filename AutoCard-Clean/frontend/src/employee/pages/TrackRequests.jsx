@@ -246,10 +246,30 @@ const getForgotPunchData = (request) => {
   try {
     return JSON.parse(jsonText);
   } catch (error) {
-    console.warn(
-      "Skipping malformed Forgot Punch data:",
-      request.id || "unknown request",
-    );
+    // Attempt to extract the first JSON object block if trailing notes/text exist
+    try {
+      const jsonMatch = jsonText.match(/\{[\s\S]*?\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch {}
+
+    // Fallback regex field recovery from truncated or legacy records
+    const readString = (key) =>
+      jsonText.match(new RegExp(`"${key}"\\s*:\\s*"([^"\\r\\n]*)"`))?.[1] || null;
+
+    const recoveredDate = readString("date");
+    const recoveredPunchType = readString("punchType");
+    if (recoveredDate || recoveredPunchType) {
+      return {
+        date: recoveredDate,
+        punchType: recoveredPunchType,
+        checkInTime: readString("checkInTime"),
+        checkOutTime: readString("checkOutTime"),
+        checkInLocation: readString("checkInLocation"),
+        checkOutLocation: readString("checkOutLocation"),
+      };
+    }
 
     return null;
   }

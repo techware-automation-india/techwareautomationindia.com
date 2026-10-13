@@ -786,6 +786,11 @@ const FormattedInventoryTitle = ({ title, className = "" }) => {
 };
 
 const isReturnRequest = (req) => {
+  if (!req) return false;
+  // Non-inventory requests (CORRECTION / forgot punch, ATTENDANCE, LEAVE) cannot be return requests
+  if (req.source && req.source !== "REQUEST") return false;
+  if (req.type && req.type !== "EQUIPMENT") return false;
+
   const title = String(req?.title || "").toLowerCase();
   const desc = String(req?.description || "").toLowerCase();
   const subject = String(req?.subject || "").toLowerCase();
@@ -811,6 +816,7 @@ const isReturnRequest = (req) => {
 };
 
 const getReturnStep = (req) => {
+  if (req?.source !== "REQUEST" || req?.type !== "EQUIPMENT") return 0;
   if (!isReturnRequest(req)) return 0;
 
   const text = `${req?.status || ""} ${req?.reviewNote || ""} ${req?.adminNote || ""} ${req?.description || ""}`.toUpperCase();
@@ -842,6 +848,7 @@ const Approvals = () => {
 
   const getInventoryItemLocation = (approval) => {
     if (!approval || !Array.isArray(inventoryItems) || inventoryItems.length === 0) return null;
+    if (approval.source !== "REQUEST" || approval.type !== "EQUIPMENT") return null;
     const fullText = `${approval.title || ""} ${approval.description || ""}`.toLowerCase();
     return (
       inventoryItems.find((item) => {
@@ -1410,7 +1417,7 @@ const Approvals = () => {
 
                             {/* Action Buttons Row: View Reason & View Location */}
                             {(() => {
-                              const matchedInvItem = approval.source === "REQUEST" ? getInventoryItemLocation(approval) : null;
+                              const matchedInvItem = (approval.source === "REQUEST" && approval.type === "EQUIPMENT") ? getInventoryItemLocation(approval) : null;
                               const isLocationOpen = openLocationIds.has(approval.id);
 
                               return (
@@ -1567,7 +1574,7 @@ const Approvals = () => {
                                   <span>Approve</span>
                                 </button>
 
-                                {approval.source === "REQUEST" && (
+                                {approval.source === "REQUEST" && approval.type === "EQUIPMENT" && (
                                   <button
                                     type="button"
                                     onClick={() => setHoldModal({ approval })}
@@ -2190,7 +2197,7 @@ const Approvals = () => {
                             Approve
                           </button>
 
-                          {reasonModal.source === "REQUEST" && (
+                          {reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT" && (
                             <button
                               type="button"
                               onClick={() => {

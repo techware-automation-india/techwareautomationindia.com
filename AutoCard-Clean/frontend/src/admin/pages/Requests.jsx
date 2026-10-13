@@ -697,19 +697,25 @@ const loadRequests = async () => {
                           </>
                         ) : (
                           <div className="flex w-full flex-col gap-2">
-                            {r.reviewNote?.includes("[ITEM_NOT_FOUND]") ? (
-                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 rounded-lg p-2 border border-rose-500/20">
-                                <X className="h-3.5 w-3.5" />
-                                Employee: Item Not Found ✕
-                              </div>
-                            ) : r.reviewNote?.includes("[PRODUCT_FOUND]") || r.status === "COMPLETED" ? (
-                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
-                                <PackageCheck className="h-3.5 w-3.5" />
-                                Completed / Product Found ✓
-                              </div>
+                            {r.type === "EQUIPMENT" ? (
+                              r.reviewNote?.includes("[ITEM_NOT_FOUND]") ? (
+                                <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 rounded-lg p-2 border border-rose-500/20">
+                                  <X className="h-3.5 w-3.5" />
+                                  Employee: Item Not Found ✕
+                                </div>
+                              ) : r.reviewNote?.includes("[PRODUCT_FOUND]") || r.status === "COMPLETED" ? (
+                                <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
+                                  <PackageCheck className="h-3.5 w-3.5" />
+                                  Completed / Product Found ✓
+                                </div>
+                              ) : r.status === "APPROVED" ? (
+                                <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20 text-center">
+                                  Approved (Awaiting Employee Confirmation)
+                                </div>
+                              ) : null
                             ) : r.status === "APPROVED" ? (
-                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20 text-center">
-                                Approved (Awaiting Employee Confirmation)
+                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20 text-center">
+                                Approved ✓
                               </div>
                             ) : null}
                             <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center">

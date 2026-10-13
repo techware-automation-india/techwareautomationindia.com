@@ -1103,34 +1103,41 @@ const TrackRequests = ({ isAdmin = false }) => {
                       : request.type}
                   </span>
                   {(() => {
+                    const isEquipment = request.type === "EQUIPMENT";
                     const isProductFound =
-                      request.status === "COMPLETED" ||
-                      (typeof request.reviewNote === "string" &&
-                        (request.reviewNote.includes("[PRODUCT_FOUND]") ||
-                          request.reviewNote.includes("Product found")));
+                      isEquipment &&
+                      (request.status === "COMPLETED" ||
+                        (typeof request.reviewNote === "string" &&
+                          (request.reviewNote.includes("[PRODUCT_FOUND]") ||
+                            request.reviewNote.includes("Product found"))));
 
                     const isItemNotFound =
+                      isEquipment &&
                       typeof request.reviewNote === "string" &&
                       request.reviewNote.includes("[ITEM_NOT_FOUND]");
 
                     const isHold =
+                      isEquipment &&
                       typeof request.reviewNote === "string" &&
                       (request.reviewNote.includes("[ON_HOLD]") ||
                         request.reviewNote.toLowerCase().includes("out of stock") ||
                         request.reviewNote.toLowerCase().includes("on hold"));
 
                     const isQualityInspected =
+                      isEquipment &&
                       typeof request.reviewNote === "string" && request.reviewNote.includes("[QUALITY_INSPECTED]");
 
                     const isItemReturned =
+                      isEquipment &&
                       typeof request.reviewNote === "string" &&
                       (request.reviewNote.includes("[ITEM_RETURNED]") ||
                         request.reviewNote.includes("[PHYSICALLY_RETURNED]"));
 
                     const isReturnRequest =
-                      (typeof request.description === "string" && request.description.toLowerCase().includes("action type: return")) ||
-                      (typeof request.subject === "string" && request.subject.toLowerCase().includes("inventory return")) ||
-                      (typeof request.title === "string" && request.title.toLowerCase().includes("return"));
+                      isEquipment &&
+                      ((typeof request.description === "string" && request.description.toLowerCase().includes("action type: return")) ||
+                        (typeof request.subject === "string" && request.subject.toLowerCase().includes("inventory return")) ||
+                        (typeof request.title === "string" && request.title.toLowerCase().includes("return")));
 
                     const displayStatus = isProductFound
                       ? isReturnRequest ? "FOUND & RESTOCKED" : "COMPLETED"
@@ -1219,7 +1226,7 @@ const TrackRequests = ({ isAdmin = false }) => {
               </div>
 
               {/* ─── Phase Line Timeline Bar for EQUIPMENT / Inventory Requests ─── */}
-              {(request.type === "EQUIPMENT" || request.subject?.includes("Inventory") || request.subject?.toLowerCase().includes("tool") || request.description?.includes("Action Type:")) && (
+              {request.type === "EQUIPMENT" && (
                 <div className="mt-5 pt-4 border-t border-border">
                   {/* Request Phase Pipeline (Only for Tools & Spares / Equipment / Project requests) */}
                   {(() => {

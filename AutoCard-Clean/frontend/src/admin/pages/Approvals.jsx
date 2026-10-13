@@ -1283,10 +1283,11 @@ const Approvals = () => {
                   }
                 };
 
-                const isHold = approval.reviewNote?.includes("[ON_HOLD]");
-                const returnStep = approval.source === "REQUEST" ? getReturnStep(approval) : 0;
-                const isProductFound = returnStep === 4 || approval.reviewNote?.includes("[PRODUCT_FOUND]") || approval.status === "COMPLETED";
-                const isItemNotFound = approval.reviewNote?.includes("[ITEM_NOT_FOUND]");
+                const isEquipment = approval.source === "REQUEST" && approval.type === "EQUIPMENT";
+                const isHold = isEquipment && approval.reviewNote?.includes("[ON_HOLD]");
+                const returnStep = isEquipment ? getReturnStep(approval) : 0;
+                const isProductFound = isEquipment && (returnStep === 4 || approval.reviewNote?.includes("[PRODUCT_FOUND]") || approval.status === "COMPLETED");
+                const isItemNotFound = isEquipment && approval.reviewNote?.includes("[ITEM_NOT_FOUND]");
 
                 let badgeLabel = approval.status;
                 let badgeClass = approval.status === "PENDING"
@@ -1611,7 +1612,7 @@ const Approvals = () => {
                                     : isProductFound
                                     ? "text-emerald-600 dark:text-emerald-400 font-bold"
                                     : approval.status === "APPROVED"
-                                    ? "text-blue-600 dark:text-blue-400 font-bold"
+                                    ? "text-emerald-600 dark:text-emerald-400 font-bold"
                                     : "text-muted-foreground"
                                 }`}>
                                   {isItemNotFound
@@ -1621,7 +1622,9 @@ const Approvals = () => {
                                     : approval.status === "APPROVED"
                                     ? returnStep > 0
                                       ? "Approved (Awaiting Return Handover)"
-                                      : "Approved (Awaiting Employee Confirmation)"
+                                      : isEquipment
+                                      ? "Approved (Awaiting Employee Confirmation)"
+                                      : "Approved ✓"
                                     : "Rejected"}
                                 </div>
                                 {isAdmin && (
@@ -2175,9 +2178,16 @@ const Approvals = () => {
                           </span>
                         );
                       }
+                      if (reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT") {
+                        return (
+                          <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
+                            Approved (Awaiting Employee Confirmation)
+                          </span>
+                        );
+                      }
                       return (
-                        <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
-                          Approved (Awaiting Employee Confirmation)
+                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                          Approved ✓
                         </span>
                       );
                     }

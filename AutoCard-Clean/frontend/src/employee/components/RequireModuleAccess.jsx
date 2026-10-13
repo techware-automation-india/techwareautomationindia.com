@@ -8,6 +8,11 @@ import { apiGet } from "../../lib/api.js";
  * Helper function to check if a specific module key is allowed based on user permissions
  */
 export function isModuleAllowed(moduleKey, permissions = {}) {
+  // Support array of module keys
+  if (Array.isArray(moduleKey)) {
+    return moduleKey.some((k) => isModuleAllowed(k, permissions));
+  }
+
   // Always allowed base employee modules
   const defaultBaseKeys = [
     "overview",
@@ -100,6 +105,43 @@ export function isModuleAllowed(moduleKey, permissions = {}) {
       permissions["roles-access"] === true ||
       (permissions["roles-access"] && typeof permissions["roles-access"] === "object" && Object.values(permissions["roles-access"]).some(Boolean))
     );
+  }
+
+  // Inventory parent key & sub-module access checks
+  if (moduleKey === "inventory") {
+    return !!(
+      permissions["inventory"] ||
+      permissions["inventory-in"] ||
+      permissions["inventory-out"] ||
+      permissions["view-inventory"] ||
+      permissions["inventory-approval"] ||
+      permissions["inventory-alert"] ||
+      permissions["general-consumables"]
+    );
+  }
+
+  if (moduleKey === "inventory-in") {
+    return !!(permissions["inventory"] || permissions["inventory-in"]);
+  }
+
+  if (moduleKey === "inventory-out") {
+    return !!(permissions["inventory"] || permissions["inventory-out"]);
+  }
+
+  if (moduleKey === "view-inventory") {
+    return !!(permissions["inventory"] || permissions["view-inventory"]);
+  }
+
+  if (moduleKey === "inventory-approval") {
+    return !!(permissions["inventory"] || permissions["inventory-approval"] || permissions["approvals-tools-inventory"]);
+  }
+
+  if (moduleKey === "inventory-alert") {
+    return !!(permissions["inventory"] || permissions["inventory-alert"]);
+  }
+
+  if (moduleKey === "general-consumables") {
+    return !!(permissions["inventory"] || permissions["general-consumables"] || permissions["inventory-in"] || permissions["inventory-out"]);
   }
 
   return false;

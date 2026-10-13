@@ -122,13 +122,15 @@ const Overview = () => {
           <Link
             key={key}
             to={path}
-            className="group rounded-2xl bg-background border border-border p-6 card-shadow hover:card-shadow-hover hover:border-primary/30 transition-all duration-300"
+            className="group rounded-2xl bg-background border border-border p-6 card-shadow hover:card-shadow-hover hover:border-primary/30 transition-all duration-300 flex flex-col justify-between min-h-[170px]"
           >
-            <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-              <Icon className="h-5.5 w-5.5 text-primary" />
+            <div>
+              <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <Icon className="h-5.5 w-5.5 text-primary" />
+              </div>
+              <h3 className="font-display font-semibold mb-1">{label}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">{description}</p>
             </div>
-            <h3 className="font-display font-semibold mb-1">{label}</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
           </Link>
         ))}
       </div>

@@ -35,14 +35,18 @@ router.post("/", checkRolePermission(["roles-access", "employee", "overview"]), 
       });
     }
 
+    const validKeys = moduleKeys
+      .map((k) => (typeof k === 'string' ? k : k?.moduleKey))
+      .filter((k) => typeof k === 'string' && k.trim().length > 0);
+
     // Create role with isDefault: false and optional modules
     const newRole = await prisma.roleTable.create({
       data: {
         name,
         isDefault: false,
-        modules: moduleKeys.length > 0
+        modules: validKeys.length > 0
           ? {
-              create: moduleKeys.map((moduleKey) => ({ moduleKey })),
+              create: validKeys.map((moduleKey) => ({ moduleKey })),
             }
           : undefined,
       },

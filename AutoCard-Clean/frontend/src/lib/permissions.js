@@ -66,7 +66,7 @@ export function hasModuleAccess(key) {
     if (key === "leave-policy-types" && (perms["leave-policy-types"] || perms["leave-policy"])) return true;
     if (key === "leave-policy-holidays" && (perms["leave-policy-holidays"] || perms["leave-policy"])) return true;
 
-    if (key.startsWith("inventory-") && (perms[key] || perms["inventory"])) return true;
+    if ((key === "inventory" || key.startsWith("inventory-") || key === "view-inventory" || key === "general-consumables") && (perms[key] || perms["inventory"])) return true;
 
     // Check parent fallback if checking a generic sub-module
     if (key.startsWith("requests-") && perms["requests"]) return true;

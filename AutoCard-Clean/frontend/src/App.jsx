@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PollProvider } from "./lib/pollContext.jsx";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
 import { applyTheme, getPreferredTheme, onThemeChange } from "./lib/theme.js";
@@ -326,7 +326,7 @@ const AppRoutes = () => {
             path="inventory"
             element={
               <RequireOnboarding>
-                <RequireModuleAccess moduleKey={["inventory", "inventory-in", "inventory-out", "view-inventory"]}>
+                <RequireModuleAccess moduleKey={["inventory", "inventory-in", "inventory-out", "view-inventory", "inventory-approval", "inventory-alert", "general-consumables"]}>
                   <Inventory />
                 </RequireModuleAccess>
               </RequireOnboarding>
@@ -336,7 +336,7 @@ const AppRoutes = () => {
             path="inventory/:submodule"
             element={
               <RequireOnboarding>
-                <RequireModuleAccess moduleKey={["inventory", "inventory-in", "inventory-out", "view-inventory"]}>
+                <RequireModuleAccess moduleKey={["inventory", "inventory-in", "inventory-out", "view-inventory", "inventory-approval", "inventory-alert", "general-consumables"]}>
                   <Inventory />
                 </RequireModuleAccess>
               </RequireOnboarding>

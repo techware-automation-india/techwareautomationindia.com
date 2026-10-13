@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { checkRolePermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -50,6 +51,65 @@ router.post("/upload", requireAuth, upload.single("photo"), (req, res) => {
   } catch (err) {
     console.error("Upload failed:", err);
     res.status(500).json({ message: "Failed to upload photo." });
+  }
+});
+
+// GET /inventory/assigned-users — Get users who have access to inventory submodules
+router.get("/assigned-users", requireAuth, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        customRole: {
+          select: {
+            name: true,
+            modules: {
+              select: { moduleKey: true },
+            },
+          },
+        },
+      },
+    });
+
+    const inventoryInUsers = users
+      .filter((u) => {
+        if (u.role === "ADMIN") return true;
+        const modKeys = u.customRole?.modules?.map((m) => m.moduleKey) || [];
+        return modKeys.includes("inventory") || modKeys.includes("inventory-in");
+      })
+      .map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: u.role,
+        roleName: u.customRole?.name || u.role,
+      }));
+
+    const inventoryOutUsers = users
+      .filter((u) => {
+        if (u.role === "ADMIN") return true;
+        const modKeys = u.customRole?.modules?.map((m) => m.moduleKey) || [];
+        return modKeys.includes("inventory") || modKeys.includes("inventory-out");
+      })
+      .map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: u.role,
+        roleName: u.customRole?.name || u.role,
+      }));
+
+    res.json({
+      inventoryInUsers,
+      inventoryOutUsers,
+    });
+  } catch (err) {
+    console.error("Failed to fetch assigned inventory users:", err);
+    res.status(500).json({ message: "Failed to fetch assigned inventory users." });
   }
 });
 
@@ -126,6 +186,9 @@ router.get("/categories", requireAuth, async (req, res) => {
     const categories = await prisma.inventoryCategory.findMany({
       where,
       include: {
+        parent: {
+          select: { id: true, name: true, code: true },
+        },
         _count: {
           select: {
             children: true,
@@ -133,7 +196,7 @@ router.get("/categories", requireAuth, async (req, res) => {
           },
         },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ level: "asc" }, { name: "asc" }],
     });
 
     res.json({ categories });
@@ -174,7 +237,7 @@ router.get("/categories/:id", requireAuth, async (req, res) => {
 });
 
 // POST /inventory/categories — Create category (enforces max 4 levels)
-router.post("/categories", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.post("/categories", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
   try {
     const { name, code, description, parentId } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -225,7 +288,7 @@ router.post("/categories", requireAuth, requireRole("ADMIN"), async (req, res) =
 });
 
 // PUT /inventory/categories/:id — Update category
-router.put("/categories/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.put("/categories/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
   try {
     const { name, code, description } = req.body;
     const existing = await prisma.inventoryCategory.findUnique({
@@ -261,7 +324,7 @@ router.put("/categories/:id", requireAuth, requireRole("ADMIN"), async (req, res
 });
 
 // DELETE /inventory/categories/:id — Delete category (cascades subcategories)
-router.delete("/categories/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.delete("/categories/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
   try {
     const existing = await prisma.inventoryCategory.findUnique({
       where: { id: req.params.id },
@@ -303,6 +366,8 @@ router.get("/items", requireAuth, async (req, res) => {
         { name: { contains: q } },
         { code: { contains: q } },
         { sku: { contains: q } },
+        { warehouse: { contains: q } },
+        { location: { contains: q } },
         { description: { contains: q } },
       ];
     }
@@ -310,7 +375,19 @@ router.get("/items", requireAuth, async (req, res) => {
     const items = await prisma.inventoryItem.findMany({
       where,
       include: {
-        categoryRef: true,
+        categoryRef: {
+          include: {
+            parent: {
+              include: {
+                parent: {
+                  include: {
+                    parent: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -323,7 +400,7 @@ router.get("/items", requireAuth, async (req, res) => {
 });
 
 // POST /inventory/items — Create item with specs and photo
-router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.post("/items", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
   try {
     const {
       name,
@@ -335,11 +412,14 @@ router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
       quantity,
       unit,
       minStock,
+      maxStock,
       location,
+      warehouse,
       description,
       costPrice,
       companyName,
       date,
+      createdByName,
     } = req.body;
 
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -351,6 +431,16 @@ router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
       return res.status(400).json({ message: "Item code is required." });
     }
 
+    if (/[_\-]/.test(itemCode)) {
+      return res.status(400).json({
+        message: "Item Code / SKU cannot contain hyphen (-) or underscore (_) characters.",
+      });
+    }
+
+    if (quantity !== undefined && (!Number.isFinite(Number(quantity)) || Number(quantity) < 0)) {
+      return res.status(400).json({ message: "Quantity must be a valid number greater than or equal to zero." });
+    }
+
     const dup = await prisma.inventoryItem.findFirst({
       where: {
         OR: [{ code: itemCode }, { sku: itemCode }],
@@ -360,10 +450,24 @@ router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
       return res.status(409).json({ message: `Item Code / SKU "${itemCode}" already exists.` });
     }
 
-    // Ensure specifications is valid JSON/array (up to 5 key-values)
+    // Resolve author name and ID
+    let authorName = (createdByName || "").trim();
+    const authorId = req.user?.id || null;
+    if (!authorName && authorId) {
+      const u = await prisma.user.findUnique({
+        where: { id: authorId },
+        select: { fullName: true, email: true },
+      });
+      authorName = u?.fullName || u?.email || "Admin";
+    }
+    if (!authorName) {
+      authorName = "Admin";
+    }
+
+    // Ensure specifications is valid JSON/array (No limitation on specifications count)
     let parsedSpecs = [];
     if (Array.isArray(specifications)) {
-      parsedSpecs = specifications.slice(0, 5).filter((s) => s && s.key && s.key.trim());
+      parsedSpecs = specifications.filter((s) => s && s.key && s.key.trim());
     }
 
     const item = await prisma.inventoryItem.create({
@@ -376,12 +480,16 @@ router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
         specifications: parsedSpecs,
         quantity: quantity !== undefined ? Number(quantity) : 0,
         unit: unit && unit.trim() ? unit.trim() : "Nos",
-        minStock: minStock !== undefined ? Number(minStock) : 5,
+        minStock: minStock !== undefined && minStock !== "" ? Number(minStock) : 5,
+        maxStock: maxStock !== undefined && maxStock !== "" ? Number(maxStock) : 100,
         location: location ? location.trim() : null,
+        warehouse: warehouse ? warehouse.trim() : null,
         description: description ? description.trim() : null,
         costPrice: costPrice !== undefined && costPrice !== "" ? Number(costPrice) : null,
         companyName: companyName ? companyName.trim() : null,
         date: date ? new Date(date) : null,
+        createdByName: authorName,
+        createdById: authorId,
       },
       include: { categoryRef: true },
     });
@@ -394,7 +502,7 @@ router.post("/items", requireAuth, requireRole("ADMIN"), async (req, res) => {
 });
 
 // PUT /inventory/items/:id — Update item
-router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.put("/items/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
   try {
     const existing = await prisma.inventoryItem.findUnique({
       where: { id: req.params.id },
@@ -413,12 +521,19 @@ router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => 
       quantity,
       unit,
       minStock,
+      maxStock,
       location,
+      warehouse,
       description,
       costPrice,
       companyName,
       date,
+      createdByName,
     } = req.body;
+
+    if (quantity !== undefined && (!Number.isFinite(Number(quantity)) || Number(quantity) < 0)) {
+      return res.status(400).json({ message: "Quantity must be a valid number greater than or equal to zero." });
+    }
 
     if (name !== undefined && (!name || typeof name !== "string" || !name.trim())) {
       return res.status(400).json({ message: "Item name cannot be empty." });
@@ -427,6 +542,12 @@ router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => 
     const itemCode = (code !== undefined ? code : sku !== undefined ? sku : existing.code || existing.sku || "").trim();
     if ((code !== undefined || sku !== undefined) && !itemCode) {
       return res.status(400).json({ message: "Item code cannot be empty." });
+    }
+
+    if (itemCode && /[_\-]/.test(itemCode)) {
+      return res.status(400).json({
+        message: "Item Code / SKU cannot contain hyphen (-) or underscore (_) characters.",
+      });
     }
 
     if (itemCode && itemCode !== existing.code && itemCode !== existing.sku) {
@@ -443,7 +564,7 @@ router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => 
 
     let parsedSpecs = existing.specifications;
     if (Array.isArray(specifications)) {
-      parsedSpecs = specifications.slice(0, 5).filter((s) => s && s.key && s.key.trim());
+      parsedSpecs = specifications.filter((s) => s && s.key && s.key.trim());
     }
 
     const item = await prisma.inventoryItem.update({
@@ -457,12 +578,15 @@ router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => 
         specifications: parsedSpecs,
         quantity: quantity !== undefined ? Number(quantity) : existing.quantity,
         unit: unit !== undefined ? unit.trim() : existing.unit,
-        minStock: minStock !== undefined ? Number(minStock) : existing.minStock,
+        minStock: minStock !== undefined && minStock !== "" ? Number(minStock) : existing.minStock,
+        maxStock: maxStock !== undefined && maxStock !== "" ? Number(maxStock) : (existing.maxStock ?? 100),
         location: location !== undefined ? (location ? location.trim() : null) : existing.location,
+        warehouse: warehouse !== undefined ? (warehouse ? warehouse.trim() : null) : existing.warehouse,
         description: description !== undefined ? (description ? description.trim() : null) : existing.description,
         costPrice: costPrice !== undefined ? (costPrice !== "" ? Number(costPrice) : null) : existing.costPrice,
         companyName: companyName !== undefined ? (companyName ? companyName.trim() : null) : existing.companyName,
         date: date !== undefined ? (date ? new Date(date) : null) : existing.date,
+        createdByName: createdByName !== undefined ? (createdByName ? createdByName.trim() : null) : existing.createdByName,
       },
       include: { categoryRef: true },
     });
@@ -475,7 +599,7 @@ router.put("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => 
 });
 
 // DELETE /inventory/items/:id — Delete item
-router.delete("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.delete("/items/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
   try {
     const existing = await prisma.inventoryItem.findUnique({
       where: { id: req.params.id },
@@ -501,7 +625,13 @@ router.delete("/items/:id", requireAuth, requireRole("ADMIN"), async (req, res) 
 router.get("/", requireAuth, async (req, res) => {
   try {
     const items = await prisma.inventoryItem.findMany({
-      include: { categoryRef: true },
+      include: {
+        categoryRef: {
+          include: {
+            parent: true,
+          },
+        },
+      },
       orderBy: { name: "asc" },
     });
     res.json({ items });
@@ -554,7 +684,7 @@ router.get("/issues/all", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/issues", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.post("/issues", requireAuth, checkRolePermission(["inventory", "inventory-out"]), async (req, res) => {
   try {
     const parsed = issueSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -581,9 +711,8 @@ router.post("/issues", requireAuth, requireRole("ADMIN"), async (req, res) => {
       data: {
         inventoryItemId: data.inventoryItemId || null,
         itemName: data.itemName,
-        itemSku: data.itemSku || null,
-        issuedToPerson: data.issuedToPerson,
-        issuedToCompany: data.issuedToCompany,
+        assignedToPerson: data.issuedToPerson,
+        companyName: data.issuedToCompany,
         quantity: data.quantity,
         issueDate: data.issueDate || new Date(),
         status: data.status || "ISSUED",
@@ -599,7 +728,7 @@ router.post("/issues", requireAuth, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-router.put("/issues/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.put("/issues/:id", requireAuth, checkRolePermission(["inventory", "inventory-out"]), async (req, res) => {
   try {
     const existing = await prisma.inventoryIssue.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ message: "Issue record not found." });
@@ -611,17 +740,60 @@ router.put("/issues/:id", requireAuth, requireRole("ADMIN"), async (req, res) =>
     }
     const data = parsed.data;
 
-    if (data.status === "RETURNED" && existing.status !== "RETURNED" && existing.inventoryItemId) {
-      await prisma.inventoryItem.update({
-        where: { id: existing.inventoryItemId },
-        data: { quantity: { increment: existing.quantity } },
-      });
+    if (data.status === "RETURNED" && existing.status !== "RETURNED") {
+      if (existing.inventoryItemId) {
+        await prisma.inventoryItem.update({
+          where: { id: existing.inventoryItemId },
+          data: { quantity: { increment: existing.quantity } },
+        });
+      } else {
+        const matchedItem = await prisma.inventoryItem.findFirst({
+          where: {
+            OR: [
+              { name: { equals: existing.itemName } },
+              { code: { equals: existing.itemName } },
+            ],
+          },
+        });
+        if (matchedItem) {
+          await prisma.inventoryItem.update({
+            where: { id: matchedItem.id },
+            data: { quantity: { increment: existing.quantity } },
+          });
+          data.inventoryItemId = matchedItem.id;
+        } else {
+          let uniqueCode = `RET${Date.now().toString().slice(-6)}`;
+          const created = await prisma.inventoryItem.create({
+            data: {
+              name: existing.itemName,
+              code: uniqueCode,
+              sku: uniqueCode,
+              quantity: existing.quantity,
+              unit: "Nos",
+              description: `Auto-restocked from Returned Material Outward / Issue (${existing.id})`,
+              date: new Date(),
+              createdByName: existing.assignedToPerson || "Admin",
+            },
+          });
+          data.inventoryItemId = created.id;
+        }
+      }
       data.returnDate = new Date();
     }
 
     const issue = await prisma.inventoryIssue.update({
       where: { id: req.params.id },
-      data,
+      data: {
+        ...(data.inventoryItemId !== undefined && { inventoryItemId: data.inventoryItemId || null }),
+        ...(data.itemName !== undefined && { itemName: data.itemName }),
+        ...(data.issuedToPerson !== undefined && { assignedToPerson: data.issuedToPerson }),
+        ...(data.issuedToCompany !== undefined && { companyName: data.issuedToCompany }),
+        ...(data.quantity !== undefined && { quantity: data.quantity }),
+        ...(data.issueDate !== undefined && { issueDate: data.issueDate }),
+        ...(data.returnDate !== undefined && { returnDate: data.returnDate }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.notes !== undefined && { notes: data.notes }),
+      },
       include: { inventoryItem: true },
     });
 
@@ -632,7 +804,7 @@ router.put("/issues/:id", requireAuth, requireRole("ADMIN"), async (req, res) =>
   }
 });
 
-router.delete("/issues/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
+router.delete("/issues/:id", requireAuth, checkRolePermission(["inventory", "inventory-out"]), async (req, res) => {
   try {
     const existing = await prisma.inventoryIssue.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ message: "Issue record not found." });

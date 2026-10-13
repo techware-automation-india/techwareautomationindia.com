@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Inbox, Loader2, Check, X, RefreshCw, Eye, MapPin, CalendarDays, Search, SlidersHorizontal, MessageSquareText, UserRound, Clock3, FilterX } from "lucide-react";
+import { Inbox, Loader2, Check, X, RefreshCw, Eye, MapPin, CalendarDays, Search, SlidersHorizontal, MessageSquareText, UserRound, Clock3, FilterX, PackageCheck } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import OnboardingPreview from "../components/OnboardingPreview.jsx";
@@ -24,6 +24,24 @@ const fmtTime = (value) => {
     hour12: true,
     timeZone: "Asia/Kolkata",
   });
+};
+
+const isApprovedOrCompletedStatus = (status, note = "") => {
+  const s = String(status || "").toUpperCase();
+  const n = String(note || "").toUpperCase();
+  if (s === "REJECTED" || s === "CANCELLED" || n.includes("[REJECTED]") || n.includes("[CANCELLED]")) {
+    return false;
+  }
+  return (
+    s === "APPROVED" ||
+    s === "COMPLETED" ||
+    s === "FOUND" ||
+    s === "RECEIVED" ||
+    s === "IN_PROGRESS" ||
+    n.includes("[PRODUCT_FOUND]") ||
+    n.includes("[QUALITY_INSPECTED]") ||
+    n.includes("PHYSICALLY_RETURNED")
+  );
 };
 
 const statusStyles = {
@@ -296,6 +314,20 @@ const loadRequests = async () => {
     }
   };
 
+  const handleMarkFound = async (id) => {
+    if (!id || actingId) return;
+    setActingId(id);
+    try {
+      await apiPost(`/requests/${id}/found`, {});
+      toast.success("Product marked as found successfully!");
+      await loadRequests();
+    } catch (err) {
+      toast.error(err.message || "Failed to mark product found.");
+    } finally {
+      setActingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -505,6 +537,11 @@ const loadRequests = async () => {
                             <span className="rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-primary">
                               {typeLabels[r.type] || r.type}
                             </span>
+                            {r.reviewNote?.includes("[ITEM_NOT_FOUND]") && (
+                              <span className="rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border border-rose-500/30">
+                                Employee: Item Not Found ✕
+                              </span>
+                            )}
                             <span className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
                               r.status === "PENDING" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
                               r.status === "APPROVED" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
@@ -659,17 +696,34 @@ const loadRequests = async () => {
                             )}
                           </>
                         ) : (
-                          <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center">
-                            <div className="text-xs">
-                              <div className="font-semibold text-muted-foreground">Reviewed</div>
-                              <div className="mt-0.5 font-bold text-foreground">
-                                {r.reviewedAt ? fmt(r.reviewedAt) : "—"}
+                          <div className="flex w-full flex-col gap-2">
+                            {r.reviewNote?.includes("[ITEM_NOT_FOUND]") ? (
+                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 rounded-lg p-2 border border-rose-500/20">
+                                <X className="h-3.5 w-3.5" />
+                                Employee: Item Not Found ✕
                               </div>
-                              {r.reviewedAt && (
-                                <div className="mt-0.5 text-muted-foreground">
-                                  {fmtTime(r.reviewedAt)}
+                            ) : r.reviewNote?.includes("[PRODUCT_FOUND]") || r.status === "COMPLETED" ? (
+                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
+                                <PackageCheck className="h-3.5 w-3.5" />
+                                Completed / Product Found ✓
+                              </div>
+                            ) : r.status === "APPROVED" ? (
+                              <div className="flex items-center justify-center gap-1.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20 text-center">
+                                Approved (Awaiting Employee Confirmation)
+                              </div>
+                            ) : null}
+                            <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center">
+                              <div className="text-xs">
+                                <div className="font-semibold text-muted-foreground">Reviewed</div>
+                                <div className="mt-0.5 font-bold text-foreground">
+                                  {r.reviewedAt ? fmt(r.reviewedAt) : "—"}
                                 </div>
-                              )}
+                                {r.reviewedAt && (
+                                  <div className="mt-0.5 text-muted-foreground">
+                                    {fmtTime(r.reviewedAt)}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )}
@@ -735,10 +789,10 @@ const loadRequests = async () => {
                   </div>
                   {reasonRequest.reviewedAt && reasonRequest.status !== "PENDING" && (
                     <div className={`flex items-center justify-between border-t border-border pt-2 text-xs`}>
-                      <span className={`font-semibold ${reasonRequest.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
-                        {reasonRequest.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                      <span className={`font-semibold ${isApprovedOrCompletedStatus(reasonRequest.status, reasonRequest.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
+                        {isApprovedOrCompletedStatus(reasonRequest.status, reasonRequest.reviewNote) ? "Approved At" : "Rejected At"}
                       </span>
-                      <span className={`font-bold ${reasonRequest.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                      <span className={`font-bold ${isApprovedOrCompletedStatus(reasonRequest.status, reasonRequest.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
                         {fmt(reasonRequest.reviewedAt)} {fmtTime(reasonRequest.reviewedAt)}
                       </span>
                     </div>
@@ -747,11 +801,11 @@ const loadRequests = async () => {
               )}
             </div>
 
-            <div className="flex justify-end border-t border-border bg-secondary/20 p-4">
+            <div className="flex justify-end gap-2 border-t border-border bg-secondary/20 p-4">
               <button
                 type="button"
                 onClick={() => setReasonRequest(null)}
-                className="rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground"
+                className="rounded-xl border border-border bg-secondary px-5 py-2.5 text-sm font-bold text-foreground hover:bg-secondary/80 cursor-pointer"
               >
                 Close
               </button>

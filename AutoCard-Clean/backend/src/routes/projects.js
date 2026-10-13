@@ -3,6 +3,7 @@ import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
 import { checkRolePermission } from "../middleware/checkRolePermission.js";
+import { addOrEnsureProductInProject } from "./requests.js";
 
 const router = Router();
 
@@ -237,6 +238,37 @@ router.get("/", checkRolePermission(["projects", "overview"]), async (req, res) 
   }
 });
 
+// GET /api/projects/active-options - Active project options for request forms (all authenticated users)
+router.get("/active-options", async (req, res) => {
+  try {
+    const projects = await prisma.project.findMany({
+      where: {
+        isArchived: false,
+        status: { notIn: ["COMPLETED", "CANCELLED"] },
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        status: true,
+      },
+      orderBy: { name: "asc" },
+    });
+
+    return res.json({
+      projects: projects.map((p) => ({
+        id: p.id,
+        name: (p.name || "").trim(),
+        code: (p.code || "").trim(),
+        status: p.status,
+      })),
+    });
+  } catch (err) {
+    console.error("Get active-options error:", err);
+    return res.status(500).json({ message: "Failed to load active projects." });
+  }
+});
+
 // GET /api/projects/my-assigned - Get projects assigned to the logged-in employee
 router.get("/my-assigned", async (req, res) => {
   try {
@@ -254,20 +286,34 @@ router.get("/my-assigned", async (req, res) => {
 
     if (!isAdmin) {
       if (!employeeProfile) {
-        return res.json({
-          projects: [],
-          stats: { totalProjects: 0, pendingTasks: 0, inProgressTasks: 0, completedTasks: 0 },
+        where = { isArchived: false };
+      } else {
+        const assignedCount = await prisma.projectAssignment.count({
+          where: { employeeId: employeeProfile.id },
         });
-      }
+        const managedCount = await prisma.project.count({
+          where: {
+            OR: [
+              { managerId: employeeProfile.id },
+              { managerId: userId },
+            ],
+          },
+        });
 
-      where = {
-        isArchived: false,
-        OR: [
-          { assignments: { some: { employeeId: employeeProfile.id } } },
-          { managerId: employeeProfile.id },
-          { managerId: userId },
-        ],
-      };
+        if (assignedCount > 0 || managedCount > 0) {
+          where = {
+            isArchived: false,
+            OR: [
+              { assignments: { some: { employeeId: employeeProfile.id } } },
+              { managerId: employeeProfile.id },
+              { managerId: userId },
+            ],
+          };
+        } else {
+          // Fallback: If admin has not assigned a project yet, show all active project names in emp panel
+          where = { isArchived: false };
+        }
+      }
     }
 
     const projects = await prisma.project.findMany({
@@ -299,8 +345,9 @@ router.get("/my-assigned", async (req, res) => {
         tasks: {
           orderBy: { orderIndex: "asc" },
         },
-        documents: {
-          orderBy: { uploadedAt: "desc" },
+        documents: true,
+        comments: {
+          orderBy: { createdAt: "desc" },
         },
         _count: {
           select: { tasks: true, documents: true, comments: true },
@@ -311,12 +358,35 @@ router.get("/my-assigned", async (req, res) => {
 
     const myEmpId = employeeProfile?.id;
 
+    // Resolve comment author names
+    const allCommentAuthorIds = [
+      ...new Set(
+        projects
+          .flatMap((p) => p.comments || [])
+          .map((c) => c.authorId)
+          .filter(Boolean),
+      ),
+    ];
+    const authors =
+      allCommentAuthorIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: allCommentAuthorIds } },
+            select: { id: true, fullName: true, email: true },
+          })
+        : [];
+    const authorMap = Object.fromEntries(authors.map((a) => [a.id, a]));
+
     let totalPendingTasks = 0;
     let totalInProgressTasks = 0;
     let totalCompletedTasks = 0;
 
     const formatted = projects.map((p) => {
-      const myAssignment = p.assignments.find(
+      const assignments = p.assignments || [];
+      const tasks = p.tasks || [];
+      const documents = p.documents || [];
+      const comments = p.comments || [];
+
+      const myAssignment = assignments.find(
         (a) => a.employeeId === myEmpId || a.employee?.userId === userId
       );
       const myRole = myAssignment
@@ -326,7 +396,7 @@ router.get("/my-assigned", async (req, res) => {
         : "Team Member";
 
       // Filter tasks assigned to this employee
-      const myTasks = p.tasks.filter((t) => {
+      const myTasks = tasks.filter((t) => {
         if (isAdmin) return true;
         return t.assignedToId === myEmpId || t.assignedToId === userId;
       });
@@ -365,21 +435,30 @@ router.get("/my-assigned", async (req, res) => {
           dueDate: t.dueDate,
           completedAt: t.completedAt,
         })),
-        allTasksCount: p.tasks.length,
-        allTasksCompleted: p.tasks.filter((t) => t.status === "COMPLETED").length,
-        team: p.assignments.map((a) => ({
+        allTasksCount: tasks.length,
+        allTasksCompleted: tasks.filter((t) => t.status === "COMPLETED").length,
+        team: assignments.map((a) => ({
           id: a.id,
           name: a.employee?.user?.fullName || "Employee",
           email: a.employee?.user?.email || "",
           role: a.roleOnProject || "Member",
         })),
-        documents: p.documents.map((d) => ({
+        documents: documents.map((d) => ({
           id: d.id,
           name: d.fileName,
           size: d.fileSize,
           type: d.fileType,
           url: d.fileUrl,
           uploadedAt: d.uploadedAt,
+        })),
+        comments: comments.map((c) => ({
+          id: c.id,
+          user: authorMap[c.authorId]?.fullName || "User",
+          email: authorMap[c.authorId]?.email || "",
+          message: c.content,
+          content: c.content,
+          timestamp: new Date(c.createdAt).toLocaleString(),
+          createdAt: c.createdAt,
         })),
         createdAt: p.createdAt,
       };
@@ -444,6 +523,41 @@ router.get("/:id", checkRolePermission(["projects", "overview"]), async (req, re
 
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
+    }
+
+    // Auto-sync products from approved/found requests for this project
+    try {
+      const matchingRequests = await prisma.employeeRequest.findMany({
+        where: {
+          type: "EQUIPMENT",
+          status: { not: "REJECTED" },
+          OR: [
+            { description: { contains: project.name } },
+            { subject: { contains: project.name } },
+            ...(project.code ? [
+              { description: { contains: project.code } },
+              { subject: { contains: project.code } },
+            ] : []),
+          ],
+        },
+      });
+
+      let newlyCreated = false;
+      for (const reqItem of matchingRequests) {
+        const added = await addOrEnsureProductInProject(reqItem, req.user.id);
+        if (added && added.includes("Added product")) {
+          newlyCreated = true;
+        }
+      }
+
+      if (newlyCreated) {
+        project.documents = await prisma.projectDocument.findMany({
+          where: { projectId: id },
+          orderBy: { uploadedAt: "desc" },
+        });
+      }
+    } catch (syncErr) {
+      console.warn("⚠️ Error syncing project products from requests:", syncErr);
     }
 
     // Resolve task assignees
@@ -589,6 +703,31 @@ router.post("/", checkRolePermission(["projects", "overview"]), async (req, res)
       }
     }
 
+    // Query root level-1 inventory categories created by Admin (excluding CONSUAMBLE and Tools)
+    const rootCategories = await prisma.inventoryCategory.findMany({
+      where: { OR: [{ parentId: null }, { level: 1 }] },
+      select: { name: true },
+    });
+
+    const categoryDocs = rootCategories
+      .filter((c) => {
+        const lower = (c.name || "").trim().toLowerCase();
+        return (
+          !lower.includes("consumable") &&
+          !lower.includes("consuamble") &&
+          !lower.includes("general") &&
+          !lower.includes("genral") &&
+          !lower.includes("tool")
+        );
+      })
+      .map((c) => ({
+        fileName: c.name,
+        fileUrl: "#folder",
+        fileType: "folder",
+        fileSize: 0,
+        uploadedById: req.user.id,
+      }));
+
     // Create project
     const project = await prisma.project.create({
       data: {
@@ -604,6 +743,9 @@ router.post("/", checkRolePermission(["projects", "overview"]), async (req, res)
         managerId: resolvedManagerId,
         assignments: normalizedTeamMembers.length > 0 ? {
           create: normalizedTeamMembers,
+        } : undefined,
+        documents: categoryDocs.length > 0 ? {
+          create: categoryDocs,
         } : undefined,
         activities: {
           create: {
@@ -1121,7 +1263,7 @@ router.delete("/:id/team/:assignmentId", checkRolePermission(["projects", "overv
 // ============================================================================
 
 // POST /api/projects/:id/comments - Add comment
-router.post("/:id/comments", checkRolePermission(["projects", "overview"]), async (req, res) => {
+router.post("/:id/comments", async (req, res) => {
   try {
     const { id } = req.params;
     const parsed = createCommentSchema.safeParse(req.body);
@@ -1130,16 +1272,57 @@ router.post("/:id/comments", checkRolePermission(["projects", "overview"]), asyn
       return res.status(400).json({ message: parsed.error.issues[0].message });
     }
 
+    const userId = req.user.id;
+    const isAdmin = req.user.role === "ADMIN";
+
+    // Verify project exists & user is authorized (admin or assigned)
+    const project = await prisma.project.findUnique({
+      where: { id },
+      include: {
+        assignments: {
+          select: { employeeId: true, employee: { select: { userId: true } } },
+        },
+      },
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    if (!isAdmin) {
+      const empProfile = await prisma.employeeProfile.findUnique({ where: { userId } });
+      const isAssigned =
+        project.managerId === empProfile?.id ||
+        project.managerId === userId ||
+        project.assignments.some(
+          (a) => a.employeeId === empProfile?.id || a.employee?.userId === userId
+        );
+
+      if (!isAssigned) {
+        return res.status(403).json({ message: "Not authorized to comment on unassigned project." });
+      }
+    }
+
     const comment = await prisma.projectComment.create({
       data: {
         projectId: id,
-        authorId: req.user.id,
+        authorId: userId,
         content: parsed.data.content,
       },
     });
 
+    // Activity log
+    await prisma.projectActivity.create({
+      data: {
+        projectId: id,
+        userId,
+        activityType: "comment_added",
+        description: `Comment added to project`,
+      },
+    });
+
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: userId },
       select: { fullName: true, email: true },
     });
 
@@ -1176,4 +1359,61 @@ router.delete("/:id/comments/:commentId", checkRolePermission(["projects", "over
   }
 });
 
+// PATCH /api/projects/:id/documents/:docId - Update document price, quantity, or name
+router.patch("/:id/documents/:docId", async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const { unitPrice, quantity, productName } = req.body;
+
+    const doc = await prisma.projectDocument.findUnique({ where: { id: docId } });
+    if (!doc) {
+      return res.status(404).json({ message: "Product document not found." });
+    }
+
+    let fileUrl = doc.fileUrl || "#product";
+    if (unitPrice !== undefined) {
+      const priceNum = parseFloat(unitPrice) || 0;
+      if (fileUrl.includes("price=")) {
+        fileUrl = fileUrl.replace(/price=[0-9.]+/, `price=${priceNum}`);
+      } else if (fileUrl.includes("?")) {
+        fileUrl += `&price=${priceNum}`;
+      } else {
+        fileUrl += `?price=${priceNum}`;
+      }
+    }
+
+    let fileName = doc.fileName;
+    if (productName !== undefined || quantity !== undefined) {
+      const bracketMatch = (fileName || "").match(/^(\[.*?\])\s*/);
+      const catPrefix = bracketMatch ? bracketMatch[1] : "";
+      
+      const cleanWithoutCat = (fileName || "").replace(/^\[.*?\]\s*/, "");
+      const prodIdMatch = cleanWithoutCat.match(/^([A-Z0-9_-]{2,20})\s*-\s*(.+)/i);
+      const prodId = prodIdMatch ? prodIdMatch[1] : "";
+
+      const newQty = quantity !== undefined ? (parseInt(quantity, 10) || 1) : (doc.fileSize || 1);
+      const baseName = productName !== undefined 
+        ? productName.trim() 
+        : (prodIdMatch ? prodIdMatch[2].replace(/\(Qty:\s*\d+.*?\)/gi, "").trim() : cleanWithoutCat.replace(/\(Qty:\s*\d+.*?\)/gi, "").trim());
+
+      fileName = `${catPrefix} ${prodId ? prodId + ' - ' : ''}${baseName} (Qty: ${newQty})`.trim();
+    }
+
+    const updated = await prisma.projectDocument.update({
+      where: { id: docId },
+      data: {
+        fileUrl,
+        fileName,
+        ...(quantity !== undefined && { fileSize: parseInt(quantity, 10) || 1 }),
+      },
+    });
+
+    res.json({ document: updated });
+  } catch (err) {
+    console.error("Update product document error:", err);
+    res.status(500).json({ message: "Failed to update product details." });
+  }
+});
+
 export default router;
+

@@ -93,6 +93,12 @@ const calculateOvertimeHours = (workedHours, isHolidayOrSunday = false) => {
   return parseFloat((roundedOtMinutes / 60).toFixed(2));
 };
 
+const isShortDayHours = (workedHours, isHolidayOrSunday = false) => {
+  if (isHolidayOrSunday || workedHours == null) return false;
+  const hours = Number(workedHours);
+  return Number.isFinite(hours) && hours > 0 && hours < REGULAR_WORKING_HOURS;
+};
+
 const parseLocationString = (location) => {
   if (!location || typeof location !== "string") return null;
   const match = location.match(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/);
@@ -246,15 +252,21 @@ const parseManualPunchDateTime = (dateValue, timeValue) => {
   if (!dateValue || !timeValue) return null;
 
   const trimmedDate = String(dateValue).trim();
-  const trimmedTime = String(timeValue).trim();
+  let trimmedTime = String(timeValue).trim();
 
   if (!trimmedDate || !trimmedTime) return null;
 
-  // IMPORTANT:
-  // Manual attendance time is always India Standard Time (IST)
-  const safeDate = new Date(
-    `${trimmedDate}T${trimmedTime}:00+05:30`
-  );
+  if (trimmedTime.includes("T")) {
+    trimmedTime = trimmedTime.split("T")[1];
+  }
+  const timeMatch = trimmedTime.match(/^(\d{1,2}):(\d{1,2})/);
+  if (!timeMatch) return null;
+
+  const hours = String(timeMatch[1]).padStart(2, "0");
+  const minutes = String(timeMatch[2]).padStart(2, "0");
+
+  // IMPORTANT: Manual attendance time is always India Standard Time (IST)
+  const safeDate = new Date(`${trimmedDate}T${hours}:${minutes}:00+05:30`);
 
   if (Number.isNaN(safeDate.getTime())) return null;
 
@@ -346,6 +358,70 @@ const isHolidayOrSundayDate = async (date) => {
   return Boolean(holiday);
 };
 
+const getUnclosedPreviousAttendance = async (profileId) => {
+  const now = new Date();
+  const { start: todayStart } = getIndiaDayRange(now);
+
+  const unclosedRecord = await prisma.attendance.findFirst({
+    where: {
+      employeeId: profileId,
+      date: { lt: todayStart },
+      checkIn: { not: null },
+      checkOut: null,
+    },
+    orderBy: { date: "desc" },
+  });
+
+  if (!unclosedRecord) {
+    return null;
+  }
+
+  const unclosedDateKey = getIndiaDateKey(unclosedRecord.date);
+
+  const employeeRequests = await prisma.employeeRequest.findMany({
+    where: {
+      employeeId: profileId,
+      type: "CORRECTION",
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  let matchingRequest = null;
+  for (const req of employeeRequests) {
+    if (!req.description) continue;
+    const isMatchingDate =
+      req.description.includes(`"date":"${unclosedDateKey}"`) ||
+      req.description.includes(unclosedDateKey);
+    const isCheckoutType =
+      req.description.includes(`"punchType":"check-out"`) ||
+      req.description.includes(`"punchType":"both"`) ||
+      req.description.includes("check-out") ||
+      req.description.includes("Check Out");
+
+    if (isMatchingDate && isCheckoutType) {
+      matchingRequest = req;
+      break;
+    }
+  }
+
+  return {
+    record: {
+      id: unclosedRecord.id,
+      date: unclosedRecord.date,
+      dateKey: unclosedDateKey,
+      checkIn: unclosedRecord.checkIn,
+    },
+    correctionRequest: matchingRequest
+      ? {
+          id: matchingRequest.id,
+          status: matchingRequest.status,
+          createdAt: matchingRequest.createdAt,
+          reviewNote: matchingRequest.reviewNote,
+        }
+      : null,
+  };
+};
+
 // ============================================================================
 // EMPLOYEE SELF-SERVICE ROUTES  (requireAuth only, no role guard)
 // ============================================================================
@@ -423,7 +499,7 @@ router.get("/me", requireAuth, async (req, res) => {
       }
     }
 
-    const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
+    const summary = { PRESENT: 0, SHORT_DAY: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
     const populatedRecords = [];
     const todayKey = getIndiaDateKey(new Date());
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -455,6 +531,11 @@ router.get("/me", requireAuth, async (req, res) => {
 
         const isHolOrSun = !isWorkingDay(key) || holidayByDate.has(key);
         const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
+        const isShortDay = isShortDayHours(workedHours, isHolOrSun);
+
+        if (isShortDay) {
+          summary.SHORT_DAY += 1;
+        }
 
         populatedRecords.push({
           id: attendance.id,
@@ -464,6 +545,7 @@ router.get("/me", requireAuth, async (req, res) => {
           status,
           workedHours,
           overtimeHours,
+          isShortDay,
           note,
           createdAt: attendance.createdAt,
           updatedAt: attendance.updatedAt,
@@ -576,23 +658,28 @@ router.get("/me/today", requireAuth, async (req, res) => {
       where: { userId: req.user.id },
     });
 
-    // If admin doesn't have employee profile, create one
-    if (!profile && req.user.role === "ADMIN") {
+    // If user doesn't have employee profile, create one
+    if (!profile) {
       const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-      if (user) {
+      if (user && (user.role === "ADMIN" || user.role === "EMPLOYEE")) {
+        const code = user.email && !user.email.includes("@")
+          ? user.email
+          : `${user.role === "ADMIN" ? "ADMIN" : "EMP"}-${Date.now()}`;
         profile = await prisma.employeeProfile.create({
           data: {
             userId: req.user.id,
-            employeeCode: `ADMIN-${Date.now()}`,
+            employeeCode: code,
             onboardingStatus: "APPROVED",
-            firstName: user.fullName.split(" ")[0] || "Admin",
+            firstName: user.fullName.split(" ")[0] || (user.role === "ADMIN" ? "Admin" : "Employee"),
             lastName: user.fullName.split(" ").slice(1).join(" ") || "",
-            jobTitle: "Administrator",
+            jobTitle: user.role === "ADMIN" ? "Administrator" : "Employee",
           },
-        });
-        console.log(
-          `✅ Auto-created employee profile for admin: ${req.user.id}`,
-        );
+        }).catch(() => null);
+        if (profile) {
+          console.log(
+            `✅ Auto-created employee profile for user: ${req.user.id} (${code})`,
+          );
+        }
       }
     }
 
@@ -604,7 +691,7 @@ router.get("/me/today", requireAuth, async (req, res) => {
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
-    const [record, approvedLeave] = await Promise.all([
+    const [record, approvedLeave, unclosedPrevious] = await Promise.all([
       prisma.attendance.findFirst({
         where: {
           employeeId: profile.id,
@@ -623,6 +710,7 @@ router.get("/me/today", requireAuth, async (req, res) => {
         },
         include: { leaveType: { select: { name: true, code: true } } },
       }),
+      getUnclosedPreviousAttendance(profile.id),
     ]);
 
     let finalRecord = record;
@@ -642,10 +730,130 @@ router.get("/me/today", requireAuth, async (req, res) => {
       };
     }
 
-    res.json({ record: finalRecord ?? null, approvedLeave: approvedLeave ?? null });
+    res.json({
+      record: finalRecord ?? null,
+      approvedLeave: approvedLeave ?? null,
+      unclosedPrevious: unclosedPrevious ?? null,
+    });
   } catch (err) {
     console.error("Employee get today attendance error:", err);
     res.status(500).json({ message: "Failed to load today's attendance." });
+  }
+});
+
+// GET /api/attendance/by-date?date=YYYY-MM-DD[&employeeId=ID]
+// Fetches the saved attendance record and leave status for the selected date.
+router.get("/by-date", requireAuth, async (req, res) => {
+  try {
+    const { date, employeeId } = req.query;
+    if (!date) {
+      return res.status(400).json({ message: "Date is required (YYYY-MM-DD)." });
+    }
+
+    let targetProfile = null;
+
+    if (req.user.role === "ADMIN" && employeeId) {
+      targetProfile = await prisma.employeeProfile.findUnique({
+        where: { id: employeeId },
+        include: { user: { select: { fullName: true, email: true } } },
+      });
+      if (!targetProfile) {
+        targetProfile = await prisma.employeeProfile.findUnique({
+          where: { userId: employeeId },
+          include: { user: { select: { fullName: true, email: true } } },
+        });
+      }
+    }
+
+    if (!targetProfile) {
+      targetProfile = await prisma.employeeProfile.findUnique({
+        where: { userId: req.user.id },
+        include: { user: { select: { fullName: true, email: true } } },
+      });
+    }
+
+    if (!targetProfile) {
+      return res.status(404).json({ message: "Employee profile not found." });
+    }
+
+    const selectedDate = new Date(`${date}T00:00:00+05:30`);
+    if (Number.isNaN(selectedDate.getTime())) {
+      return res.status(400).json({ message: "Invalid date format." });
+    }
+    const nextDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
+
+    const [record, approvedLeave] = await Promise.all([
+      prisma.attendance.findFirst({
+        where: {
+          employeeId: targetProfile.id,
+          date: {
+            gte: selectedDate,
+            lt: nextDate,
+          },
+        },
+      }),
+      prisma.leaveRequest.findFirst({
+        where: {
+          employeeId: targetProfile.id,
+          status: "APPROVED",
+          startDate: { lt: nextDate },
+          endDate: { gte: selectedDate },
+        },
+        include: { leaveType: { select: { name: true, code: true } } },
+      }),
+    ]);
+
+    let checkInTime = null;
+    let checkOutTime = null;
+
+    if (record?.checkIn) {
+      checkInTime = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(record.checkIn));
+    }
+
+    if (record?.checkOut) {
+      checkOutTime = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(record.checkOut));
+    }
+
+    return res.json({
+      date,
+      employee: {
+        id: targetProfile.id,
+        employeeCode: targetProfile.employeeCode,
+        fullName: targetProfile.user?.fullName,
+      },
+      record: record
+        ? {
+            id: record.id,
+            status: record.status,
+            checkIn: record.checkIn,
+            checkOut: record.checkOut,
+            checkInTime,
+            checkOutTime,
+            workedHours: record.workedHours,
+            overtimeHours: record.overtimeHours,
+            note: record.note,
+          }
+        : null,
+      approvedLeave: approvedLeave
+        ? {
+            id: approvedLeave.id,
+            leaveTypeName: approvedLeave.leaveType?.name || approvedLeave.leaveType?.code,
+          }
+        : null,
+    });
+  } catch (err) {
+    console.error("Get attendance by date error:", err);
+    return res.status(500).json({ message: "Failed to load attendance for the selected date." });
   }
 });
 
@@ -659,17 +867,23 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
   }
 
   try {
-    const { date, punchType, checkInTime, checkOutTime, reason } =
+    const { date, punchType, checkInTime, checkOutTime, reason, employeeId } =
       req.body || {};
 
+    const isTimeEdit = punchType === "time-edit";
     const normalizedType =
-      punchType === "check-out"
-        ? "check-out"
-        : punchType === "both"
-          ? "both"
-          : "check-in";
+      isTimeEdit
+        ? "time-edit"
+        : punchType === "check-out"
+          ? "check-out"
+          : punchType === "both"
+            ? "both"
+            : "check-in";
 
-    const manualReason = typeof reason === "string" ? reason.trim() : "";
+    let manualReason = typeof reason === "string" ? reason.trim() : "";
+    if (!manualReason && isTimeEdit) {
+      manualReason = "Time Edit";
+    }
 
     // --------------------------------------------------
     // VALIDATION
@@ -691,31 +905,47 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // FIND PROFILE
     // --------------------------------------------------
 
-    let profile = await prisma.employeeProfile.findUnique({
-      where: {
-        userId: req.user.id,
-      },
-    });
+    let profile = null;
 
-    // Create Admin profile if required
-    if (!profile && req.user.role === "ADMIN") {
-      const user = await prisma.user.findUnique({
+    if (req.user.role === "ADMIN" && employeeId) {
+      profile = await prisma.employeeProfile.findUnique({
+        where: { id: employeeId },
+      });
+      if (!profile) {
+        profile = await prisma.employeeProfile.findUnique({
+          where: { userId: employeeId },
+        });
+      }
+    }
+
+    if (!profile) {
+      profile = await prisma.employeeProfile.findUnique({
         where: {
-          id: req.user.id,
+          userId: req.user.id,
         },
       });
+    }
 
-      if (user) {
+    // Create profile if required
+    if (!profile) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+      });
+
+      if (user && (user.role === "ADMIN" || user.role === "EMPLOYEE")) {
+        const code = user.email && !user.email.includes("@")
+          ? user.email
+          : `${user.role === "ADMIN" ? "ADMIN" : "EMP"}-${Date.now()}`;
         profile = await prisma.employeeProfile.create({
           data: {
             userId: req.user.id,
-            employeeCode: `ADMIN-${Date.now()}`,
+            employeeCode: code,
             onboardingStatus: "APPROVED",
-            firstName: user.fullName.split(" ")[0] || "Admin",
+            firstName: user.fullName.split(" ")[0] || (user.role === "ADMIN" ? "Admin" : "Employee"),
             lastName: user.fullName.split(" ").slice(1).join(" ") || "",
-            jobTitle: "Administrator",
+            jobTitle: user.role === "ADMIN" ? "Administrator" : "Employee",
           },
-        });
+        }).catch(() => null);
       }
     }
 
@@ -751,14 +981,14 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     if (approvedLeaveForDate) {
       return res.status(400).json({
-        message: `Forgot Punch request cannot be submitted for ${date} because you were on approved leave (${approvedLeaveForDate.leaveType?.name || "Leave"}).`,
+        message: `Forgot Punch request cannot be submitted for ${date} because employee was on approved leave (${approvedLeaveForDate.leaveType?.name || "Leave"}).`,
       });
     }
 
     // --------------------------------------------------
     // FIND EXISTING ATTENDANCE
     // IMPORTANT:
-    // If today's attendance already exists,
+    // If attendance already exists,
     // UPDATE that same record.
     // --------------------------------------------------
 
@@ -774,17 +1004,33 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     // --------------------------------------------------
     // CHECK IF TODAY'S ATTENDANCE IS ALREADY MARKED VIA GPS
-    // IMPORTANT: Only prevent forgot punch check-in for TODAY if marked via Mark Attendance (GPS)
-    // Allow forgot punch for previous dates always
-    // Allow check-out anytime (even if checked in via GPS)
     // --------------------------------------------------
 
     const { start: todayStart } = getIndiaDayRange(new Date());
     const isToday = selectedDate.getTime() === todayStart.getTime();
 
+    // Prevent today's check-in if previous attendance check-out is missing or incomplete
+    if (
+      isToday &&
+      !isTimeEdit &&
+      (normalizedType === "check-in" || normalizedType === "both")
+    ) {
+      const unclosedPrevious = await getUnclosedPreviousAttendance(profile.id);
+      if (
+        unclosedPrevious &&
+        (!unclosedPrevious.correctionRequest ||
+          unclosedPrevious.correctionRequest.status !== "APPROVED")
+      ) {
+        return res.status(400).json({
+          message: `Check-in for today is disabled. You have an uncompleted check-in from ${unclosedPrevious.record.dateKey}. Please complete yesterday's check-out first.`,
+        });
+      }
+    }
+
     if (
       record &&
       isToday &&
+      !isTimeEdit &&
       (normalizedType === "check-in" || normalizedType === "both")
     ) {
       // Check if attendance was marked via GPS (Mark Attendance module)
@@ -806,9 +1052,10 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // PREVENT DUPLICATE PUNCH FOR SAME TYPE
     // If trying to update check-in but check-in already exists, block it
     // If trying to update check-out but check-out already exists, block it
+    // (Skipped for time-edit)
     // --------------------------------------------------
 
-    if (record) {
+    if (record && !isTimeEdit) {
       if (
         (normalizedType === "check-in" || normalizedType === "both") &&
         record.checkIn
@@ -854,35 +1101,61 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     let checkInDateTime = null;
     let checkOutDateTime = null;
 
-    if (normalizedType === "check-in" || normalizedType === "both") {
-      if (!checkInTime) {
+    if (isTimeEdit) {
+      if (!checkInTime && !checkOutTime) {
         return res.status(400).json({
-          message: "Please enter check-in time.",
+          message: "Please enter at least check-in time or check-out time for time edit.",
         });
       }
 
-      checkInDateTime = parseManualPunchDateTime(date, checkInTime);
-
-      if (!checkInDateTime) {
-        return res.status(400).json({
-          message: "Invalid check-in time.",
-        });
-      }
-    }
-
-    if (normalizedType === "check-out" || normalizedType === "both") {
-      if (!checkOutTime) {
-        return res.status(400).json({
-          message: "Please enter check-out time.",
-        });
+      if (checkInTime) {
+        checkInDateTime = parseManualPunchDateTime(date, checkInTime);
+        if (!checkInDateTime) {
+          return res.status(400).json({
+            message: "Invalid check-in time.",
+          });
+        }
       }
 
-      checkOutDateTime = parseManualPunchDateTime(date, checkOutTime);
+      if (checkOutTime) {
+        checkOutDateTime = parseManualPunchDateTime(date, checkOutTime);
+        if (!checkOutDateTime) {
+          return res.status(400).json({
+            message: "Invalid check-out time.",
+          });
+        }
+      }
+    } else {
+      if (normalizedType === "check-in" || normalizedType === "both") {
+        if (!checkInTime) {
+          return res.status(400).json({
+            message: "Please enter check-in time.",
+          });
+        }
 
-      if (!checkOutDateTime) {
-        return res.status(400).json({
-          message: "Invalid check-out time.",
-        });
+        checkInDateTime = parseManualPunchDateTime(date, checkInTime);
+
+        if (!checkInDateTime) {
+          return res.status(400).json({
+            message: "Invalid check-in time.",
+          });
+        }
+      }
+
+      if (normalizedType === "check-out" || normalizedType === "both") {
+        if (!checkOutTime) {
+          return res.status(400).json({
+            message: "Please enter check-out time.",
+          });
+        }
+
+        checkOutDateTime = parseManualPunchDateTime(date, checkOutTime);
+
+        if (!checkOutDateTime) {
+          return res.status(400).json({
+            message: "Invalid check-out time.",
+          });
+        }
       }
     }
 
@@ -890,7 +1163,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // BOTH TIME VALIDATION
     // --------------------------------------------------
 
-    if (normalizedType === "both" && checkOutDateTime <= checkInDateTime) {
+    if (checkInDateTime && checkOutDateTime && checkOutDateTime <= checkInDateTime) {
       return res.status(400).json({
         message: "Check-out time must be greater than check-in time.",
       });
@@ -904,12 +1177,20 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     const updates = {};
 
-    if (normalizedType === "check-in" || normalizedType === "both") {
-      updates.checkIn = checkInDateTime;
-    }
-
-    if (normalizedType === "check-out" || normalizedType === "both") {
-      updates.checkOut = checkOutDateTime;
+    if (isTimeEdit) {
+      if (checkInDateTime) {
+        updates.checkIn = checkInDateTime;
+      }
+      if (checkOutDateTime) {
+        updates.checkOut = checkOutDateTime;
+      }
+    } else {
+      if (normalizedType === "check-in" || normalizedType === "both") {
+        updates.checkIn = checkInDateTime;
+      }
+      if (normalizedType === "check-out" || normalizedType === "both") {
+        updates.checkOut = checkOutDateTime;
+      }
     }
 
     // --------------------------------------------------
@@ -1020,31 +1301,34 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     // AUTO CREATE PROFILE FOR ADMIN
     // ----------------------------------------------------------
 
-    if (!profile && req.user.role === "ADMIN") {
+    if (!profile) {
       const user = await prisma.user.findUnique({
-        where: {
-          id: req.user.id,
-        },
+        where: { id: req.user.id },
       });
 
-      if (user) {
+      if (user && (user.role === "ADMIN" || user.role === "EMPLOYEE")) {
+        const code = user.email && !user.email.includes("@")
+          ? user.email
+          : `${user.role === "ADMIN" ? "ADMIN" : "EMP"}-${Date.now()}`;
         profile = await prisma.employeeProfile.create({
           data: {
             userId: req.user.id,
-            employeeCode: `ADMIN-${Date.now()}`,
+            employeeCode: code,
             onboardingStatus: "APPROVED",
-            firstName: user.fullName.split(" ")[0] || "Admin",
+            firstName: user.fullName.split(" ")[0] || (user.role === "ADMIN" ? "Admin" : "Employee"),
             lastName: user.fullName.split(" ").slice(1).join(" ") || "",
-            jobTitle: "Administrator",
+            jobTitle: user.role === "ADMIN" ? "Administrator" : "Employee",
           },
           include: {
             location: true,
           },
-        });
+        }).catch(() => null);
 
-        console.log(
-          `✅ Auto-created employee profile for admin: ${req.user.id}`,
-        );
+        if (profile) {
+          console.log(
+            `✅ Auto-created employee profile for user: ${req.user.id} (${code})`,
+          );
+        }
       }
     }
 
@@ -1089,6 +1373,26 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
       return res.status(400).json({
         message: `Check-in is disabled because you are on approved leave today (${approvedLeaveToday.leaveType?.name || "Leave"}).`,
       });
+    }
+
+    // ----------------------------------------------------------
+    // UNCLOSED PREVIOUS DAY PUNCH CHECK
+    // ----------------------------------------------------------
+
+    const unclosedPrevious = await getUnclosedPreviousAttendance(profile.id);
+
+    if (unclosedPrevious) {
+      const { record: unclosedRec, correctionRequest: unclosedReq } = unclosedPrevious;
+      if (!unclosedReq || unclosedReq.status !== "APPROVED") {
+        const detail =
+          unclosedReq?.status === "PENDING"
+            ? `Your check-out request for ${unclosedRec.dateKey} is waiting for admin approval. Today's check-in will open once approved.`
+            : `You have an uncompleted check-in from ${unclosedRec.dateKey}. Please complete yesterday's check-out first.`;
+        return res.status(400).json({
+          message: `Check-in disabled. ${detail}`,
+          unclosedPrevious,
+        });
+      }
     }
 
     // ----------------------------------------------------------
@@ -1402,33 +1706,28 @@ router.get("/checkin-location", requireAuth, async (req, res) => {
     // ADMIN PROFILE
     // --------------------------------------------------------
 
-    if (!profile && req.user.role === "ADMIN") {
+    if (!profile) {
       const user = await prisma.user.findUnique({
-        where: {
-          id: req.user.id,
-        },
+        where: { id: req.user.id },
       });
 
-      if (user) {
+      if (user && (user.role === "ADMIN" || user.role === "EMPLOYEE")) {
+        const code = user.email && !user.email.includes("@")
+          ? user.email
+          : `${user.role === "ADMIN" ? "ADMIN" : "EMP"}-${Date.now()}`;
         profile = await prisma.employeeProfile.create({
           data: {
             userId: req.user.id,
-
-            employeeCode: `ADMIN-${Date.now()}`,
-
+            employeeCode: code,
             onboardingStatus: "APPROVED",
-
-            firstName: user.fullName.split(" ")[0] || "Admin",
-
+            firstName: user.fullName.split(" ")[0] || (user.role === "ADMIN" ? "Admin" : "Employee"),
             lastName: user.fullName.split(" ").slice(1).join(" ") || "",
-
-            jobTitle: "Administrator",
+            jobTitle: user.role === "ADMIN" ? "Administrator" : "Employee",
           },
-
           include: {
             location: true,
           },
-        });
+        }).catch(() => null);
       }
     }
 
@@ -1518,37 +1817,34 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // AUTO CREATE ADMIN PROFILE
     // --------------------------------------------------------
 
-    if (!profile && req.user.role === "ADMIN") {
+    if (!profile) {
       const user = await prisma.user.findUnique({
-        where: {
-          id: req.user.id,
-        },
+        where: { id: req.user.id },
       });
 
-      if (user) {
+      if (user && (user.role === "ADMIN" || user.role === "EMPLOYEE")) {
+        const code = user.email && !user.email.includes("@")
+          ? user.email
+          : `${user.role === "ADMIN" ? "ADMIN" : "EMP"}-${Date.now()}`;
         profile = await prisma.employeeProfile.create({
           data: {
             userId: req.user.id,
-
-            employeeCode: `ADMIN-${Date.now()}`,
-
+            employeeCode: code,
             onboardingStatus: "APPROVED",
-
-            firstName: user.fullName.split(" ")[0] || "Admin",
-
+            firstName: user.fullName.split(" ")[0] || (user.role === "ADMIN" ? "Admin" : "Employee"),
             lastName: user.fullName.split(" ").slice(1).join(" ") || "",
-
-            jobTitle: "Administrator",
+            jobTitle: user.role === "ADMIN" ? "Administrator" : "Employee",
           },
-
           include: {
             location: true,
           },
-        });
+        }).catch(() => null);
 
-        console.log(
-          `✅ Auto-created employee profile for admin: ${req.user.id}`,
-        );
+        if (profile) {
+          console.log(
+            `✅ Auto-created employee profile for user: ${req.user.id} (${code})`,
+          );
+        }
       }
     }
 
@@ -2013,6 +2309,34 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
 // ADMIN ROUTES  (requireAuth + permission check)
 // ============================================================================
 
+const ensureAllEmployeesHaveProfiles = async () => {
+  try {
+    const unprofiled = await prisma.user.findMany({
+      where: {
+        role: { in: ["EMPLOYEE", "ADMIN"] },
+        employeeProfile: null,
+      },
+    });
+    for (const u of unprofiled) {
+      const code = u.email && !u.email.includes("@")
+        ? u.email
+        : `${u.role === "ADMIN" ? "ADMIN" : "EMP"}-${u.id.slice(0, 6).toUpperCase()}`;
+      await prisma.employeeProfile.create({
+        data: {
+          userId: u.id,
+          employeeCode: code,
+          onboardingStatus: "APPROVED",
+          firstName: u.fullName?.split(" ")[0] || u.fullName || "Employee",
+          lastName: u.fullName?.split(" ").slice(1).join(" ") || "",
+          jobTitle: u.role === "ADMIN" ? "Administrator" : "Employee",
+        },
+      }).catch((e) => console.warn("Could not auto-create profile for", u.email, e.message));
+    }
+  } catch (syncErr) {
+    console.warn("Auto-sync employee profiles error:", syncErr.message);
+  }
+};
+
 // GET /api/attendance/employees - approved employees for the picker.
 router.get("/employees", async (req, res) => {
   console.log("📋 [GET /employees] Request received");
@@ -2021,7 +2345,7 @@ router.get("/employees", async (req, res) => {
   if (req.user.role === "ADMIN") {
     // Check permission for admin
     const hasPermission = await requireAdminOrModulePermission(
-      "attendance",
+      ["attendance", "attendance-management"],
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return; // Permission denied
@@ -2030,6 +2354,8 @@ router.get("/employees", async (req, res) => {
   }
 
   try {
+    await ensureAllEmployeesHaveProfiles();
+
     const employees = await prisma.employeeProfile.findMany({
       include: { user: { select: { fullName: true, email: true } } },
       orderBy: { employeeCode: "asc" },
@@ -2128,7 +2454,7 @@ router.get("/pending-approvals", async (req, res) => {
   // Allow ADMIN with permission OR any EMPLOYEE to see their own pending
   if (req.user.role === "ADMIN") {
     const hasPermission = await requireAdminOrModulePermission(
-      ["approvals-attendance", "attendance", "approvals", "attendance-management"],
+      ["approvals-attendance", "attendance", "approvals", "attendance-management", "requests"],
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return;
@@ -2171,7 +2497,7 @@ router.get("/pending-approvals", async (req, res) => {
 });
 
 // GET /api/attendance/my-requests - attendance approval history for employee
-router.get("/my-requests", requireRole("EMPLOYEE"), async (req, res) => {
+router.get("/my-requests", requireAuth, async (req, res) => {
   try {
     const profile = await prisma.employeeProfile.findUnique({
       where: { userId: req.user.id },
@@ -2264,9 +2590,10 @@ router.get(
 // GET /api/attendance/today - today's summary for all employees.
 router.get(
   "/today",
-  requireAdminOrModulePermission("attendance", "canView"),
+  requireAdminOrModulePermission(["attendance", "attendance-management"], "canView"),
   async (_req, res) => {
     try {
+      await ensureAllEmployeesHaveProfiles();
       const now = new Date();
       const { start: today, end: indiaDayEnd } = getIndiaDayRange(now);
       const tomorrow = new Date(indiaDayEnd.getTime() + 1);
@@ -2301,6 +2628,7 @@ router.get(
 
       const summary = {
         PRESENT: 0,
+        SHORT_DAY: 0,
         ABSENT: 0,
         ON_LEAVE: 0,
         HOLIDAY: 0,
@@ -2328,17 +2656,20 @@ router.get(
           note = `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`;
         }
 
+        const isShortDay = isShortDayHours(workedHours, false);
         if (summary[status] !== undefined) summary[status] += 1;
+        if (isShortDay) summary.SHORT_DAY += 1;
 
         return {
           id: employee.id,
           employeeCode: employee.employeeCode,
-          fullName: employee.user.fullName,
-          email: employee.user.email,
+          fullName: employee.user?.fullName || "Employee",
+          email: employee.user?.email || "",
           status,
           checkIn,
           checkOut,
           workedHours,
+          isShortDay,
           note,
         };
       });
@@ -2363,7 +2694,7 @@ router.get("/register/weekly", async (req, res) => {
 
   if (req.user.role === "ADMIN") {
     const hasPermission = await requireAdminOrModulePermission(
-      "attendance",
+      ["attendance", "attendance-management"],
       "canView",
     )(req, res, () => true);
     if (res.headersSent) return; // Permission denied
@@ -2379,27 +2710,24 @@ router.get("/register/weekly", async (req, res) => {
     }
 
     if (roleId) {
-      const roleMod = await prisma.roleModule.findUnique({
+      const roleMod = await prisma.roleModule.findFirst({
         where: {
-          roleId_moduleKey: {
-            roleId,
-            moduleKey: "attendance",
-          },
+          roleId,
+          moduleKey: { in: ["attendance", "attendance-management"] },
         },
       });
       if (roleMod) isFullManager = true;
     }
 
     if (!isFullManager) {
-      const directPerm = await prisma.modulePermission.findUnique({
+      const directPerm = await prisma.modulePermission.findFirst({
         where: {
-          userId_moduleKey: {
-            userId: req.user.id,
-            moduleKey: "attendance",
-          },
+          userId: req.user.id,
+          moduleKey: { in: ["attendance", "attendance-management"] },
+          canView: true,
         },
       });
-      if (directPerm?.canView) isFullManager = true;
+      if (directPerm) isFullManager = true;
     }
   } else {
     return res.status(403).json({ message: "Access denied." });
@@ -2415,6 +2743,7 @@ router.get("/register/weekly", async (req, res) => {
   const startParam = req.query.start;
 
   try {
+    await ensureAllEmployeesHaveProfiles();
     const now = new Date();
     const today = normalizeUTCDate(now);
 
@@ -2555,6 +2884,7 @@ router.get("/register/weekly", async (req, res) => {
 
     const summary = {
       PRESENT: 0,
+      SHORT_DAY: 0,
       ABSENT: 0,
       ON_LEAVE: 0,
       HOLIDAY: 0,
@@ -2610,7 +2940,11 @@ router.get("/register/weekly", async (req, res) => {
             : "Forgot Punch Check In pending approval.";
         }
 
+        const isHolOrSun = Boolean(holiday || !isWorkingDay(date));
+        const isShortDay = isShortDayHours(workedHours, isHolOrSun);
+
         if (summary[status] !== undefined) summary[status] += 1;
+        if (isShortDay) summary.SHORT_DAY += 1;
 
         records.push({
           id: attendance?.id ?? `${employee.id}-${dateKey}`,
@@ -2627,6 +2961,7 @@ router.get("/register/weekly", async (req, res) => {
           checkOutLatitude: attendance?.checkOutLatitude ?? null,
           checkOutLongitude: attendance?.checkOutLongitude ?? null,
           workedHours,
+          isShortDay,
           note,
         });
       }
@@ -2835,7 +3170,7 @@ router.post(
 // Returns the employee's attendance records for the given month plus a summary.
 router.get(
   "/:employeeId",
-  requireAdminOrModulePermission("attendance", "canView"),
+  requireAdminOrModulePermission(["attendance", "attendance-management"], "canView"),
   async (req, res) => {
     const { employeeId } = req.params;
     const year = Number(req.query.year);
@@ -2930,7 +3265,7 @@ router.get(
         }
       }
 
-      const summary = { PRESENT: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0 };
+      const summary = { PRESENT: 0, SHORT_DAY: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0, PENDING_APPROVAL: 0 };
       const todayUtc = normalizeUTCDate(new Date());
       const populatedRecords = [];
 
@@ -2962,7 +3297,16 @@ router.get(
             status = "ON_LEAVE";
           }
 
+          const calculatedWorkedHours =
+            existing.workedHours ??
+            calculateWorkedHours(existing.checkIn, existing.checkOut);
+
+          const isHolOrSun = Boolean(holidayObj || isSunday);
+          const isShortDay = isShortDayHours(calculatedWorkedHours, isHolOrSun);
+
           if (summary[status] !== undefined) summary[status] += 1;
+          if (isShortDay) summary.SHORT_DAY += 1;
+
           populatedRecords.push({
             id: existing.id,
             date: existing.date,
@@ -2977,9 +3321,8 @@ router.get(
             checkOutLatitude: existing.checkOutLatitude,
             checkOutLongitude: existing.checkOutLongitude,
             status,
-            workedHours:
-              existing.workedHours ??
-              calculateWorkedHours(existing.checkIn, existing.checkOut),
+            workedHours: calculatedWorkedHours,
+            isShortDay,
             note: pendingCorrection
               ? `${existing.note || ""}${existing.note ? " | " : ""}Forgot Punch Check In pending approval.`
               : (leaveByDate.has(key) && status === "ON_LEAVE"

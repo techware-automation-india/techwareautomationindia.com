@@ -44,14 +44,20 @@ export function checkRolePermission(moduleKey) {
           keySet.add("shift-and-location");
           keySet.add("shift_location");
         }
-        if (typeof k === "string" && k.startsWith("approvals-")) {
+        if (typeof k === "string" && (k.startsWith("approvals-") || k === "inventory-approval")) {
           keySet.add("approvals");
-          if (k === "approvals-tools-inventory") {
+          if (k === "approvals-tools-inventory" || k === "inventory-approval") {
             keySet.add("approvals-tools");
+            keySet.add("approvals-tools-inventory");
+            keySet.add("inventory-approval");
           }
         }
-        if (typeof k === "string" && k.startsWith("requests-")) {
+        if (typeof k === "string" && (k.startsWith("requests-") || k === "inventory-request")) {
           keySet.add("requests");
+          if (k === "requests-tools-inventory" || k === "inventory-request") {
+            keySet.add("requests-tools-inventory");
+            keySet.add("inventory-request");
+          }
           if (k === "requests-apply-leave") {
             keySet.add("leave");
           }

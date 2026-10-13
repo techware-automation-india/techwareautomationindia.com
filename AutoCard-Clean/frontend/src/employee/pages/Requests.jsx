@@ -7,8 +7,42 @@ import {
   Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { hasModuleAccess } from "../../lib/permissions.js";
 
 const Requests = () => {
+  const allServices = [
+    {
+      key: "requests-apply-leave",
+      label: "Apply for Leave",
+      description: "Submit leave application and track approval status.",
+      path: "/employee/requests/apply-leave",
+      icon: CalendarDays,
+    },
+    {
+      key: "requests-forgot-punch",
+      label: "Forgot Punch / Time Edit",
+      description: "Review employee check in, check out and time edit requests.",
+      path: "/employee/requests/forgot-punch",
+      icon: ScanLine,
+    },
+    {
+      key: "requests-tools-inventory",
+      label: "Request Tools / Inventory",
+      description: "Submit inventory requests for Taking (issue) or Return of tools & equipment.",
+      path: "/employee/requests/tools-inventory",
+      icon: Wrench,
+    },
+    {
+      key: "requests-track",
+      label: "Track My Request",
+      description: "View submitted requests and their status.",
+      path: "/employee/requests/track",
+      icon: ClipboardList,
+    },
+  ];
+
+  const services = allServices.filter((s) => hasModuleAccess(s.key));
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -27,53 +61,30 @@ const Requests = () => {
 
       <div className="space-y-4">
         <h2 className="font-display text-lg font-semibold">Request Services</h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            {
-              label: "Apply for Leave",
-              description: "Submit leave application and track approval status.",
-              path: "/employee/requests/apply-leave",
-              icon: CalendarDays,
-            },
-            {
-              label: "Forgot Punch",
-              description:
-                "Request a correction for a missed check-in or check-out.",
-              path: "/employee/requests/forgot-punch",
-              icon: ScanLine,
-            },
-            {
-              label: "Request Tools / Inventory",
-              description:
-                "Submit inventory requests for Taking (issue) or Return of tools & equipment.",
-              path: "/employee/requests/tools-inventory",
-              icon: Wrench,
-            },
-            {
-              label: "Track My Request",
-              description: "View submitted requests and their status.",
-              path: "/employee/requests/track",
-              icon: ClipboardList,
-            },
-          ].map(({ label, description, path, icon: Icon }) => (
-            <Link
-              key={path}
-              to={path}
-              className="group rounded-2xl border border-border bg-background p-5 card-shadow transition-colors hover:border-primary/40 hover:bg-primary/[0.03]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                  <Icon className="h-5 w-5 text-primary" />
+        {services.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4">No request services assigned to your role.</p>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-3">
+            {services.map(({ label, description, path, icon: Icon }) => (
+              <Link
+                key={path}
+                to={path}
+                className="group rounded-2xl border border-border bg-background p-5 card-shadow transition-colors hover:border-primary/40 hover:bg-primary/[0.03]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                    <Icon className="h-5 w-5 text-primary" />
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
-              </div>
-              <h3 className="mt-4 font-semibold">{label}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {description}
-              </p>
-            </Link>
-          ))}
-        </div>
+                <h3 className="mt-4 font-semibold">{label}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {description}
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

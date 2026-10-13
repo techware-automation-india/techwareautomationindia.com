@@ -3,23 +3,33 @@ import { useSearchParams, useParams, useNavigate } from "react-router-dom";
 import {
   Package, PackagePlus, PackageMinus, Boxes, CheckCircle2,
   Inbox, AlertTriangle, ArrowRight, ArrowLeft, RefreshCw,
-  FolderTree, ShieldCheck, ClipboardList, Bell, Layers, Sparkles
+  FolderTree, ShieldCheck, ClipboardList, Bell, Layers, Sparkles, Wrench,
+  User, Users
 } from "lucide-react";
 import InventoryInView from "../components/inventory/InventoryInView.jsx";
+import InventoryOutView from "../components/inventory/InventoryOutView.jsx";
+import InventoryApprovalView from "../components/inventory/InventoryApprovalView.jsx";
+import ViewInventoryView from "../components/inventory/ViewInventoryView.jsx";
+import InventoryRequestView from "../components/inventory/InventoryRequestView.jsx";
+import InventoryAlertView from "../components/inventory/InventoryAlertView.jsx";
+import GeneralConsumablesView from "../components/inventory/GeneralConsumablesView.jsx";
+import { hasModuleAccess } from "../../lib/permissions.js";
+import { apiGet } from "../../lib/api.js";
+import { getAuthUser } from "../../lib/auth.js";
 
 // ═══════════════════════════════════════════════════════════════════════
-// INVENTORY SUBMODULES DEFINITIONS (The 6 Submodules specified by user)
+// INVENTORY SUBMODULES DEFINITIONS (Core Inventory Submodules)
 // ═══════════════════════════════════════════════════════════════════════
 const INVENTORY_SUBMODULES = [
   {
     id: "in",
     key: "inventory-in",
     title: "1. Inventory In",
-    tagline: "Categories, Subcategories & Item Specifications",
+    tagline: "Material Inward Register & Category Tree",
     description:
-      "Create & edit hierarchical categories (up to 4 levels) and register items at any level with photo, code, quantity, and 5 key-value specifications.",
+      "Track product inward entries (stock IN logs), create & edit hierarchical categories (up to 4 levels), and register items at any level.",
     icon: PackagePlus,
-    badge: "Phase 1 Active",
+    badge: "Active Module",
     badgeType: "active",
     color: "from-blue-600/10 to-indigo-600/10 text-blue-600 border-blue-500/30",
     buttonText: "Open Inventory In",
@@ -28,66 +38,53 @@ const INVENTORY_SUBMODULES = [
     id: "out",
     key: "inventory-out",
     title: "2. Inventory Out",
-    tagline: "Stock Issuance & Allocation",
+    tagline: "Material Outward Register & Allocations",
     description:
-      "Dispatch products and materials to employees, running projects, or client organizations with status and return tracking.",
+      "Track product outward entries (stock OUT logs), dispatch products and materials to employees, running projects, or client organizations with status and return tracking.",
     icon: PackageMinus,
-    badge: "Next Phase",
-    badgeType: "upcoming",
+    badge: "Active Module",
+    badgeType: "active",
     color: "from-amber-600/10 to-orange-600/10 text-amber-600 border-amber-500/30",
-    buttonText: "View Submodule",
-  },
-  {
-    id: "approval",
-    key: "inventory-approval",
-    title: "3. Inventory Approval",
-    tagline: "Requisition & Dispatch Sign-Off",
-    description:
-      "Authorized review workflow to approve or reject internal material requisitions, purchase indents, and dispatch requests.",
-    icon: ShieldCheck,
-    badge: "Next Phase",
-    badgeType: "upcoming",
-    color: "from-emerald-600/10 to-teal-600/10 text-emerald-600 border-emerald-500/30",
-    buttonText: "View Submodule",
+    buttonText: "Open Inventory Out",
   },
   {
     id: "view",
     key: "view-inventory",
-    title: "4. View Inventory",
+    title: "3. View Inventory",
     tagline: "Master Stock Catalog & Valuation",
     description:
       "Comprehensive catalog of all company materials, workshop assets, category filters, physical locations, and stock summaries.",
     icon: Boxes,
-    badge: "Next Phase",
-    badgeType: "upcoming",
+    badge: "Active Module",
+    badgeType: "active",
     color: "from-violet-600/10 to-purple-600/10 text-violet-600 border-violet-500/30",
-    buttonText: "View Submodule",
-  },
-  {
-    id: "request",
-    key: "inventory-request",
-    title: "5. Inventory Request",
-    tagline: "Material Requisition & Indents",
-    description:
-      "Submit requests for tools, spare parts, raw materials, or consumables needed for production, maintenance, or client projects.",
-    icon: ClipboardList,
-    badge: "Next Phase",
-    badgeType: "upcoming",
-    color: "from-cyan-600/10 to-sky-600/10 text-cyan-600 border-cyan-500/30",
-    buttonText: "View Submodule",
+    buttonText: "Open View Inventory",
   },
   {
     id: "alert",
     key: "inventory-alert",
-    title: "6. Inventory Alert",
+    title: "4. Inventory Alert",
     tagline: "Low Stock & Threshold Warnings",
     description:
       "Real-time notifications for items running below minimum stock limits, zero-stock items, and automated reorder alerts.",
     icon: Bell,
-    badge: "Next Phase",
-    badgeType: "upcoming",
+    badge: "Active Module",
+    badgeType: "active",
     color: "from-rose-600/10 to-red-600/10 text-rose-600 border-rose-500/30",
-    buttonText: "View Submodule",
+    buttonText: "Open Inventory Alert",
+  },
+  {
+    id: "general",
+    key: "general-consumables",
+    title: "5. Tools / Consumables",
+    tagline: "2 Folders: Tools & General / Consumables",
+    description:
+      "Dedicated management for employee tool requests and general consumable product taking history organized into Tools and General / Consumables folders.",
+    icon: Wrench,
+    badge: "Active Module",
+    badgeType: "active",
+    color: "from-teal-600/10 to-emerald-600/10 text-teal-600 border-teal-500/30",
+    buttonText: "Open Tools / Consumables",
   },
 ];
 
@@ -170,10 +167,29 @@ const Inventory = ({ defaultSubmodule = null }) => {
     if (lower === "view" || lower === "view-inventory" || lower === "all") return "view";
     if (lower === "request" || lower === "inventory-request") return "request";
     if (lower === "alert" || lower === "inventory-alert" || lower === "low-stock" || lower === "out-stock") return "alert";
+    if (lower === "general" || lower === "general-consumables" || lower === "consumables") return "general";
     return null;
   };
 
   const [activeSubmodule, setActiveSubmodule] = useState(getSelectedSubmodule);
+  const [assignedUsers, setAssignedUsers] = useState({
+    inventoryInUsers: [],
+    inventoryOutUsers: [],
+  });
+  const currentUser = getAuthUser();
+
+  useEffect(() => {
+    apiGet("/inventory/assigned-users")
+      .then((data) => {
+        setAssignedUsers({
+          inventoryInUsers: data.inventoryInUsers || [],
+          inventoryOutUsers: data.inventoryOutUsers || [],
+        });
+      })
+      .catch((err) => {
+        console.warn("Could not load assigned inventory users:", err);
+      });
+  }, []);
 
   useEffect(() => {
     const nextSub = getSelectedSubmodule();
@@ -196,11 +212,69 @@ const Inventory = ({ defaultSubmodule = null }) => {
     return (
       <InventoryInView
         onBackToHub={() => handleSelectSubmodule(null)}
+        assignedUsers={assignedUsers.inventoryInUsers}
+        currentUser={currentUser}
       />
     );
   }
 
-  // Render Upcoming Submodules (2 through 6)
+  // Render Submodule 2: Inventory Out
+  if (activeSubmodule === "out") {
+    return (
+      <InventoryOutView
+        onBackToHub={() => handleSelectSubmodule(null)}
+        assignedUsers={assignedUsers.inventoryOutUsers}
+        currentUser={currentUser}
+      />
+    );
+  }
+
+  // Render Submodule 3: Inventory Approval
+  if (activeSubmodule === "approval") {
+    return (
+      <InventoryApprovalView
+        onBackToHub={() => handleSelectSubmodule(null)}
+      />
+    );
+  }
+
+  // Render Submodule 4: View Inventory
+  if (activeSubmodule === "view") {
+    return (
+      <ViewInventoryView
+        onBackToHub={() => handleSelectSubmodule(null)}
+      />
+    );
+  }
+
+  // Render Submodule 5: Inventory Request
+  if (activeSubmodule === "request") {
+    return (
+      <InventoryRequestView
+        onBackToHub={() => handleSelectSubmodule(null)}
+      />
+    );
+  }
+
+  // Render Submodule 6: Inventory Alert
+  if (activeSubmodule === "alert") {
+    return (
+      <InventoryAlertView
+        onBackToHub={() => handleSelectSubmodule(null)}
+      />
+    );
+  }
+
+  // Render Submodule 7: General / Consumables
+  if (activeSubmodule === "general") {
+    return (
+      <GeneralConsumablesView
+        onBackToHub={() => handleSelectSubmodule(null)}
+      />
+    );
+  }
+
+  // Render Upcoming Submodules
   if (activeSubmodule) {
     const selectedObj = INVENTORY_SUBMODULES.find((s) => s.id === activeSubmodule) || {
       id: activeSubmodule,
@@ -217,7 +291,7 @@ const Inventory = ({ defaultSubmodule = null }) => {
   }
 
   // ═════════════════════════════════════════════════════════════════════
-  // Main Inventory Hub: The 6 Submodules Grid
+  // Main Inventory Hub: The Submodules Grid
   // ═════════════════════════════════════════════════════════════════════
   return (
     <div className="space-y-8">
@@ -233,7 +307,7 @@ const Inventory = ({ defaultSubmodule = null }) => {
                 Inventory Management System
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-                6 Sub-Modules
+                5 Sub-Modules
               </span>
             </div>
             <p className="text-sm text-muted-foreground mt-1 leading-relaxed max-w-2xl">
@@ -263,7 +337,7 @@ const Inventory = ({ defaultSubmodule = null }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {INVENTORY_SUBMODULES.map((sub) => {
+          {INVENTORY_SUBMODULES.filter((sub) => hasModuleAccess(sub.key)).map((sub) => {
             const Icon = sub.icon;
             const isActive = sub.badgeType === "active";
 
@@ -313,6 +387,47 @@ const Inventory = ({ defaultSubmodule = null }) => {
                   <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
                     {sub.description}
                   </p>
+
+                  {/* Assigned Personnel Names */}
+                  {sub.id === "in" && assignedUsers.inventoryInUsers?.length > 0 && (
+                    <div className="mt-3.5 pt-3 border-t border-border/70">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground mb-1.5">
+                        <Users className="h-3.5 w-3.5 text-blue-600" />
+                        <span>Assigned Access Personnel:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {assignedUsers.inventoryInUsers.map((u) => (
+                          <span
+                            key={u.id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+                          >
+                            <User className="h-2.5 w-2.5" />
+                            {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {sub.id === "out" && assignedUsers.inventoryOutUsers?.length > 0 && (
+                    <div className="mt-3.5 pt-3 border-t border-border/70">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground mb-1.5">
+                        <Users className="h-3.5 w-3.5 text-amber-600" />
+                        <span>Assigned Access Personnel:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {assignedUsers.inventoryOutUsers.map((u) => (
+                          <span
+                            key={u.id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20"
+                          >
+                            <User className="h-2.5 w-2.5" />
+                            {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom Action Footer */}

@@ -12,12 +12,14 @@ import {
   AlertCircle,
   TrendingUp,
   X,
-  Eye,
+  MessageSquare,
+  Send,
   Loader2,
-  UserCheck,
+  Folder,
+  Package,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiGet, apiPatch } from "../../lib/api.js";
+import { apiGet, apiPatch, apiPost } from "../../lib/api.js";
 
 const EmployeeAssignedProjects = () => {
   const [projects, setProjects] = useState([]);
@@ -32,6 +34,35 @@ const EmployeeAssignedProjects = () => {
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [selectedProject, setSelectedProject] = useState(null);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [commentText, setCommentText] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  const handlePostComment = async (projectId) => {
+    if (!commentText.trim() || submittingComment) return;
+    setSubmittingComment(true);
+    try {
+      const res = await apiPost(`/projects/${projectId}/comments`, { content: commentText.trim() });
+      toast.success("Comment posted successfully!");
+      setCommentText("");
+
+      if (res.comment) {
+        setSelectedProject((prev) =>
+          prev ? { ...prev, comments: [res.comment, ...(prev.comments || [])] } : null
+        );
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === projectId
+              ? { ...p, comments: [res.comment, ...(p.comments || [])] }
+              : p
+          )
+        );
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to post comment.");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   const loadAssignedProjects = async () => {
     setLoading(true);
@@ -511,38 +542,256 @@ const EmployeeAssignedProjects = () => {
                 </div>
               </div>
 
-              {/* Documents & Specifications */}
+              {/* Documents & Category Folders */}
               <div>
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  Project Documents ({selectedProject.documents?.length || 0})
+                  Project Products & Category Folders ({selectedProject.documents?.length || 0})
                 </h4>
-                <div className="space-y-2">
-                  {selectedProject.documents && selectedProject.documents.length > 0 ? (
-                    selectedProject.documents.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="p-3 rounded-lg border border-border bg-background flex items-center justify-between text-xs"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText className="h-4 w-4 text-primary shrink-0" />
-                          <span className="font-medium truncate">{doc.name}</span>
-                        </div>
-                        {doc.url && (
-                          <a
-                            href={doc.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-border hover:bg-secondary transition-colors font-medium shrink-0"
+                <div className="space-y-3">
+                  {(() => {
+                    const catMap = {};
+                    const uncatDocs = [];
+
+                    (selectedProject.documents || []).forEach((doc) => {
+                      if (doc.type === "folder" || doc.url === "#folder" || doc.fileType === "folder" || doc.fileUrl === "#folder") {
+                        const folderName = doc.name || doc.fileName;
+                        if (
+                          folderName === "Mechanical Product" ||
+                          folderName === "Electrical Product" ||
+                          folderName === "Automation Product" ||
+                          folderName === "Electronics Product" ||
+                          folderName === "General / Consumables"
+                        ) {
+                          return;
+                        }
+                        if (folderName && !catMap[folderName]) catMap[folderName] = [];
+                        return;
+                      }
+
+                      const name = doc.name || doc.fileName || "";
+                      let matched = null;
+                      const bracketMatch = name.match(/^\[(.*?)\]/);
+                      if (bracketMatch && bracketMatch[1]) {
+                        let tag = bracketMatch[1].trim();
+                        if (tag === "Mechanical Product") {
+                          tag = "Mechnical";
+                        }
+                        const key = Object.keys(catMap).find(
+                          (k) =>
+                            k.toLowerCase() === tag.toLowerCase() ||
+                            k.toLowerCase().includes(tag.toLowerCase()) ||
+                            tag.toLowerCase().includes(k.toLowerCase())
+                        );
+                        if (key) matched = key;
+                        else {
+                          catMap[tag] = [];
+                          matched = tag;
+                        }
+                      } else {
+                        const key = Object.keys(catMap).find((k) =>
+                          name.toLowerCase().includes(k.toLowerCase())
+                        );
+                        if (key) matched = key;
+                      }
+
+                      if (matched) catMap[matched].push(doc);
+                      else uncatDocs.push(doc);
+                    });
+
+                    return (
+                      <div className="space-y-3">
+                        {Object.entries(catMap)
+                          .filter(([_, items]) => items.length > 0)
+                          .map(([category, items]) => (
+                          <div
+                            key={category}
+                            className="rounded-xl border border-border bg-background overflow-hidden"
                           >
-                            <Download className="h-3 w-3" />
-                            Download
-                          </a>
+                            <div className="p-3 bg-secondary/30 flex items-center justify-between">
+                              <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                                <Folder className="h-4 w-4 text-amber-500 fill-amber-500/20 shrink-0" />
+                                <span>{category}</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                                {items.length} {items.length === 1 ? "Product" : "Products"}
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 space-y-1.5 border-t border-border">
+                              {items.length > 0 ? (
+                                items.map((item) => {
+                                  let cleanName = (item.name || item.fileName || "").replace(/^\[.*?\]\s*/, "");
+                                  let qty = item.size || item.fileSize || 1;
+                                  const qtyMatch = cleanName.match(/\(Qty:\s*(\d+)/i);
+                                  if (qtyMatch && qtyMatch[1]) {
+                                    qty = parseInt(qtyMatch[1], 10) || qty;
+                                  }
+
+                                  let unitPrice = 0;
+                                  let empName = "";
+                                  let createdAt = item.uploadedAt || null;
+                                  let approvedAt = null;
+                                  let foundAt = null;
+
+                                  const urlStr = item.url || item.fileUrl || "";
+                                  if (urlStr.includes("?")) {
+                                    const params = new URLSearchParams(urlStr.split("?")[1] || "");
+                                    if (params.get("price")) unitPrice = parseFloat(params.get("price")) || 0;
+                                    if (params.get("emp")) empName = decodeURIComponent(params.get("emp"));
+                                    if (params.get("created")) createdAt = decodeURIComponent(params.get("created"));
+                                    if (params.get("approved")) approvedAt = decodeURIComponent(params.get("approved"));
+                                    if (params.get("found")) foundAt = decodeURIComponent(params.get("found"));
+                                  }
+
+                                  if (!unitPrice) {
+                                    const priceMatch = cleanName.match(/(?:price:?\s*|₹\s*|Rs\.?\s*|\$\s*)([0-9,.]+)/i);
+                                    if (priceMatch && priceMatch[1]) {
+                                      unitPrice = parseFloat(priceMatch[1].replace(/,/g, "")) || 0;
+                                    }
+                                  }
+
+                                  cleanName = cleanName
+                                    .replace(/\(Qty:\s*\d+.*?\)/gi, "")
+                                    .replace(/(?:Price:?\s*|₹\s*|Rs\.?\s*|\$\s*)[0-9,.]+/gi, "")
+                                    .replace(/\|\s*$/g, "")
+                                    .trim();
+
+                                  const totalPrice = unitPrice * qty;
+
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      className="p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-xs flex items-center justify-between flex-wrap gap-2"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <Package className="h-4 w-4 text-emerald-600 shrink-0" />
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-semibold text-foreground truncate block">{cleanName}</span>
+                                            {empName && (
+                                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/10 text-primary font-medium">
+                                                Emp: {empName}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5 flex-wrap">
+                                            <span className="text-emerald-700 dark:text-emerald-300 font-medium">Qty: {qty}</span>
+                                            <span>•</span>
+                                            <span>Price: ₹{unitPrice.toLocaleString("en-IN")}</span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground mt-1 flex-wrap">
+                                            {createdAt && <span>Req: {new Date(createdAt).toLocaleDateString()}</span>}
+                                            {approvedAt && <span className="text-blue-600 dark:text-blue-400">• Appr: {new Date(approvedAt).toLocaleDateString()}</span>}
+                                            {foundAt && <span className="text-emerald-700 dark:text-emerald-300 font-medium">• Found: {new Date(foundAt).toLocaleDateString()}</span>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <span className="text-[9px] text-muted-foreground block font-medium">Total Value</span>
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                          ₹{totalPrice.toLocaleString("en-IN")}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="py-2 text-center text-[11px] text-muted-foreground">
+                                  No products added under {category} yet.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+
+                        {uncatDocs.length > 0 && (
+                          <div className="p-3 rounded-xl border border-border bg-background space-y-2">
+                            <div className="text-[11px] font-semibold text-muted-foreground uppercase">
+                              Other Documents ({uncatDocs.length})
+                            </div>
+                            {uncatDocs.map((d) => (
+                              <div
+                                key={d.id}
+                                className="p-2 rounded-lg border border-border flex items-center justify-between text-xs"
+                              >
+                                <span className="truncate">{d.name}</span>
+                                {d.url && d.url !== "#" && (
+                                  <a href={d.url} target="_blank" rel="noreferrer">
+                                    <Download className="h-3.5 w-3.5 text-primary" />
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Project Comments & Discussion Section */}
+              <div className="pt-4 border-t border-border space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    Project Discussion & Comments ({selectedProject.comments?.length || 0})
+                  </h4>
+                </div>
+
+                {/* Add Comment Input */}
+                <div className="rounded-xl border border-border bg-secondary/20 p-3.5 space-y-2">
+                  <textarea
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    placeholder="Write a comment or project update..."
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none text-xs"
+                  />
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handlePostComment(selectedProject.id)}
+                      disabled={submittingComment || !commentText.trim()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg cta-gradient text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+                    >
+                      {submittingComment ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Posting...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3.5 w-3.5" /> Post Comment
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Comments List */}
+                <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                  {selectedProject.comments && selectedProject.comments.length > 0 ? (
+                    selectedProject.comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        className="p-3 rounded-lg border border-border bg-background shadow-2xs text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between font-semibold">
+                          <span className="text-foreground text-xs font-bold">
+                            {comment.user || "Team Member"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {comment.timestamp || (comment.createdAt ? new Date(comment.createdAt).toLocaleString() : "")}
+                          </span>
+                        </div>
+                        <p className="text-muted-foreground whitespace-pre-wrap leading-relaxed text-xs">
+                          {comment.message || comment.content}
+                        </p>
                       </div>
                     ))
                   ) : (
                     <div className="py-4 text-center text-xs text-muted-foreground border border-dashed border-border rounded-lg">
-                      No documents uploaded for this project yet.
+                      No comments yet. Start the project conversation!
                     </div>
                   )}
                 </div>

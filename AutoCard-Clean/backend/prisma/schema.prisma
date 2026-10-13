@@ -55,6 +55,7 @@ enum RequestStatus {
   PENDING
   APPROVED
   REJECTED
+  COMPLETED
 }
 
 enum CustomerRequestStatus {
@@ -164,6 +165,7 @@ model EmployeeProfile {
   totalExperienceYears Float?
   previousemployer     String?
   skills               String?
+  assignedTools        String?          @db.Text
 
   // --- Identification / proofs ---
   nationalIdNumber  String?
@@ -383,7 +385,7 @@ model LeaveRequest {
   // Admin review.
   reviewedById String?
   reviewedBy   User?     @relation("LeaveReviewer", fields: [reviewedById], references: [id])
-  reviewNote   String?
+  reviewNote   String?   @db.Text
   reviewedAt   DateTime?
 
   createdAt DateTime @default(now())
@@ -435,7 +437,7 @@ model EmployeeRequest {
 
   reviewedById String?
   reviewedBy   User?     @relation("RequestReviewer", fields: [reviewedById], references: [id])
-  reviewNote   String?
+  reviewNote   String?   @db.Text
   reviewedAt   DateTime?
 
   createdAt DateTime @default(now())
@@ -545,7 +547,7 @@ model ProjectDocument {
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   fileName    String
-  fileUrl     String
+  fileUrl     String   @db.Text
   fileSize    Int?     // in bytes
   fileType    String?  // MIME type
   uploadedById String
@@ -743,7 +745,7 @@ model InventoryCategory {
   children    InventoryCategory[] @relation("CategoryHierarchy")
   items       InventoryItem[]     @relation("CategoryItems")
   createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  updatedAt   DateTime            @default(now()) @updatedAt
 
   @@index([parentId])
   @@index([level])
@@ -770,16 +772,20 @@ model InventoryItem {
   specifications Json?              // Up to 5 key-value pairs stored as JSON
   quantity       Float              @default(0)
   minStock       Int                @default(5)
+  maxStock       Int?               @default(100)
   unit           String             @default("Nos")
   location       String?
+  warehouse      String?
   description    String?            @db.Text
   costPrice      Float?
   purchaseDate   DateTime?
   date           DateTime?
   companyName    String?
+  createdById    String?
+  createdByName  String?
   issues         InventoryIssue[]
   createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  updatedAt      DateTime           @default(now()) @updatedAt
 
   @@index([categoryId])
   @@map("inventory_items")
@@ -799,7 +805,7 @@ model InventoryIssue {
   status           String         @default("ISSUED")
   notes            String?        @db.Text
   createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  updatedAt        DateTime       @default(now()) @updatedAt
 
   @@map("inventory_issues")
 }

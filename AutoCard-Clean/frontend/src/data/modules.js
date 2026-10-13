@@ -25,7 +25,7 @@ import {
 export const APPROVAL_SUBTYPES = [
   { key: 'approvals-leave', label: 'Leave Approval', icon: CalendarDays, description: 'Approve employee leave applications' },
   { key: 'approvals-attendance', label: 'Unassign Location Approval', icon: MapPin, description: 'Approve out-of-office & GPS punches' },
-  { key: 'approvals-forgot-punch', label: 'Forgot Punch Approval', icon: Clock, description: 'Approve missed check-in & check-out time corrections' },
+  { key: 'approvals-forgot-punch', label: 'Forgot Punch / Time Edit Approval', icon: Clock, description: 'Review employee check in, check out and time edit requests' },
   { key: 'approvals-tools-inventory', label: 'Tools & Inventory Approval', icon: Wrench, description: 'Approve tool requisitions & inventory returns' },
 ];
 
@@ -39,9 +39,9 @@ export const MODULES = [
     hasSubTypes: true,
     subModules: [
       { key: 'requests-apply-leave', label: 'Apply for Leave', icon: CalendarDays, description: 'Submit leave applications' },
-      { key: 'requests-forgot-punch', label: 'Forgot Punch', icon: Clock, description: 'Submit attendance correction / missed punch' },
+      { key: 'requests-forgot-punch', label: 'Forgot Punch / Time Edit', icon: Clock, description: 'Review employee check in, check out and time edit requests' },
       { key: 'requests-tools-inventory', label: 'Request Tools / Inventory', icon: Wrench, description: 'Request or return project tools and equipment' },
-      { key: 'requests-track', label: 'Track My Requests', icon: FileText, description: 'View status of submitted requests' },
+      { key: 'requests-track', label: 'Track All Requests', icon: FileText, description: 'View status of all submitted requests' },
     ],
   },
   {

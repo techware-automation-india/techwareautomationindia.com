@@ -22,13 +22,13 @@ function toNumberOrNull(v) {
 // ============================================================================
 
 // GET /api/onboarding/me - return the current employee's profile + status.
-router.get("/me", requireAuth, requireRole("EMPLOYEE"), async (req, res) => {
+router.get("/me", requireAuth, async (req, res) => {
   try {
     const profile = await prisma.employeeProfile.findUnique({
       where: { userId: req.user.id },
     });
     if (!profile) {
-      return res.status(404).json({ message: "Employee profile not found." });
+      return res.status(200).json({ profile: null });
     }
     res.json({ profile });
   } catch (err) {

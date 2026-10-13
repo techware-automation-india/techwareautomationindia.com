@@ -16,6 +16,7 @@ import {
   X,
   MapPin,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -239,6 +240,14 @@ const STATUS_META = {
     cell: "bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-800 dark:text-emerald-300",
   },
 
+  SHORT_DAY: {
+    label: "Short Day",
+    description: `Worked hours less than ${REGULAR_HOURS} hours`,
+    bg: "bg-amber-500/15 dark:bg-amber-500/25",
+    text: "text-amber-700 dark:text-amber-400",
+    cell: "bg-amber-500/10 dark:bg-amber-500/20 border-amber-300 dark:border-amber-700/50 text-amber-800 dark:text-amber-300",
+  },
+
   ABSENT: {
     label: "Absent",
     bg: "bg-rose-500/15 dark:bg-rose-500/25",
@@ -268,7 +277,7 @@ const STATUS_META = {
   },
 };
 
-const StatCard = ({ icon: Icon, label, value, bg, text }) => (
+const StatCard = ({ icon: Icon, label, value, bg, text, description }) => (
   <div className="rounded-2xl bg-background border border-border card-shadow p-5 flex items-center gap-4">
     <div
       className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${bg}`}
@@ -282,6 +291,11 @@ const StatCard = ({ icon: Icon, label, value, bg, text }) => (
       </div>
 
       <div className="text-xs text-muted-foreground mt-1">{label}</div>
+      {description && (
+        <div className="text-[11px] text-muted-foreground/80 mt-0.5 font-medium">
+          {description}
+        </div>
+      )}
     </div>
   </div>
 );
@@ -390,7 +404,19 @@ const Attendance = () => {
   ).length;
 
   const filteredRecords = selectedStatus
-    ? records.filter((r) => r.status === selectedStatus)
+    ? records.filter((r) => {
+        if (selectedStatus === "SHORT_DAY") {
+          return (
+            r.isShortDay ||
+            (Number(r.workedHours) > 0 &&
+              Number(r.workedHours) < REGULAR_HOURS &&
+              !isHolidayOrSundayRecord(r) &&
+              r.status !== "ON_LEAVE" &&
+              r.status !== "ABSENT")
+          );
+        }
+        return r.status === selectedStatus;
+      })
     : records;
 
   const handleStatusClick = (key) => {
@@ -828,7 +854,7 @@ const Attendance = () => {
 
       {/* Summary stat cards */}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           {
             key: "PRESENT",
@@ -836,6 +862,15 @@ const Attendance = () => {
             Icon: CheckCircle2,
             bg: "bg-emerald-100",
             text: "text-emerald-700",
+          },
+
+          {
+            key: "SHORT_DAY",
+            label: "Short Day",
+            description: `Worked < ${REGULAR_HOURS} hrs`,
+            Icon: AlertCircle,
+            bg: "bg-amber-100",
+            text: "text-amber-700",
           },
 
           {
@@ -861,8 +896,21 @@ const Attendance = () => {
             bg: "bg-indigo-100",
             text: "text-indigo-700",
           },
-        ].map(({ key, label, Icon, bg, text }) => {
+        ].map(({ key, label, Icon, bg, text, description }) => {
           const isActive = selectedStatus === key;
+          const count =
+            key === "SHORT_DAY"
+              ? (summary.SHORT_DAY ??
+                records.filter(
+                  (r) =>
+                    r.isShortDay ||
+                    (Number(r.workedHours) > 0 &&
+                      Number(r.workedHours) < REGULAR_HOURS &&
+                      !isHolidayOrSundayRecord(r) &&
+                      r.status !== "ON_LEAVE" &&
+                      r.status !== "ABSENT"),
+                ).length)
+              : summary[key] ?? 0;
 
           return (
             <button
@@ -878,9 +926,10 @@ const Attendance = () => {
               <StatCard
                 icon={Icon}
                 label={label}
-                value={summary[key] ?? 0}
+                value={count}
                 bg={bg}
                 text={text}
+                description={description}
               />
             </button>
           );
@@ -1079,13 +1128,24 @@ const Attendance = () => {
                     month === today.getMonth() + 1 &&
                     day === today.getDate();
 
-                  const meta = r
-                    ? STATUS_META[r.status] ?? STATUS_META.PRESENT
-                    : hol || isSunday
-                      ? STATUS_META.HOLIDAY
-                      : null;
-
                   const isSunOrHolCell = isSunday || Boolean(hol) || r?.status === "HOLIDAY";
+                  const isShortDayCell =
+                    r &&
+                    (r.isShortDay ||
+                      (Number(r.workedHours) > 0 &&
+                        Number(r.workedHours) < REGULAR_HOURS &&
+                        !isSunOrHolCell &&
+                        r.status !== "ON_LEAVE" &&
+                        r.status !== "ABSENT"));
+
+                  const meta = isShortDayCell
+                    ? STATUS_META.SHORT_DAY
+                    : r
+                      ? STATUS_META[r.status] ?? STATUS_META.PRESENT
+                      : hol || isSunday
+                        ? STATUS_META.HOLIDAY
+                        : null;
+
                   const hasPunchData = r && r.status !== "ON_LEAVE" && (r.checkIn || r.checkOut || Number(r.workedHours) > 0);
                   const cellOvertime = r ? (r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolCell)) : 0;
 
@@ -1129,7 +1189,10 @@ const Attendance = () => {
                                 "500",
                               )}`}
                             />
-                            <span className="text-[10px] font-bold truncate">
+                            <span
+                              className="text-[10px] font-bold truncate"
+                              title={meta.description || meta.label}
+                            >
                               {(r?.status === "HOLIDAY" || !r) ? (hol || r?.note || (isSunday ? "Sunday (Weekly Off)" : "Holiday")) : meta.label}
                             </span>
                           </div>
@@ -1285,9 +1348,11 @@ const Attendance = () => {
 
                 <tbody>
                   {records.map((r) => {
-                    const meta = STATUS_META[r.status] ?? STATUS_META.PRESENT;
-
                     const isSunOrHolRow = new Date(r.date).getDay() === 0 || r.status === "HOLIDAY" || Boolean(holidayByDay[getIndiaDayNumber(r.date)]);
+                    const rowWorkedHours = Number(r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0));
+                    const isShortDayRow = r && (r.isShortDay || (rowWorkedHours > 0 && rowWorkedHours < REGULAR_HOURS && !isSunOrHolRow && r.status !== "ON_LEAVE" && r.status !== "ABSENT"));
+                    const meta = isShortDayRow ? STATUS_META.SHORT_DAY : (STATUS_META[r.status] ?? STATUS_META.PRESENT);
+
                     const rowOvertime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolRow);
                     const rowWorkedTotal = isSunOrHolRow
                       ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
@@ -1317,6 +1382,7 @@ const Attendance = () => {
 
                         <td className="px-5 py-3">
                           <span
+                            title={meta.description || meta.label}
                             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
                           >
                             {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}

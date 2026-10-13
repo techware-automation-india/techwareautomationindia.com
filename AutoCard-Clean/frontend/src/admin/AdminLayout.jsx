@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, LogOut, ChevronLeft, ChevronDown } from "lucide-react";
+import { Menu, X, LogOut, ChevronLeft, ChevronDown, Bell } from "lucide-react";
 import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
+import { usePoll } from "../lib/pollContext.jsx";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const profileDropdownRef = useRef(null);
+  const notifDropdownRef = useRef(null);
   const user = getAuthUser();
+  const { adminPendingCount, adminPendingItems } = usePoll();
 
   // Redirect to login if not authenticated as admin — must be inside useEffect
   useEffect(() => {
@@ -28,6 +32,12 @@ const AdminLayout = () => {
         !profileDropdownRef.current.contains(event.target)
       ) {
         setProfileOpen(false);
+      }
+      if (
+        notifDropdownRef.current &&
+        !notifDropdownRef.current.contains(event.target)
+      ) {
+        setNotifOpen(false);
       }
     };
 
@@ -152,6 +162,63 @@ const AdminLayout = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* 🔔 Live Notification Bell */}
+            <div className="relative" ref={notifDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setNotifOpen((v) => !v)}
+                className="relative p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+                aria-label={`Notifications${adminPendingCount ? `, ${adminPendingCount} pending` : ""}`}
+                title="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {adminPendingCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 ring-2 ring-background animate-pulse">
+                    {adminPendingCount > 99 ? "99+" : adminPendingCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-border bg-background shadow-xl z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                    <span className="text-sm font-bold text-foreground">Pending Requests</span>
+                    {adminPendingCount > 0 && (
+                      <span className="text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 px-2 py-0.5 rounded-full">
+                        {adminPendingCount} pending
+                      </span>
+                    )}
+                  </div>
+                  {adminPendingItems.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      ✅ All caught up! No pending requests.
+                    </div>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto divide-y divide-border">
+                      {adminPendingItems.slice(0, 8).map((item) => (
+                        <div key={item.id} className="px-4 py-3 flex items-start gap-3 hover:bg-secondary/60 transition-colors">
+                          <span className="mt-0.5 h-2 w-2 rounded-full bg-amber-500 shrink-0 mt-2" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground truncate">{item.subject || "New Request"}</p>
+                            <p className="text-xs text-muted-foreground truncate">{item.employee?.fullName || "Employee"}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-border px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => { setNotifOpen(false); navigate("/admin/approvals"); }}
+                      className="w-full text-xs font-semibold text-primary hover:underline text-center"
+                    >
+                      View All in Approvals →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <ThemeToggle />
 
             {/* Profile Dropdown */}

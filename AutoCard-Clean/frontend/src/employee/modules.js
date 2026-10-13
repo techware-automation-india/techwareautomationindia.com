@@ -13,6 +13,7 @@ import {
   CalendarDays,
   ClipboardList,
   Wrench,
+  Package,
 } from "lucide-react";
 
 // Default modules always visible to employees
@@ -40,7 +41,6 @@ const defaultModules = [
     path: "/employee/mark-attendance",
     icon: Fingerprint,
     description: "Check in and check out for the day.",
-    alwaysVisible: true,
   },
   {
     key: "attendance",
@@ -48,7 +48,6 @@ const defaultModules = [
     path: "/employee/attendance",
     icon: Clock,
     description: "View your personal attendance history.",
-    alwaysVisible: true,
   },
   {
     key: "requests",
@@ -56,7 +55,6 @@ const defaultModules = [
     path: "/employee/requests",
     icon: FileText,
     description: "Submit and track requests.",
-    alwaysVisible: true,
   },
   {
     key: "assigned-projects",
@@ -74,22 +72,6 @@ const defaultModules = [
     description: "View machinery projects and documentation.",
     aliases: ["my-projects", "customer-projects"],
   },
-  // {
-  //   key: "leave",
-  //   label: "Leave",
-  //   path: "/employee/leave",
-  //   icon: Plane,
-  //   description: "Apply for and track your leave.",
-  //   alwaysVisible: true,
-  // },
-  // {
-  //   key: "holidays",
-  //   label: "Holidays",
-  //   path: "/employee/holidays",
-  //   icon: CalendarDays,
-  //   description: "View company holiday calendar.",
-  //   alwaysVisible: true,
-  // },
 ];
 
 // Admin modules that can be delegated to employees via custom roles or permissions
@@ -167,6 +149,14 @@ const adminModules = [
     adminKey: "projects",
     aliases: ["projects", "assigned-projects"],
   },
+  {
+    key: "inventory",
+    label: "Inventory",
+    path: "/employee/inventory",
+    icon: Package,
+    description: "Manage inventory, inward stock, and outward dispatches.",
+    adminKey: "inventory",
+  },
 ];
 
 // All modules combined
@@ -214,6 +204,32 @@ export function getModulesByPermissions(permissions = {}) {
       }
     }
 
+    // Requests parent key fallback if any requests-* sub-module is assigned
+    const hasRequestsSubPerm = module.key === "requests" && (
+      permissions["requests"] ||
+      permissions["requests-apply-leave"] ||
+      permissions["requests-forgot-punch"] ||
+      permissions["requests-tools-inventory"] ||
+      permissions["requests-track"]
+    );
+
+    // Approvals parent key fallback if any approvals-* sub-module is assigned
+    const hasApprovalsSubPerm = module.key === "approvals" && (
+      permissions["approvals"] ||
+      permissions["approvals-leave"] || 
+      permissions["approvals-attendance"] || 
+      permissions["approvals-forgot-punch"] ||
+      permissions["approvals-tools-inventory"] ||
+      permissions["approvals-tools"]
+    );
+
+    // Leave policy parent key fallback if any leave-policy-* sub-module is assigned
+    const hasLeavePolicySubPerm = module.key === "leave-policy" && (
+      permissions["leave-policy"] ||
+      permissions["leave-policy-types"] ||
+      permissions["leave-policy-holidays"]
+    );
+
     // Special mapping for assigned-projects and projects
     if (!perm && (module.key === "assigned-projects" || module.key === "projects")) {
       perm = permissions["assigned-projects"] || permissions["projects"];
@@ -225,21 +241,36 @@ export function getModulesByPermissions(permissions = {}) {
 
     const hasAdminPower = permissions["employee"] || permissions["roles-access"] || permissions["approvals"];
     const attendanceMgmtFallback = module.key === "attendance-management" && permissions["attendance"] && hasAdminPower;
-    
-    // Approvals access check (main key or any sub-type key)
-    const hasSubApprovalPerm = module.key === "approvals" && (
-      permissions["approvals"] ||
-      permissions["approvals-leave"] || 
-      permissions["approvals-attendance"] || 
-      permissions["approvals-forgot-punch"]
-    );
 
     if (attendanceMgmtFallback && !perm) {
       perm = permissions["attendance"];
     }
 
-    if (hasSubApprovalPerm && !perm) {
-      perm = hasSubApprovalPerm;
+    if (hasRequestsSubPerm && !perm) {
+      perm = hasRequestsSubPerm;
+    }
+
+    if (hasApprovalsSubPerm && !perm) {
+      perm = hasApprovalsSubPerm;
+    }
+
+    // Inventory parent key fallback if any inventory-* sub-module is assigned
+    const hasInventorySubPerm = module.key === "inventory" && (
+      permissions["inventory"] ||
+      permissions["inventory-in"] ||
+      permissions["inventory-out"] ||
+      permissions["view-inventory"] ||
+      permissions["inventory-approval"] ||
+      permissions["inventory-alert"] ||
+      permissions["general-consumables"]
+    );
+
+    if (hasLeavePolicySubPerm && !perm) {
+      perm = hasLeavePolicySubPerm;
+    }
+
+    if (hasInventorySubPerm && !perm) {
+      perm = hasInventorySubPerm;
     }
 
     const isAllowed = perm && (

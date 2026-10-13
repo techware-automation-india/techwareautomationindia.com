@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { ClipboardList, CalendarDays, Plus } from "lucide-react";
 import { getAuthUser } from "../../lib/auth.js";
+import { hasModuleAccess } from "../../lib/permissions.js";
 
 const LeavePolicyHome = () => {
   const navigate = useNavigate();
@@ -12,9 +13,9 @@ const LeavePolicyHome = () => {
   const user = getAuthUser();
   const isActualAdmin = user?.role === "ADMIN";
 
-  const modules = [
+  const allModules = [
     {
-      key: "leave-policy",
+      key: "leave-policy-types",
       label: "Leave Policy",
       description: "Define leave types, annual allowances, and rules.",
       icon: ClipboardList,
@@ -22,7 +23,7 @@ const LeavePolicyHome = () => {
       color: "bg-emerald-100 text-emerald-700",
     },
     {
-      key: "holidays",
+      key: "leave-policy-holidays",
       label: "Holiday",
       description: "Manage the company holiday calendar.",
       icon: CalendarDays,
@@ -30,6 +31,8 @@ const LeavePolicyHome = () => {
       color: "bg-violet-100 text-violet-700",
     },
   ];
+
+  const modules = allModules.filter((m) => hasModuleAccess(m.key));
 
   return (
     <div className="space-y-6">

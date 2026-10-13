@@ -26,7 +26,7 @@ const createEmployeeSchema = z.object({
 
 router.get(
   "/",
-  checkRolePermission(["employee", "projects"]),
+  checkRolePermission(["employee", "projects", "inventory", "view-inventory", "general-consumables"]),
   async (_req, res) => {
     try {
       const employees = await prisma.user.findMany({

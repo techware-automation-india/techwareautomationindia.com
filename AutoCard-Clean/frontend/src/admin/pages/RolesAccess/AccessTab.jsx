@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Search, Filter, Users } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Search, Filter, Users, Package, User, ShieldCheck } from "lucide-react";
 import { fetchUsersWithRoles, assignUserRole } from "../../../lib/api/usersApi";
 import { fetchRoles } from "../../../lib/api/rolesApi";
 import LoadingSpinner from "../../../components/common/LoadingSpinner";
@@ -84,6 +84,22 @@ export default function AccessTab() {
     return matchesSearch && matchesRoleFilter;
   });
 
+  const inventoryInPersonnel = useMemo(() => {
+    return users.filter((u) => {
+      if (u.role === "ADMIN" || u.customRole?.name?.toUpperCase() === "ADMIN") return true;
+      const mods = Array.isArray(u.customRole?.modules) ? u.customRole.modules : [];
+      return mods.includes("inventory") || mods.includes("inventory-in");
+    });
+  }, [users]);
+
+  const inventoryOutPersonnel = useMemo(() => {
+    return users.filter((u) => {
+      if (u.role === "ADMIN" || u.customRole?.name?.toUpperCase() === "ADMIN") return true;
+      const mods = Array.isArray(u.customRole?.modules) ? u.customRole.modules : [];
+      return mods.includes("inventory") || mods.includes("inventory-out");
+    });
+  }, [users]);
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -110,6 +126,85 @@ export default function AccessTab() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-foreground">Account Access & Role Assignment</h2>
         <p className="text-muted-foreground mt-1">Reassign or change the active role for any user account to update their module access.</p>
+      </div>
+
+      {/* Assigned Inventory Module Personnel Banner */}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Inventory In Card */}
+        <div className="p-4 rounded-2xl border border-blue-200/80 bg-blue-50/40 dark:bg-blue-950/20 dark:border-blue-900/40 card-shadow space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <Package className="h-4 w-4" />
+              </div>
+              <h4 className="text-sm font-bold text-foreground">
+                Inventory In (Material Inward) Access
+              </h4>
+            </div>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300">
+              {inventoryInPersonnel.length} Assigned
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Personnel with module access to create categories, add products & log inward stock:
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {inventoryInPersonnel.length > 0 ? (
+              inventoryInPersonnel.map((u) => (
+                <span
+                  key={u.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-blue-300 dark:border-blue-800 text-foreground shadow-2xs"
+                >
+                  <User className="h-3 w-3 text-blue-600" />
+                  <span className="font-semibold">{u.fullName || u.email}</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">
+                    ({u.customRole?.name || u.role})
+                  </span>
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground italic">No users assigned yet</span>
+            )}
+          </div>
+        </div>
+
+        {/* Inventory Out Card */}
+        <div className="p-4 rounded-2xl border border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-900/40 card-shadow space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <Package className="h-4 w-4" />
+              </div>
+              <h4 className="text-sm font-bold text-foreground">
+                Inventory Out (Material Outward) Access
+              </h4>
+            </div>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300">
+              {inventoryOutPersonnel.length} Assigned
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Personnel with module access to issue materials, dispatch stock & update returns:
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {inventoryOutPersonnel.length > 0 ? (
+              inventoryOutPersonnel.map((u) => (
+                <span
+                  key={u.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-amber-300 dark:border-amber-800 text-foreground shadow-2xs"
+                >
+                  <User className="h-3 w-3 text-amber-600" />
+                  <span className="font-semibold">{u.fullName || u.email}</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">
+                    ({u.customRole?.name || u.role})
+                  </span>
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground italic">No users assigned yet</span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -184,9 +279,34 @@ export default function AccessTab() {
                       <div className="text-muted-foreground">{user.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                        {user.customRole?.name || user.role || 'No Role'}
-                      </span>
+                      <div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                          {user.customRole?.name || user.role || 'No Role'}
+                        </span>
+                        {(() => {
+                          const isAdmin = user.role === 'ADMIN' || user.customRole?.name?.toUpperCase() === 'ADMIN';
+                          const modules = Array.isArray(user.customRole?.modules) ? user.customRole.modules : [];
+                          const hasIn = isAdmin || modules.includes('inventory') || modules.includes('inventory-in');
+                          const hasOut = isAdmin || modules.includes('inventory') || modules.includes('inventory-out');
+
+                          if (!hasIn && !hasOut) return null;
+
+                          return (
+                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                              {hasIn && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
+                                  ✓ Inward (In)
+                                </span>
+                              )}
+                              {hasOut && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                                  ✓ Outward (Out)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <select
@@ -216,11 +336,36 @@ export default function AccessTab() {
                   <div className="font-medium text-card-foreground">{user.fullName || 'N/A'}</div>
                   <div className="text-sm text-muted-foreground">{user.email}</div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Current:</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                    {user.customRole?.name || user.role || 'No Role'}
-                  </span>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Current:</span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      {user.customRole?.name || user.role || 'No Role'}
+                    </span>
+                  </div>
+                  {(() => {
+                    const isAdmin = user.role === 'ADMIN' || user.customRole?.name?.toUpperCase() === 'ADMIN';
+                    const modules = Array.isArray(user.customRole?.modules) ? user.customRole.modules : [];
+                    const hasIn = isAdmin || modules.includes('inventory') || modules.includes('inventory-in');
+                    const hasOut = isAdmin || modules.includes('inventory') || modules.includes('inventory-out');
+
+                    if (!hasIn && !hasOut) return null;
+
+                    return (
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        {hasIn && (
+                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
+                            ✓ Inward (In)
+                          </span>
+                        )}
+                        {hasOut && (
+                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                            ✓ Outward (Out)
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">Assign Role</label>

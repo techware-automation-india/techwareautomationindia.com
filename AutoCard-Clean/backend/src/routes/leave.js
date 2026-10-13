@@ -323,7 +323,7 @@ router.post("/:id/cancel", requireAuth, async (req, res) => {
 // ─── ADMIN ROUTES ────────────────────────────────────────────────────────────
 
 // GET /api/leave/admin/all  – all leave requests with employee info
-router.get("/admin/all", requireAuth, checkRolePermission(["approvals-leave", "approvals"]), async (req, res) => {
+router.get("/admin/all", requireAuth, checkRolePermission(["approvals-leave", "approvals", "requests"]), async (req, res) => {
   try {
     const { status } = req.query;
     const where = {};

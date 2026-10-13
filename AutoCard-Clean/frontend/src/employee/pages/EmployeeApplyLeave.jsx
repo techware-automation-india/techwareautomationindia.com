@@ -4,10 +4,12 @@ import {
   CalendarDays,
   Loader2,
   Send,
+  ShieldAlert,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
+import { hasModuleAccess } from "../../lib/permissions.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -16,6 +18,7 @@ const inputClass =
 
 const EmployeeApplyLeave = () => {
   const navigate = useNavigate();
+
   const [balances, setBalances] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +80,25 @@ const EmployeeApplyLeave = () => {
       setSubmitting(false);
     }
   };
+
+  if (!hasModuleAccess("requests-apply-leave")) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 bg-card rounded-2xl border border-border shadow-sm">
+        <ShieldAlert className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-foreground mb-2">Access Restricted</h2>
+        <p className="text-sm text-muted-foreground mb-6">
+          You do not have permission to submit Leave applications. Please contact your system administrator to assign this role capability.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate("/employee/requests")}
+          className="px-4 py-2 bg-primary text-white font-medium rounded-xl text-sm hover:bg-primary/90 transition-colors"
+        >
+          Go to Requests
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

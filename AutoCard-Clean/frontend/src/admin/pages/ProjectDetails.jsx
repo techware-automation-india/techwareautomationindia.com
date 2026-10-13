@@ -10,6 +10,7 @@ import {
   MoreVertical,
   Calendar,
   Users,
+  User,
   CheckCircle2,
   Clock,
   FileText,
@@ -24,6 +25,15 @@ import {
   Target,
   TrendingUp,
   Loader2,
+  Folder,
+  Package,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Tag,
+  X,
+  Sparkles,
+  UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPatch, apiDelete, apiPut } from "../../lib/api.js";
@@ -32,7 +42,10 @@ import { ProjectModal } from "./Projects.jsx";
 const ProjectDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") || "overview";
+  });
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -102,7 +115,7 @@ const ProjectDetails = () => {
     { id: "overview", label: "Overview", icon: Eye },
     { id: "tasks", label: "Tasks", icon: ListTodo, count: project?.tasks?.length || 0 },
     { id: "team", label: "Team", icon: Users, count: project?.assignments?.length || 0 },
-    { id: "documents", label: "Documents", icon: FileText, count: project?.documents?.length || 0 },
+    { id: "documents", label: "Category Folders & Products", icon: Folder, count: project?.documents?.length || 0 },
     { id: "activity", label: "Activity", icon: Activity },
     { id: "comments", label: "Comments", icon: MessageSquare, count: project?.comments?.length || 0 },
   ];
@@ -155,13 +168,28 @@ const ProjectDetails = () => {
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 <h1 className="font-display text-2xl font-bold">{project.name}</h1>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(
+                <select
+                  value={project.status}
+                  onChange={async (e) => {
+                    const newStatus = e.target.value;
+                    try {
+                      await apiPatch(`/projects/${project.id}`, { status: newStatus });
+                      toast.success(`Project status updated to ${newStatus.replace("_", " ")}`);
+                      setProject((prev) => ({ ...prev, status: newStatus }));
+                    } catch (err) {
+                      toast.error(err.message || "Failed to update project status");
+                    }
+                  }}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold border cursor-pointer focus:outline-none transition-colors ${getStatusColor(
                     project.status
                   )}`}
                 >
-                  {project.status.replace("_", " ")}
-                </span>
+                  <option value="PLANNING">Planning</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="ON_HOLD">On Hold</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
                 <span className={`inline-flex items-center gap-1 text-sm font-semibold ${getPriorityColor(project.priority)}`}>
                   <Target className="h-3.5 w-3.5" />
                   {project.priority}
@@ -173,10 +201,6 @@ const ProjectDetails = () => {
                   <Calendar className="h-3.5 w-3.5" />
                   {project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} -{" "}
                   {project.endDate ? new Date(project.endDate).toLocaleDateString() : "No end date"}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5" />
-                  {project.assignments?.length || 0} members
                 </span>
               </div>
             </div>
@@ -244,44 +268,9 @@ const ProjectDetails = () => {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="rounded-2xl bg-background border border-border card-shadow overflow-hidden">
-        <div className="border-b border-border overflow-x-auto">
-          <div className="flex">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-6 py-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? "border-primary text-primary bg-primary/5"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                }`}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-                {tab.count !== undefined && (
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      activeTab === tab.id ? "bg-primary text-white" : "bg-secondary"
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="p-6">
-          {activeTab === "overview" && <OverviewTab project={project} />}
-          {activeTab === "tasks" && <TasksTab project={project} setProject={setProject} />}
-          {activeTab === "team" && <TeamTab project={project} setProject={setProject} />}
-          {activeTab === "documents" && <DocumentsTab project={project} setProject={setProject} />}
-          {activeTab === "activity" && <ActivityTab project={project} />}
-          {activeTab === "comments" && <CommentsTab project={project} setProject={setProject} />}
-        </div>
+      {/* Category Folders & Products Section */}
+      <div className="rounded-2xl bg-background border border-border card-shadow p-6">
+        <DocumentsTab project={project} setProject={setProject} />
       </div>
 
       {/* Edit Project Modal */}
@@ -855,60 +844,599 @@ const TeamTab = ({ project, setProject }) => {
   );
 };
 
-// Documents Tab Component
+// Documents & Category Folders Tab Component
 const DocumentsTab = ({ project, setProject }) => {
-  const getFileIcon = (type) => {
-    return <FileText className="h-5 w-5 text-primary" />;
+  const docs = project?.documents || [];
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [adminInventoryCategories, setAdminInventoryCategories] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchInventoryCategories = async () => {
+      try {
+        const res = await apiGet("/inventory/categories?rootOnly=true").catch(() => ({ categories: [] }));
+        if (isMounted && res?.categories && Array.isArray(res.categories)) {
+          const rootCatNames = res.categories
+            .filter((c) => c.level === 1 || !c.parentId)
+            .filter((c) => {
+              const lower = (c.name || "").trim().toLowerCase();
+              return (
+                !lower.includes("consumable") &&
+                !lower.includes("consuamble") &&
+                !lower.includes("general") &&
+                !lower.includes("genral") &&
+                !lower.includes("tool")
+              );
+            })
+            .map((c) => c.name)
+            .filter(Boolean);
+          setAdminInventoryCategories(rootCatNames);
+        }
+      } catch (err) {
+        console.warn("Could not fetch root level-1 inventory categories for project folders:", err);
+      }
+    };
+    fetchInventoryCategories();
+    return () => { isMounted = false; };
+  }, []);
+
+  const canonicalizeCategory = (rawCat) => {
+    if (!rawCat) return null;
+    const cat = String(rawCat).trim();
+    const lower = cat.toLowerCase();
+
+    // Do not create or show consumable, general, or tool folders in project
+    if (
+      lower.includes("consumable") ||
+      lower.includes("consuamble") ||
+      lower.includes("general") ||
+      lower.includes("genral") ||
+      lower.includes("tool")
+    ) {
+      return null;
+    }
+
+    // Filter out legacy default names
+    if (
+      cat === "Mechanical Product" ||
+      cat === "Electrical Product" ||
+      cat === "Automation Product" ||
+      cat === "Electronics Product" ||
+      cat === "General / Consumables"
+    ) {
+      if (lower.includes("mechanical")) {
+        const found = adminInventoryCategories.find((c) => c.toLowerCase().startsWith("mech"));
+        return found || "Mechnical";
+      }
+      return null;
+    }
+
+    if (Array.isArray(adminInventoryCategories) && adminInventoryCategories.length > 0) {
+      const exact = adminInventoryCategories.find((ac) => ac.toLowerCase() === lower);
+      if (exact) return exact;
+
+      if (lower.startsWith("mech")) {
+        const mech = adminInventoryCategories.find((ac) => ac.toLowerCase().startsWith("mech"));
+        if (mech) return mech;
+      }
+
+      const inc = adminInventoryCategories.find((ac) => ac.toLowerCase().includes(lower) || lower.includes(ac.toLowerCase()));
+      if (inc) return inc;
+    }
+
+    if (lower.startsWith("mech")) return "Mechnical";
+
+    return cat;
   };
 
-  const docs = project.documents || [];
+  // Dynamic Folder Categories: Admin Level 1 Inventory categories (excluding Consumables and Tools)
+  const allFolderCategories = Array.from(
+    new Set(
+      [...adminInventoryCategories.map((c) => canonicalizeCategory(c)).filter(Boolean)]
+        .filter((catName) => {
+          const lower = catName.toLowerCase();
+          return (
+            !lower.includes("consumable") &&
+            !lower.includes("consuamble") &&
+            !lower.includes("general") &&
+            !lower.includes("genral") &&
+            !lower.includes("tool")
+          );
+        })
+    )
+  );
 
+  const categoryMap = {};
+  allFolderCategories.forEach((cat) => {
+    categoryMap[cat] = [];
+  });
+
+  const parseProductDocInfo = (item) => {
+    const rawName = item.fileName || item.name || "";
+    let cleanName = rawName.replace(/^\[.*?\]\s*/, "");
+
+    let quantity = item.fileSize || item.size || 1;
+    const qtyMatch = cleanName.match(/\(Qty:\s*(\d+)/i);
+    if (qtyMatch && qtyMatch[1]) {
+      quantity = parseInt(qtyMatch[1], 10) || quantity;
+    }
+
+    let unitPrice = 0;
+    let empName = "";
+    let approvedByName = "Admin";
+    let createdAt = item.uploadedAt || null;
+    let approvedAt = null;
+    let foundAt = null;
+    let prodId = "";
+
+    // Extract Product ID if prefixed
+    const prodIdMatch = cleanName.match(/^([A-Z0-9_-]{2,20})\s*-\s*(.+)/i);
+    if (prodIdMatch) {
+      prodId = prodIdMatch[1].trim();
+      cleanName = prodIdMatch[2].trim();
+    }
+
+    const urlStr = item.fileUrl || item.url || "";
+    if (urlStr.includes("?")) {
+      const queryString = urlStr.split("?")[1] || "";
+      const params = new URLSearchParams(queryString);
+      if (params.get("price")) unitPrice = parseFloat(params.get("price")) || 0;
+      if (params.get("emp")) empName = decodeURIComponent(params.get("emp"));
+      if (params.get("approvedBy")) approvedByName = decodeURIComponent(params.get("approvedBy"));
+      if (params.get("created")) createdAt = decodeURIComponent(params.get("created"));
+      if (params.get("approved")) approvedAt = decodeURIComponent(params.get("approved"));
+      if (params.get("found")) foundAt = decodeURIComponent(params.get("found"));
+      if (params.get("prodId")) prodId = decodeURIComponent(params.get("prodId")) || prodId;
+    }
+
+    if (!unitPrice) {
+      const priceMatch = cleanName.match(/(?:price:?\s*|₹\s*|Rs\.?\s*|\$\s*)([0-9,.]+)/i);
+      if (priceMatch && priceMatch[1]) {
+        unitPrice = parseFloat(priceMatch[1].replace(/,/g, "")) || 0;
+      }
+    }
+
+    cleanName = cleanName
+      .replace(/\(Qty:\s*\d+.*?\)/gi, "")
+      .replace(/(?:Price:?\s*|₹\s*|Rs\.?\s*|\$\s*)[0-9,.]+/gi, "")
+      .replace(/\|\s*$/g, "")
+      .trim();
+
+    const totalPrice = unitPrice * quantity;
+
+    return {
+      prodId: prodId || "N/A",
+      cleanName: cleanName || "Product Item",
+      quantity,
+      unitPrice,
+      totalPrice,
+      empName: empName || "Employee",
+      approvedByName: approvedByName || "—",
+      createdAt,
+      approvedAt,
+      foundAt,
+    };
+  };
+
+  const otherDocs = [];
+  docs.forEach((doc) => {
+    if (doc.fileType === "folder" || doc.fileUrl === "#folder") {
+      const name = doc.fileName || doc.name;
+      const canonicalName = canonicalizeCategory(name);
+      if (canonicalName && !categoryMap[canonicalName]) {
+        categoryMap[canonicalName] = [];
+      }
+      return;
+    }
+
+    let name = doc.fileName || doc.name || "";
+    let matchedCat = null;
+
+    const bracketMatch = name.match(/^\[(.*?)\]/);
+    if (bracketMatch && bracketMatch[1]) {
+      const rawTag = bracketMatch[1].trim();
+      const canonicalTag = canonicalizeCategory(rawTag) || rawTag;
+
+      const foundKey = Object.keys(categoryMap).find(
+        (k) =>
+          k.toLowerCase() === canonicalTag.toLowerCase() ||
+          k.toLowerCase().includes(canonicalTag.toLowerCase()) ||
+          canonicalTag.toLowerCase().includes(k.toLowerCase())
+      );
+      if (foundKey) matchedCat = foundKey;
+      else {
+        categoryMap[canonicalTag] = [];
+        matchedCat = canonicalTag;
+      }
+    } else {
+      const foundKey = Object.keys(categoryMap).find((k) =>
+        name.toLowerCase().includes(k.toLowerCase())
+      );
+      if (foundKey) matchedCat = foundKey;
+    }
+
+    if (matchedCat) {
+      categoryMap[matchedCat].push(doc);
+    } else {
+      otherDocs.push(doc);
+    }
+  });
+
+  // Calculate overall total project product cost
+  let grandTotalValue = 0;
+  let grandTotalProductsCount = 0;
+
+  Object.values(categoryMap).forEach((items) => {
+    items.forEach((item) => {
+      const info = parseProductDocInfo(item);
+      grandTotalValue += info.totalPrice;
+      grandTotalProductsCount += 1;
+    });
+  });
+
+  const [editingDocId, setEditingDocId] = useState(null);
+  const [priceInput, setPriceInput] = useState("");
+  const [qtyInput, setQtyInput] = useState("1");
+  const [nameInput, setNameInput] = useState("");
+  const [updatingProduct, setUpdatingProduct] = useState(false);
+
+  const handleSaveProductDetails = async (docId) => {
+    const p = parseFloat(priceInput);
+    if (isNaN(p) || p < 0) {
+      toast.error("Please enter a valid price");
+      return;
+    }
+    const q = parseInt(qtyInput, 10);
+    if (isNaN(q) || q < 1) {
+      toast.error("Please enter a valid quantity");
+      return;
+    }
+
+    setUpdatingProduct(true);
+    try {
+      const res = await apiPatch(`/projects/${project.id}/documents/${docId}`, {
+        unitPrice: p,
+        quantity: q,
+        productName: nameInput,
+      });
+      toast.success("Product details updated successfully!");
+      setEditingDocId(null);
+      if (setProject) {
+        setProject((prev) => ({
+          ...prev,
+          documents: (prev.documents || []).map((d) =>
+            d.id === docId
+              ? {
+                  ...d,
+                  fileUrl: res.document?.fileUrl || d.fileUrl,
+                  fileName: res.document?.fileName || d.fileName,
+                  fileSize: res.document?.fileSize || d.fileSize,
+                }
+              : d
+          ),
+        }));
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to update product details");
+    } finally {
+      setUpdatingProduct(false);
+    }
+  };
+
+  const startEditingProduct = (item, info) => {
+    setEditingDocId(item.id);
+    setPriceInput(info.unitPrice ? String(info.unitPrice) : "0");
+    setQtyInput(info.quantity ? String(info.quantity) : "1");
+    setNameInput(info.cleanName || "");
+  };
+
+  // IF A CATEGORY FOLDER IS OPENED:
+  if (selectedFolder) {
+    const activeCategoryItems = categoryMap[selectedFolder] || [];
+    let folderTotalValue = 0;
+    activeCategoryItems.forEach((item) => {
+      const info = parseProductDocInfo(item);
+      folderTotalValue += info.totalPrice;
+    });
+
+    return (
+      <div className="space-y-6">
+        {/* Navigation Breadcrumb Header */}
+        <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-2xl border border-border bg-card shadow-2xs">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setSelectedFolder(null)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground font-semibold text-xs border border-border transition-all shadow-2xs group cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+              <span>Back to Category Folders</span>
+            </button>
+            <div className="h-6 w-[1px] bg-border hidden sm:block" />
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                <FolderOpen className="h-5 w-5 fill-amber-500/20" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
+                  {selectedFolder}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Category Folder Products & Audit Details ({activeCategoryItems.length} {activeCategoryItems.length === 1 ? "Product" : "Products"})
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Products Data Table */}
+        {activeCategoryItems.length > 0 ? (
+          <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-2xs">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-secondary/60 border-b border-border text-muted-foreground uppercase font-bold tracking-wider text-[11px]">
+                  <th className="p-3.5 pl-5">Product Name</th>
+                  <th className="p-3.5">Product ID</th>
+                  <th className="p-3.5">Emp Name (Product Taking)</th>
+                  <th className="p-3.5">Request Create Time & Date</th>
+                  <th className="p-3.5">Request Approve Time & Date</th>
+                  <th className="p-3.5">Approve By</th>
+                  <th className="p-3.5">Found Time</th>
+                  <th className="p-3.5 text-center">Qty</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60 font-medium">
+                {activeCategoryItems.map((item) => {
+                  const info = parseProductDocInfo(item);
+                  const isEditing = editingDocId === item.id;
+
+                  if (isEditing) {
+                    return (
+                      <tr key={item.id} className="bg-primary/5">
+                        <td colSpan={8} className="p-4">
+                          <div className="flex items-center justify-between border-b border-border/60 pb-2 mb-3">
+                            <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                              <Edit2 className="h-3.5 w-3.5 text-primary" /> Edit Product Details
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveProductDetails(item.id)}
+                                disabled={updatingProduct}
+                                className="px-3.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs cursor-pointer"
+                              >
+                                {updatingProduct ? "Saving..." : "Save Changes"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingDocId(null)}
+                                className="px-3 py-1 rounded-lg border border-border bg-background hover:bg-secondary text-xs font-semibold cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-muted-foreground font-medium mb-1">Product Name</label>
+                              <input
+                                type="text"
+                                value={nameInput}
+                                onChange={(e) => setNameInput(e.target.value)}
+                                className="w-full px-3 py-1.5 rounded-lg border border-border bg-background font-semibold"
+                                placeholder="Product name"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-muted-foreground font-medium mb-1">Quantity (Qty)</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={qtyInput}
+                                onChange={(e) => setQtyInput(e.target.value)}
+                                className="w-full px-3 py-1.5 rounded-lg border border-border bg-background font-semibold"
+                                placeholder="1"
+                              />
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={item.id} className="hover:bg-secondary/30 transition-colors">
+                      {/* Product Name */}
+                      <td className="p-3.5 pl-5 font-bold text-foreground max-w-[200px] truncate" title={info.cleanName}>
+                        <div className="flex items-center gap-2">
+                          <Package className="h-4 w-4 text-amber-600 shrink-0" />
+                          <span className="truncate">{info.cleanName}</span>
+                        </div>
+                      </td>
+
+                      {/* Product ID */}
+                      <td className="p-3.5 font-mono text-xs font-bold text-amber-700 dark:text-amber-300">
+                        {info.prodId && info.prodId !== "N/A" ? (
+                          <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                            {info.prodId}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/60">—</span>
+                        )}
+                      </td>
+
+                      {/* Emp Name (Product Taking) */}
+                      <td className="p-3.5 font-semibold text-foreground whitespace-nowrap">
+                        {info.empName}
+                      </td>
+
+                      {/* Request Create Time & Date */}
+                      <td className="p-3.5 text-muted-foreground whitespace-nowrap">
+                        {info.createdAt ? `${new Date(info.createdAt).toLocaleDateString()} ${new Date(info.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : "—"}
+                      </td>
+
+                      {/* Request Approve Time & Date */}
+                      <td className="p-3.5 font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                        {info.approvedAt ? `${new Date(info.approvedAt).toLocaleDateString()} ${new Date(info.approvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : "—"}
+                      </td>
+
+                      {/* Approve By */}
+                      <td className="p-3.5 font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap">
+                        {info.approvedByName}
+                      </td>
+
+                      {/* Found Time */}
+                      <td className="p-3.5 font-semibold whitespace-nowrap">
+                        {info.foundAt && !isNaN(new Date(info.foundAt).getTime()) ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                            {new Date(info.foundAt).toLocaleDateString()} {new Date(info.foundAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-muted-foreground/60 bg-secondary/40 text-[11px] font-medium">
+                            Pending
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Qty */}
+                      <td className="p-3.5 text-center font-bold text-foreground">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                          {info.quantity}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-16 text-center text-muted-foreground border-2 border-dashed border-border rounded-2xl p-6 bg-card">
+            <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
+            <p className="font-bold text-foreground text-base">No Products Added Yet</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+              Products requested for this project under "{selectedFolder}" will automatically appear here after request approval.
+            </p>
+          </div>
+        )}
+
+        {/* Bottom Back Button */}
+        <div className="pt-4 flex justify-start">
+          <button
+            type="button"
+            onClick={() => setSelectedFolder(null)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground font-semibold text-sm border border-border transition-all shadow-2xs cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to All Category Folders</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // DEFAULT VIEW: ALL CATEGORY FOLDER CARDS GRID
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Documents ({docs.length})</h3>
-        <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm">
-          <Upload className="h-4 w-4" />
-          Upload Document
-        </button>
+      {/* Top Banner & Total Summary */}
+      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-2xl border border-border bg-gradient-to-r from-amber-500/5 via-primary/5 to-purple-500/5 shadow-2xs">
+        <div>
+          <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
+            <FolderOpen className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            Project Products & Category Folders
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Click on any folder card to view allocated products, employee details, and audit timestamps.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold flex items-center gap-2 shadow-2xs">
+            <Package className="h-4 w-4 text-primary" />
+            <span>Total Products Allocated:</span>
+            <span className="text-sm font-black">{grandTotalProductsCount}</span>
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-2">
-        {docs.map((doc) => (
-          <div key={doc.id} className="rounded-lg border border-border p-4 bg-background hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                {getFileIcon(doc.fileType)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-medium text-sm truncate">{doc.fileName || doc.name}</h4>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                  <span>{doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB` : "N/A"}</span>
-                  <span>•</span>
-                  <span>{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : ""}</span>
+      {/* Category Folder Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {Object.entries(categoryMap)
+          .filter(([category, items]) => items.length > 0 || adminInventoryCategories.includes(category))
+          .map(([category, items]) => {
+          const totalUnits = items.reduce((acc, it) => acc + (it.fileSize || 1), 0);
+
+          return (
+            <div
+              key={category}
+              onClick={() => setSelectedFolder(category)}
+              className="group relative overflow-hidden rounded-2xl border border-border bg-background p-5 shadow-2xs hover:shadow-md hover:border-amber-500/40 transition-all cursor-pointer flex flex-col justify-between"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 group-hover:scale-105 transition-transform">
+                    <Folder className="h-6 w-6 fill-amber-500/30" />
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                    {items.length} {items.length === 1 ? "Product" : "Products"}
+                  </span>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-base text-foreground group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                    {category}
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {items.length > 0 ? "Contains used products & components" : "No products added yet"}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {doc.fileUrl && (
+
+              <div className="mt-5 pt-3 border-t border-border/60 flex items-center justify-between text-xs">
+                <span className="font-bold text-muted-foreground bg-secondary/80 px-2.5 py-1 rounded-lg border border-border">
+                  {totalUnits} {totalUnits === 1 ? "Unit" : "Units"} Allocated
+                </span>
+                <span className="inline-flex items-center gap-1 font-bold text-primary text-xs group-hover:translate-x-1 transition-transform">
+                  Open Folder <ChevronRight className="h-4 w-4" />
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Other Uploaded Documents */}
+      {otherDocs.length > 0 && (
+        <div className="rounded-xl border border-border bg-background p-4 space-y-3">
+          <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
+            Other Project Documents ({otherDocs.length})
+          </h4>
+          <div className="space-y-2">
+            {otherDocs.map((doc) => (
+              <div
+                key={doc.id}
+                className="p-3 rounded-lg border border-border bg-background flex items-center justify-between text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="h-4 w-4 text-primary shrink-0" />
+                  <span className="font-medium truncate">{doc.fileName || doc.name}</span>
+                </div>
+                {doc.fileUrl && doc.fileUrl !== "#" && (
                   <a
                     href={doc.fileUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="p-2 hover:bg-secondary rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground shrink-0"
                   >
-                    <Download className="h-4 w-4" />
+                    <Download className="h-3.5 w-3.5" />
                   </a>
                 )}
               </div>
-            </div>
+            ))}
           </div>
-        ))}
-        {docs.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
-            No documents uploaded yet
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

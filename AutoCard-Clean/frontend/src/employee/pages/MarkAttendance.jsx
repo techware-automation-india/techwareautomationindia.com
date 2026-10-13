@@ -10,10 +10,13 @@ import {
   RefreshCw,
   Calendar,
   ScanLine,
+  ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getAuthUser } from "../../lib/auth.js";
+import { hasModuleAccess } from "../../lib/permissions.js";
 
 // =========================================================
 // HELPERS
@@ -281,6 +284,7 @@ const MarkAttendance = () => {
 
   const [record, setRecord] = useState(null);
   const [approvedLeave, setApprovedLeave] = useState(null);
+  const [unclosedPrevious, setUnclosedPrevious] = useState(null);
 
   const [correctionRequest, setCorrectionRequest] = useState(null);
 
@@ -332,6 +336,7 @@ const MarkAttendance = () => {
 
       setRecord(attendanceResult.record ?? null);
       setApprovedLeave(attendanceResult.approvedLeave ?? null);
+      setUnclosedPrevious(attendanceResult.unclosedPrevious ?? null);
 
       const requests = Array.isArray(requestResult?.requests)
         ? requestResult.requests
@@ -370,6 +375,9 @@ const MarkAttendance = () => {
 
       setCorrectionRequest(todayCorrection);
     } catch (err) {
+      if (err?.status === 401 || err?.message?.includes("Authentication required")) {
+        return;
+      }
       console.error("Failed loading attendance/request:", err);
 
       // Attendance should continue
@@ -819,8 +827,19 @@ const MarkAttendance = () => {
 
   const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
 
+  const hasUnclosedPreviousMissingCheckout =
+    !!unclosedPrevious?.record &&
+    (!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status !== "APPROVED");
+
+  const isUnclosedPreviousCorrectionPending =
+    !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
+
   const canCheckIn =
-    !hasCheckedIn && !isCorrectionPending && !isCorrectionApproved && !isOnLeaveToday;
+    !hasCheckedIn &&
+    !isCorrectionPending &&
+    !isCorrectionApproved &&
+    !isOnLeaveToday &&
+    !hasUnclosedPreviousMissingCheckout;
 
   /*
    * CHECK OUT
@@ -881,6 +900,25 @@ const MarkAttendance = () => {
 
   const workedS = Math.floor((workedMs % (1000 * 60)) / 1000);
 
+  if (!hasModuleAccess("mark-attendance")) {
+    return (
+      <div className="p-8 text-center max-w-md mx-auto my-12 bg-card rounded-2xl border border-border shadow-sm">
+        <ShieldAlert className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-foreground mb-2">Access Restricted</h2>
+        <p className="text-sm text-muted-foreground mb-6">
+          You do not have permission to access the Mark Attendance module. Please contact your system administrator to assign this role capability.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate("/employee")}
+          className="px-4 py-2 bg-primary text-white font-medium rounded-xl text-sm hover:bg-primary/90 transition-colors"
+        >
+          Go to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   // =======================================================
   // UI
   // =======================================================
@@ -906,14 +944,14 @@ const MarkAttendance = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => navigate("/employee/requests/forgot-punch")}
             className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-4 py-2 flex items-center gap-2 transition-all hover:shadow-md active:scale-[0.99] text-sm"
           >
-            <ScanLine className="h-4 w-4" />
-            <span>Forgot Punch</span>
+            <Clock className="h-4 w-4" />
+            <span>Forgot Punch / Time Edit</span>
           </button>
 
           <button
@@ -1001,6 +1039,54 @@ const MarkAttendance = () => {
               </div>
               <div className="mt-1 text-xs text-purple-700 dark:text-purple-300">
                 Your leave application is approved. Attendance check-in and check-out are frozen for today.
+              </div>
+            </div>
+          )}
+
+          {/* =================================================
+              UNCLOSED PREVIOUS DAY PUNCH ALERT
+          ================================================= */}
+
+          {hasUnclosedPreviousMissingCheckout && !isUnclosedPreviousCorrectionPending && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900/50 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold shrink-0 mt-0.5">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
+                    Missing Check-Out for {fmtDate(unclosedPrevious.record.date)}
+                  </h3>
+                  <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                    You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Today's Check In is blocked until yesterday's check-out is completed.
+                  </p>
+                  {unclosedPrevious.correctionRequest?.status === "REJECTED" && (
+                    <p className="mt-1 text-xs font-semibold text-rose-600 dark:text-rose-400">
+                      Previous request was rejected: {unclosedPrevious.correctionRequest.reviewNote || "Rejected by Admin"}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/employee/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=check-out`, {
+                    state: { date: unclosedPrevious.record.dateKey, punchType: "check-out" }
+                  })}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-all"
+                >
+                  <ScanLine className="h-3.5 w-3.5" />
+                  <span>Submit Forgot Punch for {unclosedPrevious.record.dateKey}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isUnclosedPreviousCorrectionPending && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
+              <Clock className="h-4 w-4 text-blue-600 shrink-0" />
+              <div>
+                <span className="font-bold">Forgot Punch Pending:</span> Your check-out request for {fmtDate(unclosedPrevious.record.date)} is waiting for admin approval. Today's Check In will open once approved.
               </div>
             </div>
           )}
@@ -1197,13 +1283,15 @@ const MarkAttendance = () => {
                 ${
                   isOnLeaveToday
                     ? "bg-purple-100 text-purple-700 border border-purple-200 cursor-not-allowed"
-                    : hasCheckedIn
-                      ? "bg-emerald-500 text-white cursor-not-allowed"
-                      : isCorrectionPending
-                        ? "bg-amber-100 text-amber-700 border border-amber-200 cursor-not-allowed"
-                        : isCorrectionApproved
-                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-not-allowed"
-                          : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
+                    : hasUnclosedPreviousMissingCheckout
+                      ? "bg-amber-100 text-amber-800 border border-amber-300 cursor-not-allowed"
+                      : hasCheckedIn
+                        ? "bg-emerald-500 text-white cursor-not-allowed"
+                        : isCorrectionPending
+                          ? "bg-amber-100 text-amber-700 border border-amber-200 cursor-not-allowed"
+                          : isCorrectionApproved
+                            ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-not-allowed"
+                            : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
                 }
 
                 disabled:opacity-70
@@ -1221,6 +1309,16 @@ const MarkAttendance = () => {
                   <Calendar className="h-5 w-5 text-purple-600" />
 
                   <span>On Leave Today</span>
+                </>
+              ) : hasUnclosedPreviousMissingCheckout ? (
+                <>
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+
+                  <span>
+                    {isUnclosedPreviousCorrectionPending
+                      ? "Yesterday Check-Out Pending"
+                      : "Yesterday Check-Out Missing"}
+                  </span>
                 </>
               ) : hasCheckedIn ? (
                 <>

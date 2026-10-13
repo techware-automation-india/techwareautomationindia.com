@@ -168,6 +168,7 @@ const AdminMarkAttendance = () => {
   const [targetLocation, setTargetLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(true);
   const [locationError, setLocationError] = useState(null);
+  const [unclosedPrevious, setUnclosedPrevious] = useState(null);
   const [reasonModal, setReasonModal] = useState(null);
   const [reasonText, setReasonText] = useState("");
 
@@ -184,6 +185,7 @@ const AdminMarkAttendance = () => {
       const data = await apiGet("/attendance/me/today");
       setRecord(data.record);
       setApprovedLeave(data.approvedLeave);
+      setUnclosedPrevious(data.unclosedPrevious);
     } catch (err) {
       toast.error(err.message || "Failed to load today's attendance.");
     } finally {
@@ -261,10 +263,23 @@ const AdminMarkAttendance = () => {
 
   const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
 
+  const hasUnclosedPreviousMissingCheckout =
+    !!unclosedPrevious?.record &&
+    (!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status !== "APPROVED");
+
+  const isUnclosedPreviousCorrectionPending =
+    !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
+
   const handleCheckIn = async () => {
     if (checkingIn || capturingLocation) return;
     if (isOnLeaveToday) {
       toast.error("Check-in is frozen for approved leave days.");
+      return;
+    }
+    if (hasUnclosedPreviousMissingCheckout) {
+      toast.error(
+        `Check-in is disabled. Please complete yesterday's check-out (${unclosedPrevious.record.dateKey}) first.`,
+      );
       return;
     }
 
@@ -374,14 +389,14 @@ const AdminMarkAttendance = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => navigate("/admin/requests/forgot-punch")}
             className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-4 py-2 flex items-center gap-2 transition-all hover:shadow-md active:scale-[0.99] text-sm"
           >
-            <ScanLine className="h-4 w-4" />
-            <span>Forgot Punch</span>
+            <Clock className="h-4 w-4" />
+            <span>Forgot Punch / Time Edit</span>
           </button>
 
           <button
@@ -515,17 +530,72 @@ const AdminMarkAttendance = () => {
             </div>
           )}
 
+          {/* Unclosed Previous Day Missing Check-Out Alert */}
+          {hasUnclosedPreviousMissingCheckout && !isUnclosedPreviousCorrectionPending && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900/50 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold shrink-0 mt-0.5">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
+                    Missing Check-Out for {unclosedPrevious?.record?.dateKey}
+                  </h3>
+                  <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                    You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Today's Check In is blocked until yesterday's check-out is completed.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/admin/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=check-out`,
+                      {
+                        state: {
+                          date: unclosedPrevious.record.dateKey,
+                          punchType: "check-out",
+                        },
+                      },
+                    )
+                  }
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-all"
+                >
+                  <ScanLine className="h-3.5 w-3.5" />
+                  <span>Complete Check-Out for {unclosedPrevious?.record?.dateKey}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isUnclosedPreviousCorrectionPending && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
+              <Clock className="h-4 w-4 text-blue-600 shrink-0" />
+              <div>
+                <span className="font-bold">Forgot Punch Pending:</span> Your check-out request for {unclosedPrevious?.record?.dateKey} is waiting for approval. Today's Check In will open once approved.
+              </div>
+            </div>
+          )}
+
           {/* Check-In button */}
           {!hasCheckedIn && (
             <button
               onClick={handleCheckIn}
-              disabled={checkingIn || capturingLocation || isOnLeaveToday}
+              disabled={
+                checkingIn ||
+                capturingLocation ||
+                isOnLeaveToday ||
+                hasUnclosedPreviousMissingCheckout
+              }
               className="w-full cta-gradient text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {checkingIn || capturingLocation ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : isOnLeaveToday ? (
                 <Ban className="h-5 w-5 text-purple-200" />
+              ) : hasUnclosedPreviousMissingCheckout ? (
+                <AlertCircle className="h-5 w-5 text-amber-200" />
               ) : (
                 <LogIn className="h-5 w-5" />
               )}
@@ -533,6 +603,10 @@ const AdminMarkAttendance = () => {
                 ? "Capturing Location…"
                 : isOnLeaveToday
                 ? "Check-In Frozen (On Approved Leave)"
+                : hasUnclosedPreviousMissingCheckout
+                ? isUnclosedPreviousCorrectionPending
+                  ? "Yesterday Check-Out Pending"
+                  : "Yesterday Check-Out Missing"
                 : "Check In"}
             </button>
           )}

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Clock,
-  Loader2,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -24,6 +23,12 @@ const statusMeta = {
     label: "Present",
     dot: "bg-emerald-500",
     cell: "bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300",
+  },
+  SHORT_DAY: {
+    label: "Short Day",
+    description: "Worked hours less than standard 8 hours",
+    dot: "bg-amber-500",
+    cell: "bg-amber-500/10 dark:bg-amber-500/20 border-amber-300 dark:border-amber-700/50 text-amber-700 dark:text-amber-300",
   },
   ABSENT: {
     label: "Absent",
@@ -348,7 +353,6 @@ const Attendance = () => {
   );
   const [selectedDate, setSelectedDate] = useState("");
   const [registerData, setRegisterData] = useState(null);
-  const [loadingData, setLoadingData] = useState(false);
   const [showDetailedRecords, setShowDetailedRecords] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -499,8 +503,6 @@ const Attendance = () => {
         return;
       }
 
-      setLoadingData(true);
-
       try {
         if (selectedId === "all") {
           const { start, days } = getRegisterWindow(year, month, selectedWeek);
@@ -531,8 +533,6 @@ const Attendance = () => {
           setRegisterData(null);
           setShowDetailedRecords(false);
         }
-      } finally {
-        if (active) setLoadingData(false);
       }
     })();
 
@@ -692,7 +692,19 @@ const Attendance = () => {
     return otMinutes > 15;
   };
 
+  const isShortDayRecord = (record) => {
+    if (!record) return false;
+    if (record.isShortDay != null) return Boolean(record.isShortDay);
+    if (isHolidayDate(record.date)) return false;
+    const d = new Date(record.date);
+    if (d.getDay() === 0) return false;
+    if (record.status === "ON_LEAVE" || record.status === "ABSENT" || record.status === "HOLIDAY") return false;
+    const worked = Number(record.workedHours);
+    return !Number.isNaN(worked) && worked > 0 && worked < 8;
+  };
+
   const overtimeDays = records.filter(isOvertimeRecord).length;
+  const shortDays = records.filter(isShortDayRecord).length;
   const overtimeMeta = {
     label: "Overtime",
     dot: "bg-orange-500",
@@ -702,6 +714,9 @@ const Attendance = () => {
     ? records.filter((rec) => {
         if (selectedStatus === "OVERTIME") {
           return isOvertimeRecord(rec);
+        }
+        if (selectedStatus === "SHORT_DAY") {
+          return isShortDayRecord(rec);
         }
         if (selectedStatus === "HOLIDAY") {
           return isHolidayDate(rec.date) || rec.status === "HOLIDAY";
@@ -795,6 +810,7 @@ const Attendance = () => {
   // Monthly summary for the All Employees view.
   const getEmployeeMonthSummary = (emp) => {
     let present = 0;
+    let shortDay = 0;
     let absent = 0;
     let leave = 0;
     let holiday = 0;
@@ -828,6 +844,9 @@ const Attendance = () => {
           rec.status === "PENDING_APPROVAL")
       ) {
         present += 1;
+        if (isShortDayRecord(rec)) {
+          shortDay += 1;
+        }
       } else if (isHoliday) {
         holiday += 1;
       }
@@ -835,6 +854,7 @@ const Attendance = () => {
 
     return {
       present,
+      shortDay,
       absent,
       leave,
       holiday,
@@ -861,7 +881,6 @@ const Attendance = () => {
 
   const reloadRegister = async () => {
     try {
-      setLoadingData(true);
       const { start, days } = getRegisterWindow(year, month, selectedWeek);
       const res = await apiGet(
         `/attendance/register/weekly?days=${days}&start=${start}`,
@@ -869,8 +888,6 @@ const Attendance = () => {
       setRegisterData(res);
     } catch (err) {
       toast.error(err.message || "Failed to reload register.");
-    } finally {
-      setLoadingData(false);
     }
   };
 
@@ -922,9 +939,10 @@ const Attendance = () => {
     });
   };
 
-  const openAttendanceReason = (record, employeeName) => {
+  const openAttendanceReason = (record, employeeName, employeeId) => {
     setAttendanceReasonModal({
       employeeName: employeeName || "Employee",
+      employeeId: employeeId || record.employeeId || record.employee?.id || (selectedId !== "all" ? selectedId : null),
       reason: extractSubmittedReason(record.note),
       recordId: record.id,
       date: record.date,
@@ -1243,8 +1261,20 @@ const Attendance = () => {
                         >
                           <td className="py-3 pr-4 font-medium">{fmtDateDMY(rec.date)}</td>
                           <td className="py-3 pr-4">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-                              {statusMeta[rec.status]?.label || rec.status}
+                            <span
+                              title={isShortDayRecord(rec) ? statusMeta.SHORT_DAY.description : undefined}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                              isShortDayRecord(rec)
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                                : rec.status === "ON_LEAVE"
+                                  ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                                  : rec.status === "ABSENT"
+                                    ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
+                                    : rec.status === "HOLIDAY"
+                                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                                      : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                            }`}>
+                              {isShortDayRecord(rec) ? "Short Day" : (statusMeta[rec.status]?.label || rec.status)}
                             </span>
                           </td>
                           {rec.status === "ON_LEAVE" ? (
@@ -1354,11 +1384,7 @@ const Attendance = () => {
                       setShowEmployeeDropdown(true);
                     }}
                     onFocus={() => setShowEmployeeDropdown(true)}
-                    placeholder={
-                      loadingEmployees
-                        ? "Loading employees..."
-                        : "Search employee..."
-                    }
+                    placeholder="Search employee..."
                     disabled={loadingEmployees}
                     className="w-full rounded-xl border border-input bg-background px-3.5 py-3 pr-10 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                   />
@@ -1618,15 +1644,10 @@ const Attendance = () => {
             selected month.
           </p>
         </div>
-      ) : loadingData ? (
-        <div className="p-12 flex items-center justify-center text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading
-          attendance...
-        </div>
       ) : (
         <>
           {!isAllEmployees && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
               {Object.entries(statusMeta).map(([key, meta]) => {
                 const isActive = selectedStatus === key;
                 const count =
@@ -1635,12 +1656,15 @@ const Attendance = () => {
                         (rec) =>
                           isHolidayDate(rec.date) || rec.status === "HOLIDAY",
                       ).length
-                    : summary[key] || 0;
+                    : key === "SHORT_DAY"
+                      ? (summary?.SHORT_DAY ?? shortDays)
+                      : summary[key] || 0;
 
                 return (
                   <button
                     key={key}
                     type="button"
+                    title={meta.description || meta.label}
                     onClick={() => handleStatusClick(key)}
                     className={`rounded-xl border p-4 text-left transition-colors ${
                       isActive
@@ -1662,6 +1686,11 @@ const Attendance = () => {
                     {key === "PRESENT" && (
                       <div className="mt-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                         {fmtMinutesToHM(presentTotals.workedMinutes)} worked
+                      </div>
+                    )}
+                    {key === "SHORT_DAY" && (
+                      <div className="mt-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                        Worked &lt; 8 hrs
                       </div>
                     )}
                   </button>
@@ -1714,11 +1743,7 @@ const Attendance = () => {
                             setShowEmployeeDropdown(true);
                           }}
                           onFocus={() => setShowEmployeeDropdown(true)}
-                          placeholder={
-                            loadingEmployees
-                              ? "Loading employees..."
-                              : "Search employee..."
-                          }
+                          placeholder="Search employee..."
                           disabled={loadingEmployees}
                           className="w-full rounded-xl border border-input bg-background px-3.5 py-3 pr-10 text-sm font-semibold text-foreground shadow-sm transition focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
                         />
@@ -1943,112 +1968,10 @@ const Attendance = () => {
               </div>
 
               {/* Selected employee / calendar context */}
-              <div className="mx-4 sm:mx-5 mb-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                        Calendar View
-                      </div>
-                      <div className="truncate text-sm font-bold text-foreground">
-                        {selectedId === "all"
-                          ? "All Employees"
-                          : employees.find((emp) => emp.id === selectedId)
-                              ?.fullName || "Selected Employee"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
-                    <span className="rounded-full bg-secondary px-3 py-1.5 text-secondary-foreground">
-                      {monthNames[month - 1]} {year}
-                    </span>
-                    <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
-                      {selectedDate
-                        ? "Selected Date"
-                        : selectedWeek
-                          ? `Week ${selectedWeek}`
-                          : "Full Month"}
-                    </span>
-                  
-                  
-                  </div>
-                </div>
-              </div>
+             
 
               {/* Location code explanation */}
-              <div className="mx-4 sm:mx-5 mb-2 rounded-xl border border-border bg-secondary/30 px-3 py-2">
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-foreground">
-                    Location Code Guide
-                  </div>
-                  
-                </div>
-
-                <div className="grid gap-1.5 text-[10px] leading-tight text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-md border border-orange-200 dark:border-orange-900/40 bg-card px-2 py-1.5">
-                    <div className="flex items-center gap-1">
-                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
-                        UL O
-                      </span>
-                      <span>Check In: Unassigned · Check Out: Office</span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
-                        O UL
-                      </span>
-                      <span>Check In: Office · Check Out: Unassigned</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border border-emerald-200 dark:border-emerald-900/40 bg-card px-2 py-1.5">
-                    <div className="flex items-center gap-1">
-                      <span className="rounded bg-emerald-100 dark:bg-emerald-900/40 px-1 py-0.5 font-bold text-emerald-700 dark:text-emerald-300">
-                        O O
-                      </span>
-                      <span>Check In: Office · Check Out: Office</span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 font-bold text-blue-700 dark:text-blue-300">
-                        A A
-                      </span>
-                      <span>Check In & Check Out: Assign Location</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border border-blue-200 dark:border-blue-900/40 bg-card px-2 py-1.5">
-                    <div className="flex items-center gap-1">
-                      <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 font-bold text-blue-700 dark:text-blue-300">
-                        A O
-                      </span>
-                      <span>Check In: Assign · Check Out: Office</span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 font-bold text-blue-700 dark:text-blue-300">
-                        O A
-                      </span>
-                      <span>Check In: Office · Check Out: Assign</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border border-orange-200 dark:border-orange-900/40 bg-card px-2 py-1.5">
-                    <div className="flex items-center gap-1">
-                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
-                        A UL
-                      </span>
-                      <span>Check In: Assign · Check Out: Unassigned</span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="rounded bg-orange-100 dark:bg-orange-900/40 px-1 py-0.5 font-bold text-orange-700 dark:text-orange-300">
-                        UL A
-                      </span>
-                      <span>Check In: Unassigned · Check Out: Assign</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              
               {/* Calendar Zoom */}
               <div className="flex flex-col gap-2 border-t border-border bg-secondary/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
@@ -2061,11 +1984,11 @@ const Attendance = () => {
                 </div>
                 <div className="flex w-full max-w-md items-center gap-3">
                   <span className="text-xs font-semibold text-muted-foreground">
-                    40%
+                    60%
                   </span>
                   <input
                     type="range"
-                    min="40"
+                    min="60"
                     max="100"
                     step="5"
                     value={calendarZoom}
@@ -2165,6 +2088,12 @@ const Attendance = () => {
                           <th className="sticky top-0 z-[60] min-w-[95px] border-l border-b border-border bg-emerald-500/10 dark:bg-emerald-500/20 px-3 py-3 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400 shadow-sm">
                             Present
                           </th>
+                          <th
+                            className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-amber-500/10 dark:bg-amber-500/20 px-3 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 shadow-sm"
+                            title="Short Day: Worked hours less than standard 8 hours"
+                          >
+                            Short Day
+                          </th>
                           <th className="sticky top-0 z-[60] min-w-[95px] border-b border-border bg-rose-500/10 dark:bg-rose-500/20 px-3 py-3 text-center text-xs font-bold text-rose-600 dark:text-rose-400 shadow-sm">
                             Absent
                           </th>
@@ -2246,7 +2175,8 @@ const Attendance = () => {
                               date.getUTCDay() === 0;
                             const isAbsent = rec?.status === "ABSENT";
 
-                            const meta = rec ? statusMeta[rec.status] : null;
+                            const isShortDay = isShortDayRecord(rec);
+                            const meta = rec ? (isShortDay ? statusMeta.SHORT_DAY : statusMeta[rec.status]) : null;
                             const cleanedNote = cleanAttendanceNote(
                               rec?.note || "",
                             );
@@ -2324,7 +2254,7 @@ const Attendance = () => {
                                         <span
                                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta?.dot || "bg-muted-foreground"}`}
                                         />
-                                        <span className="truncate">
+                                        <span className="truncate" title={meta?.description || meta?.label}>
                                           {meta?.label || rec.status}
                                         </span>
                                       </span>
@@ -2433,6 +2363,7 @@ const Attendance = () => {
                                             openAttendanceReason(
                                               rec,
                                               emp.fullName,
+                                              emp.id,
                                             )
                                           }
                                           className="rounded-md bg-amber-500/10 dark:bg-amber-500/20 px-2 py-1 text-[8px] font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
@@ -2469,6 +2400,14 @@ const Attendance = () => {
                                   <td className="border-l border-b border-border bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2 text-center">
                                     <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-emerald-500/10 dark:bg-emerald-500/20 px-2.5 py-1.5 text-sm font-bold text-emerald-600 dark:text-emerald-400">
                                       {monthSummary.present}
+                                    </span>
+                                  </td>
+                                  <td
+                                    className="border-b border-border bg-amber-500/5 dark:bg-amber-500/10 px-3 py-2 text-center"
+                                    title={`Short Days: ${monthSummary.shortDay} (Worked < 8 hrs)`}
+                                  >
+                                    <span className="inline-flex min-w-[38px] items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-500/20 px-2.5 py-1.5 text-sm font-bold text-amber-600 dark:text-amber-400">
+                                      {monthSummary.shortDay}
                                     </span>
                                   </td>
                                   <td className="border-b border-border bg-rose-500/5 dark:bg-rose-500/10 px-3 py-2 text-center">
@@ -2626,23 +2565,30 @@ const Attendance = () => {
                               Daily Attendance
                             </div>
                             {selectedRecord ? (
-                              <span
-                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${
-                                  statusMeta[selectedRecord.status]?.cell ||
-                                  "bg-secondary text-secondary-foreground"
-                                }`}
-                              >
-                                <span
-                                  className={`h-2 w-2 rounded-full ${
-                                    statusMeta[selectedRecord.status]?.dot ||
-                                    "bg-muted-foreground"
-                                  }`}
-                                />
-                                {selectedRecord.status === "HOLIDAY"
-                                  ? selectedRecord.note || "Holiday"
-                                  : statusMeta[selectedRecord.status]?.label ||
-                                    selectedRecord.status}
-                              </span>
+                              (() => {
+                                const isShortDay = isShortDayRecord(selectedRecord);
+                                const currentMeta = isShortDay ? statusMeta.SHORT_DAY : statusMeta[selectedRecord.status];
+                                return (
+                                  <span
+                                    title={currentMeta?.description || currentMeta?.label}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${
+                                      currentMeta?.cell ||
+                                      "bg-secondary text-secondary-foreground"
+                                    }`}
+                                  >
+                                    <span
+                                      className={`h-2 w-2 rounded-full ${
+                                        currentMeta?.dot ||
+                                        "bg-muted-foreground"
+                                      }`}
+                                    />
+                                    {selectedRecord.status === "HOLIDAY"
+                                      ? selectedRecord.note || "Holiday"
+                                      : currentMeta?.label ||
+                                        selectedRecord.status}
+                                  </span>
+                                );
+                              })()
                             ) : selectedHolidayName ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 dark:border-blue-800/40 bg-blue-500/10 dark:bg-blue-500/20 px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300">
                                 <span className="h-2 w-2 rounded-full bg-blue-500" />
@@ -2797,26 +2743,42 @@ const Attendance = () => {
                                         </div>
                                       )}
                                   </div>
-                                )}
+                                 )}
 
-                                {hasSubmittedReason(selectedRecord.note) && (
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  {hasSubmittedReason(selectedRecord.note) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openAttendanceReason(
+                                          selectedRecord,
+                                          data?.employee?.fullName ||
+                                            employees.find(
+                                              (emp) => emp.id === selectedId,
+                                            )?.fullName ||
+                                            "Employee",
+                                          data?.employee?.id || selectedId,
+                                        )
+                                      }
+                                      className="rounded-lg bg-amber-500/10 dark:bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
+                                    >
+                                      View attendance reason
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openAttendanceReason(
-                                        selectedRecord,
-                                        data?.employee?.fullName ||
-                                          employees.find(
-                                            (emp) => emp.id === selectedId,
-                                          )?.fullName ||
-                                          "Employee",
-                                      )
-                                    }
-                                    className="rounded-lg bg-amber-500/10 dark:bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
+                                    onClick={() => {
+                                      const targetEmpId = data?.employee?.id || selectedId;
+                                      const dateStr = selectedRecord?.date ? formatDateKey(new Date(selectedRecord.date)) : selectedDate;
+                                      const empParam = targetEmpId && targetEmpId !== "all" ? `&employeeId=${encodeURIComponent(targetEmpId)}` : "";
+                                      navigate(`/admin/requests/forgot-punch?mode=time-edit&date=${dateStr}${empParam}`);
+                                    }}
+                                    className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/20 inline-flex items-center gap-1.5"
                                   >
-                                    View attendance reason
+                                    <Clock className="h-3.5 w-3.5" />
+                                    Edit Attendance Time
                                   </button>
-                                )}
+                                </div>
                               </div>
                             )
                           ) : selectedHolidayName ? (
@@ -2886,8 +2848,9 @@ const Attendance = () => {
                         const isToday = dateKey === todayKey;
                         const isHolidayCell =
                           Boolean(holidayName) || rec?.status === "HOLIDAY" || (isSunday && !rec);
+                        const isShortDay = isShortDayRecord(rec);
                         const meta = rec
-                          ? statusMeta[rec.status]
+                          ? (isShortDay ? statusMeta.SHORT_DAY : statusMeta[rec.status])
                           : holidayName
                             ? statusMeta.HOLIDAY
                             : isSunday
@@ -2962,11 +2925,14 @@ const Attendance = () => {
                                               ? "text-violet-600 dark:text-violet-400"
                                               : rec.status === "HOLIDAY"
                                                 ? "text-blue-600 dark:text-blue-400"
-                                                : rec.status ===
-                                                    "PENDING_APPROVAL"
+                                                : isShortDay
                                                   ? "text-amber-600 dark:text-amber-400"
-                                                  : "text-emerald-600 dark:text-emerald-400"
+                                                  : rec.status ===
+                                                      "PENDING_APPROVAL"
+                                                    ? "text-amber-600 dark:text-amber-400"
+                                                    : "text-emerald-600 dark:text-emerald-400"
                                         }`}
+                                        title={meta?.description || meta?.label}
                                       >
                                         {meta?.label || rec.status}
                                       </span>
@@ -3096,9 +3062,15 @@ const Attendance = () => {
               <div
                 key={key}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                title={meta.description || meta.label}
               >
                 <span className={`w-3 h-3 rounded-full ${meta.dot}`} />
-                {meta.label}
+                <span>{meta.label}</span>
+                {meta.description && (
+                  <span className="text-[11px] text-muted-foreground/75">
+                    ({meta.description})
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -3254,11 +3226,25 @@ const Attendance = () => {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end border-t border-border bg-card px-6 py-3">
+            <div className="flex items-center justify-between border-t border-border bg-card px-6 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const dateStr = formatDateKey(new Date(attendanceReasonModal.date));
+                  const empParam = attendanceReasonModal.employeeId
+                    ? `&employeeId=${encodeURIComponent(attendanceReasonModal.employeeId)}`
+                    : "";
+                  navigate(`/admin/requests/forgot-punch?mode=time-edit&date=${dateStr}${empParam}`);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-[14px] font-bold text-primary transition hover:bg-primary/20"
+              >
+                <Clock className="h-4 w-4" />
+                Edit Attendance Time
+              </button>
               <button
                 type="button"
                 onClick={() => setAttendanceReasonModal(null)}
-                className="rounded-xl bg-primary px-5 py-2.5 text-[15px] font-bold text-primary-foreground transition hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className="rounded-xl bg-secondary px-5 py-2 text-[15px] font-bold text-secondary-foreground transition hover:bg-secondary/80 focus:outline-none focus:ring-2"
               >
                 Close
               </button>

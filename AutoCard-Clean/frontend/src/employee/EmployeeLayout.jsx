@@ -15,11 +15,13 @@ import {
   Clock,
   ChevronDown,
   Wrench,
+  Bell,
 } from "lucide-react";
 import { employeeModules, getModulesByPermissions } from "./modules.js";
 import { getAuthUser, clearAuth, updateAuthUser } from "../lib/auth.js";
 import { apiGet } from "../lib/api.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
+import { usePoll } from "../lib/pollContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
@@ -28,7 +30,9 @@ const EmployeeLayout = () => {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const profileDropdownRef = useRef(null);
+  const notifDropdownRef = useRef(null);
   const [user, setUser] = useState(null);
   const [assignedRoleName, setAssignedRoleName] = useState(() => {
     const authUser = getAuthUser();
@@ -37,8 +41,9 @@ const EmployeeLayout = () => {
   const [permissions, setPermissions] = useState({});
   const [visibleModules, setVisibleModules] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+  const { empNotifications } = usePoll();
 
-  // Close profile dropdown when clicking anywhere outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -46,6 +51,12 @@ const EmployeeLayout = () => {
         !profileDropdownRef.current.contains(event.target)
       ) {
         setProfileOpen(false);
+      }
+      if (
+        notifDropdownRef.current &&
+        !notifDropdownRef.current.contains(event.target)
+      ) {
+        setNotifOpen(false);
       }
     };
 
@@ -104,7 +115,7 @@ const EmployeeLayout = () => {
           setPermissions(perms);
           setVisibleModules(getModulesByPermissions(perms));
         } else {
-          setVisibleModules(employeeModules);
+          setVisibleModules(getModulesByPermissions({}));
         }
       } finally {
         setLoadingPermissions(false);
@@ -245,6 +256,65 @@ const EmployeeLayout = () => {
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
+
+            {/* 🔔 Live Notification Bell — employee */}
+            <div className="relative" ref={notifDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setNotifOpen((v) => !v)}
+                className="relative p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+                aria-label={`Notifications${empNotifications.length ? `, ${empNotifications.length} new` : ""}`}
+                title="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {empNotifications.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 ring-2 ring-background animate-pulse">
+                    {empNotifications.length > 99 ? "99+" : empNotifications.length}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-border bg-background shadow-xl z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                    <span className="text-sm font-bold text-foreground">Notifications</span>
+                    {empNotifications.length > 0 && (
+                      <span className="text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 px-2 py-0.5 rounded-full">
+                        {empNotifications.length} new
+                      </span>
+                    )}
+                  </div>
+                  {empNotifications.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      ✅ No new notifications.
+                    </div>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto divide-y divide-border">
+                      {empNotifications.map((item) => (
+                        <div key={item.id} className="px-4 py-3 flex items-start gap-3 hover:bg-secondary/60 transition-colors">
+                          <span className={`h-2 w-2 rounded-full shrink-0 mt-2 ${item.status === "APPROVED" ? "bg-emerald-500" : item.status === "REJECTED" ? "bg-rose-500" : "bg-blue-500"}`} />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground truncate">{item.subject || "Update"}</p>
+                            <p className={`text-xs font-medium ${item.status === "APPROVED" ? "text-emerald-600" : item.status === "REJECTED" ? "text-rose-600" : "text-blue-600"}`}>
+                              {item.status === "ASSIGNED" ? "Roster Assigned" : item.status}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-border px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => { setNotifOpen(false); navigate("/employee/requests/track"); }}
+                      className="w-full text-xs font-semibold text-primary hover:underline text-center"
+                    >
+                      View All Requests →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="relative" ref={profileDropdownRef}>
               {/* Profile Button */}

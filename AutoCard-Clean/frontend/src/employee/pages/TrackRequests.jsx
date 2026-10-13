@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { usePoll } from "../../lib/pollContext.jsx";
 import {
   ArrowLeft,
   ClipboardList,
@@ -10,16 +11,27 @@ import {
   MapPin,
   MessageSquareText,
   X,
+  PackageCheck,
+  CheckCircle2,
+  CheckCheck,
+  Layers,
+  AlertTriangle,
+  PauseCircle,
+  RotateCcw,
+  PackagePlus,
+  Tag,
+  UserRound,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { apiGet } from "../../lib/api.js";
-import { clearAuth } from "../../lib/auth.js";
+import { apiGet, apiPost } from "../../lib/api.js";
+import { clearAuth, getAuthUser } from "../../lib/auth.js";
 
 const statusStyles = {
-  PENDING: "bg-amber-100 text-amber-700",
-  PENDING_APPROVAL: "bg-amber-100 text-amber-700",
-  APPROVED: "bg-emerald-100 text-emerald-700",
+  PENDING: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  PENDING_APPROVAL: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  APPROVED: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
   PRESENT: "bg-emerald-100 text-emerald-700",
   REJECTED: "bg-rose-100 text-rose-700",
   ABSENT: "bg-rose-100 text-rose-700",
@@ -28,9 +40,68 @@ const statusStyles = {
 
 const typeStyles = {
   REQUEST: "bg-blue-100 text-blue-700",
+  EQUIPMENT: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
   CORRECTION: "bg-blue-100 text-blue-700",
   LEAVE: "bg-violet-100 text-violet-700",
   ATTENDANCE: "bg-rose-100 text-rose-700",
+};
+
+const parseInventorySubject = (titleStr = "") => {
+  if (!titleStr || typeof titleStr !== "string") return null;
+  const match = titleStr.match(/^\[(Inventory Return|Inventory Taking)(?:\s*:\s*([^\]]+))?\]\s*(.*?)(?:\s*\((.*?)\))?$/i);
+  if (!match) return null;
+  return {
+    actionType: match[1].trim(),
+    codeOrProject: match[2]?.trim() || "",
+    itemName: match[3]?.trim() || titleStr,
+    categoryType: match[4]?.trim() || "",
+    isReturn: match[1].toLowerCase().includes("return"),
+  };
+};
+
+const FormattedInventoryTitle = ({ title, className = "" }) => {
+  const parsed = parseInventorySubject(title);
+  if (!parsed) {
+    return (
+      <h3 className={`font-semibold text-foreground ${className}`}>
+        {title}
+      </h3>
+    );
+  }
+
+  return (
+    <div className={`space-y-1.5 ${className}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold border ${
+            parsed.isReturn
+              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+              : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30"
+          }`}
+        >
+          {parsed.isReturn ? <RotateCcw className="h-3 w-3" /> : <PackagePlus className="h-3 w-3" />}
+          {parsed.actionType}
+        </span>
+
+        {parsed.codeOrProject && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-secondary text-foreground border border-border">
+            <Tag className="h-3 w-3 text-amber-600" />
+            {parsed.codeOrProject}
+          </span>
+        )}
+
+        {parsed.categoryType && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-medium bg-secondary/80 text-muted-foreground border border-border/50">
+            {parsed.categoryType}
+          </span>
+        )}
+      </div>
+
+      <h3 className="text-base sm:text-lg font-bold leading-snug text-foreground">
+        {parsed.itemName}
+      </h3>
+    </div>
+  );
 };
 
 const months = [
@@ -103,12 +174,31 @@ const normalizeStatus = (status, note = "", reviewNote = "") => {
   const s = String(status || "").toUpperCase();
   const n = (String(note || "") + " " + String(reviewNote || "")).toLowerCase();
 
+  if (s === "COMPLETED" || s === "FOUND" || s === "RECEIVED" || n.includes("product found") || n.includes("collected by employee")) return "COMPLETED";
   if (s === "PENDING_APPROVAL" || s === "PENDING") return "PENDING";
   if (s === "APPROVED" || s === "PRESENT" || n.includes("approved")) return "APPROVED";
   if (s === "REJECTED" || s === "ABSENT" || n.includes("rejected")) return "REJECTED";
   if (s === "CANCELLED") return "CANCELLED";
 
   return "PENDING";
+};
+
+const isApprovedOrCompletedStatus = (status, note = "") => {
+  const s = String(status || "").toUpperCase();
+  const n = String(note || "").toUpperCase();
+  if (s === "REJECTED" || s === "CANCELLED" || n.includes("[REJECTED]") || n.includes("[CANCELLED]")) {
+    return false;
+  }
+  return (
+    s === "APPROVED" ||
+    s === "COMPLETED" ||
+    s === "FOUND" ||
+    s === "RECEIVED" ||
+    s === "IN_PROGRESS" ||
+    n.includes("[PRODUCT_FOUND]") ||
+    n.includes("[QUALITY_INSPECTED]") ||
+    n.includes("PHYSICALLY_RETURNED")
+  );
 };
 
 const getRequestReason = (request) => {
@@ -121,8 +211,8 @@ const getRequestReason = (request) => {
   }
 
   text = text
-    .replace(/^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i, "")
-    .replace(/^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i, "")
+    .replace(/^(?:Forgot Punch|Time Edit) request for (?:both|check-in|check-out|Check In|Check Out|time-edit|Time Edit) on \d{4}-\d{2}-\d{2}\.?\s*/i, "")
+    .replace(/^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i, "")
     .replace(/Check-In Location:.*$/i, "")
     .replace(/Check-Out Location:.*$/i, "")
     .replace(/\|?\s*Pending admin approval\.?/gi, "")
@@ -266,47 +356,315 @@ const getAttendanceReason = (note = "", reason = "") => {
   };
 };
 
+const parseRequestDetails = (rawText) => {
+  if (!rawText || typeof rawText !== "string") return null;
+
+  const text = rawText.trim();
+  const knownKeys = [
+    "Action Type",
+    "Category",
+    "Product Type",
+    "Product ID",
+    "Project Name",
+    "Item Name",
+    "Quantity",
+    "Urgency Level",
+    "Item Condition",
+    "Date",
+    "Purpose / Work Details / Remarks",
+    "Purpose / Remarks",
+    "Remarks",
+    "Reason",
+  ];
+
+  const hasKeys = knownKeys.some((k) => text.toLowerCase().includes(`${k.toLowerCase()}:`));
+  if (!hasKeys) return null;
+
+  const pairs = [];
+  let remarks = "";
+
+  const pattern = new RegExp(
+    `(?:^|\\n|\\s)(Action Type|Category|Product Type|Product ID|Project Name|Item Name|Quantity|Urgency Level|Item Condition|Date|Purpose \\/ Work Details \\/ Remarks|Purpose \\/ Remarks|Remarks|Reason):\\s*`,
+    "gi"
+  );
+
+  const matches = [...text.matchAll(pattern)];
+  if (matches.length === 0) return null;
+
+  for (let i = 0; i < matches.length; i++) {
+    const key = matches[i][1].trim();
+    const startIndex = matches[i].index + matches[i][0].length;
+    const endIndex = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    const val = text.substring(startIndex, endIndex).trim();
+
+    if (key.match(/Purpose|Remarks|Reason/i) && (key.includes("Purpose") || key.includes("Remarks") || key === "Reason")) {
+      remarks = val;
+    } else {
+      pairs.push({ label: key, value: val });
+    }
+  }
+
+  return { pairs, remarks };
+};
+
+const RenderFormattedDetails = ({ text }) => {
+  const parsed = parseRequestDetails(text);
+
+  if (!parsed || (!parsed.pairs.length && !parsed.remarks)) {
+    return (
+      <p className="whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+        {text || "No details provided."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {parsed.pairs.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {parsed.pairs.map((pair, idx) => (
+            <div
+              key={idx}
+              className="rounded-xl border border-border bg-background p-3 shadow-2xs"
+            >
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">
+                {pair.label}
+              </span>
+              <span className="text-sm font-bold text-foreground break-words">
+                {pair.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {parsed.remarks && (
+        <div className="rounded-xl border border-border bg-background p-3.5 shadow-2xs">
+          <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+            Purpose / Work Details / Remarks
+          </span>
+          <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-wrap break-words">
+            {parsed.remarks}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TrackRequests = ({ isAdmin = false }) => {
   const navigate = useNavigate();
+  const { pollTick } = usePoll();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [reasonModal, setReasonModal] = useState(null);
+  const [markingId, setMarkingId] = useState(null);
+  const [returningId, setReturningId] = useState(null);
+  const [notFoundModal, setNotFoundModal] = useState(null);
+  const [notFoundReason, setNotFoundReason] = useState("");
+  const [notFoundLoading, setNotFoundLoading] = useState(false);
+
+  const handleMarkProductFound = async (requestId) => {
+    if (!requestId || markingId) return;
+    const cleanId = String(requestId).replace(/^request-/, "");
+    setMarkingId(requestId);
+    try {
+      await apiPost(`/requests/${cleanId}/found`, {});
+      toast.success("Product marked as found / item received successfully!");
+      await loadRequests();
+    } catch (err) {
+      toast.error(err.message || "Failed to update product status.");
+    } finally {
+      setMarkingId(null);
+    }
+  };
+
+  const handleMarkProductNotFound = async (requestId, reason) => {
+    if (!requestId || notFoundLoading) return;
+    const cleanId = String(requestId).replace(/^request-/, "");
+    setNotFoundLoading(true);
+    try {
+      await apiPost(`/requests/${cleanId}/not-found`, {
+        reason: reason || notFoundReason || "Item could not be found in store / workshop.",
+      });
+      toast.warning("Reported as Item Not Found. Admin has been notified.");
+      setNotFoundModal(null);
+      setNotFoundReason("");
+      await loadRequests();
+    } catch (err) {
+      toast.error(err.message || "Failed to submit not-found report.");
+    } finally {
+      setNotFoundLoading(false);
+    }
+  };
+
+  const handleItemReturn = async (requestId) => {
+    if (!requestId || returningId) return;
+    const cleanId = String(requestId).replace(/^request-/, "");
+    setReturningId(requestId);
+    try {
+      await apiPost(`/requests/${cleanId}/item-return`, {});
+      toast.success("Item Return confirmed! Item handed over to store/admin.");
+      await loadRequests();
+    } catch (err) {
+      toast.error(err.message || "Failed to confirm item return.");
+    } finally {
+      setReturningId(null);
+    }
+  };
 
   // Set default filters to current month/year
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
 
+  const currentUser = getAuthUser();
+  const [adminScope, setAdminScope] = useState("ALL");
+  const [employeeFilter, setEmployeeFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [yearFilter, setYearFilter] = useState(String(currentYear));
   const [monthFilter, setMonthFilter] = useState(String(currentMonth));
 
+  const isMyRequest = (req) => {
+    if (!currentUser) return false;
+    if (adminScope === "ME" || !isAdmin) return true;
+    const emp = req?.employee;
+    if (!emp) return false;
+    if (emp.id && currentUser.employeeProfile?.id && emp.id === currentUser.employeeProfile.id) return true;
+    if (emp.employeeCode && currentUser.employeeProfile?.employeeCode && emp.employeeCode === currentUser.employeeProfile.employeeCode) return true;
+    if (emp.email && currentUser.email && emp.email.toLowerCase() === currentUser.email.toLowerCase()) return true;
+    if (emp.user?.email && currentUser.email && emp.user.email.toLowerCase() === currentUser.email.toLowerCase()) return true;
+    if (emp.user?.id && currentUser.id && emp.user.id === currentUser.id) return true;
+    if (emp.fullName && currentUser.fullName && emp.fullName.toLowerCase() === currentUser.fullName.toLowerCase()) return true;
+    return false;
+  };
+
+  const employeesList = useMemo(() => {
+    if (!isAdmin) return [];
+    const map = new Map();
+    requests.forEach((r) => {
+      if (r.employee) {
+        const key = r.employee.id || r.employee.employeeCode || r.employee.fullName;
+        if (key && !map.has(key)) {
+          map.set(key, {
+            key,
+            id: r.employee.id,
+            employeeCode: r.employee.employeeCode,
+            fullName: r.employee.fullName || "Unknown",
+          });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [isAdmin, requests]);
+
   const loadRequests = async () => {
-    setLoading(true);
     setLoadError("");
 
     try {
-      if (isAdmin) {
-        const result = await apiGet("/requests");
+      if (isAdmin && adminScope === "ALL") {
+        const results = await Promise.allSettled([
+          apiGet("/requests"),
+          apiGet("/leave/admin/all"),
+          apiGet("/attendance/pending-approvals"),
+        ]);
 
-        console.log("ADMIN TRACK REQUESTS:", result);
+        const requestResult = results[0];
+        const leaveResult = results[1];
+        const attendanceResult = results[2];
 
-        const adminRequests = result.requests || [];
+        // 1. ALL COMPANY GENERAL / FORGOT PUNCH / EQUIPMENT REQUESTS
+        const allGeneralRequests =
+          requestResult.status === "fulfilled"
+            ? (requestResult.value.requests || []).map((request) => ({
+                ...request,
+                status: normalizeStatus(request.status, request.description || request.note, request.reviewNote),
+                forgotPunch: getForgotPunchData(request),
+                reviewedAt: request.reviewedAt || null,
+                employee: request.employee
+                  ? {
+                      id: request.employee.id,
+                      employeeCode: request.employee.employeeCode,
+                      fullName: request.employee.fullName || request.employee.user?.fullName || "Employee",
+                      email: request.employee.email || request.employee.user?.email || "",
+                    }
+                  : null,
+              }))
+            : [];
+
+        // 2. ALL COMPANY LEAVE REQUESTS
+        const allLeaveRequests =
+          leaveResult.status === "fulfilled"
+            ? (leaveResult.value.requests || []).map((request) => ({
+                id: `leave-${request.id}`,
+                type: "LEAVE",
+                subject: `${request.leaveType?.name || "Leave"} request`,
+                status: normalizeStatus(request.status, request.reason, request.reviewNote),
+                createdAt: request.createdAt,
+                reviewedAt: request.reviewedAt || null,
+                description:
+                  `${new Date(request.startDate).toLocaleDateString()} – ` +
+                  `${new Date(request.endDate).toLocaleDateString()} · ` +
+                  `${request.totalDays} day(s)` +
+                  (request.reason ? `\nReason: ${request.reason}` : ""),
+                reviewNote: request.reviewNote,
+                employee: request.employee
+                  ? {
+                      id: request.employee.id,
+                      employeeCode: request.employee.employeeCode,
+                      fullName: request.employee.user?.fullName || request.employee.fullName || "Employee",
+                      email: request.employee.user?.email || request.employee.email || "",
+                    }
+                  : null,
+              }))
+            : [];
+
+        // 3. ALL COMPANY ATTENDANCE APPROVAL REQUESTS
+        const allAttendanceRequests =
+          attendanceResult.status === "fulfilled"
+            ? (attendanceResult.value.pendingRecords || []).map((request) => ({
+                id: `attendance-${request.id}`,
+                type: "ATTENDANCE",
+                subject: "Attendance Location Approval",
+                status: normalizeStatus(request.status, request.note, request.reviewNote),
+                createdAt: request.createdAt || request.date,
+                reviewedAt: request.status !== "PENDING_APPROVAL" ? (request.updatedAt || null) : null,
+                checkInTime: request.checkIn || request.createdAt || request.date,
+                checkOutTime: request.checkOut || null,
+                description: request.note || "",
+                note: request.note || "",
+                reason: request.reason || "",
+                checkInLatitude: request.checkInLatitude ?? null,
+                checkInLongitude: request.checkInLongitude ?? null,
+                checkOutLatitude: request.checkOutLatitude ?? null,
+                checkOutLongitude: request.checkOutLongitude ?? null,
+                checkInDistance: request.checkInDistance ?? null,
+                checkOutDistance: request.checkOutDistance ?? null,
+                reviewNote: request.reviewNote,
+                employee: request.employee
+                  ? {
+                      id: request.employee.id,
+                      employeeCode: request.employee.employeeCode,
+                      fullName: request.employee.user?.fullName || request.employee.fullName || "Employee",
+                      email: request.employee.user?.email || request.employee.email || "",
+                    }
+                  : null,
+              }))
+            : [];
 
         setRequests(
-          adminRequests.sort(
+          [...allGeneralRequests, ...allLeaveRequests, ...allAttendanceRequests].sort(
             (first, second) =>
               new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
           ),
         );
-
         return;
       }
 
       // ============================================================
-      // EMPLOYEE
+      // EMPLOYEE OR ADMIN PERSONAL ("ME")
       // ============================================================
 
       const results = await Promise.allSettled([
@@ -319,6 +677,15 @@ const TrackRequests = ({ isAdmin = false }) => {
       const leaveResult = results[1];
       const attendanceResult = results[2];
 
+      const currentEmployeeInfo = currentUser
+        ? {
+            id: currentUser.employeeProfile?.id || currentUser.id,
+            employeeCode: currentUser.employeeProfile?.employeeCode || "",
+            fullName: currentUser.fullName,
+            email: currentUser.email,
+          }
+        : null;
+
       // ------------------------------------------------------------
       // GENERAL / FORGOT PUNCH REQUESTS
       // ------------------------------------------------------------
@@ -330,6 +697,7 @@ const TrackRequests = ({ isAdmin = false }) => {
               status: normalizeStatus(request.status, request.description || request.note, request.reviewNote),
               forgotPunch: getForgotPunchData(request),
               reviewedAt: request.reviewedAt || null,
+              employee: request.employee || currentEmployeeInfo,
             }))
           : [];
 
@@ -352,6 +720,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                 `${request.totalDays} day(s)` +
                 (request.reason ? `\nReason: ${request.reason}` : ""),
               reviewNote: request.reviewNote,
+              employee: request.employee || currentEmployeeInfo,
             }))
           : [];
 
@@ -363,40 +732,24 @@ const TrackRequests = ({ isAdmin = false }) => {
         attendanceResult.status === "fulfilled"
           ? (attendanceResult.value.records || []).map((request) => ({
               id: `attendance-${request.id}`,
-
               type: "ATTENDANCE",
-
               subject: "Attendance Location Approval",
-
               status: normalizeStatus(request.status, request.note, request.reviewNote),
-
               createdAt: request.createdAt || request.date,
-
               reviewedAt: request.status !== "PENDING_APPROVAL" ? (request.updatedAt || null) : null,
-
               checkInTime: request.checkIn || request.createdAt || request.date,
               checkOutTime: request.checkOut || null,
-
-              // IMPORTANT
               description: request.note || "",
-
-              // IMPORTANT
               note: request.note || "",
-
-              // IMPORTANT
               reason: request.reason || "",
-
               checkInLatitude: request.checkInLatitude ?? null,
               checkInLongitude: request.checkInLongitude ?? null,
-
               checkOutLatitude: request.checkOutLatitude ?? null,
               checkOutLongitude: request.checkOutLongitude ?? null,
-
-              // Exact road distances from backend enrichAttendanceRecordsWithDistance
               checkInDistance: request.checkInDistance ?? null,
               checkOutDistance: request.checkOutDistance ?? null,
-
               reviewNote: request.reviewNote,
+              employee: request.employee || currentEmployeeInfo,
             }))
           : [];
 
@@ -422,7 +775,12 @@ const TrackRequests = ({ isAdmin = false }) => {
             index
           ],
         }))
-        .filter(({ result }) => result.status === "rejected");
+        .filter(({ result }) => {
+          if (result.status !== "rejected") return false;
+          // If admin checking personal requests and no employee profile exists, 404 is expected
+          if (isAdmin && adminScope === "ME" && result.reason?.status === 404) return false;
+          return true;
+        });
 
       const unauthorizedResult = failedServices.find(
         ({ result }) => result.reason?.status === 401,
@@ -472,7 +830,15 @@ const TrackRequests = ({ isAdmin = false }) => {
 
   useEffect(() => {
     loadRequests();
-  }, [navigate]);
+  }, [navigate, adminScope]);
+
+  // Silent background refresh every pollTick (every 5s)
+  useEffect(() => {
+    if (pollTick === 0) return;
+    if (!markingId && !returningId) {
+      loadRequests();
+    }
+  }, [pollTick]);
 
   // Get unique years and months from requests
   const years = Array.from(
@@ -493,8 +859,28 @@ const TrackRequests = ({ isAdmin = false }) => {
     // STATUS FILTER
     // =====================================================
 
-    const matchesStatus =
-      statusFilter === "ALL" || request.status === statusFilter;
+    const isProductFound =
+      request.status === "COMPLETED" ||
+      (typeof request.reviewNote === "string" &&
+        (request.reviewNote.includes("[PRODUCT_FOUND]") ||
+          request.reviewNote.includes("Product found")));
+
+    const isHold =
+      typeof request.reviewNote === "string" &&
+      (request.reviewNote.includes("[ON_HOLD]") ||
+        request.reviewNote.toLowerCase().includes("out of stock") ||
+        request.reviewNote.toLowerCase().includes("on hold"));
+
+    let matchesStatus = statusFilter === "ALL";
+    if (!matchesStatus) {
+      if (statusFilter === "ON_HOLD") {
+        matchesStatus = isHold;
+      } else if (statusFilter === "COMPLETED") {
+        matchesStatus = isProductFound;
+      } else {
+        matchesStatus = request.status === statusFilter && !isHold && !isProductFound;
+      }
+    }
 
     if (!matchesStatus) {
       return false;
@@ -531,6 +917,18 @@ const TrackRequests = ({ isAdmin = false }) => {
       return false;
     }
 
+    // =====================================================
+    // EMPLOYEE FILTER (Admin All Scope)
+    // =====================================================
+    if (isAdmin && adminScope === "ALL" && employeeFilter !== "ALL") {
+      const emp = request.employee;
+      if (!emp) return false;
+      const key = emp.id || emp.employeeCode || emp.fullName;
+      if (key !== employeeFilter && emp.id !== employeeFilter && emp.employeeCode !== employeeFilter) {
+        return false;
+      }
+    }
+
     return true;
   });
 
@@ -552,26 +950,26 @@ const TrackRequests = ({ isAdmin = false }) => {
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold">
-              Track My Request
+              {isAdmin ? "Track All Requests" : "Track My Request"}
             </h1>
             <p className="text-sm text-muted-foreground">
               {isAdmin
-                ? "View requests created by your admin account and their current status."
+                ? "View and track all company-wide employee requests and their current status."
                 : "View your submitted requests and their current status."}
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setLoading(true);
-            loadRequests();
-          }}
-          className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary"
-          aria-label="Refresh requests"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={loadRequests}
+            className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary"
+            aria-label="Refresh requests"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -581,6 +979,8 @@ const TrackRequests = ({ isAdmin = false }) => {
           ["ALL", "All Status"],
           ["PENDING", "Pending"],
           ["APPROVED", "Approved"],
+          ["ON_HOLD", "On Hold ⏸"],
+          ["COMPLETED", "Completed ✓"],
           ["REJECTED", "Rejected"],
         ].map(([value, label]) => (
           <button
@@ -598,7 +998,22 @@ const TrackRequests = ({ isAdmin = false }) => {
         ))}
 
         <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap sm:flex-nowrap gap-2">
-          {/* Year Filter */}
+          {/* Employee Filter (Admin in ALL scope) */}
+          {isAdmin && adminScope === "ALL" && employeesList.length > 0 && (
+            <select
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+            >
+              <option value="ALL">All Employees ({employeesList.length})</option>
+              {employeesList.map((emp) => (
+                <option key={emp.key} value={emp.key}>
+                  {emp.employeeCode ? `[${emp.employeeCode}] ` : ""}{emp.fullName}
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Request Type Filter */}
           <select
             value={typeFilter}
@@ -607,7 +1022,7 @@ const TrackRequests = ({ isAdmin = false }) => {
           >
             <option value="ALL">All Types</option>
             <option value="LEAVE">Leave</option>
-            <option value="CORRECTION">Forgot Punch</option>
+            <option value="CORRECTION">Forgot Punch / Time Edit</option>
             <option value="ATTENDANCE">Attendance</option>
           </select>
 
@@ -629,10 +1044,7 @@ const TrackRequests = ({ isAdmin = false }) => {
 
       {/* Requests List */}
       {loading ? (
-        <div className="flex items-center justify-center rounded-2xl border border-border bg-background p-12 card-shadow">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
-          <span className="text-muted-foreground">Loading requests...</span>
-        </div>
+        null
       ) : filteredRequests.length === 0 ? (
         <div className="rounded-2xl border border-border bg-background p-12 text-center card-shadow">
           {loadError && <p className="mb-3 text-rose-600">{loadError}</p>}
@@ -640,7 +1052,7 @@ const TrackRequests = ({ isAdmin = false }) => {
             No{" "}
             {typeFilter !== "ALL"
               ? typeFilter === "CORRECTION"
-                ? "Forgot Punch"
+                ? "Forgot Punch / Time Edit"
                 : typeFilter === "ATTENDANCE"
                   ? "Attendance"
                   : typeFilter === "LEAVE"
@@ -667,14 +1079,92 @@ const TrackRequests = ({ isAdmin = false }) => {
                     className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${typeStyles[request.type] || "bg-gray-100 text-gray-700"}`}
                   >
                     {request.type === "CORRECTION"
-                      ? "FORGOT PUNCH"
+                      ? "FORGOT PUNCH / TIME EDIT"
                       : request.type}
                   </span>
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${statusStyles[request.status] || "bg-secondary text-muted-foreground"}`}
-                  >
-                    {request.status}
-                  </span>
+                  {(() => {
+                    const isProductFound =
+                      request.status === "COMPLETED" ||
+                      (typeof request.reviewNote === "string" &&
+                        (request.reviewNote.includes("[PRODUCT_FOUND]") ||
+                          request.reviewNote.includes("Product found")));
+
+                    const isItemNotFound =
+                      typeof request.reviewNote === "string" &&
+                      request.reviewNote.includes("[ITEM_NOT_FOUND]");
+
+                    const isHold =
+                      typeof request.reviewNote === "string" &&
+                      (request.reviewNote.includes("[ON_HOLD]") ||
+                        request.reviewNote.toLowerCase().includes("out of stock") ||
+                        request.reviewNote.toLowerCase().includes("on hold"));
+
+                    const isQualityInspected =
+                      typeof request.reviewNote === "string" && request.reviewNote.includes("[QUALITY_INSPECTED]");
+
+                    const isItemReturned =
+                      typeof request.reviewNote === "string" &&
+                      (request.reviewNote.includes("[ITEM_RETURNED]") ||
+                        request.reviewNote.includes("[PHYSICALLY_RETURNED]"));
+
+                    const isReturnRequest =
+                      (typeof request.description === "string" && request.description.toLowerCase().includes("action type: return")) ||
+                      (typeof request.subject === "string" && request.subject.toLowerCase().includes("inventory return")) ||
+                      (typeof request.title === "string" && request.title.toLowerCase().includes("return"));
+
+                    const displayStatus = isProductFound
+                      ? isReturnRequest ? "FOUND & RESTOCKED" : "COMPLETED"
+                      : isItemNotFound
+                      ? "ITEM NOT FOUND"
+                      : isHold
+                      ? "ON HOLD"
+                      : (isReturnRequest && isItemReturned)
+                      ? "ITEM RETURNED"
+                      : (isReturnRequest && isQualityInspected)
+                      ? "QUALITY TESTED"
+                      : request.status;
+
+                    const displayStyle = isProductFound
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 font-bold"
+                      : isItemNotFound
+                      ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 font-bold border border-rose-500/30"
+                      : isHold
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 font-bold border border-amber-500/30"
+                      : (isReturnRequest && isItemReturned)
+                      ? "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300 font-bold border border-blue-500/30"
+                      : (isReturnRequest && isQualityInspected)
+                      ? "bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 font-bold border border-purple-500/30"
+                      : statusStyles[request.status] || "bg-secondary text-muted-foreground";
+
+                    return (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold uppercase ${displayStyle}`}
+                      >
+                        {displayStatus}
+                      </span>
+                    );
+                  })()}
+
+                  {/* Employee Badge */}
+                  {request.employee ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/80 px-2.5 py-1 text-xs font-medium text-foreground border border-border">
+                      <UserRound className="h-3 w-3 text-muted-foreground" />
+                      <span>
+                        {request.employee.employeeCode ? `[${request.employee.employeeCode}] ` : ""}
+                        {request.employee.fullName || "Employee"}
+                      </span>
+                      {isMyRequest(request) && (
+                        <span className="rounded bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold text-primary">
+                          Me
+                        </span>
+                      )}
+                    </span>
+                  ) : isMyRequest(request) && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary border border-primary/20">
+                      <UserRound className="h-3 w-3" />
+                      Me
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -688,20 +1178,380 @@ const TrackRequests = ({ isAdmin = false }) => {
               </div>
 
               {/* Card Content */}
-              <h3 className="mb-3 font-semibold text-foreground">
-                {request.subject}
-              </h3>
+              <FormattedInventoryTitle title={request.subject} className="mb-3" />
 
               <div className="grid gap-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
                   <Calendar className="h-4 w-4" />
                   <span>{formatDate(request.createdAt)}</span>
                   <Clock3 className="ml-2 h-4 w-4" />
                   <span>{formatTime(request.createdAt)}</span>
+                  {request.employee && (
+                    <>
+                      <span className="mx-1 text-muted-foreground/40">•</span>
+                      <span className="flex items-center gap-1 text-foreground/80 font-medium">
+                        <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
+                        {request.employee.fullName}
+                      </span>
+                    </>
+                  )}
                 </div>
-
-                
               </div>
+
+              {/* ─── Phase Line Timeline Bar for EQUIPMENT / Inventory Requests ─── */}
+              {(request.type === "EQUIPMENT" || request.subject?.includes("Inventory") || request.subject?.toLowerCase().includes("tool") || request.description?.includes("Action Type:")) && (
+                <div className="mt-5 pt-4 border-t border-border">
+                  {/* Request Phase Pipeline (Only for Tools & Spares / Equipment / Project requests) */}
+                  {(() => {
+                    const isProductFound =
+                      request.status === "COMPLETED" ||
+                      (typeof request.reviewNote === "string" &&
+                        (request.reviewNote.includes("[PRODUCT_FOUND]") ||
+                          request.reviewNote.includes("Product found")));
+
+                    const isItemNotFound =
+                      typeof request.reviewNote === "string" &&
+                      request.reviewNote.includes("[ITEM_NOT_FOUND]");
+
+                    const isHold =
+                      typeof request.reviewNote === "string" &&
+                      (request.reviewNote.includes("[ON_HOLD]") ||
+                        request.reviewNote.toLowerCase().includes("out of stock") ||
+                        request.reviewNote.toLowerCase().includes("on hold"));
+
+                    const isReturnRequest =
+                      (typeof request.description === "string" && request.description.toLowerCase().includes("action type: return")) ||
+                      (typeof request.subject === "string" && request.subject.toLowerCase().includes("inventory return")) ||
+                      (typeof request.title === "string" && request.title.toLowerCase().includes("return"));
+
+                    const isQualityInspected =
+                      typeof request.reviewNote === "string" && request.reviewNote.includes("[QUALITY_INSPECTED]");
+
+                    const isItemReturned =
+                      typeof request.reviewNote === "string" &&
+                      (request.reviewNote.includes("[ITEM_RETURNED]") ||
+                        request.reviewNote.includes("[PHYSICALLY_RETURNED]"));
+
+                    return (
+                      <>
+                        <div className="flex items-center justify-between text-xs font-semibold mb-2">
+                          <span className="text-foreground flex items-center gap-1.5">
+                            <Layers className="h-3.5 w-3.5 text-primary" /> Request Progress Lifecycle
+                          </span>
+                          <span className="text-muted-foreground">
+                            {isItemNotFound && !isProductFound && "Phase 2: Reported NOT FOUND in Store/Workshop"}
+                            {!isItemNotFound && isHold && "Phase 2: ON HOLD (Product Out of Stock)"}
+                            {!isHold && isReturnRequest && (
+                              isProductFound
+                                ? "Phase 4: Found Item & Restocked to Warehouse"
+                                : isItemReturned
+                                ? "Phase 3: Item Returned by Employee (Awaiting Admin Found Item)"
+                                : isQualityInspected || request.status === "APPROVED"
+                                ? "Phase 2: Quality Tested & Approved (Please click Item Return)"
+                                : "Phase 1: Return Request Submitted (Pending Approval)"
+                            )}
+                            {!isHold && !isReturnRequest && request.status === "PENDING" && "Phase 1: In Review (Submitted to Admin)"}
+                            {!isHold && !isReturnRequest && request.status === "APPROVED" && !isProductFound && "Phase 2: Admin Approved (Ready for Pickup)"}
+                            {!isHold && !isReturnRequest && isProductFound && "Phase 3: Product Found & Collected"}
+                            {request.status === "REJECTED" && "Request Rejected"}
+                          </span>
+                        </div>
+
+                        {/* Step Indicators & Line */}
+                        {isReturnRequest ? (
+                          <div className="relative flex items-center justify-between my-4 px-2">
+                            {/* Background Connecting Line */}
+                            <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-secondary rounded-full -z-0" />
+
+                            {/* Filled Progress Line */}
+                            <div
+                              className="absolute left-6 top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-500 -z-0 bg-gradient-to-r from-amber-500 via-purple-500 to-emerald-500"
+                              style={{
+                                width: isProductFound
+                                  ? "92%"
+                                  : isItemReturned
+                                  ? "68%"
+                                  : isQualityInspected || request.status === "APPROVED"
+                                  ? "40%"
+                                  : "12%",
+                              }}
+                            />
+
+                            {/* Step 1 Node: Return Submitted */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-amber-600 text-white shadow-xs">
+                                1
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">Return Submitted</span>
+                            </div>
+
+                            {/* Step 2 Node: Quality Tested */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isQualityInspected || request.status === "APPROVED" || isItemReturned || isProductFound
+                                    ? "bg-purple-600 text-white shadow-xs ring-2 ring-purple-500/20"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                2
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">Quality Tested</span>
+                            </div>
+
+                            {/* Step 3 Node: Item Return */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isItemReturned || isProductFound
+                                    ? "bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/20"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                3
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">Item Return</span>
+                            </div>
+
+                            {/* Step 4 Node: Found Item */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isProductFound
+                                    ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/20"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                4
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">Found Item</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="relative flex items-center justify-between my-4 px-2">
+                            {/* Background Connecting Line */}
+                            <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-secondary rounded-full -z-0" />
+
+                            {/* Filled Progress Line */}
+                            <div
+                              className={`absolute left-6 top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-500 -z-0 ${
+                                isHold
+                                  ? "bg-gradient-to-r from-blue-500 to-amber-500"
+                                  : "bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500"
+                              }`}
+                              style={{
+                                width:
+                                  isHold
+                                    ? "50%"
+                                    : request.status === "PENDING"
+                                    ? "35%"
+                                    : isProductFound
+                                    ? "90%"
+                                    : request.status === "APPROVED"
+                                    ? "68%"
+                                    : "0%",
+                              }}
+                            />
+
+                            {/* Step 1 Node */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  request.status !== "REJECTED"
+                                    ? "bg-blue-600 text-white shadow-xs"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                1
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">Submitted</span>
+                            </div>
+
+                            {/* Step 2 Node */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isHold
+                                    ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/20"
+                                    : request.status === "APPROVED" || isProductFound
+                                    ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-500/20"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                {isHold ? <PauseCircle className="h-4 w-4" /> : "2"}
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">
+                                {isHold ? "On Hold" : "Admin Approved"}
+                              </span>
+                            </div>
+
+                            {/* Step 3 Node */}
+                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isProductFound
+                                    ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/20"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                3
+                              </div>
+                              <span className="text-[11px] font-medium text-muted-foreground">Product Found</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* On Hold Warning Banner */}
+                        {isHold && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+                            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <div className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                                Request Placed On Hold (Product Out of Stock)
+                              </div>
+                              <div className="text-xs text-amber-700 dark:text-amber-400 mt-1 font-medium">
+                                {request.reviewNote?.replace(/\[ON_HOLD\]\s*/g, "") || "Admin noted product is currently out of stock. It will be fulfilled once restocked."}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Button: "Item Return" (Appears for Return Request when Approved & Quality Tested & not yet returned) */}
+                        {isReturnRequest && (request.status === "APPROVED" || isQualityInspected) && !isItemReturned && !isProductFound && !isHold && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-between flex-wrap gap-3">
+                            <div className="text-xs text-purple-700 dark:text-purple-300 font-medium flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 shrink-0 text-purple-600" />
+                              <span>Admin approved & quality tested! Hand over item to store/admin and click below.</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleItemReturn(request.id)}
+                              disabled={returningId === request.id}
+                              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {returningId === request.id ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Submitting...
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw className="h-4 w-4" /> Item Return
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Action Banner & Button: "Product Found" (Appears for Return Request when Employee clicked Item Return & waiting for Admin Found) */}
+                        {isReturnRequest && isItemReturned && !isProductFound && !isHold && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between flex-wrap gap-3">
+                            <div className="text-xs text-blue-700 dark:text-blue-300 font-medium flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" />
+                              <span>Item Return submitted by employee ✓ Waiting for Admin verification and "Product Found" restock confirmation.</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMarkProductFound(request.id)}
+                              disabled={markingId === request.id}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {markingId === request.id ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Restocking...
+                                </>
+                              ) : (
+                                <>
+                                  <PackageCheck className="h-4 w-4" /> Product Found
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Action Decision: "Item Found" vs "Item Not Found" for Taking Request (Employee decides) */}
+                        {request.status === "APPROVED" && !isProductFound && !isReturnRequest && (
+                          <div className="mt-3.5 p-4 rounded-2xl bg-secondary/40 border-2 border-primary/20 space-y-3">
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div>
+                                <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                                  <PackageCheck className="h-4 w-4 text-primary" />
+                                  <span>Admin Approved • Physical Collection Verification</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Check workshop/store to confirm if the item is physically available:
+                                </p>
+                              </div>
+
+                              {isItemNotFound && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                                  <X className="h-3 w-3" /> Reported: Not Found
+                                </span>
+                              )}
+                            </div>
+
+                            {isItemNotFound && (
+                              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                                <div>
+                                  <span className="font-semibold">Item Not Found on shelf.</span> Store & Admin have been notified.
+                                  If located later, click <strong>"Item Found"</strong> below to complete pickup.
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap pt-1">
+                              {/* 1. PRODUCT FOUND BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => handleMarkProductFound(request.id)}
+                                disabled={markingId === request.id || notFoundLoading}
+                                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-500/25 hover:from-emerald-700 hover:to-teal-700 transition cursor-pointer disabled:opacity-50 ring-2 ring-emerald-500/40"
+                              >
+                                {markingId === request.id ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" /> Verifying...
+                                  </>
+                                ) : (
+                                  <>
+                                    <PackageCheck className="h-4 w-4" /> Product Found
+                                  </>
+                                )}
+                              </button>
+
+                              {/* 2. ITEM NOT FOUND BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNotFoundModal(request);
+                                  setNotFoundReason("");
+                                }}
+                                disabled={markingId === request.id || notFoundLoading}
+                                className="flex-1 flex items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white dark:bg-background px-4 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition cursor-pointer disabled:opacity-50"
+                              >
+                                <X className="h-4 w-4" /> Item Not Found
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Completed Status Banner */}
+                        {isProductFound && (
+                          <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                            <CheckCheck className="h-4 w-4 text-emerald-600" />
+                            <span>
+                              {isReturnRequest
+                                ? "Product returned, quality tested & confirmed Found Item by Admin! Restocked to warehouse."
+                                : "Product found & item lifecycle completed."}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -737,12 +1587,12 @@ const TrackRequests = ({ isAdmin = false }) => {
             {/* Modal Content */}
             <div className="space-y-4 p-5">
               {/* Status Badges */}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${typeStyles[reasonModal.type] || "bg-gray-100 text-gray-700"}`}
                 >
                   {reasonModal.type === "CORRECTION"
-                    ? "FORGOT PUNCH"
+                    ? "FORGOT PUNCH / TIME EDIT"
                     : reasonModal.type}
                 </span>
                 <span
@@ -750,6 +1600,20 @@ const TrackRequests = ({ isAdmin = false }) => {
                 >
                   {reasonModal.status}
                 </span>
+                {reasonModal.employee && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/80 px-2.5 py-1 text-xs font-medium text-foreground border border-border">
+                    <UserRound className="h-3 w-3 text-muted-foreground" />
+                    <span>
+                      {reasonModal.employee.employeeCode ? `[${reasonModal.employee.employeeCode}] ` : ""}
+                      {reasonModal.employee.fullName || "Employee"}
+                    </span>
+                    {isMyRequest(reasonModal) && (
+                      <span className="rounded bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold text-primary">
+                        Me
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
 
               {/* Date/Time Info */}
@@ -796,7 +1660,9 @@ const TrackRequests = ({ isAdmin = false }) => {
                                 ? "Check In"
                                 : forgotPunch?.punchType === "check-out"
                                   ? "Check Out"
-                                  : "—"}
+                                  : forgotPunch?.punchType === "time-edit"
+                                    ? "Time Edit"
+                                    : "—"}
                           </p>
                         </div>
 
@@ -935,11 +1801,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                     );
                   })()
                 ) : (
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                    {getRequestReason(reasonModal) ||
+                  <RenderFormattedDetails
+                    text={
+                      getRequestReason(reasonModal) ||
                       reasonModal.description ||
-                      "No reason provided."}
-                  </p>
+                      "No reason provided."
+                    }
+                  />
                 )}
               </div>
 
@@ -1025,12 +1893,12 @@ const TrackRequests = ({ isAdmin = false }) => {
                 {reasonModal.reviewedAt && reasonModal.status !== "PENDING" && (
                   <div className="flex items-center justify-between border-t border-border pt-2">
                     <div className="flex items-center gap-2 text-xs">
-                      <Clock3 className={`h-3.5 w-3.5 ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`} />
-                      <span className={`font-semibold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
-                        {reasonModal.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                      <Clock3 className={`h-3.5 w-3.5 ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-600" : "text-rose-600"}`} />
+                      <span className={`font-semibold ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
+                        {isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "Approved At" : "Rejected At"}
                       </span>
                     </div>
-                    <span className={`text-xs font-bold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                    <span className={`text-xs font-bold ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
                       {formatDate(reasonModal.reviewedAt)} {formatTime(reasonModal.reviewedAt)}
                     </span>
                   </div>
@@ -1039,13 +1907,117 @@ const TrackRequests = ({ isAdmin = false }) => {
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-border px-5 py-4">
+            <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
+              {reasonModal.status === "APPROVED" &&
+                !reasonModal.reviewNote?.includes("[PRODUCT_FOUND]") &&
+                !reasonModal.reviewNote?.includes("[ON_HOLD]") && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = reasonModal.id;
+                        setReasonModal(null);
+                        handleMarkProductFound(id);
+                      }}
+                      disabled={markingId === reasonModal.id || notFoundLoading}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2 font-bold text-xs text-white hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 min-w-[110px] shadow-sm cursor-pointer ring-2 ring-emerald-500/30"
+                    >
+                      <PackageCheck className="h-3.5 w-3.5" />
+                      Product Found
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = reasonModal;
+                        setReasonModal(null);
+                        setNotFoundModal(target);
+                        setNotFoundReason("");
+                      }}
+                      disabled={markingId === reasonModal.id || notFoundLoading}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-rose-300 bg-white dark:bg-background px-3 py-2 font-bold text-xs text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 min-w-[110px] cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Item Not Found
+                    </button>
+                  </>
+                )}
               <button
                 type="button"
                 onClick={() => setReasonModal(null)}
-                className="w-full rounded-lg bg-secondary px-4 py-2 font-medium text-sm hover:bg-secondary/80"
+                className="flex-1 rounded-lg bg-secondary px-4 py-2 font-medium text-xs hover:bg-secondary/80 min-w-[80px]"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Item Not Found Confirmation Modal */}
+      {notFoundModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!notFoundLoading) setNotFoundModal(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-rose-600 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/10">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-base font-bold text-foreground">
+                  Report Item Not Found
+                </h3>
+                <p className="text-xs text-muted-foreground truncate max-w-[280px]">
+                  {notFoundModal.subject}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground mb-3">
+              Cannot locate this item in the store or workshop? Submitting this will record that the item was not found and alert the Admin / Store manager to check inventory or restock.
+            </p>
+
+            <label className="block text-xs font-semibold text-foreground mb-1.5">
+              Reason / Remarks (Optional)
+            </label>
+            <textarea
+              rows={3}
+              value={notFoundReason}
+              onChange={(e) => setNotFoundReason(e.target.value)}
+              placeholder="e.g. Shelf is empty, missing from rack, not in workshop..."
+              className="w-full rounded-xl border border-border bg-secondary/30 p-3 text-xs outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 mb-4 resize-none"
+            />
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setNotFoundModal(null)}
+                disabled={notFoundLoading}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-secondary cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMarkProductNotFound(notFoundModal.id, notFoundReason)}
+                disabled={notFoundLoading}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                {notFoundLoading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Submitting...
+                  </>
+                ) : (
+                  <>
+                    <X className="h-3.5 w-3.5" /> Confirm Not Found
+                  </>
+                )}
               </button>
             </div>
           </div>

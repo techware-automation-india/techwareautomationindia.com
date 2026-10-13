@@ -2,17 +2,21 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Folder, FolderPlus, FolderTree, Package, Plus, Search, ChevronRight,
   ChevronDown, ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
-  FileText, LayoutGrid, List, RefreshCw, X, Box, Sparkles
+  FileText, LayoutGrid, List, RefreshCw, X, Box, Sparkles, PackagePlus, Clock, Tag, Boxes, Eye,
+  User, Users, ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiDelete } from "../../../lib/api.js";
+import { getAuthUser } from "../../../lib/auth.js";
 import CategoryModal from "./CategoryModal.jsx";
 import ItemCardModal from "./ItemCardModal.jsx";
+import CategoryProductsModal from "./CategoryProductsModal.jsx";
 
 const resolveImageUrl = (url) => {
   if (!url) return "";
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+  const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:4001";
   return `${baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
 };
 
@@ -31,18 +35,22 @@ const fmtDate = (d) => {
 // ─── Helper: Build Recursive Category Tree (Up to 4 Levels) ─────────────────
 const buildCategoryTree = (categoriesList) => {
   if (!Array.isArray(categoriesList)) return [];
+  // Deduplicate categories by ID
+  const uniqueList = Array.from(
+    new Map(categoriesList.filter(c => c && c.id).map((cat) => [cat.id, cat])).values()
+  );
   const map = new Map();
   const roots = [];
 
   // Pass 1: Clone and map all categories
-  categoriesList.forEach((cat) => {
+  uniqueList.forEach((cat) => {
     map.set(cat.id, { ...cat, children: [] });
   });
 
   // Pass 2: Connect children to parents
-  categoriesList.forEach((cat) => {
+  uniqueList.forEach((cat) => {
     const node = map.get(cat.id);
-    if (cat.parentId && map.has(cat.parentId)) {
+    if (cat.parentId && map.has(cat.parentId) && cat.parentId !== cat.id) {
       map.get(cat.parentId).children.push(node);
     } else {
       roots.push(node);
@@ -109,6 +117,7 @@ const CategoryTreeNode = ({
   expandedMap,
   toggleExpand,
   onDrillDown,
+  onViewProducts,
   onAddSubcategory,
   onAddItem,
   onEdit,
@@ -218,6 +227,16 @@ const CategoryTreeNode = ({
           </div>
 
           <div className="flex items-center gap-1">
+            {/* View Products */}
+            <button
+              type="button"
+              onClick={() => onViewProducts && onViewProducts(cat)}
+              className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer shadow-xs"
+              title="View products in this category"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </button>
+
             {/* Open / Drill-Down Button */}
             <button
               type="button"
@@ -277,14 +296,15 @@ const CategoryTreeNode = ({
       {/* Children branches (Indented with visual connector line) */}
       {hasChildren && isExpanded && (
         <div className="ml-5 pl-4 border-l-2 border-primary/20 space-y-2.5 mt-2.5">
-          {cat.children.map((child) => (
+          {cat.children.map((child, cIdx) => (
             <CategoryTreeNode
-              key={child.id}
+              key={child.id ? `${child.id}-${cIdx}` : cIdx}
               cat={child}
               level={level + 1}
               expandedMap={expandedMap}
               toggleExpand={toggleExpand}
               onDrillDown={onDrillDown}
+              onViewProducts={onViewProducts}
               onAddSubcategory={onAddSubcategory}
               onAddItem={onAddItem}
               onEdit={onEdit}
@@ -301,17 +321,38 @@ const CategoryTreeNode = ({
 // ═══════════════════════════════════════════════════════════════════════════
 // Main InventoryInView Component
 // ═══════════════════════════════════════════════════════════════════════════
-const InventoryInView = ({ onBackToHub }) => {
+const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, currentUser: propCurrentUser }) => {
   // Navigation stack: array of category objects [rootCategory, sub2, sub3, sub4]
   const [navPath, setNavPath] = useState([]);
   const [allCategories, setAllCategories] = useState([]);
   const [categories, setCategories] = useState([]);
   const [items, setItems] = useState([]);
+  const [allInwardItems, setAllInwardItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   // Default to 'tree' view so the hierarchy is immediately visible!
-  const [viewMode, setViewMode] = useState("tree"); // 'tree' | 'grid' | 'table'
+  const [viewMode, setViewMode] = useState("tree"); // 'tree' | 'grid' | 'table' | 'inward'
   const [expandedNodes, setExpandedNodes] = useState({});
+
+  // Assigned personnel
+  const [internalAssignedUsers, setInternalAssignedUsers] = useState(propAssignedUsers || []);
+  const [internalCurrentUser, setInternalCurrentUser] = useState(propCurrentUser || null);
+
+  useEffect(() => {
+    if (propAssignedUsers && propAssignedUsers.length > 0) {
+      setInternalAssignedUsers(propAssignedUsers);
+    } else {
+      apiGet("/inventory/assigned-users")
+        .then((data) => setInternalAssignedUsers(data.inventoryInUsers || []))
+        .catch(() => {});
+    }
+
+    if (propCurrentUser) {
+      setInternalCurrentUser(propCurrentUser);
+    } else {
+      setInternalCurrentUser(getAuthUser());
+    }
+  }, [propAssignedUsers, propCurrentUser]);
 
   // Modals state
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -321,6 +362,10 @@ const InventoryInView = ({ onBackToHub }) => {
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [itemTargetCategory, setItemTargetCategory] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
+
+  // View Category Products Modal
+  const [viewingCategoryProducts, setViewingCategoryProducts] = useState(null);
+  const [categoryProductsRefresh, setCategoryProductsRefresh] = useState(0);
 
   // Delete confirmations
   const [deleteCatTarget, setDeleteCatTarget] = useState(null);
@@ -340,6 +385,18 @@ const InventoryInView = ({ onBackToHub }) => {
     () => flattenTreeWithPath(categoryTree),
     [categoryTree]
   );
+
+  const filteredInwardLogs = useMemo(() => {
+    if (!search.trim()) return allInwardItems;
+    const q = search.trim().toLowerCase();
+    return allInwardItems.filter((i) => {
+      const nameMatch = (i.name || "").toLowerCase().includes(q);
+      const codeMatch = (i.code || i.sku || "").toLowerCase().includes(q);
+      const catMatch = (i.categoryRef?.name || i.category || "").toLowerCase().includes(q);
+      const locMatch = (i.location || i.warehouse || "").toLowerCase().includes(q);
+      return nameMatch || codeMatch || catMatch || locMatch;
+    });
+  }, [allInwardItems, search]);
 
   // Toggle node expand/collapse
   const toggleExpand = (id) => {
@@ -370,19 +427,29 @@ const InventoryInView = ({ onBackToHub }) => {
     setLoading(true);
     try {
       // 1. Fetch all categories so tree and counts are always up-to-date
-      const catsRes = await apiGet("/inventory/categories");
-      const cats = catsRes?.categories || [];
+      const [catsRes, allItemsRes] = await Promise.all([
+        apiGet("/inventory/categories"),
+        apiGet("/inventory/items"),
+      ]);
+      const rawCats = catsRes?.categories || [];
+      const cats = Array.from(new Map(rawCats.filter((c) => c && c.id).map((c) => [c.id, c])).values());
       setAllCategories(cats);
+
+      const rawAllItems = allItemsRes?.items || [];
+      const uniqueAllItems = Array.from(new Map(rawAllItems.filter((i) => i && i.id).map((i) => [i.id, i])).values());
+      setAllInwardItems(uniqueAllItems);
 
       // 2. Filter categories for CURRENT level in Folder Cards View
       if (!currentCategory) {
-        // At Root level: only show Level 1 root categories (e.g. A and B)
+        // At Root level: only show Level 1 root categories
         const roots = cats.filter((c) => !c.parentId || c.level === 1);
         setCategories(roots);
 
         // Load root-level direct items
         const itemsRes = await apiGet("/inventory/items?rootOnly=true");
-        setItems(itemsRes?.items || []);
+        const rawItems = itemsRes?.items || [];
+        const uniqueItems = Array.from(new Map(rawItems.filter((i) => i && i.id).map((i) => [i.id, i])).values());
+        setItems(uniqueItems);
       } else {
         // Inside a category: only show direct children of currentCategory
         const directChildren = cats.filter((c) => c.parentId === currentCategory.id);
@@ -390,8 +457,11 @@ const InventoryInView = ({ onBackToHub }) => {
 
         // Load direct items in this category
         const itemsRes = await apiGet(`/inventory/items?categoryId=${currentCategory.id}`);
-        setItems(itemsRes?.items || []);
+        const rawItems = itemsRes?.items || [];
+        const uniqueItems = Array.from(new Map(rawItems.filter((i) => i && i.id).map((i) => [i.id, i])).values());
+        setItems(uniqueItems);
       }
+      setCategoryProductsRefresh((prev) => prev + 1);
     } catch (err) {
       toast.error(err.message || "Failed to load inventory data.");
     } finally {
@@ -501,6 +571,38 @@ const InventoryInView = ({ onBackToHub }) => {
 
   return (
     <div className="space-y-6">
+      {/* ─── Assigned Access Personnel & Active Operator Bar ─── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-900/40 rounded-2xl p-3 px-4 text-xs card-shadow">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 font-bold text-foreground">
+            <ShieldCheck className="h-4 w-4 text-blue-600" />
+            <span>Assigned Module Access (Inventory In):</span>
+          </div>
+          {internalAssignedUsers.length > 0 ? (
+            internalAssignedUsers.map((u) => (
+              <span
+                key={u.id}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200 font-semibold text-xs border border-blue-300 dark:border-blue-800"
+              >
+                <User className="h-3 w-3" />
+                {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
+              </span>
+            ))
+          ) : (
+            <span className="text-muted-foreground italic">Admin Only</span>
+          )}
+        </div>
+        {internalCurrentUser && (
+          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <span>Operator:</span>
+            <strong className="text-foreground">{internalCurrentUser.fullName}</strong>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary uppercase font-semibold text-muted-foreground">
+              {internalCurrentUser.role}
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* ─── Breadcrumb Navigation & Back ─────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-4 bg-background border border-border rounded-2xl p-4 card-shadow">
         <div className="flex items-center gap-2 flex-wrap text-sm">
@@ -540,7 +642,7 @@ const InventoryInView = ({ onBackToHub }) => {
           {navPath.map((crumb, idx) => {
             const isLast = idx === navPath.length - 1;
             return (
-              <div key={crumb.id || idx} className="flex items-center gap-2">
+              <div key={crumb.id ? `crumb-${crumb.id}-${idx}` : `crumb-${idx}`} className="flex items-center gap-2">
                 <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
                 <button
                   type="button"
@@ -688,6 +790,20 @@ const InventoryInView = ({ onBackToHub }) => {
               <List className="h-3.5 w-3.5" />
               <span>Table List</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode("inward")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === "inward"
+                  ? "bg-background text-blue-600 shadow-xs font-bold ring-1 ring-border"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Inventory Inward Logs (Product In Entries)"
+            >
+              <PackagePlus className="h-3.5 w-3.5 text-blue-600" />
+              <span>Inventory In Logs</span>
+            </button>
           </div>
         </div>
       </div>
@@ -697,6 +813,195 @@ const InventoryInView = ({ onBackToHub }) => {
         <div className="p-16 flex flex-col items-center justify-center text-muted-foreground gap-3">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <span className="text-sm">Loading inventory hierarchy...</span>
+        </div>
+      ) : viewMode === "inward" ? (
+        /* ═══════════════════════════════════════════════════════════════ */
+        /* VIEW MODE 4: INVENTORY IN LOGS (All Product Inward Entries)    */
+        /* ═══════════════════════════════════════════════════════════════ */
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <PackagePlus className="h-5 w-5 text-blue-600" />
+              <h3 className="font-display text-base font-bold text-foreground">
+                Inventory Inward Register (All Inward Product Logs)
+              </h3>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-bold">
+                {filteredInwardLogs.length} Records
+              </span>
+            </div>
+          </div>
+
+          {/* Summary Stat Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-5 rounded-2xl border border-border bg-background card-shadow flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+                <PackagePlus className="h-6 w-6" />
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider block">
+                  Total Inward Products
+                </span>
+                <span className="text-2xl font-bold text-foreground">{allInwardItems.length}</span>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl border border-border bg-background card-shadow flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0">
+                <Boxes className="h-6 w-6" />
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider block">
+                  Total Inward Stock Quantity
+                </span>
+                <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                  {allInwardItems.reduce((acc, i) => acc + (i.quantity || 0), 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl border border-border bg-background card-shadow flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                <Tag className="h-6 w-6" />
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider block">
+                  Inward Stock Valuation
+                </span>
+                <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  ₹{allInwardItems.reduce((acc, i) => acc + ((i.quantity || 0) * (i.costPrice || 0)), 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Inward Logs Register Table */}
+          <div className="rounded-2xl border border-border bg-background card-shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <th className="p-4">Entry Date & Time</th>
+                    <th className="p-4">Product Name & Photo</th>
+                    <th className="p-4">Product Code / SKU</th>
+                    <th className="p-4">Category</th>
+                    <th className="p-4">Created By</th>
+                    <th className="p-4">Quantity In Stock</th>
+                    <th className="p-4">Cost Price / Unit</th>
+                    <th className="p-4">Location / Warehouse</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border text-sm">
+                  {filteredInwardLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" className="p-8 text-center text-muted-foreground">
+                        No inward inventory product records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredInwardLogs.map((item) => (
+                      <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="p-4 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <Clock className="h-3.5 w-3.5 text-blue-500" />
+                            <span>{fmtDate(item.createdAt || item.purchaseDate)}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 font-semibold text-foreground">
+                          <div className="flex items-center gap-3">
+                            {item.photoUrl ? (
+                              <img
+                                src={resolveImageUrl(item.photoUrl)}
+                                alt={item.name}
+                                className="w-9 h-9 rounded-lg object-cover border border-border shadow-xs shrink-0"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0 font-bold border border-blue-500/20">
+                                <Package className="h-4 w-4" />
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-bold text-foreground">{item.name}</div>
+                              {item.companyName && (
+                                <div className="text-xs font-normal text-muted-foreground">
+                                  Supplier: {item.companyName}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          {item.code || item.sku ? (
+                            <span className="font-mono text-xs px-2 py-0.5 rounded bg-secondary border border-border/60 text-foreground font-semibold">
+                              {item.code || item.sku}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-xs font-medium text-muted-foreground">
+                          {item.categoryRef ? (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 font-semibold">
+                              {item.categoryRef.name}
+                            </span>
+                          ) : item.category ? (
+                            <span>{item.category}</span>
+                          ) : (
+                            <span>Root Item</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-xs font-semibold">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                            {item.createdByName || "Admin"}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            {item.quantity} {item.unit || "Nos"}
+                          </span>
+                        </td>
+                        <td className="p-4 font-semibold text-foreground">
+                          {item.costPrice != null ? `₹${Number(item.costPrice).toLocaleString("en-IN")}` : "—"}
+                        </td>
+                        <td className="p-4 text-xs text-muted-foreground">
+                          {item.warehouse || item.location ? (
+                            <span>{item.warehouse || item.location}</span>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setItemToEdit(item);
+                                setItemTargetCategory(item.categoryRef || null);
+                                setIsItemModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors"
+                              title="Edit Item Specs / Stock"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteItemTarget(item)}
+                              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       ) : viewMode === "tree" ? (
         /* ═══════════════════════════════════════════════════════════════ */
@@ -728,14 +1033,15 @@ const InventoryInView = ({ onBackToHub }) => {
             </div>
           ) : (
             <div className="space-y-3">
-              {categoryTree.map((rootNode) => (
+              {categoryTree.map((rootNode, rIdx) => (
                 <CategoryTreeNode
-                  key={rootNode.id}
+                  key={rootNode.id ? `${rootNode.id}-${rIdx}` : rIdx}
                   cat={rootNode}
                   level={1}
                   expandedMap={expandedNodes}
                   toggleExpand={toggleExpand}
                   onDrillDown={handleDrillDown}
+                  onViewProducts={(cat) => setViewingCategoryProducts(cat)}
                   onAddSubcategory={(parent) => {
                     setCategoryToEdit(null);
                     setModalParentCategory(parent);
@@ -803,11 +1109,11 @@ const InventoryInView = ({ onBackToHub }) => {
                     </td>
                   </tr>
                 ) : (
-                  flattenedCategories.map((cat) => {
+                  flattenedCategories.map((cat, idx) => {
                     const childCount = cat.children?.length ?? cat._count?.children ?? 0;
                     const itemCount = cat._count?.items ?? cat.items?.length ?? 0;
                     return (
-                      <tr key={cat.id} className="hover:bg-secondary/20 transition-colors">
+                      <tr key={cat.id ? `${cat.id}-${idx}` : idx} className="hover:bg-secondary/20 transition-colors">
                         <td className="py-3 px-4">
                           <div
                             className="flex items-center gap-2"
@@ -837,6 +1143,14 @@ const InventoryInView = ({ onBackToHub }) => {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setViewingCategoryProducts(cat)}
+                              className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                              title="View products in this category"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleDrillDown(cat)}
@@ -936,14 +1250,14 @@ const InventoryInView = ({ onBackToHub }) => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filteredCategories.map((cat) => {
+                  {filteredCategories.map((cat, idx) => {
                     const childCount = cat._count?.children ?? cat.children?.length ?? 0;
                     const itemCount = cat._count?.items ?? cat.items?.length ?? 0;
                     const catLevel = cat.level || currentLevel + 1;
 
                     return (
                       <div
-                        key={cat.id}
+                        key={cat.id ? `${cat.id}-${idx}` : idx}
                         onClick={() => handleDrillDown(cat)}
                         className="group relative rounded-2xl border border-border bg-background p-5 card-shadow transition-all hover:border-primary/50 hover:shadow-md cursor-pointer flex flex-col justify-between"
                       >
@@ -983,6 +1297,14 @@ const InventoryInView = ({ onBackToHub }) => {
                             className="flex items-center gap-1 opacity-80 group-hover:opacity-100"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <button
+                              type="button"
+                              onClick={() => setViewingCategoryProducts(cat)}
+                              className="p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                              title="View Products in Category"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -1040,7 +1362,7 @@ const InventoryInView = ({ onBackToHub }) => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredItems.map((item) => {
+                {filteredItems.map((item, idx) => {
                   const specsArr = Array.isArray(item.specifications)
                     ? item.specifications
                     : item.specifications && typeof item.specifications === "object"
@@ -1049,7 +1371,7 @@ const InventoryInView = ({ onBackToHub }) => {
 
                   return (
                     <div
-                      key={item.id}
+                      key={item.id ? `${item.id}-${idx}` : idx}
                       className="rounded-2xl border border-border bg-background p-4 card-shadow flex flex-col justify-between hover:border-[#1e3a5f]/50 transition-all group"
                     >
                       <div>
@@ -1083,11 +1405,32 @@ const InventoryInView = ({ onBackToHub }) => {
                           </p>
                         )}
 
-                        {/* 5 Specifications Table Preview */}
+                        {/* Price per Item & Total Valuation */}
+                        <div className="mt-2.5 flex items-center justify-between gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 font-bold text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 shadow-2xs">
+                            <span>₹{Number(item.costPrice || 0).toLocaleString("en-IN")}</span>
+                            <span className="text-[10px] font-normal text-muted-foreground">/ {item.unit || "Nos"}</span>
+                          </span>
+                          {Number(item.quantity || 0) > 1 && Number(item.costPrice || 0) > 0 && (
+                            <span className="text-[11px] font-semibold text-muted-foreground">
+                              Total: ₹{(Number(item.quantity || 0) * Number(item.costPrice || 0)).toLocaleString("en-IN")}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Created By Print Name */}
+                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <span className="font-semibold text-foreground/80">Created by:</span>
+                          <span className="inline-flex items-center gap-1 font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]">
+                            {item.createdByName || "Admin"}
+                          </span>
+                        </div>
+
+                        {/* Specifications Preview (No Limit) */}
                         {specsArr.length > 0 && (
-                          <div className="mt-3 border border-border/60 rounded-lg overflow-hidden bg-secondary/20">
+                          <div className="mt-3 border border-border/60 rounded-xl overflow-hidden bg-secondary/20 max-h-36 overflow-y-auto">
                             <div className="divide-y divide-border/40 text-[11px]">
-                              {specsArr.slice(0, 5).map((sp, sIdx) => (
+                              {specsArr.map((sp, sIdx) => (
                                 <div
                                   key={sIdx}
                                   className="grid grid-cols-12 py-1 px-2.5 items-center"
@@ -1143,6 +1486,31 @@ const InventoryInView = ({ onBackToHub }) => {
       )}
 
       {/* ─── Modals ───────────────────────────────────────────────── */}
+      {/* View Category Products Modal (Background Viewer Modal) */}
+      <CategoryProductsModal
+        isOpen={Boolean(viewingCategoryProducts)}
+        onClose={() => setViewingCategoryProducts(null)}
+        category={viewingCategoryProducts}
+        allCategories={allCategories}
+        onDrillDown={(cat) => {
+          handleDrillDown(cat);
+        }}
+        onAddItem={(cat) => {
+          setItemToEdit(null);
+          setItemTargetCategory(cat);
+          setIsItemModalOpen(true);
+        }}
+        onEditItem={(item, cat) => {
+          setItemToEdit(item);
+          setItemTargetCategory(cat);
+          setIsItemModalOpen(true);
+        }}
+        onDeleteItem={(item) => {
+          setDeleteItemTarget(item);
+        }}
+        refreshTrigger={categoryProductsRefresh}
+      />
+
       <CategoryModal
         isOpen={isCategoryModalOpen}
         onClose={() => {
@@ -1178,7 +1546,7 @@ const InventoryInView = ({ onBackToHub }) => {
           onClick={(e) => {
             if (e.target === e.currentTarget) setDeleteCatTarget(null);
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -1228,7 +1596,7 @@ const InventoryInView = ({ onBackToHub }) => {
           onClick={(e) => {
             if (e.target === e.currentTarget) setDeleteItemTarget(null);
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
           <div
             onClick={(e) => e.stopPropagation()}

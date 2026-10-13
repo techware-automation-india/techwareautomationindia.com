@@ -12,14 +12,14 @@ const RequestsHome = () => {
   // Base request services available to all
   const baseRequestServices = [
     {
-      label: "Track My Request",
-      description: "View all submitted requests and their current approval status.",
+      label: "Track All Requests",
+      description: "View and track all company-wide employee requests and your own requests.",
       path: "/admin/requests/track",
       icon: ClipboardList,
     },
     {
-      label: "Forgot Punch",
-      description: "Review employee check-in and check-out correction requests.",
+      label: "Forgot Punch / Time Edit",
+      description: "Review employee check in, check out and time edit requests.",
       path: "/admin/requests/forgot-punch",
       icon: ScanLine,
     },

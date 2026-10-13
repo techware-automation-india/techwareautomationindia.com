@@ -16,7 +16,7 @@ import {
 
 import { employeeModules, getModulesByPermissions } from "../modules.js";
 import { getAuthUser } from "../../lib/auth.js";
-import { apiGet } from "../../lib/api.js";
+import { apiGet, getToken } from "../../lib/api.js";
 import { formatTimeRange } from "../../lib/timeFormat.js";
 
 const parseNotificationDescription = (description) => {
@@ -177,7 +177,6 @@ const Overview = () => {
   ------------------------- */
 
   const [assignedEntries, setAssignedEntries] = useState([]);
-  const [loadingRoster, setLoadingRoster] = useState(true);
 
   /* -------------------------
      NOTIFICATION STATE
@@ -211,6 +210,13 @@ const Overview = () => {
     let mounted = true;
 
     const loadRoster = async () => {
+      if (!getToken()) {
+        if (mounted) {
+          setAssignedEntries([]);
+        }
+        return;
+      }
+
       try {
         const data = await apiGet(`/roster/me?year=${year}&month=${month}`);
 
@@ -224,10 +230,6 @@ const Overview = () => {
 
         if (mounted) {
           setAssignedEntries([]);
-        }
-      } finally {
-        if (mounted) {
-          setLoadingRoster(false);
         }
       }
     };
@@ -709,13 +711,8 @@ const Overview = () => {
               ROSTER CONTENT
           ================================================= */}
 
-          {loadingRoster ? (
-            <div className="p-8 text-center text-muted-foreground">
-              Loading assignments…
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {upcomingAssignments.map((entry) => (
+          <div className="space-y-3">
+            {upcomingAssignments.map((entry) => (
                 <div
                   key={entry.id}
                   className="rounded-2xl border border-border bg-background p-4 sm:p-5 shadow-sm hover:border-primary/30 transition-colors"
@@ -804,9 +801,8 @@ const Overview = () => {
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
 

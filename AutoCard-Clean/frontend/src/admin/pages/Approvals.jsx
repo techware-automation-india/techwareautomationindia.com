@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePoll } from "../../lib/pollContext.jsx";
 import {
   BadgeCheck,
   Check,
@@ -15,6 +16,16 @@ import {
   MessageSquareText,
   ArrowLeft,
   Shield,
+  PauseCircle,
+  AlertTriangle,
+  Package,
+  PackageCheck,
+  RotateCcw,
+  PackagePlus,
+  Tag,
+  FolderKanban,
+  Wrench,
+  CheckCircle2,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -118,6 +129,24 @@ const formatTimeIST = (timeValue) => {
   return str;
 };
 
+const isApprovedOrCompletedStatus = (status, note = "") => {
+  const s = String(status || "").toUpperCase();
+  const n = String(note || "").toUpperCase();
+  if (s === "REJECTED" || s === "CANCELLED" || n.includes("[REJECTED]") || n.includes("[CANCELLED]")) {
+    return false;
+  }
+  return (
+    s === "APPROVED" ||
+    s === "COMPLETED" ||
+    s === "FOUND" ||
+    s === "RECEIVED" ||
+    s === "IN_PROGRESS" ||
+    n.includes("[PRODUCT_FOUND]") ||
+    n.includes("[QUALITY_INSPECTED]") ||
+    n.includes("PHYSICALLY_RETURNED")
+  );
+};
+
 const formatDistance = (value) => {
   if (value == null || value === "") return "";
   const str = String(value).trim();
@@ -155,7 +184,9 @@ const getPunchTypeLabel = (request) => {
       ? "Check Out"
       : punchType === "both"
         ? "Check In + Check Out"
-        : null;
+        : punchType === "time-edit"
+          ? "Time Edit"
+          : null;
 };
 
 const parseCorrectionFromDescription = (description) => {
@@ -170,13 +201,15 @@ const parseCorrectionFromDescription = (description) => {
     const data = JSON.parse(jsonText);
     const readableText = description.slice(0, markerIndex).trim();
 
+    const isTimeEdit = data.punchType === "time-edit" || readableText.toLowerCase().includes("time edit");
+
     let reason = readableText
       .replace(
-        /^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+        /^(?:Forgot Punch|Time Edit) request for (?:both|check-in|check-out|Check In|Check Out|time-edit|Time Edit) on \d{4}-\d{2}-\d{2}\.?\s*/i,
         "",
       )
       .replace(
-        /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+        /^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
         "",
       )
       .replace(/Check-In Location:.*$/i, "")
@@ -189,12 +222,15 @@ const parseCorrectionFromDescription = (description) => {
 
     return {
       date: data.date,
+      isTimeEdit,
       punchType:
         data.punchType === "check-in"
           ? "Check In"
           : data.punchType === "check-out"
             ? "Check Out"
-            : "Check In + Check Out",
+            : data.punchType === "time-edit"
+              ? "Time Edit"
+              : "Check In + Check Out",
       checkInTime: data.checkInTime,
       checkOutTime: data.checkOutTime,
       checkInLocation: data.checkInLocation,
@@ -210,9 +246,12 @@ const normalizeRequests = (items) =>
   (items || []).map((item) => ({
     id: item.id,
     source: "REQUEST",
+    type: item.type,
     title:
       item.type === "CORRECTION"
-        ? `Forgot Punch${getPunchTypeLabel(item) ? ` - ${getPunchTypeLabel(item)}` : ""}`
+        ? (item.subject?.toLowerCase().includes("time edit") || item.description?.includes('"punchType":"time-edit"')
+            ? `Time Edit Request - ${item.subject?.replace(/Time Edit Request\s*-?\s*/i, "") || "Attendance Time"}`
+            : `Forgot Punch${getPunchTypeLabel(item) ? ` - ${getPunchTypeLabel(item)}` : ""}`)
         : item.subject || "Employee request",
     punchType: item.type === "CORRECTION" ? getPunchTypeLabel(item) : null,
     correctionDetails:
@@ -529,20 +568,344 @@ const getReviewerInfo = (approval) => {
   return "Admin";
 };
 
+const parseRequestDetails = (rawText) => {
+  if (!rawText || typeof rawText !== "string") return null;
+
+  const text = rawText.trim();
+  const knownKeys = [
+    "Action Type",
+    "Category",
+    "Product Type",
+    "Product ID",
+    "Project Name",
+    "Item Name",
+    "Quantity",
+    "Urgency Level",
+    "Item Condition",
+    "Date",
+    "Purpose / Work Details / Remarks",
+    "Purpose / Remarks",
+    "Remarks",
+    "Reason",
+  ];
+
+  const hasKeys = knownKeys.some((k) => text.toLowerCase().includes(`${k.toLowerCase()}:`));
+  if (!hasKeys) return null;
+
+  const pairs = [];
+  let remarks = "";
+
+  const pattern = new RegExp(
+    `(?:^|\\n|\\s)(Action Type|Category|Product Type|Product ID|Project Name|Item Name|Quantity|Urgency Level|Item Condition|Date|Purpose \\/ Work Details \\/ Remarks|Purpose \\/ Remarks|Remarks|Reason):\\s*`,
+    "gi"
+  );
+
+  const matches = [...text.matchAll(pattern)];
+  if (matches.length === 0) return null;
+
+  for (let i = 0; i < matches.length; i++) {
+    const key = matches[i][1].trim();
+    const startIndex = matches[i].index + matches[i][0].length;
+    const endIndex = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    const val = text.substring(startIndex, endIndex).trim();
+
+    if (key.match(/Purpose|Remarks|Reason/i) && (key.includes("Purpose") || key.includes("Remarks") || key === "Reason")) {
+      remarks = val;
+    } else {
+      pairs.push({ label: key, value: val });
+    }
+  }
+
+  const categoryPair = pairs.find((p) => p.label.toLowerCase().includes("category"));
+  const categoryName = categoryPair ? categoryPair.value.toLowerCase() : "";
+  const isToolsCategory = categoryName.includes("tool");
+
+  const filteredPairs = pairs.filter((pair) => {
+    if (pair.label.toLowerCase().includes("project")) {
+      if (isToolsCategory || !pair.value || pair.value === "N/A") {
+        return false; // Remove Project Name from view reason/details modal if request category is Tools
+      }
+    }
+    return true;
+  });
+
+  return { pairs: filteredPairs, remarks };
+};
+
+const getDetailIcon = (label) => {
+  const l = label.toLowerCase();
+  if (l.includes("product id") || l.includes("item id")) return <Tag className="h-3.5 w-3.5 text-amber-600 shrink-0" />;
+  if (l.includes("project")) return <FolderKanban className="h-3.5 w-3.5 text-indigo-600 shrink-0" />;
+  if (l.includes("action")) return <RotateCcw className="h-3.5 w-3.5 text-purple-600 shrink-0" />;
+  if (l.includes("item name")) return <Wrench className="h-3.5 w-3.5 text-blue-600 shrink-0" />;
+  if (l.includes("date")) return <Calendar className="h-3.5 w-3.5 text-emerald-600 shrink-0" />;
+  if (l.includes("urgency")) return <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />;
+  if (l.includes("condition")) return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />;
+  return <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
+};
+
+const RenderFormattedDetails = ({ text }) => {
+  const parsed = parseRequestDetails(text);
+
+  if (!parsed || (!parsed.pairs.length && !parsed.remarks)) {
+    return (
+      <div className="rounded-xl border border-border bg-background p-4 shadow-2xs">
+        <p className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-foreground">
+          {text || "No details provided."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {parsed.pairs.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {parsed.pairs.map((pair, idx) => {
+            const isProdId = pair.label.toLowerCase().includes("product id");
+            const isProject = pair.label.toLowerCase().includes("project");
+            const isAction = pair.label.toLowerCase().includes("action");
+            const isCondition = pair.label.toLowerCase().includes("condition");
+
+            return (
+              <div
+                key={idx}
+                className="rounded-xl border border-border/80 bg-background p-3.5 shadow-2xs transition-all hover:border-primary/30"
+              >
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {getDetailIcon(pair.label)}
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {pair.label}
+                  </span>
+                </div>
+
+                {isProdId ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-sm font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
+                    {pair.value}
+                  </span>
+                ) : isProject ? (
+                  <span className="font-bold text-sm text-foreground bg-secondary px-2.5 py-1 rounded-md inline-block border border-border">
+                    {pair.value}
+                  </span>
+                ) : isAction ? (
+                  <span className={`font-bold text-xs px-2.5 py-1 rounded-full inline-block ${
+                    pair.value.toUpperCase().includes("RETURN")
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                      : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30"
+                  }`}>
+                    {pair.value}
+                  </span>
+                ) : isCondition ? (
+                  <span className="font-bold text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 inline-block">
+                    {pair.value}
+                  </span>
+                ) : (
+                  <span className="text-sm font-bold text-foreground break-words block">
+                    {pair.value}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {parsed.remarks && (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 shadow-2xs">
+          <div className="flex items-center gap-2 mb-1.5 text-amber-700 dark:text-amber-400">
+            <MessageSquareText className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">
+              Purpose / Work Details / Remarks
+            </span>
+          </div>
+          <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-wrap break-words pl-3 border-l-2 border-amber-500/40">
+            {parsed.remarks}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const parseInventorySubject = (titleStr = "") => {
+  if (!titleStr || typeof titleStr !== "string") return null;
+  const match = titleStr.match(/^\[(Inventory Return|Inventory Taking)(?:\s*:\s*([^\]]+))?\]\s*(.*?)(?:\s*\((.*?)\))?$/i);
+  if (!match) return null;
+  return {
+    actionType: match[1].trim(),
+    codeOrProject: match[2]?.trim() || "",
+    itemName: match[3]?.trim() || titleStr,
+    categoryType: match[4]?.trim() || "",
+    isReturn: match[1].toLowerCase().includes("return"),
+  };
+};
+
+const FormattedInventoryTitle = ({ title, className = "" }) => {
+  const parsed = parseInventorySubject(title);
+  if (!parsed) {
+    return (
+      <h3 className={`text-lg font-bold leading-tight text-foreground ${className}`}>
+        {title}
+      </h3>
+    );
+  }
+
+  return (
+    <div className={`space-y-1.5 ${className}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold border ${
+            parsed.isReturn
+              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+              : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30"
+          }`}
+        >
+          {parsed.isReturn ? <RotateCcw className="h-3 w-3" /> : <PackagePlus className="h-3 w-3" />}
+          {parsed.actionType}
+        </span>
+
+        {parsed.codeOrProject && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-secondary text-foreground border border-border">
+            <Tag className="h-3 w-3 text-amber-600" />
+            {parsed.codeOrProject}
+          </span>
+        )}
+
+        {parsed.categoryType && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-medium bg-secondary/80 text-muted-foreground border border-border/50">
+            {parsed.categoryType}
+          </span>
+        )}
+      </div>
+
+      <h3 className="text-lg font-bold leading-snug text-foreground">
+        {parsed.itemName}
+      </h3>
+    </div>
+  );
+};
+
+const isReturnRequest = (req) => {
+  const title = String(req?.title || "").toLowerCase();
+  const desc = String(req?.description || "").toLowerCase();
+  const subject = String(req?.subject || "").toLowerCase();
+
+  // If explicitly taking / issue, it is NOT a return request
+  if (
+    title.includes("inventory taking") ||
+    desc.includes("action type: taking") ||
+    desc.includes("action type: issue")
+  ) {
+    return false;
+  }
+
+  return (
+    title.includes("inventory return") ||
+    desc.includes("action type: return") ||
+    desc.includes("[inventory return") ||
+    title.includes("[inventory return") ||
+    subject.includes("inventory return") ||
+    title.includes("return") ||
+    subject.includes("return")
+  );
+};
+
+const getReturnStep = (req) => {
+  if (!isReturnRequest(req)) return 0;
+
+  const text = `${req?.status || ""} ${req?.reviewNote || ""} ${req?.adminNote || ""} ${req?.description || ""}`.toUpperCase();
+  if (text.includes("[PRODUCT_FOUND]") || req?.status === "COMPLETED") return 4;
+  if (text.includes("[ITEM_RETURNED]") || text.includes("[PHYSICALLY_RETURNED]")) return 3;
+  if (text.includes("[QUALITY_INSPECTED]") || text.includes("QUALITY INSPECTED")) return 2;
+  if (req?.status === "APPROVED") return 2;
+  return 1;
+};
 
 const Approvals = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const authUser = getAuthUser();
   const isAdmin = authUser?.role === "ADMIN";
+  const { pollTick } = usePoll();
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState(null);
   const [reasonModal, setReasonModal] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [holdModal, setHoldModal] = useState(null);
+  const [holdReason, setHoldReason] = useState("Product currently out of stock / unavailable.");
   const [permissions, setPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [openLocationIds, setOpenLocationIds] = useState(new Set());
+
+  const getInventoryItemLocation = (approval) => {
+    if (!approval || !Array.isArray(inventoryItems) || inventoryItems.length === 0) return null;
+    const fullText = `${approval.title || ""} ${approval.description || ""}`.toLowerCase();
+    return (
+      inventoryItems.find((item) => {
+        const code = (item.code || item.sku || "").toLowerCase();
+        const name = (item.name || "").toLowerCase();
+        return (code && code.length >= 3 && fullText.includes(code)) || (name && name.length >= 3 && fullText.includes(name));
+      }) || null
+    );
+  };
+
+  const [qualityModal, setQualityModal] = useState(null);
+  const [qualityCondition, setQualityCondition] = useState("Good Condition - Restock to Warehouse");
+  const [qualityRemarks, setQualityRemarks] = useState("");
+
+  const handleHoldSubmit = async () => {
+    if (!holdModal) return;
+    setActingId(`${holdModal.approval.source}:${holdModal.approval.id}`);
+    try {
+      await apiPost(`/requests/${holdModal.approval.id}/hold`, {
+        note: holdReason.trim() || "Product currently out of stock / unavailable.",
+      });
+      toast.success("Request placed on HOLD (Product Out of Stock).");
+      setHoldModal(null);
+      setHoldReason("Product currently out of stock / unavailable.");
+      await loadApprovals();
+    } catch (err) {
+      toast.error(err.message || "Failed to place request on hold.");
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const handleQualitySubmit = async () => {
+    if (!qualityModal) return;
+    setActingId(`${qualityModal.source}:${qualityModal.id}`);
+    try {
+      const note = `[QUALITY_INSPECTED] Quality Inspected: ${qualityCondition}. Remarks: ${qualityRemarks.trim() || "Quality inspected by Admin."}`;
+      await review(qualityModal, "approve", note);
+      toast.success("Return Request Approved & Quality Test recorded! Awaiting employee Item Return.");
+      setQualityModal(null);
+      setQualityCondition("Good Condition - Restock to Warehouse Stock");
+      setQualityRemarks("");
+      await loadApprovals();
+    } catch (err) {
+      toast.error(err.message || "Failed to submit quality check.");
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const handleAdminFoundItem = async (approval) => {
+    if (!approval) return;
+    setActingId(`${approval.source}:${approval.id}`);
+    try {
+      const cleanId = String(approval.id).replace(/^request-/, "");
+      await apiPost(`/requests/${cleanId}/found`, {});
+      toast.success("Found Item! Product return confirmed and restocked into inventory.");
+      await loadApprovals();
+    } catch (err) {
+      toast.error(err.message || "Failed to mark item found.");
+    } finally {
+      setActingId(null);
+    }
+  };
 
   // Set default filters to ALL so all requests display immediately
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -556,16 +919,19 @@ const Approvals = () => {
   const loadApprovals = async () => {
     setLoading(true);
     try {
-      // Load all three APIs with Promise.allSettled so individual failures don't block others
-      const [requestResult, leaveResult, attendanceResult] = await Promise.allSettled([
+      // Load all APIs with Promise.allSettled so individual failures don't block others
+      const [requestResult, leaveResult, attendanceResult, inventoryResult] = await Promise.allSettled([
         apiGet("/requests"),
         apiGet("/leave/admin/all"),
         apiGet("/attendance/admin/requests"),
+        apiGet("/inventory/items"),
       ]);
 
       const requests = requestResult.status === "fulfilled" ? (requestResult.value?.requests || []) : [];
       const leave = leaveResult.status === "fulfilled" ? (leaveResult.value?.requests || []) : [];
       const attendance = attendanceResult.status === "fulfilled" ? (attendanceResult.value?.records || []) : [];
+      const invItems = inventoryResult.status === "fulfilled" ? (inventoryResult.value?.items || []) : [];
+      setInventoryItems(invItems);
 
       setApprovals(
         [
@@ -627,6 +993,15 @@ const Approvals = () => {
     loadData();
   }, []);
 
+  // Silent background refresh every pollTick (every 5s from PollContext)
+  useEffect(() => {
+    if (pollTick === 0) return; // Skip the very first tick (initial load already handled above)
+    // Only reload if no action is in progress (don't disrupt user mid-action)
+    if (!actingId) {
+      loadApprovals();
+    }
+  }, [pollTick]);
+
   const years = [
     ...new Set(
       approvals
@@ -668,14 +1043,21 @@ const Approvals = () => {
       const subAttendance = permissions["approvals-attendance"]?.canView || permissions["approvals-attendance"] === true;
       const subForgotPunch = permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true;
       const subLeave = permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true;
+      const subTools = permissions["approvals-tools-inventory"]?.canView || permissions["approvals-tools-inventory"] === true || permissions["approvals-tools"]?.canView || permissions["approvals-tools"] === true;
 
-      const hasAnySubPerm = subAttendance || subForgotPunch || subLeave;
+      const hasAnySubPerm = subAttendance || subForgotPunch || subLeave || subTools;
 
       if (hasAnySubPerm) {
         if (approval.source === "ATTENDANCE" && !subAttendance) {
           matchesPermission = false;
-        } else if (approval.source === "REQUEST" && !subForgotPunch) {
-          matchesPermission = false;
+        } else if (approval.source === "REQUEST") {
+          if (approval.type === "EQUIPMENT" && !subTools) {
+            matchesPermission = false;
+          } else if (approval.type === "CORRECTION" && !subForgotPunch) {
+            matchesPermission = false;
+          } else if (!subForgotPunch && !subTools) {
+            matchesPermission = false;
+          }
         } else if (approval.source === "LEAVE" && !subLeave) {
           matchesPermission = false;
         }
@@ -689,6 +1071,17 @@ const Approvals = () => {
   });
 
   const review = async (approval, decision, reason = "") => {
+    if (decision === "approve" && approval.source === "REQUEST" && approval.type === "EQUIPMENT") {
+      const matchedInvItem = getInventoryItemLocation(approval);
+      const isTaking = (approval.description || "").toLowerCase().includes("taking") || (approval.description || "").toLowerCase().includes("action type: taking");
+      if (matchedInvItem && isTaking && matchedInvItem.quantity <= 0) {
+        toast.error(
+          `Cannot approve request: Product '${matchedInvItem.code || matchedInvItem.name}' is OUT OF STOCK (Available: 0 ${matchedInvItem.unit || "Nos"}). Please place the request on HOLD or restock inventory first.`
+        );
+        return;
+      }
+    }
+
     setActingId(`${approval.source}:${approval.id}`);
     try {
       const endpoint =
@@ -737,7 +1130,7 @@ const Approvals = () => {
               {typeFilter === "attendance" 
                 ? "Attendance Approvals" 
                 : typeFilter === "forgot-punch" 
-                ? "Forgot Punch Approvals" 
+                ? "Forgot Punch / Time Edit Approvals" 
                 : typeFilter === "leave" 
                 ? "Leave Approvals" 
                 : "Approvals"}
@@ -746,7 +1139,7 @@ const Approvals = () => {
               {typeFilter === "attendance" 
                 ? "Approve or reject attendance and location requests." 
                 : typeFilter === "forgot-punch" 
-                ? "Approve or reject forgot punch correction requests." 
+                ? "Review employee check in, check out and time edit requests." 
                 : typeFilter === "leave" 
                 ? "Approve or reject employee leave requests." 
                 : "Approve or reject pending employee requests in one place."}
@@ -763,7 +1156,7 @@ const Approvals = () => {
                 {(permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true) && (
                   <span className="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                     <Shield className="h-3 w-3" />
-                    Forgot Punch
+                    Forgot Punch / Time Edit
                   </span>
                 )}
                 {(permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true) && (
@@ -782,7 +1175,7 @@ const Approvals = () => {
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
         >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className="h-4 w-4" />
           Refresh
         </button>
       </div>
@@ -843,11 +1236,8 @@ const Approvals = () => {
             Showing {filteredApprovals.length} of {approvals.length}
           </span>
         </div>
-        {loading || loadingPermissions ? (
-          <div className="flex min-h-[260px] items-center justify-center text-muted-foreground">
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading
-            approvals...
-          </div>
+        {loadingPermissions ? (
+          <div className="min-h-[260px]" />
         ) : filteredApprovals.length === 0 ? (
           <div className="flex min-h-[260px] flex-col items-center justify-center px-6 text-center">
             <CheckCheck className="h-10 w-10 text-emerald-500/60" />
@@ -886,6 +1276,60 @@ const Approvals = () => {
                   }
                 };
 
+                const isHold = approval.reviewNote?.includes("[ON_HOLD]");
+                const returnStep = approval.source === "REQUEST" ? getReturnStep(approval) : 0;
+                const isProductFound = returnStep === 4 || approval.reviewNote?.includes("[PRODUCT_FOUND]") || approval.status === "COMPLETED";
+                const isItemNotFound = approval.reviewNote?.includes("[ITEM_NOT_FOUND]");
+
+                let badgeLabel = approval.status;
+                let badgeClass = approval.status === "PENDING"
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  : approval.status === "APPROVED"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400";
+                let barClass = approval.status === "PENDING"
+                  ? "bg-amber-500"
+                  : approval.status === "APPROVED"
+                    ? "bg-emerald-500"
+                    : "bg-rose-500";
+
+                if (isItemNotFound && !isProductFound) {
+                  badgeLabel = "EMPLOYEE: ITEM NOT FOUND ✕";
+                  badgeClass = "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 font-bold border border-rose-500/30";
+                  barClass = "bg-rose-500";
+                } else if (isHold) {
+                  badgeLabel = "ON HOLD ⏸";
+                  badgeClass = "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
+                  barClass = "bg-amber-500";
+                } else if (returnStep > 0) {
+                  switch (returnStep) {
+                    case 1:
+                      badgeLabel = "Step 1: Return Pending Approval & Quality Test";
+                      badgeClass = "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
+                      barClass = "bg-amber-500";
+                      break;
+                    case 2:
+                      badgeLabel = "Step 2: Quality Passed (Awaiting Employee Item Return)";
+                      badgeClass = "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300";
+                      barClass = "bg-purple-500";
+                      break;
+                    case 3:
+                      badgeLabel = "Step 3: Employee Clicked Item Return (Ready for Found Item)";
+                      badgeClass = "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300";
+                      barClass = "bg-blue-600";
+                      break;
+                    case 4:
+                      badgeLabel = "Step 4: Item Found & Restocked ✓";
+                      badgeClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
+                      barClass = "bg-emerald-600";
+                      break;
+                  }
+                } else if (isProductFound) {
+                  badgeLabel = "COMPLETED ✓";
+                  badgeClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
+                  barClass = "bg-emerald-600";
+                }
+
                 return (
                   <div
                     key={actionId}
@@ -893,13 +1337,7 @@ const Approvals = () => {
                   >
                     {/* Status Indicator Bar */}
                     <div
-                      className={`absolute left-0 top-0 h-full w-1.5 ${
-                        approval.status === "PENDING"
-                          ? "bg-amber-500"
-                          : approval.status === "APPROVED"
-                            ? "bg-emerald-500"
-                            : "bg-rose-500"
-                      }`}
+                      className={`absolute left-0 top-0 h-full w-1.5 ${barClass}`}
                     />
 
                     <div className="p-5 pl-7">
@@ -932,15 +1370,9 @@ const Approvals = () => {
                                     : "Request"}
                               </span>
                               <span
-                                className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
-                                  approval.status === "PENDING"
-                                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                                    : approval.status === "APPROVED"
-                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                      : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                                }`}
+                                className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${badgeClass}`}
                               >
-                                {approval.status}
+                                {badgeLabel}
                               </span>
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Calendar className="h-3.5 w-3.5" />
@@ -949,9 +1381,7 @@ const Approvals = () => {
                             </div>
 
                             {/* Title */}
-                            <h3 className="mt-3 text-lg font-bold leading-tight text-foreground">
-                              {approval.title}
-                            </h3>
+                            <FormattedInventoryTitle title={approval.title} className="mt-3" />
 
                             {/* Punch Type Badge */}
                             {approval.punchType && (
@@ -978,56 +1408,214 @@ const Approvals = () => {
                               )}
                             </div>
 
-                            {/* View Reason Button */}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setReasonModal(approval);
-                              }}
-                              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary w-fit"
-                            >
-                              <MessageSquareText className="h-4 w-4" />
-                              <span>View Reason</span>
-                            </button>
+                            {/* Action Buttons Row: View Reason & View Location */}
+                            {(() => {
+                              const matchedInvItem = approval.source === "REQUEST" ? getInventoryItemLocation(approval) : null;
+                              const isLocationOpen = openLocationIds.has(approval.id);
+
+                              return (
+                                <div className="mt-3 space-y-3">
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    {/* View Reason Button */}
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setReasonModal(approval);
+                                      }}
+                                      className="inline-flex items-center gap-2 rounded-xl bg-secondary/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-primary/10 hover:text-primary w-fit cursor-pointer"
+                                    >
+                                      <MessageSquareText className="h-4 w-4" />
+                                      <span>View Reason</span>
+                                    </button>
+
+                                    {/* View Location Button */}
+                                    {matchedInvItem && (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setOpenLocationIds((prev) => {
+                                            const next = new Set(prev);
+                                            if (next.has(approval.id)) {
+                                              next.delete(approval.id);
+                                            } else {
+                                              next.add(approval.id);
+                                            }
+                                            return next;
+                                          });
+                                        }}
+                                        className="inline-flex items-center gap-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-4 py-2 text-sm font-semibold transition hover:bg-blue-500/20 w-fit cursor-pointer"
+                                      >
+                                        <MapPin className="h-4 w-4" />
+                                        <span>{isLocationOpen ? "Hide Location" : "View Location"}</span>
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Toggled Warehouse & Storage Location Details */}
+                                  {matchedInvItem && isLocationOpen && (() => {
+                                    const isOutOfStock = matchedInvItem.quantity <= 0;
+                                    return (
+                                      <div className={`p-3 rounded-xl border text-xs space-y-1 transition-all animate-in fade-in slide-in-from-top-1 ${isOutOfStock ? "bg-rose-500/10 border-rose-500/30" : "bg-blue-500/10 border-blue-500/20"}`}>
+                                        <div className="flex items-center justify-between font-bold">
+                                          <span className={`flex items-center gap-1.5 ${isOutOfStock ? "text-rose-900 dark:text-rose-300" : "text-blue-900 dark:text-blue-300"}`}>
+                                            <Package className={`h-4 w-4 shrink-0 ${isOutOfStock ? "text-rose-600" : "text-blue-600"}`} />
+                                            Warehouse Location & Stock Info:
+                                          </span>
+                                          <span className={`px-2 py-0.5 rounded text-white text-[11px] font-bold ${isOutOfStock ? "bg-rose-600 animate-pulse" : "bg-blue-600"}`}>
+                                            {isOutOfStock ? `⚠️ OUT OF STOCK (${matchedInvItem.quantity} ${matchedInvItem.unit || "Nos"})` : `${matchedInvItem.quantity} ${matchedInvItem.unit || "Nos"} in Stock`}
+                                          </span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-foreground pt-1 font-medium">
+                                          <div>
+                                            <span className="text-muted-foreground">Warehouse: </span>
+                                            <span className="font-bold text-blue-700 dark:text-blue-400">{matchedInvItem.warehouse || "Main Warehouse"}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-muted-foreground">Rack / Shelf: </span>
+                                            <span className="font-bold text-foreground">{matchedInvItem.location || "Store Rack"}</span>
+                                          </div>
+                                        </div>
+                                        {isOutOfStock && (
+                                          <div className="mt-1 pt-1 border-t border-rose-500/20 text-rose-700 dark:text-rose-400 font-bold text-[11px] flex items-center gap-1">
+                                            ⚠️ Approval disabled — Product is currently out of stock. Place request on HOLD or restock inventory first.
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 
                         {/* Action Buttons - Right Side */}
                         <div className="flex shrink-0 flex-wrap items-center gap-2.5 lg:flex-col lg:items-stretch">
-                          {approval.status === "PENDING" ? (
+                          {returnStep === 1 ? (
+                            <div className="flex w-full gap-2 flex-wrap sm:flex-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQualityModal(approval);
+                                  setQualityCondition("Good Condition - Restock to Warehouse Stock");
+                                  setQualityRemarks("Quality inspected and verified by Admin.");
+                                }}
+                                disabled={acting}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-purple-500/20 transition hover:from-purple-700 hover:to-indigo-700 cursor-pointer disabled:opacity-60"
+                              >
+                                <span key={acting ? "step2-loading" : "step2-icon"} className="inline-flex items-center justify-center">
+                                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+                                </span>
+                                <span>Quality Test & Approve</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRejectModal({ approval })}
+                                disabled={acting}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20 cursor-pointer"
+                              >
+                                <span key="reject-step1-icon" className="inline-flex items-center justify-center">
+                                  <X className="h-4 w-4" />
+                                </span>
+                                <span>Reject</span>
+                              </button>
+                            </div>
+                          ) : returnStep === 2 ? (
+                            <div className="flex flex-col gap-2 w-full">
+                              <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-2 rounded-xl border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                                <CheckCheck className="h-4 w-4 text-purple-600 shrink-0" />
+                                <span>Quality Tested ✓ Awaiting Employee to click <strong>Item Return</strong></span>
+                              </div>
+                            </div>
+                          ) : returnStep === 3 ? (
+                            <div className="flex flex-col gap-2 w-full">
+                              <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 animate-pulse">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                                <span>Employee pushed "Item Return"! Ready to restock</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminFoundItem(approval)}
+                                disabled={acting}
+                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/25 transition hover:from-emerald-700 hover:to-teal-700 cursor-pointer disabled:opacity-60 ring-2 ring-emerald-500/40"
+                              >
+                                <span key={acting ? "found-loading" : "found-icon"} className="inline-flex items-center justify-center">
+                                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                                </span>
+                                <span>Product Found</span>
+                              </button>
+                            </div>
+                          ) : approval.status === "PENDING" ? (
                             <>
-                              {/* Approve/Reject Buttons */}
-                              <div className="flex w-full gap-2">
+                              {/* Standard Approve/Hold/Reject Buttons for non-return requests */}
+                              <div className="flex w-full gap-2 flex-wrap sm:flex-nowrap">
                                 <button
                                   type="button"
                                   onClick={() => review(approval, "approve")}
                                   disabled={acting}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:from-emerald-700 hover:to-emerald-800 hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:from-emerald-700 hover:to-emerald-800 hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                                 >
-                                  {acting ? (
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                  ) : (
-                                    <Check className="h-5 w-5" />
-                                  )}
-                                  Approve
+                                  <span key={acting ? "approve-loading" : "approve-icon"} className="inline-flex items-center justify-center">
+                                    {acting ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Check className="h-4 w-4" />
+                                    )}
+                                  </span>
+                                  <span>Approve</span>
                                 </button>
+
+                                {approval.source === "REQUEST" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setHoldModal({ approval })}
+                                    disabled={acting}
+                                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-amber-300 bg-amber-500/10 px-3 py-2.5 text-xs font-bold text-amber-700 transition hover:bg-amber-500/20 dark:text-amber-400 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                                    title="Put request on hold due to product out of stock"
+                                  >
+                                    <span key="hold-btn-icon" className="inline-flex items-center justify-center">
+                                      <PauseCircle className="h-4 w-4" />
+                                    </span>
+                                    <span>Hold (Out of Stock)</span>
+                                  </button>
+                                )}
+
                                 <button
                                   type="button"
                                   onClick={() => setRejectModal({ approval })}
                                   disabled={acting}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-5 py-3 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20"
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20 cursor-pointer"
                                 >
-                                  <X className="h-5 w-5" />
-                                  Reject
+                                  <span key="reject-btn-icon" className="inline-flex items-center justify-center">
+                                    <X className="h-4 w-4" />
+                                  </span>
+                                  <span>Reject</span>
                                 </button>
                               </div>
                             </>
                           ) : (
-                            <div className="flex w-full items-center justify-center rounded-xl bg-secondary/50 px-4 py-3 text-center min-w-[140px]">
+                            <div className="flex w-full items-center justify-center rounded-xl px-4 py-3 text-center min-w-[140px] bg-secondary/50 border border-border">
                               <div className="text-xs">
-                                <div className="font-semibold text-muted-foreground">
-                                  {approval.status === "APPROVED" ? "Approved" : "Rejected"}
+                                <div className={`font-semibold ${
+                                  isItemNotFound
+                                    ? "text-rose-600 dark:text-rose-400 font-bold"
+                                    : isProductFound
+                                    ? "text-emerald-600 dark:text-emerald-400 font-bold"
+                                    : approval.status === "APPROVED"
+                                    ? "text-blue-600 dark:text-blue-400 font-bold"
+                                    : "text-muted-foreground"
+                                }`}>
+                                  {isItemNotFound
+                                    ? "EMPLOYEE: ITEM NOT FOUND ✕"
+                                    : isProductFound
+                                    ? "Completed / Product Found ✓"
+                                    : approval.status === "APPROVED"
+                                    ? returnStep > 0
+                                      ? "Approved (Awaiting Return Handover)"
+                                      : "Approved (Awaiting Employee Confirmation)"
+                                    : "Rejected"}
                                 </div>
                                 {isAdmin && (
                                   <div className="mt-0.5 font-bold text-foreground truncate max-w-[150px]" title={`By: ${getReviewerInfo(approval)}`}>
@@ -1074,9 +1662,7 @@ const Approvals = () => {
                     Approval Details
                   </p>
 
-                  <h3 className="mt-1 truncate text-lg font-bold text-foreground">
-                    {reasonModal.title}
-                  </h3>
+                  <FormattedInventoryTitle title={reasonModal.title} className="mt-1" />
                 </div>
               </div>
 
@@ -1295,13 +1881,41 @@ const Approvals = () => {
                         )}
                       </div>
                 ) : (
-                  <div className="rounded-2xl border border-border bg-secondary/20 px-4 py-4">
-                    <p className="mb-1 text-xs font-semibold text-muted-foreground">
-                      Employee Reason
-                    </p>
-                    <p className="break-words text-sm font-medium leading-6 text-foreground">
-                      {getReadableReason(reasonModal).reason}
-                    </p>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-border bg-secondary/20 px-4 py-4">
+                      <p className="mb-2 text-xs font-semibold text-muted-foreground">
+                        Employee Reason / Request Details
+                      </p>
+                      <RenderFormattedDetails text={getReadableReason(reasonModal).reason} />
+                    </div>
+
+                    {reasonModal.source === "REQUEST" && (() => {
+                      const modalInvItem = getInventoryItemLocation(reasonModal);
+                      if (!modalInvItem) return null;
+                      return (
+                        <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/25 text-xs space-y-2">
+                          <div className="flex items-center justify-between font-bold text-blue-900 dark:text-blue-300">
+                            <span className="flex items-center gap-2 text-sm">
+                              <Package className="h-5 w-5 text-blue-600 shrink-0" />
+                              Warehouse Location & Stock Status
+                            </span>
+                            <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-xs">
+                              {modalInvItem.quantity} {modalInvItem.unit || "Nos"} Available
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-foreground pt-1 font-medium">
+                            <div className="p-3 rounded-xl bg-background border border-border">
+                              <span className="text-xs text-muted-foreground block mb-0.5 font-semibold uppercase tracking-wider">Warehouse</span>
+                              <span className="font-bold text-blue-700 dark:text-blue-400 text-sm">{modalInvItem.warehouse || "Main Warehouse"}</span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-background border border-border">
+                              <span className="text-xs text-muted-foreground block mb-0.5 font-semibold uppercase tracking-wider">Rack / Shelf / Bin</span>
+                              <span className="font-bold text-foreground text-sm">{modalInvItem.location || "Store Rack A"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </section>
@@ -1442,7 +2056,7 @@ const Approvals = () => {
                         <div className="flex items-center gap-2">
                           <UserRound className="h-4 w-4 text-primary" />
                           <span className="text-sm font-semibold text-muted-foreground">
-                            {reasonModal.status === "APPROVED" ? "Approved By" : "Rejected By"}
+                            {isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "Approved By" : "Rejected By"}
                           </span>
                         </div>
                         <div className="text-right">
@@ -1455,16 +2069,16 @@ const Approvals = () => {
                     {reasonModal.reviewedAt && (
                       <div className="flex items-center justify-between border-t border-border pt-2">
                         <div className="flex items-center gap-2">
-                          <Clock3 className={`h-4 w-4 ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`} />
-                          <span className={`text-sm font-semibold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
-                            {reasonModal.status === "APPROVED" ? "Approved At" : "Rejected At"}
+                          <Clock3 className={`h-4 w-4 ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-600" : "text-rose-600"}`} />
+                          <span className={`text-sm font-semibold ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
+                            {isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "Approved At" : "Rejected At"}
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className={`text-sm font-bold ${reasonModal.status === "APPROVED" ? "text-emerald-700" : "text-rose-700"}`}>
+                          <span className={`text-sm font-bold ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
                             {formatDate(reasonModal.reviewedAt)}
                           </span>
-                          <span className={`ml-2 text-xs ${reasonModal.status === "APPROVED" ? "text-emerald-600" : "text-rose-600"}`}>
+                          <span className={`ml-2 text-xs ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-600" : "text-rose-600"}`}>
                             {formatTimeIST(reasonModal.reviewedAt)}
                           </span>
                         </div>
@@ -1476,11 +2090,144 @@ const Approvals = () => {
             </div>
 
             {/* ================= FOOTER ================= */}
-            <div className="flex justify-end border-t border-border bg-secondary/20 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-6 py-4">
+              {isAdmin && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(() => {
+                    const returnStep = reasonModal.source === "REQUEST" ? getReturnStep(reasonModal) : 0;
+                    if (returnStep === 1) {
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const target = reasonModal;
+                              setReasonModal(null);
+                              setQualityModal(target);
+                              setQualityCondition("Good Condition - Restock to Warehouse Stock");
+                              setQualityRemarks("Quality inspected and verified by Admin.");
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold shadow-md hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
+                          >
+                            <CheckCheck className="h-4 w-4" />
+                            Quality Test & Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const target = reasonModal;
+                              setReasonModal(null);
+                              setRejectModal({ approval: target });
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-rose-300 bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-500/20 cursor-pointer"
+                          >
+                            <X className="h-4 w-4" />
+                            Reject Return
+                          </button>
+                        </>
+                      );
+                    }
+                    if (returnStep === 2) {
+                      return (
+                        <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                          <CheckCheck className="h-3.5 w-3.5 text-purple-600" />
+                          <span>Quality Tested ✓ Awaiting Employee to click <strong>Item Return</strong></span>
+                        </div>
+                      );
+                    }
+                    if (returnStep === 3) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const target = reasonModal;
+                            setReasonModal(null);
+                            await handleAdminFoundItem(target);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md hover:from-emerald-700 hover:to-teal-700 cursor-pointer"
+                        >
+                          <PackageCheck className="h-4 w-4" />
+                          Product Found
+                        </button>
+                      );
+                    }
+                    if (reasonModal.status === "APPROVED") {
+                      const isFound = reasonModal.reviewNote?.includes("[PRODUCT_FOUND]") || reasonModal.status === "COMPLETED";
+                      const isNotFound = reasonModal.reviewNote?.includes("[ITEM_NOT_FOUND]");
+                      if (isFound) {
+                        return (
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                            Completed / Product Found ✓
+                          </span>
+                        );
+                      }
+                      if (isNotFound) {
+                        return (
+                          <span className="text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20">
+                            EMPLOYEE: ITEM NOT FOUND ✕
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
+                          Approved (Awaiting Employee Confirmation)
+                        </span>
+                      );
+                    }
+                    if (reasonModal.status === "PENDING") {
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const target = reasonModal;
+                              setReasonModal(null);
+                              await review(target, "approve");
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                          >
+                            <Check className="h-4 w-4" />
+                            Approve
+                          </button>
+
+                          {reasonModal.source === "REQUEST" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const target = reasonModal;
+                                setReasonModal(null);
+                                setHoldModal({ approval: target });
+                              }}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-amber-300 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-bold hover:bg-amber-500/20 cursor-pointer"
+                            >
+                              <PauseCircle className="h-4 w-4" />
+                              Hold (Out of Stock)
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const target = reasonModal;
+                              setReasonModal(null);
+                              setRejectModal({ approval: target });
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-rose-300 bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-500/20 cursor-pointer"
+                          >
+                            <X className="h-4 w-4" />
+                            Reject
+                          </button>
+                        </>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setReasonModal(null)}
-                className="rounded-xl bg-primary px-7 py-2.5 text-sm font-bold text-primary-foreground shadow-sm transition hover:opacity-90"
+                className="ml-auto rounded-xl bg-secondary hover:bg-secondary/80 text-foreground border border-border px-6 py-2 text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 Close
               </button>
@@ -1566,6 +2313,179 @@ const Approvals = () => {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
                 Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hold Modal (Product Out of Stock / Unavailable) */}
+      {holdModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setHoldModal(null);
+            }
+          }}
+        >
+          <div className="flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border bg-amber-500/10 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-600">
+                  <PauseCircle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">
+                    Put Request On Hold
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Product Out of Stock / Unavailable
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHoldModal(null)}
+                className="rounded-xl p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Hold Reason / Restock Note <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={holdReason}
+                  onChange={(e) => setHoldReason(e.target.value)}
+                  placeholder="e.g. Product currently out of stock. Order placed with vendor, expected in 3 days."
+                  rows={4}
+                  className="w-full rounded-2xl border border-border bg-secondary/20 p-3.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 resize-none font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-border bg-secondary/20 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setHoldModal(null)}
+                className="rounded-xl border border-border px-5 py-2.5 text-sm font-semibold hover:bg-secondary transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleHoldSubmit}
+                disabled={actingId === `${holdModal.approval?.source}:${holdModal.approval?.id}`}
+                className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-6 py-2.5 text-sm font-bold text-white shadow-md hover:bg-amber-700 transition disabled:opacity-60"
+              >
+                {actingId === `${holdModal.approval?.source}:${holdModal.approval?.id}` && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Confirm Hold
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quality Check & Mark Product Found Modal */}
+      {qualityModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setQualityModal(null);
+          }}
+        >
+          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-emerald-500/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-600 flex items-center justify-center font-bold">
+                  <CheckCheck className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-foreground text-lg">
+                    Quality Inspection & Approve Return
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Inspect product condition and approve return. Employee will then click "Item Return".
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQualityModal(null)}
+                className="rounded-xl p-2 text-muted-foreground hover:bg-secondary"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-2xl border border-border bg-secondary/20 p-4 text-xs space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-semibold">Employee:</span>
+                  <span className="font-bold text-foreground">{qualityModal.employee}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-semibold">Request Title:</span>
+                  <span className="font-bold text-foreground truncate max-w-[220px]">{qualityModal.title}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Item Quality & Condition Status *
+                </label>
+                <select
+                  value={qualityCondition}
+                  onChange={(e) => setQualityCondition(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background p-3 text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                >
+                  <option value="Good Condition - Restock to Warehouse Stock">Good Condition (Restock to Warehouse Stock)</option>
+                  <option value="Minor Wear - Acceptable for Re-issue">Minor Wear (Acceptable for Re-issue)</option>
+                  <option value="Damaged / Defective - Needs Maintenance">Damaged / Defective (Scrap / Repair Required)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Quality Inspection Remarks *
+                </label>
+                <textarea
+                  value={qualityRemarks}
+                  onChange={(e) => setQualityRemarks(e.target.value)}
+                  rows={3}
+                  placeholder="Enter physical quality inspection notes / remarks..."
+                  className="w-full rounded-xl border border-border bg-background p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-border p-4 bg-secondary/20">
+              <button
+                type="button"
+                onClick={() => setQualityModal(null)}
+                className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-secondary cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleQualitySubmit}
+                disabled={actingId === `${qualityModal.source}:${qualityModal.id}`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-sm shadow-md hover:from-purple-700 hover:to-indigo-700 transition-all cursor-pointer disabled:opacity-60"
+              >
+                {actingId === `${qualityModal.source}:${qualityModal.id}` ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCheck className="h-4 w-4" />
+                )}
+                Approve & Quality Passed
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   FolderKanban,
   Plus,
@@ -315,51 +315,6 @@ export const ProjectModal = ({ project, onClose, onSave }) => {
                 </select>
               </div>
 
-              {/* Project Manager */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Project Manager</label>
-                <select
-                  value={formData.managerId}
-                  onChange={(e) => handleChange("managerId", e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">Select manager...</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.employeeProfileId || emp.id}>
-                      {emp.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Team Members */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Team Members</label>
-              <div className="max-h-48 overflow-y-auto border border-border rounded-lg divide-y divide-border">
-                {employees.map((emp) => (
-                  <label
-                    key={emp.id}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isMemberSelected(emp)}
-                      onChange={() => toggleTeamMember(emp)}
-                      className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{emp.fullName}</div>
-                      <div className="text-xs text-muted-foreground">{emp.email}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              {formData.teamMembers.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  {formData.teamMembers.length} member{formData.teamMembers.length !== 1 ? "s" : ""} selected
-                </p>
-              )}
             </div>
           </div>
 
@@ -396,6 +351,7 @@ export const ProjectModal = ({ project, onClose, onSave }) => {
 };
 
 const Projects = () => {
+  const navigate = useNavigate();
   const [view, setView] = useState("all"); // all, archived
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
@@ -441,6 +397,18 @@ const Projects = () => {
       loadProjects();
     } catch (error) {
       toast.error(error.message || "Failed to update project");
+    }
+  };
+
+  const handleStatusChange = async (projectId, newStatus) => {
+    try {
+      await apiPatch(`/projects/${projectId}`, { status: newStatus });
+      toast.success(`Project status updated to ${newStatus.replace("_", " ")}`);
+      setProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, status: newStatus } : p))
+      );
+    } catch (err) {
+      toast.error(err.message || "Failed to update project status");
     }
   };
 
@@ -498,20 +466,6 @@ const Projects = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            to="/admin/assigned-projects"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-secondary hover:text-primary transition-colors text-muted-foreground shadow-sm"
-          >
-            <Users className="h-3.5 w-3.5 text-primary" />
-            Assigned Projects (Employee View)
-          </Link>
-          <Link
-            to="/admin/my-projects"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-secondary hover:text-primary transition-colors text-muted-foreground shadow-sm"
-          >
-            <FolderKanban className="h-3.5 w-3.5 text-blue-500" />
-            My Projects (Customer View)
-          </Link>
           <button
             onClick={() => setShowCreateModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg cta-gradient text-white font-medium hover:opacity-90 transition-opacity text-sm ml-1"
@@ -602,10 +556,10 @@ const Projects = () => {
       {/* Projects Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {filteredProjects.map((project) => (
-          <Link
+          <div
             key={project.id}
-            to={`/admin/project/${project.id}`}
-            className="rounded-2xl bg-background border border-border card-shadow overflow-hidden hover:shadow-lg transition-shadow block"
+            onClick={() => navigate(`/admin/project/${project.id}`)}
+            className="rounded-2xl bg-background border border-border card-shadow overflow-hidden hover:shadow-lg transition-shadow block cursor-pointer"
           >
             <div className="p-6 space-y-4">
               {/* Header */}
@@ -613,13 +567,27 @@ const Projects = () => {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="font-semibold text-lg">{project.name}</h3>
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(
+                    <select
+                      value={project.status}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onChange={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleStatusChange(project.id, e.target.value);
+                      }}
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border cursor-pointer focus:outline-none transition-colors ${getStatusColor(
                         project.status
                       )}`}
                     >
-                      {project.status.replace("_", " ")}
-                    </span>
+                      <option value="PLANNING">Planning</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="ON_HOLD">On Hold</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
                 </div>
@@ -738,33 +706,8 @@ const Projects = () => {
                   </span>
                 </div>
               </div>
-
-              {/* Team */}
-              <div className="flex items-center gap-2 pt-3 border-t border-border">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Team:</span>
-                <div className="flex -space-x-2">
-                  {project.assignments?.slice(0, 3).map((assignment) => (
-                    <div
-                      key={assignment.id}
-                      className="w-7 h-7 rounded-full bg-primary/10 border-2 border-background flex items-center justify-center text-xs font-semibold text-primary"
-                      title={assignment.employee?.fullName}
-                    >
-                      {assignment.employee?.fullName?.split(" ").map(n => n[0]).join("").toUpperCase() || "?"}
-                    </div>
-                  ))}
-                  {(project.assignments?.length || 0) > 3 && (
-                    <div className="w-7 h-7 rounded-full bg-secondary border-2 border-background flex items-center justify-center text-xs font-medium">
-                      +{project.assignments.length - 3}
-                    </div>
-                  )}
-                  {(!project.assignments || project.assignments.length === 0) && (
-                    <span className="text-xs text-muted-foreground">No team members</span>
-                  )}
-                </div>
-              </div>
             </div>
-          </Link>
+          </div>
         ))}
       </div>
 

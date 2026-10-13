@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PollProvider } from "./lib/pollContext.jsx";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
@@ -65,6 +66,7 @@ import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
 import EmployeeRoster from "./employee/pages/Roster.jsx";
 import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
+import RequireModuleAccess from "./employee/components/RequireModuleAccess.jsx";
 
 import CustomerLayout from "./customer/CustomerLayout.jsx";
 import CustomerOverview from "./customer/pages/Overview.jsx";
@@ -168,7 +170,14 @@ const AppRoutes = () => {
           <Route path="my-tools" element={<MyTools />} />
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
           <Route path="attendance" element={<EmployeeAttendance />} />
-          <Route path="academic-calendar" element={<AcademicCalendar />} />
+          <Route
+            path="academic-calendar"
+            element={
+              <RequireModuleAccess moduleKey="academic-calendar">
+                <AcademicCalendar />
+              </RequireModuleAccess>
+            }
+          />
           <Route path="requests" element={<EmployeeRequests />} />
           <Route path="requests/track" element={<TrackRequests />} />
           <Route
@@ -186,18 +195,12 @@ const AppRoutes = () => {
             }
           />
           <Route
-            path="leave"
-            element={
-              <RequireOnboarding>
-                <EmployeeLeave />
-              </RequireOnboarding>
-            }
-          />
-          <Route
             path="employee"
             element={
               <RequireOnboarding>
-                <EmployeeManagement />
+                <RequireModuleAccess moduleKey="employee">
+                  <EmployeeManagement />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -205,7 +208,9 @@ const AppRoutes = () => {
             path="add-account"
             element={
               <RequireOnboarding>
-                <EmployeeManagement />
+                <RequireModuleAccess moduleKey="employee">
+                  <EmployeeManagement />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -213,7 +218,9 @@ const AppRoutes = () => {
             path="employee-management"
             element={
               <RequireOnboarding>
-                <EmployeeManagement />
+                <RequireModuleAccess moduleKey="employee">
+                  <EmployeeManagement />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -221,7 +228,9 @@ const AppRoutes = () => {
             path="employee-list"
             element={
               <RequireOnboarding>
-                <EmployeeList isEmployeeView={true} />
+                <RequireModuleAccess moduleKey="employee">
+                  <EmployeeList isEmployeeView={true} />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -229,7 +238,9 @@ const AppRoutes = () => {
             path="approvals"
             element={
               <RequireOnboarding>
-                <Approvals />
+                <RequireModuleAccess moduleKey="approvals">
+                  <Approvals />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -237,7 +248,9 @@ const AppRoutes = () => {
             path="attendance-management"
             element={
               <RequireOnboarding>
-                <Attendance />
+                <RequireModuleAccess moduleKey="attendance-management">
+                  <Attendance />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -253,7 +266,9 @@ const AppRoutes = () => {
             path="roles-access"
             element={
               <RequireOnboarding>
-                <RolesAccess />
+                <RequireModuleAccess moduleKey="roles-access">
+                  <RolesAccess />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -261,7 +276,9 @@ const AppRoutes = () => {
             path="shift-location"
             element={
               <RequireOnboarding>
-                <ShiftLocation />
+                <RequireModuleAccess moduleKey="shift-location">
+                  <EmployeeShiftLocation />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -269,7 +286,9 @@ const AppRoutes = () => {
             path="roster"
             element={
               <RequireOnboarding>
-                <Roster />
+                <RequireModuleAccess moduleKey="roster">
+                  <EmployeeRoster />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -277,7 +296,9 @@ const AppRoutes = () => {
             path="leave-policy"
             element={
               <RequireOnboarding>
-                <LeavePolicyHome />
+                <RequireModuleAccess moduleKey="leave-policy">
+                  <LeavePolicyHome />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -285,7 +306,9 @@ const AppRoutes = () => {
             path="leave-policy/types"
             element={
               <RequireOnboarding>
-                <LeavePolicy />
+                <RequireModuleAccess moduleKey="leave-policy">
+                  <LeavePolicy />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -293,7 +316,29 @@ const AppRoutes = () => {
             path="leave-policy/holidays"
             element={
               <RequireOnboarding>
-                <Holidays />
+                <RequireModuleAccess moduleKey="leave-policy">
+                  <Holidays />
+                </RequireModuleAccess>
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="inventory"
+            element={
+              <RequireOnboarding>
+                <RequireModuleAccess moduleKey={["inventory", "inventory-in", "inventory-out", "view-inventory"]}>
+                  <Inventory />
+                </RequireModuleAccess>
+              </RequireOnboarding>
+            }
+          />
+          <Route
+            path="inventory/:submodule"
+            element={
+              <RequireOnboarding>
+                <RequireModuleAccess moduleKey={["inventory", "inventory-in", "inventory-out", "view-inventory"]}>
+                  <Inventory />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />
@@ -319,9 +364,11 @@ const AppRoutes = () => {
 
 const App = () => {
   return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
+    <PollProvider>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </PollProvider>
   );
 };
 

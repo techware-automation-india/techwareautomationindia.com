@@ -46,7 +46,7 @@ const UnitModal = ({ isOpen, onClose, onUnitCreated }) => {
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
     >
       <div
         onClick={(e) => e.stopPropagation()}

@@ -688,7 +688,7 @@ const AttendanceCorrection = ({ correctionType }) => {
               ? "Date Frozen (On Leave)"
               : isTodayUnclosedBlocked &&
                   (punchType === "check-in" || punchType === "both" || requestMode === "time-edit")
-                ? "Check In Closed (Yesterday Incomplete)"
+                ? "Check In Closed (Complete Yesterday Check-Out First)"
                 : requestMode === "time-edit"
                   ? "Submit Time Edit Request"
                   : "Submit Request"}

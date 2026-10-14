@@ -1049,7 +1049,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
             unclosedPrevious.correctionRequest.status !== "PENDING"))
       ) {
         return res.status(400).json({
-          message: `Check-in for today is disabled. You have an uncompleted attendance from yesterday (${unclosedPrevious.record.dateKey}). Please complete yesterday's attendance first.`,
+          message: `Check-in for today is disabled. You checked in yesterday (${unclosedPrevious.record.dateKey}) but forgot to check out. Please complete yesterday's check-out first.`,
         });
       }
     }

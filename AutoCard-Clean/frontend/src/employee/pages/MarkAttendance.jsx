@@ -794,6 +794,8 @@ const MarkAttendance = () => {
 
   const isTimeEditMode = forgotPunchData?.punchType === "time-edit";
 
+  const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
+
   // =======================================================
   // ATTENDANCE STATE
   // =======================================================

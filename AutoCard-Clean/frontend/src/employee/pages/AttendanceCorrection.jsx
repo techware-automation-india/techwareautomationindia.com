@@ -143,7 +143,9 @@ const AttendanceCorrection = ({ correctionType }) => {
 
   const hasUnclosedPreviousMissingCheckout =
     !!unclosedPrevious?.record &&
-    (!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status !== "APPROVED");
+    (!unclosedPrevious.correctionRequest ||
+      (unclosedPrevious.correctionRequest.status !== "APPROVED" &&
+        unclosedPrevious.correctionRequest.status !== "PENDING"));
 
   const isTodayUnclosedBlocked =
     date === indiaNow.date && hasUnclosedPreviousMissingCheckout;
@@ -497,18 +499,23 @@ const AttendanceCorrection = ({ correctionType }) => {
           )}
         </div>
 
-        {/* Unclosed yesterday check-out warning */}
+        {/* Unclosed yesterday attendance warning */}
         {isTodayUnclosedBlocked && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900/50 p-4 space-y-2 text-xs text-amber-900 dark:text-amber-200">
             <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300 text-sm">
               <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-              Check-In for Today is Closed — Previous Attendance Incomplete
+              Check-In for Today is Blocked — Yesterday's Attendance Incomplete
             </div>
             <p>
-              You checked in on <strong>{unclosedPrevious.record.dateKey}</strong> but did not check out.
-              {unclosedPrevious.correctionRequest?.status === "PENDING"
-                ? " Your check-out request for that day is pending admin approval. Once approved, today's check-in will open."
-                : " You must complete yesterday's check-out first before today's check-in can be submitted."}
+              {unclosedPrevious.record.isMissingEntireAttendance ? (
+                <>
+                  You missed marking attendance for yesterday (<strong>{unclosedPrevious.record.dateKey}</strong>). You must submit a request for yesterday before today's check-in can be submitted.
+                </>
+              ) : (
+                <>
+                  You checked in on <strong>{unclosedPrevious.record.dateKey}</strong> but did not check out. You must submit yesterday's check-out first before today's check-in can be submitted.
+                </>
+              )}
             </p>
             {(!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status === "REJECTED") && (
               <div className="pt-1">
@@ -516,11 +523,11 @@ const AttendanceCorrection = ({ correctionType }) => {
                   type="button"
                   onClick={() => {
                     setDate(unclosedPrevious.record.dateKey);
-                    setPunchType("check-out");
+                    setPunchType(unclosedPrevious.record.isMissingEntireAttendance ? "both" : "check-out");
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
                 >
-                  Complete Check-Out for {unclosedPrevious.record.dateKey}
+                  Complete Yesterday's Attendance ({unclosedPrevious.record.dateKey})
                 </button>
               </div>
             )}

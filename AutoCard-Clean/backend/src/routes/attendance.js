@@ -360,24 +360,60 @@ const isHolidayOrSundayDate = async (date) => {
 
 const getUnclosedPreviousAttendance = async (profileId) => {
   const now = new Date();
+  const todayKey = getIndiaDateKey(now);
   const { start: todayStart } = getIndiaDayRange(now);
 
-  const unclosedRecord = await prisma.attendance.findFirst({
+  // Yesterday in India timezone
+  const yesterdayObj = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayKey = getIndiaDateKey(yesterdayObj);
+  const { start: yesterdayStart, end: yesterdayEnd } = getIndiaDayRange(yesterdayObj);
+
+  // Check if yesterday had an approved leave or holiday or Sunday (optional, but attendance check is key)
+  // Find yesterday's attendance record
+  const yesterdayRecord = await prisma.attendance.findFirst({
     where: {
       employeeId: profileId,
-      date: { lt: todayStart },
-      checkIn: { not: null },
-      checkOut: null,
+      date: {
+        gte: yesterdayStart,
+        lte: yesterdayEnd,
+      },
     },
     orderBy: { date: "desc" },
   });
 
-  if (!unclosedRecord) {
+  // Also check if employee was on approved leave yesterday
+  const yesterdayLeave = await prisma.leaveRequest.findFirst({
+    where: {
+      employeeId: profileId,
+      status: "APPROVED",
+      startDate: { lte: yesterdayEnd },
+      endDate: { gte: yesterdayStart },
+    },
+  });
+
+  // If yesterday was approved leave, no uncompleted attendance required
+  if (yesterdayLeave) {
     return null;
   }
 
-  const unclosedDateKey = getIndiaDateKey(unclosedRecord.date);
+  // Determine if yesterday's attendance is uncompleted:
+  // Case A: Checked in, but forgot check-out
+  // Case B: No attendance at all yesterday (forgot yesterday completely)
+  const isMissingCheckout = yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut;
+  const isMissingEntireAttendance = !yesterdayRecord;
 
+  // If yesterday has normal attendance completed with check-in & check-out, or status is ABSENT/ON_LEAVE, return null
+  if (!isMissingCheckout && !isMissingEntireAttendance) {
+    if (yesterdayRecord.checkIn && yesterdayRecord.checkOut) return null;
+    if (yesterdayRecord.status === "ON_LEAVE") return null;
+  }
+
+  // If yesterday has check-in & check-out completed, nothing unclosed
+  if (yesterdayRecord?.checkIn && yesterdayRecord?.checkOut) {
+    return null;
+  }
+
+  // Find any correction request for yesterday
   const employeeRequests = await prisma.employeeRequest.findMany({
     where: {
       employeeId: profileId,
@@ -390,26 +426,24 @@ const getUnclosedPreviousAttendance = async (profileId) => {
   for (const req of employeeRequests) {
     if (!req.description) continue;
     const isMatchingDate =
-      req.description.includes(`"date":"${unclosedDateKey}"`) ||
-      req.description.includes(unclosedDateKey);
-    const isCheckoutType =
-      req.description.includes(`"punchType":"check-out"`) ||
-      req.description.includes(`"punchType":"both"`) ||
-      req.description.includes("check-out") ||
-      req.description.includes("Check Out");
+      req.description.includes(`"date":"${yesterdayKey}"`) ||
+      req.description.includes(yesterdayKey);
 
-    if (isMatchingDate && isCheckoutType) {
+    if (isMatchingDate) {
       matchingRequest = req;
       break;
     }
   }
 
+  // If there is no record yesterday and no missing checkout, but employee forgot yesterday completely:
+  // We identify it as unclosed yesterday
   return {
     record: {
-      id: unclosedRecord.id,
-      date: unclosedRecord.date,
-      dateKey: unclosedDateKey,
-      checkIn: unclosedRecord.checkIn,
+      id: yesterdayRecord?.id || null,
+      date: yesterdayRecord?.date || yesterdayStart,
+      dateKey: yesterdayKey,
+      checkIn: yesterdayRecord?.checkIn || null,
+      isMissingEntireAttendance: !yesterdayRecord,
     },
     correctionRequest: matchingRequest
       ? {
@@ -1009,7 +1043,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     const { start: todayStart } = getIndiaDayRange(new Date());
     const isToday = selectedDate.getTime() === todayStart.getTime();
 
-    // Prevent today's check-in if previous attendance check-out is missing or incomplete
+    // Prevent today's check-in if previous attendance check-out is missing or incomplete (allow if PENDING or APPROVED)
     if (
       isToday &&
       !isTimeEdit &&
@@ -1019,10 +1053,11 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
       if (
         unclosedPrevious &&
         (!unclosedPrevious.correctionRequest ||
-          unclosedPrevious.correctionRequest.status !== "APPROVED")
+          (unclosedPrevious.correctionRequest.status !== "APPROVED" &&
+            unclosedPrevious.correctionRequest.status !== "PENDING"))
       ) {
         return res.status(400).json({
-          message: `Check-in for today is disabled. You have an uncompleted check-in from ${unclosedPrevious.record.dateKey}. Please complete yesterday's check-out first.`,
+          message: `Check-in for today is disabled. You have an uncompleted attendance from yesterday (${unclosedPrevious.record.dateKey}). Please complete yesterday's attendance first.`,
         });
       }
     }
@@ -1376,18 +1411,19 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     }
 
     // ----------------------------------------------------------
-    // UNCLOSED PREVIOUS DAY PUNCH CHECK
+    // UNCLOSED PREVIOUS DAY PUNCH CHECK (YESTERDAY ONLY)
     // ----------------------------------------------------------
 
     const unclosedPrevious = await getUnclosedPreviousAttendance(profile.id);
 
     if (unclosedPrevious) {
       const { record: unclosedRec, correctionRequest: unclosedReq } = unclosedPrevious;
-      if (!unclosedReq || unclosedReq.status !== "APPROVED") {
-        const detail =
-          unclosedReq?.status === "PENDING"
-            ? `Your check-out request for ${unclosedRec.dateKey} is waiting for admin approval. Today's check-in will open once approved.`
-            : `You have an uncompleted check-in from ${unclosedRec.dateKey}. Please complete yesterday's check-out first.`;
+      // If request is submitted and PENDING or APPROVED, allow user to check in today!
+      const isAllowed = unclosedReq && (unclosedReq.status === "APPROVED" || unclosedReq.status === "PENDING");
+      if (!isAllowed) {
+        const detail = unclosedRec.isMissingEntireAttendance
+          ? `You missed attendance for yesterday (${unclosedRec.dateKey}). Please complete yesterday's attendance request first.`
+          : `You have an uncompleted check-in from yesterday (${unclosedRec.dateKey}). Please complete yesterday's check-out first.`;
         return res.status(400).json({
           message: `Check-in disabled. ${detail}`,
           unclosedPrevious,
@@ -2031,7 +2067,8 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
         if (
           correction.date === todayKey &&
           (correction.punchType === "check-in" ||
-            correction.punchType === "both") &&
+            correction.punchType === "both" ||
+            correction.punchType === "time-edit") &&
           correction.checkInTime
         ) {
           pendingForgotPunchCheckIn = {

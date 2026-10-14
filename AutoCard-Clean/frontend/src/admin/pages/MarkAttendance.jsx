@@ -265,7 +265,9 @@ const AdminMarkAttendance = () => {
 
   const hasUnclosedPreviousMissingCheckout =
     !!unclosedPrevious?.record &&
-    (!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status !== "APPROVED");
+    (!unclosedPrevious.correctionRequest ||
+      (unclosedPrevious.correctionRequest.status !== "APPROVED" &&
+        unclosedPrevious.correctionRequest.status !== "PENDING"));
 
   const isUnclosedPreviousCorrectionPending =
     !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
@@ -278,7 +280,7 @@ const AdminMarkAttendance = () => {
     }
     if (hasUnclosedPreviousMissingCheckout) {
       toast.error(
-        `Check-in is disabled. Please complete yesterday's check-out (${unclosedPrevious.record.dateKey}) first.`,
+        `Check-in is disabled. Please complete yesterday's attendance (${unclosedPrevious.record.dateKey}) first.`,
       );
       return;
     }
@@ -539,10 +541,18 @@ const AdminMarkAttendance = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                    Missing Check-Out for {unclosedPrevious?.record?.dateKey}
+                    Missing Attendance for Yesterday ({unclosedPrevious?.record?.dateKey})
                   </h3>
                   <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Today's Check In is blocked until yesterday's check-out is completed.
+                    {unclosedPrevious?.record?.isMissingEntireAttendance ? (
+                      <>
+                        You did not mark attendance for yesterday (<strong>{unclosedPrevious?.record?.dateKey}</strong>). Please complete yesterday's attendance request first.
+                      </>
+                    ) : (
+                      <>
+                        You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Please complete yesterday's check-out request first.
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -551,19 +561,21 @@ const AdminMarkAttendance = () => {
                   type="button"
                   onClick={() =>
                     navigate(
-                      `/admin/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=check-out`,
+                      `/admin/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=${
+                        unclosedPrevious?.record?.isMissingEntireAttendance ? "both" : "check-out"
+                      }`,
                       {
                         state: {
                           date: unclosedPrevious.record.dateKey,
-                          punchType: "check-out",
+                          punchType: unclosedPrevious?.record?.isMissingEntireAttendance ? "both" : "check-out",
                         },
-                      },
+                      }
                     )
                   }
                   className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-all"
                 >
                   <ScanLine className="h-3.5 w-3.5" />
-                  <span>Complete Check-Out for {unclosedPrevious?.record?.dateKey}</span>
+                  <span>Complete Yesterday's Attendance ({unclosedPrevious?.record?.dateKey})</span>
                 </button>
               </div>
             </div>
@@ -573,7 +585,7 @@ const AdminMarkAttendance = () => {
             <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
               <Clock className="h-4 w-4 text-blue-600 shrink-0" />
               <div>
-                <span className="font-bold">Forgot Punch Pending:</span> Your check-out request for {unclosedPrevious?.record?.dateKey} is waiting for approval. Today's Check In will open once approved.
+                <span className="font-bold">Yesterday's Attendance Under Review:</span> Your attendance request for yesterday ({unclosedPrevious?.record?.dateKey}) is waiting for approval. You can proceed with today's Check In below.
               </div>
             </div>
           )}
@@ -604,9 +616,7 @@ const AdminMarkAttendance = () => {
                 : isOnLeaveToday
                 ? "Check-In Frozen (On Approved Leave)"
                 : hasUnclosedPreviousMissingCheckout
-                ? isUnclosedPreviousCorrectionPending
-                  ? "Yesterday Check-Out Pending"
-                  : "Yesterday Check-Out Missing"
+                ? "Yesterday Attendance Incomplete"
                 : "Check In"}
             </button>
           )}

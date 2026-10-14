@@ -789,20 +789,21 @@ const MarkAttendance = () => {
   );
 
   const isCorrectionPending = correctionStatus === "PENDING";
-
   const isCorrectionApproved = correctionStatus === "APPROVED";
-
   const isCorrectionRejected = correctionStatus === "REJECTED";
+
+  const isTimeEditMode = forgotPunchData?.punchType === "time-edit";
 
   // =======================================================
   // ATTENDANCE STATE
   // =======================================================
 
-  // Normal attendance check-in OR Forgot Punch check-in
+  // Normal attendance check-in OR Pending Check-In (Forgot Punch or Time-Edit with checkInTime)
   const hasCheckedIn =
-    !!record?.checkIn || (isCorrectionPending && !!forgotPunchCheckIn);
+    !!record?.checkIn ||
+    (isCorrectionPending && !!forgotPunchCheckIn);
 
-  // Normal attendance checkout OR Forgot Punch checkout
+  // Normal attendance checkout OR Pending Check-Out (Forgot Punch or Time-Edit with checkOutTime)
   const hasCheckedOut = !!record?.checkOut || !!forgotPunchCheckOut;
 
   // =======================================================
@@ -811,25 +812,13 @@ const MarkAttendance = () => {
 
   /*
    * CHECK IN
-   *
-   * Existing attendance:
-   * CLOSED
-   *
-   * Pending request:
-   * CLOSED
-   *
-   * Approved request:
-   * CLOSED
-   *
-   * Rejected request without attendance:
-   * OPEN
    */
-
-  const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
 
   const hasUnclosedPreviousMissingCheckout =
     !!unclosedPrevious?.record &&
-    (!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status !== "APPROVED");
+    (!unclosedPrevious.correctionRequest ||
+      (unclosedPrevious.correctionRequest.status !== "APPROVED" &&
+        unclosedPrevious.correctionRequest.status !== "PENDING"));
 
   const isUnclosedPreviousCorrectionPending =
     !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
@@ -843,18 +832,10 @@ const MarkAttendance = () => {
 
   /*
    * CHECK OUT
-   *
-   * Normal checked-in:
-   * OPEN
-   *
-   * Pending:
-   * OPEN
-   *
-   * Approved:
-   * OPEN
-   *
-   * Rejected:
-   * CLOSED
+   * Allowed when:
+   * 1. Already checked in (normal GPS or unassigned location check-in even if pending admin approval)
+   * 2. Or Forgot Punch / Time Edit check-in request is PENDING
+   * And not already checked out.
    */
 
   const canCheckOut =
@@ -1044,7 +1025,7 @@ const MarkAttendance = () => {
           )}
 
           {/* =================================================
-              UNCLOSED PREVIOUS DAY PUNCH ALERT
+              UNCLOSED PREVIOUS DAY PUNCH ALERT (YESTERDAY)
           ================================================= */}
 
           {hasUnclosedPreviousMissingCheckout && !isUnclosedPreviousCorrectionPending && (
@@ -1055,10 +1036,20 @@ const MarkAttendance = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                    Missing Check-Out for {fmtDate(unclosedPrevious.record.date)}
+                    {unclosedPrevious.record.isMissingEntireAttendance
+                      ? `Missing Attendance for Yesterday (${fmtDate(unclosedPrevious.record.date)})`
+                      : `Missing Check-Out for Yesterday (${fmtDate(unclosedPrevious.record.date)})`}
                   </h3>
                   <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Today's Check In is blocked until yesterday's check-out is completed.
+                    {unclosedPrevious.record.isMissingEntireAttendance ? (
+                      <>
+                        You did not mark attendance for yesterday (<strong>{fmtDate(unclosedPrevious.record.date)}</strong>). Please submit a forgot punch / correction request for yesterday first before today's check-in.
+                      </>
+                    ) : (
+                      <>
+                        You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Please complete yesterday's check-out request first.
+                      </>
+                    )}
                   </p>
                   {unclosedPrevious.correctionRequest?.status === "REJECTED" && (
                     <p className="mt-1 text-xs font-semibold text-rose-600 dark:text-rose-400">
@@ -1070,13 +1061,25 @@ const MarkAttendance = () => {
               <div className="flex justify-end pt-1">
                 <button
                   type="button"
-                  onClick={() => navigate(`/employee/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=check-out`, {
-                    state: { date: unclosedPrevious.record.dateKey, punchType: "check-out" }
-                  })}
+                  onClick={() =>
+                    navigate(
+                      `/employee/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=${
+                        unclosedPrevious.record.isMissingEntireAttendance ? "both" : "check-out"
+                      }`,
+                      {
+                        state: {
+                          date: unclosedPrevious.record.dateKey,
+                          punchType: unclosedPrevious.record.isMissingEntireAttendance ? "both" : "check-out",
+                        },
+                      }
+                    )
+                  }
                   className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-all"
                 >
                   <ScanLine className="h-3.5 w-3.5" />
-                  <span>Submit Forgot Punch for {unclosedPrevious.record.dateKey}</span>
+                  <span>
+                    Submit Attendance for Yesterday ({unclosedPrevious.record.dateKey})
+                  </span>
                 </button>
               </div>
             </div>
@@ -1086,7 +1089,7 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
               <Clock className="h-4 w-4 text-blue-600 shrink-0" />
               <div>
-                <span className="font-bold">Forgot Punch Pending:</span> Your check-out request for {fmtDate(unclosedPrevious.record.date)} is waiting for admin approval. Today's Check In will open once approved.
+                <span className="font-bold">Yesterday's Attendance Under Review:</span> Your attendance request for yesterday ({fmtDate(unclosedPrevious.record.date)}) is waiting for admin approval. You can proceed to check in for today below.
               </div>
             </div>
           )}
@@ -1099,13 +1102,13 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <div className="flex items-center gap-2 font-semibold">
                 <Clock className="h-4 w-4" />
-                Forgot Punch request is pending
+                {isTimeEditMode ? "Time Edit request is pending" : "Forgot Punch request is pending"}
               </div>
 
               <div className="mt-1">
-                Your requested Check In time is waiting for admin approval.
+                Your requested Check In time ({forgotPunchCheckIn || "Pending"}) is waiting for admin approval.
                 <br />
-                Check Out is available while the request is pending.
+                <strong>You can Check Out below while the request is pending.</strong>
               </div>
             </div>
           )}
@@ -1314,11 +1317,7 @@ const MarkAttendance = () => {
                 <>
                   <AlertTriangle className="h-5 w-5 text-amber-600" />
 
-                  <span>
-                    {isUnclosedPreviousCorrectionPending
-                      ? "Yesterday Check-Out Pending"
-                      : "Yesterday Check-Out Missing"}
-                  </span>
+                  <span>Yesterday Attendance Incomplete</span>
                 </>
               ) : hasCheckedIn ? (
                 <>

@@ -541,18 +541,10 @@ const AdminMarkAttendance = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                    Missing Attendance for Yesterday ({unclosedPrevious?.record?.dateKey})
+                    Missing Check-Out for Yesterday ({unclosedPrevious?.record?.dateKey})
                   </h3>
                   <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    {unclosedPrevious?.record?.isMissingEntireAttendance ? (
-                      <>
-                        You did not mark attendance for yesterday (<strong>{unclosedPrevious?.record?.dateKey}</strong>). Please complete yesterday's attendance request first.
-                      </>
-                    ) : (
-                      <>
-                        You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Please complete yesterday's check-out request first.
-                      </>
-                    )}
+                    You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Please complete yesterday's check-out request first.
                   </p>
                 </div>
               </div>
@@ -561,13 +553,11 @@ const AdminMarkAttendance = () => {
                   type="button"
                   onClick={() =>
                     navigate(
-                      `/admin/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=${
-                        unclosedPrevious?.record?.isMissingEntireAttendance ? "both" : "check-out"
-                      }`,
+                      `/admin/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=check-out`,
                       {
                         state: {
                           date: unclosedPrevious.record.dateKey,
-                          punchType: unclosedPrevious?.record?.isMissingEntireAttendance ? "both" : "check-out",
+                          punchType: "check-out",
                         },
                       }
                     )
@@ -575,7 +565,7 @@ const AdminMarkAttendance = () => {
                   className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-all"
                 >
                   <ScanLine className="h-3.5 w-3.5" />
-                  <span>Complete Yesterday's Attendance ({unclosedPrevious?.record?.dateKey})</span>
+                  <span>Complete Yesterday's Check-Out ({unclosedPrevious?.record?.dateKey})</span>
                 </button>
               </div>
             </div>

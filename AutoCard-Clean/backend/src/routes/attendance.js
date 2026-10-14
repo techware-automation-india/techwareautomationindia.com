@@ -396,24 +396,13 @@ const getUnclosedPreviousAttendance = async (profileId) => {
     return null;
   }
 
-  // Determine if yesterday's attendance is uncompleted:
-  // Case A: Checked in, but forgot check-out
-  // Case B: No attendance at all yesterday (forgot yesterday completely)
-  const isMissingCheckout = yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut;
-  const isMissingEntireAttendance = !yesterdayRecord;
-
-  // If yesterday has normal attendance completed with check-in & check-out, or status is ABSENT/ON_LEAVE, return null
-  if (!isMissingCheckout && !isMissingEntireAttendance) {
-    if (yesterdayRecord.checkIn && yesterdayRecord.checkOut) return null;
-    if (yesterdayRecord.status === "ON_LEAVE") return null;
-  }
-
-  // If yesterday has check-in & check-out completed, nothing unclosed
-  if (yesterdayRecord?.checkIn && yesterdayRecord?.checkOut) {
+  // If employee did NOT check in yesterday (no record or no checkIn), do NOT block or ask to complete.
+  // We ONLY check if employee checked in yesterday but forgot to check out!
+  if (!yesterdayRecord || !yesterdayRecord.checkIn || yesterdayRecord.checkOut) {
     return null;
   }
 
-  // Find any correction request for yesterday
+  // Find any check-out correction request for yesterday
   const employeeRequests = await prisma.employeeRequest.findMany({
     where: {
       employeeId: profileId,
@@ -428,22 +417,25 @@ const getUnclosedPreviousAttendance = async (profileId) => {
     const isMatchingDate =
       req.description.includes(`"date":"${yesterdayKey}"`) ||
       req.description.includes(yesterdayKey);
+    const isCheckoutType =
+      req.description.includes(`"punchType":"check-out"`) ||
+      req.description.includes(`"punchType":"both"`) ||
+      req.description.includes("check-out") ||
+      req.description.includes("Check Out");
 
-    if (isMatchingDate) {
+    if (isMatchingDate && isCheckoutType) {
       matchingRequest = req;
       break;
     }
   }
 
-  // If there is no record yesterday and no missing checkout, but employee forgot yesterday completely:
-  // We identify it as unclosed yesterday
   return {
     record: {
-      id: yesterdayRecord?.id || null,
-      date: yesterdayRecord?.date || yesterdayStart,
+      id: yesterdayRecord.id,
+      date: yesterdayRecord.date,
       dateKey: yesterdayKey,
-      checkIn: yesterdayRecord?.checkIn || null,
-      isMissingEntireAttendance: !yesterdayRecord,
+      checkIn: yesterdayRecord.checkIn,
+      isMissingEntireAttendance: false,
     },
     correctionRequest: matchingRequest
       ? {
@@ -1421,9 +1413,7 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
       // If request is submitted and PENDING or APPROVED, allow user to check in today!
       const isAllowed = unclosedReq && (unclosedReq.status === "APPROVED" || unclosedReq.status === "PENDING");
       if (!isAllowed) {
-        const detail = unclosedRec.isMissingEntireAttendance
-          ? `You missed attendance for yesterday (${unclosedRec.dateKey}). Please complete yesterday's attendance request first.`
-          : `You have an uncompleted check-in from yesterday (${unclosedRec.dateKey}). Please complete yesterday's check-out first.`;
+        const detail = `You checked in yesterday (${unclosedRec.dateKey}) but forgot to check out. Please complete yesterday's check-out first.`;
         return res.status(400).json({
           message: `Check-in disabled. ${detail}`,
           unclosedPrevious,

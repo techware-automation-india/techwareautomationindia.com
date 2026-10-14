@@ -1038,20 +1038,10 @@ const MarkAttendance = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                    {unclosedPrevious.record.isMissingEntireAttendance
-                      ? `Missing Attendance for Yesterday (${fmtDate(unclosedPrevious.record.date)})`
-                      : `Missing Check-Out for Yesterday (${fmtDate(unclosedPrevious.record.date)})`}
+                    Missing Check-Out for Yesterday ({fmtDate(unclosedPrevious.record.date)})
                   </h3>
                   <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    {unclosedPrevious.record.isMissingEntireAttendance ? (
-                      <>
-                        You did not mark attendance for yesterday (<strong>{fmtDate(unclosedPrevious.record.date)}</strong>). Please submit a forgot punch / correction request for yesterday first before today's check-in.
-                      </>
-                    ) : (
-                      <>
-                        You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Please complete yesterday's check-out request first.
-                      </>
-                    )}
+                    You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Please complete yesterday's check-out request first.
                   </p>
                   {unclosedPrevious.correctionRequest?.status === "REJECTED" && (
                     <p className="mt-1 text-xs font-semibold text-rose-600 dark:text-rose-400">
@@ -1065,13 +1055,11 @@ const MarkAttendance = () => {
                   type="button"
                   onClick={() =>
                     navigate(
-                      `/employee/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=${
-                        unclosedPrevious.record.isMissingEntireAttendance ? "both" : "check-out"
-                      }`,
+                      `/employee/requests/forgot-punch?date=${unclosedPrevious.record.dateKey}&punchType=check-out`,
                       {
                         state: {
                           date: unclosedPrevious.record.dateKey,
-                          punchType: unclosedPrevious.record.isMissingEntireAttendance ? "both" : "check-out",
+                          punchType: "check-out",
                         },
                       }
                     )
@@ -1080,7 +1068,7 @@ const MarkAttendance = () => {
                 >
                   <ScanLine className="h-3.5 w-3.5" />
                   <span>
-                    Submit Attendance for Yesterday ({unclosedPrevious.record.dateKey})
+                    Complete Check-Out for Yesterday ({unclosedPrevious.record.dateKey})
                   </span>
                 </button>
               </div>
@@ -1091,7 +1079,7 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
               <Clock className="h-4 w-4 text-blue-600 shrink-0" />
               <div>
-                <span className="font-bold">Yesterday's Attendance Under Review:</span> Your attendance request for yesterday ({fmtDate(unclosedPrevious.record.date)}) is waiting for admin approval. You can proceed to check in for today below.
+                <span className="font-bold">Yesterday's Check-Out Under Review:</span> Your check-out request for yesterday ({fmtDate(unclosedPrevious.record.date)}) is waiting for admin approval. You can proceed to check in for today below.
               </div>
             </div>
           )}

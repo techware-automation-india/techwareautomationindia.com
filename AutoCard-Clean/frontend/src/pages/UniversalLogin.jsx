@@ -6,6 +6,8 @@ import { ShieldCheck, Mail, Lock, ArrowLeft, LogIn, Eye, EyeOff, Loader2 } from 
 import { apiPost } from "../lib/api.js";
 import { saveAuth } from "../lib/auth.js";
 
+import logo from "../assets/techwareLogo.png";
+
 const UniversalLogin = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -46,18 +48,18 @@ const UniversalLogin = () => {
   };
 
   const inputClass =
-    "w-full pl-11 pr-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
+    "w-full pl-11 pr-4 py-2.5 rounded-lg border border-border bg-background/90 text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-card/30 relative overflow-hidden px-4">
-      <div className="absolute inset-0 grid-overlay opacity-40" />
+      <div className="absolute inset-0 grid-overlay opacity-30" />
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
 
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="relative w-full max-w-md"
+        className="relative w-full max-w-md z-10"
       >
         <Link
           to="/"
@@ -66,11 +68,15 @@ const UniversalLogin = () => {
           <ArrowLeft className="h-4 w-4" /> Back to Home
         </Link>
 
-        <div className="rounded-2xl bg-background border border-border card-shadow p-8">
-          {/* Header */}
+        <div className="rounded-2xl bg-background/95 backdrop-blur-md border border-border card-shadow p-8">
+          {/* Header with Prominent Company Logo */}
           <div className="flex flex-col items-center text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg mb-4">
-              <ShieldCheck className="h-8 w-8 text-white" />
+            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-white dark:bg-card border border-border shadow-lg flex items-center justify-center p-3.5 mb-4 transition-transform hover:scale-105">
+              <img
+                src={logo}
+                alt="Techware Automation India Logo"
+                className="w-full h-full object-contain drop-shadow-sm"
+              />
             </div>
             <h1 className="font-display text-2xl font-bold">Techware Management System</h1>
             <p className="text-sm text-muted-foreground mt-1">

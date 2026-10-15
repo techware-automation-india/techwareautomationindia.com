@@ -45,6 +45,7 @@ export const VALID_MODULES = [
   'view-inventory',
   'inventory-request',
   'inventory-alert',
+  'general-consumables',
 ];
 
 /**

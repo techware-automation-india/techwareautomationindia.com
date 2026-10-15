@@ -66,7 +66,25 @@ export function hasModuleAccess(key) {
     if (key === "leave-policy-types" && (perms["leave-policy-types"] || perms["leave-policy"])) return true;
     if (key === "leave-policy-holidays" && (perms["leave-policy-holidays"] || perms["leave-policy"])) return true;
 
-    if ((key === "inventory" || key.startsWith("inventory-") || key === "view-inventory" || key === "general-consumables") && (perms[key] || perms["inventory"])) return true;
+    if (key === "inventory") {
+      if (perms["inventory"]) {
+        const p = perms["inventory"];
+        if (p === true || p.canView === true || (typeof p === "object" && Object.values(p).some(Boolean))) return true;
+      }
+      return Object.keys(perms).some((k) => 
+        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
+        (perms[k] === true || perms[k]?.canView || (typeof perms[k] === "object" && Object.values(perms[k]).some(Boolean)))
+      );
+    }
+
+    if (key.startsWith("inventory-") || key === "view-inventory" || key === "general-consumables") {
+      const p = perms[key];
+      if (p) {
+        if (p === true || p.canView === true || (typeof p === "object" && Object.values(p).some(Boolean))) return true;
+      }
+      if (perms[`${key}:view`] || perms[`${key}:create`] || perms[`${key}:edit`]) return true;
+      return false;
+    }
 
     // Check parent fallback if checking a generic sub-module
     if (key.startsWith("requests-") && perms["requests"]) return true;
@@ -87,3 +105,53 @@ export function hasModuleAccess(key) {
     return true;
   }
 }
+
+/**
+ * Check if the currently logged-in user can perform a specific action on a module/submodule
+ * @param {string} moduleKey - e.g. 'inventory-in', 'inventory-out', 'view-inventory', 'inventory-approval', 'inventory-alert', 'general-consumables'
+ * @param {string} action - 'view' | 'create' | 'edit' | 'delete' | 'action'
+ * @returns {boolean}
+ */
+export function canPerformAction(moduleKey, action = "view") {
+  const user = getAuthUser();
+  if (!user) return false;
+  if (user.role === "ADMIN" || user.customRole?.name?.toUpperCase() === "ADMIN") return true;
+
+  try {
+    const rawModules = user.customRole?.modules || [];
+    const roleKeys = Array.isArray(rawModules)
+      ? rawModules.map((m) => (typeof m === "string" ? m : m.moduleKey))
+      : [];
+
+    const fullActionKey = `${moduleKey}:${action}`;
+
+    // 1. Direct role action check
+    if (roleKeys.includes(fullActionKey)) {
+      return true;
+    }
+
+    // 2. Check cached employee_permissions
+    const cached = localStorage.getItem("employee_permissions");
+    if (cached) {
+      const perms = JSON.parse(cached);
+      if (perms[fullActionKey] === true) return true;
+      if (perms[moduleKey] && typeof perms[moduleKey] === "object") {
+        if (action === "create" && perms[moduleKey].canCreate === true) return true;
+        if (action === "edit" && perms[moduleKey].canEdit === true) return true;
+        if (action === "delete" && perms[moduleKey].canDelete === true) return true;
+        if ((action === "view" || action === "action") && (perms[moduleKey].canView === true || perms[moduleKey].canEdit === true)) return true;
+      }
+    }
+
+    // 3. For 'view' action: fallback to hasModuleAccess
+    if (action === "view") {
+      return hasModuleAccess(moduleKey);
+    }
+
+    // For create, edit, delete: strictly false unless explicitly granted
+    return false;
+  } catch (err) {
+    return false;
+  }
+}
+

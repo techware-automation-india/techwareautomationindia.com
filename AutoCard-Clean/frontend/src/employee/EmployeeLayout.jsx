@@ -22,6 +22,7 @@ import { getAuthUser, clearAuth, updateAuthUser } from "../lib/auth.js";
 import { apiGet } from "../lib/api.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import { usePoll } from "../lib/pollContext.jsx";
+import logo from "../assets/techwareLogo.png";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
@@ -85,11 +86,17 @@ const EmployeeLayout = () => {
   useEffect(() => {
     if (!user) return;
 
-    const loadPermissions = async () => {
+    let isSubscribed = true;
+
+    const loadPermissions = async (isBackground = false) => {
       try {
-        setLoadingPermissions(true);
+        if (!isBackground) {
+          setLoadingPermissions(true);
+        }
 
         const data = await apiGet("/roles-access/me/permissions");
+        if (!isSubscribed) return;
+
         const perms = data?.permissions || {};
         
         localStorage.setItem('employee_permissions', JSON.stringify(perms));
@@ -103,26 +110,55 @@ const EmployeeLayout = () => {
           updateAuthUser({ roleName: data.roleName });
         }
       } catch (err) {
+        if (!isSubscribed) return;
         if (err.message === "Authentication required." || err.status === 401) {
           clearAuth();
           navigate("/login", { replace: true });
           return;
         }
-        console.warn("Failed to load permissions, falling back to cached or default modules:", err.message);
-        const cachedPerms = localStorage.getItem('employee_permissions');
-        if (cachedPerms) {
-          const perms = JSON.parse(cachedPerms);
-          setPermissions(perms);
-          setVisibleModules(getModulesByPermissions(perms));
-        } else {
-          setVisibleModules(getModulesByPermissions({}));
+        if (!isBackground) {
+          console.warn("Failed to load permissions, falling back to cached or default modules:", err.message);
+          const cachedPerms = localStorage.getItem('employee_permissions');
+          if (cachedPerms) {
+            const perms = JSON.parse(cachedPerms);
+            setPermissions(perms);
+            setVisibleModules(getModulesByPermissions(perms));
+          } else {
+            setVisibleModules(getModulesByPermissions({}));
+          }
         }
       } finally {
-        setLoadingPermissions(false);
+        if (isSubscribed && !isBackground) {
+          setLoadingPermissions(false);
+        }
       }
     };
 
-    loadPermissions();
+    // Initial load
+    loadPermissions(false);
+
+    // Auto-fetch every 10 seconds in the background
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadPermissions(true);
+      }
+    }, 10000);
+
+    // Auto-fetch immediately when user returns to tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadPermissions(true);
+      }
+    };
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleVisibilityChange);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
+    };
   }, [user?.id]);
 
   const handleLogout = () => {
@@ -131,7 +167,7 @@ const EmployeeLayout = () => {
     localStorage.removeItem('employee_permissions');
     localStorage.removeItem('employee_permissions_timestamp');
     clearAuth();
-    navigate("/");
+    navigate("/login");
   };
 
   const sidebarContent = (
@@ -246,12 +282,7 @@ const EmployeeLayout = () => {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <Link
-              to="/"
-              className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back to Site
-            </Link>
+            
           </div>
 
           <div className="flex items-center gap-3">
@@ -445,34 +476,48 @@ const EmployeeLayout = () => {
           </div>
         </header>
 
-        <main className="flex-1 min-w-0 max-w-full overflow-x-hidden px-4 pb-4 pt-20 lg:px-8 lg:pb-8 lg:pt-20">
-          {/* Onboarding Status Banner */}
-          {user?.onboardingStatus === "PENDING" && (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 shrink-0" />
-              <span>
-                <strong>Action Required:</strong> Please complete your
-                onboarding form to access all features.{" "}
-                <Link
-                  to="/employee/onboarding"
-                  className="underline font-semibold hover:text-amber-800"
-                >
-                  Complete Now
-                </Link>
-              </span>
-            </div>
-          )}
-          {user?.onboardingStatus === "SUBMITTED" && (
-            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
-              <Clock className="h-4 w-4 shrink-0" />
-              <span>
-                <strong>Pending Approval:</strong> Your onboarding form is under
-                review by the admin.
-              </span>
-            </div>
-          )}
+        <main className="flex-1 min-w-0 max-w-full overflow-x-hidden px-4 pb-4 pt-20 lg:px-8 lg:pb-8 lg:pt-20 relative">
+          {/* Subtle Transparent Company Watermark on every employee page for PC, Tablet & Mobile */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none select-none fixed inset-0 flex items-center justify-center z-0 overflow-hidden lg:pl-64 pt-16"
+          >
+            <img
+              src={logo}
+              alt=""
+              className="w-[70vw] max-w-[500px] sm:w-[55vw] sm:max-w-[580px] md:w-[45vw] md:max-w-[650px] h-auto object-contain opacity-[0.035] dark:opacity-[0.05] filter grayscale transition-opacity"
+            />
+          </div>
 
-          <Outlet context={{ visibleModules, permissions }} />
+          <div className="relative z-10">
+            {/* Onboarding Status Banner */}
+            {user?.onboardingStatus === "PENDING" && (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Action Required:</strong> Please complete your
+                  onboarding form to access all features.{" "}
+                  <Link
+                    to="/employee/onboarding"
+                    className="underline font-semibold hover:text-amber-800"
+                  >
+                    Complete Now
+                  </Link>
+                </span>
+              </div>
+            )}
+            {user?.onboardingStatus === "SUBMITTED" && (
+              <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+                <Clock className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Pending Approval:</strong> Your onboarding form is under
+                  review by the admin.
+                </span>
+              </div>
+            )}
+
+            <Outlet context={{ visibleModules, permissions }} />
+          </div>
         </main>
       </div>
     </div>

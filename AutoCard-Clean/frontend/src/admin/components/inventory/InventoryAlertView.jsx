@@ -19,8 +19,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPut } from "../../../lib/api.js";
+import { canPerformAction } from "../../../lib/permissions.js";
 
 export default function InventoryAlertView({ onBackToHub }) {
+  const canEdit = canPerformAction("inventory-alert", "edit");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -117,24 +119,24 @@ export default function InventoryAlertView({ onBackToHub }) {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex items-start sm:items-center gap-3">
           <button
             type="button"
             onClick={onBackToHub}
-            className="p-2 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="p-2 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
             title="Back to Inventory Submodules"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-600 dark:text-rose-400">
-            <Bell className="h-6 w-6" />
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+            <Bell className="h-5 w-5 sm:h-6 sm:w-6" />
           </div>
-          <div>
-            <h1 className="font-display text-2xl font-bold text-foreground">
-              Sub-module 6: Inventory Alert (Thresholds & Reorder Warnings)
+          <div className="min-w-0">
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-foreground truncate">
+              Sub-module 4: Inventory Alert (Thresholds & Reorder Warnings)
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Real-time warnings for low stock items, zero-stock alerts, and minimum stock threshold tuning.
             </p>
           </div>
@@ -144,7 +146,7 @@ export default function InventoryAlertView({ onBackToHub }) {
           type="button"
           onClick={loadData}
           disabled={loading}
-          className="p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+          className="self-end sm:self-auto p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50 shrink-0"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </button>
@@ -351,16 +353,18 @@ export default function InventoryAlertView({ onBackToHub }) {
                   </div>
 
                   {/* Action Button */}
-                  <div className="pt-3 border-t border-border flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(item)}
-                      className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Sliders className="h-3.5 w-3.5" />
-                      Adjust Limit / Quick Restock
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="pt-3 border-t border-border flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(item)}
+                        className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Sliders className="h-3.5 w-3.5" />
+                        Adjust Limit / Quick Restock
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

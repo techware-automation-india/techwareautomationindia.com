@@ -17,10 +17,12 @@ import {
   MapPin,
   ArrowLeft,
   AlertCircle,
+  Download,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
+import { printSingleEmployeeAttendancePdf } from "../../utils/attendancePdfExport.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -277,25 +279,23 @@ const STATUS_META = {
   },
 };
 
-const StatCard = ({ icon: Icon, label, value, bg, text, description }) => (
-  <div className="rounded-2xl bg-background border border-border card-shadow p-5 flex items-center gap-4">
+const StatCard = ({ icon: Icon, label, value, bg, text, description, subColor = "text-muted-foreground/80" }) => (
+  <div className="h-full rounded-2xl bg-background border border-border card-shadow p-4 sm:p-5 flex items-center gap-3.5 sm:gap-4 transition-colors">
     <div
       className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${bg}`}
     >
       <Icon className={`h-5 w-5 ${text}`} />
     </div>
 
-    <div>
+    <div className="min-w-0 flex-1">
       <div className="font-display text-2xl font-bold leading-none">
         {value}
       </div>
 
-      <div className="text-xs text-muted-foreground mt-1">{label}</div>
-      {description && (
-        <div className="text-[11px] text-muted-foreground/80 mt-0.5 font-medium">
-          {description}
-        </div>
-      )}
+      <div className="text-xs text-muted-foreground mt-1 truncate">{label}</div>
+      <div className={`text-[11px] font-medium mt-0.5 min-h-[16px] leading-tight ${subColor}`}>
+        {description || "\u00A0"}
+      </div>
     </div>
   </div>
 );
@@ -310,6 +310,7 @@ const Attendance = () => {
   const [month, setMonth] = useState(today.getMonth() + 1);
 
   const [records, setRecords] = useState([]); 
+  const [employeeInfo, setEmployeeInfo] = useState(null);
   const [selectedRecordForNote, setSelectedRecordForNote] = useState(null);
   const [holidays, setHolidays] = useState([]);
   const [summary, setSummary] = useState({});
@@ -319,24 +320,53 @@ const Attendance = () => {
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [showOvertime, setShowOvertime] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+    }
 
     try {
       const data = await apiGet(`/attendance/me?year=${year}&month=${month}`);
 
-      setRecords(data.records);
-      setHolidays(data.holidays);
-      setSummary(data.summary);
+      setRecords(data.records || []);
+      setEmployeeInfo(data.employee || null);
+      setHolidays(data.holidays || []);
+      setSummary(data.summary || {});
     } catch (err) {
-      toast.error(err.message || "Failed to load attendance.");
+      if (!isBackground) {
+        toast.error(err.message || "Failed to load attendance.");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }, [year, month]);
 
   useEffect(() => {
-    load();
+    // Initial fetch
+    load(false);
+
+    // Auto-fetch every 10 seconds
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        load(true);
+      }
+    }, 10000);
+
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        load(true);
+      }
+    };
+    window.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [load]);
 
   const prevMonth = () => {
@@ -403,6 +433,16 @@ const Attendance = () => {
     (r) => (r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolidayOrSundayRecord(r))) > 0,
   ).length;
 
+  const totalShortDayWorked = records.filter(
+    (r) =>
+      r.isShortDay ||
+      (Number(r.workedHours) > 0 &&
+        Number(r.workedHours) < REGULAR_HOURS &&
+        !isHolidayOrSundayRecord(r) &&
+        r.status !== "ON_LEAVE" &&
+        r.status !== "ABSENT")
+  ).reduce((acc, r) => acc + Number(r.workedHours || 0), 0);
+
   const filteredRecords = selectedStatus
     ? records.filter((r) => {
         if (selectedStatus === "SHORT_DAY") {
@@ -421,6 +461,61 @@ const Attendance = () => {
 
   const handleStatusClick = (key) => {
     setSelectedStatus((prev) => (prev === key ? null : key));
+  };
+
+  const handleDownloadPdf = () => {
+    const isShortDayFn = (r) =>
+      r && (r.isShortDay || (
+        Number(r.workedHours) > 0 &&
+        Number(r.workedHours) < REGULAR_HOURS &&
+        !isHolidayOrSundayRecord(r) &&
+        r.status !== "ON_LEAVE" &&
+        r.status !== "ABSENT"
+      ));
+
+    // Construct enriched records for printing all dates
+    const printRecords = records.map((r) => {
+      const isSunOrHol = isHolidayOrSundayRecord(r);
+      const rowWorkedHours = Number(r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0));
+      const rowOvertime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHol);
+      const rowWorkedTotal = isSunOrHol ? rowWorkedHours : getRegularHours(r.workedHours);
+
+      return {
+        ...r,
+        workedHoursTotal: rowWorkedTotal,
+        overtimeHours: rowOvertime,
+      };
+    });
+
+    const shortDaysCount = summary.SHORT_DAY ?? records.filter(isShortDayFn).length;
+    const absentCount = summary.ABSENT ?? records.filter((r) => r.status === "ABSENT").length;
+    const leaveCount = summary.ON_LEAVE ?? records.filter((r) => r.status === "ON_LEAVE").length;
+
+    printSingleEmployeeAttendancePdf({
+      employee: employeeInfo || {
+        fullName: "Employee",
+      },
+      monthName: MONTH_NAMES[month - 1],
+      year,
+      periodLabel: `Full Month (${MONTH_NAMES[month - 1]} ${year})`,
+      records: printRecords,
+      summary: {
+        SHORT_DAY: shortDaysCount,
+        ABSENT: absentCount,
+        ON_LEAVE: leaveCount,
+        PRESENT: summary.PRESENT ?? records.filter((r) => r.status === "PRESENT").length,
+        OT_HOURS_TEXT: totalOvertime > 0 ? fmtWorkedHours(totalOvertime) : "0h 0m",
+        TOTAL_WORKED_TEXT: fmtWorkedHours(totalWorked),
+      },
+      isShortDayFn,
+      isHolidayDateFn: (d) => {
+        const dayNum = getIndiaDayNumber(d);
+        return Boolean(holidayByDay[dayNum]);
+      },
+      fmtDateFn: (d) => fmtDate(d),
+      fmtTimeFn: fmtTime,
+      fmtWorkedHoursFn: fmtWorkedHours,
+    });
   };
 
   // ── filtered status page ──
@@ -501,9 +596,11 @@ const Attendance = () => {
 
                 <tbody>
                   {filteredRecords.map((r) => {
-                    const meta = STATUS_META[r.status] ?? STATUS_META.PRESENT;
+                    const isHolOrSun = isHolidayOrSundayRecord(r);
+                    const isShort = r.isShortDay || (Number(r.workedHours) > 0 && Number(r.workedHours) < REGULAR_HOURS && !isHolOrSun && r.status !== "ON_LEAVE" && r.status !== "ABSENT");
+                    const meta = isShort ? STATUS_META.SHORT_DAY : (STATUS_META[r.status] ?? STATUS_META.PRESENT);
 
-                    const overtime = getOvertimeHours(r.workedHours);
+                    const overtime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolOrSun);
 
                     return (
                       <tr
@@ -537,7 +634,7 @@ const Attendance = () => {
                         </td>
 
                         <td className="px-5 py-3 font-medium">
-                          {fmtWorkedHours(getRegularHours(r.workedHours))}
+                          {fmtWorkedHours(isHolidayOrSundayRecord(r) ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0)) : getRegularHours(r.workedHours))}
                         </td>
 
                         <td className="px-5 py-3 font-medium text-orange-600">
@@ -809,6 +906,16 @@ const Attendance = () => {
           </div>
 
           <button
+            type="button"
+            onClick={handleDownloadPdf}
+            title="Download Attendance PDF"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors shadow-2xs"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Download PDF</span>
+          </button>
+
+          <button
             onClick={load}
             disabled={loading}
             className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground disabled:opacity-60"
@@ -854,49 +961,52 @@ const Attendance = () => {
 
       {/* Summary stat cards */}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-stretch">
         {[
           {
             key: "PRESENT",
             label: "Present",
+            description: `${fmtWorkedHours(totalWorked)} worked`,
+            subColor: "text-emerald-600 dark:text-emerald-400 font-semibold",
             Icon: CheckCircle2,
-            bg: "bg-emerald-100",
-            text: "text-emerald-700",
+            bg: "bg-emerald-100 dark:bg-emerald-950/40",
+            text: "text-emerald-700 dark:text-emerald-400",
           },
 
           {
             key: "SHORT_DAY",
             label: "Short Day",
-            description: `Worked < ${REGULAR_HOURS} hrs`,
+            description: `${fmtWorkedHours(totalShortDayWorked)} worked`,
+            subColor: "text-amber-600 dark:text-amber-400 font-semibold",
             Icon: AlertCircle,
-            bg: "bg-amber-100",
-            text: "text-amber-700",
+            bg: "bg-amber-100 dark:bg-amber-950/40",
+            text: "text-amber-700 dark:text-amber-400",
           },
 
           {
             key: "ABSENT",
             label: "Absent",
             Icon: XCircle,
-            bg: "bg-rose-100",
-            text: "text-rose-700",
+            bg: "bg-rose-100 dark:bg-rose-950/40",
+            text: "text-rose-700 dark:text-rose-400",
           },
 
           {
             key: "ON_LEAVE",
             label: "On Leave",
             Icon: CalendarDays,
-            bg: "bg-purple-100",
-            text: "text-purple-700",
+            bg: "bg-purple-100 dark:bg-purple-950/40",
+            text: "text-purple-700 dark:text-purple-400",
           },
 
           {
             key: "HOLIDAY",
             label: "Holiday",
             Icon: CalendarDays,
-            bg: "bg-indigo-100",
-            text: "text-indigo-700",
+            bg: "bg-indigo-100 dark:bg-indigo-950/40",
+            text: "text-indigo-700 dark:text-indigo-400",
           },
-        ].map(({ key, label, Icon, bg, text, description }) => {
+        ].map(({ key, label, Icon, bg, text, description, subColor }) => {
           const isActive = selectedStatus === key;
           const count =
             key === "SHORT_DAY"
@@ -917,9 +1027,9 @@ const Attendance = () => {
               key={key}
               type="button"
               onClick={() => handleStatusClick(key)}
-              className={`w-full text-left rounded-2xl border transition-colors ${
+              className={`w-full h-full text-left rounded-2xl border transition-all ${
                 isActive
-                  ? "border-primary bg-primary/5 shadow-sm"
+                  ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/20"
                   : "border-border bg-background card-shadow hover:bg-secondary/40"
               }`}
             >
@@ -930,6 +1040,7 @@ const Attendance = () => {
                 bg={bg}
                 text={text}
                 description={description}
+                subColor={subColor}
               />
             </button>
           );
@@ -939,21 +1050,17 @@ const Attendance = () => {
         <button
           type="button"
           onClick={() => setShowOvertime(true)}
-          className="w-full text-left rounded-2xl bg-background border border-border card-shadow p-5 flex items-center gap-4 hover:bg-orange-50 hover:border-orange-300 transition-all cursor-pointer"
+          className="w-full h-full text-left rounded-2xl border border-orange-200 dark:border-orange-800/40 bg-orange-50/70 dark:bg-orange-950/20 card-shadow hover:bg-orange-100/70 dark:hover:bg-orange-900/30 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-300"
         >
-          <div className="w-11 h-11 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-            <Clock3 className="h-5 w-5 text-orange-700" />
-          </div>
-
-          <div>
-            <div className="font-display text-2xl font-bold leading-none">
-              {totalOvertimeDays}
-            </div>
-
-            <div className="text-xs text-muted-foreground mt-1">
-              Overtime Days
-            </div>
-          </div>
+          <StatCard
+            icon={Clock3}
+            label="Overtime Days"
+            value={totalOvertimeDays}
+            bg="bg-orange-100 dark:bg-orange-900/40"
+            text="text-orange-700 dark:text-orange-400"
+            description={totalOvertime > 0 ? `${fmtWorkedHours(totalOvertime)} OT` : ""}
+            subColor="text-orange-700 dark:text-orange-300 font-semibold"
+          />
         </button>
       </div>
 
@@ -1075,6 +1182,54 @@ const Attendance = () => {
                 <Clock3 className="h-3 w-3" />
                 Overtime
               </span>
+            </div>
+
+            {/* Small summary div: Short Days, Absent, On Leave, OT Hours */}
+            <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-500/10 px-3 py-2">
+                <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                  Short Days (&lt;8h)
+                </div>
+                <div className="font-display text-sm font-extrabold text-amber-700 dark:text-amber-400">
+                  {summary.SHORT_DAY ??
+                    records.filter(
+                      (r) =>
+                        r.isShortDay ||
+                        (Number(r.workedHours) > 0 &&
+                          Number(r.workedHours) < REGULAR_HOURS &&
+                          !isHolidayOrSundayRecord(r) &&
+                          r.status !== "ON_LEAVE" &&
+                          r.status !== "ABSENT"),
+                    ).length}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-500/10 px-3 py-2">
+                <div className="text-[11px] font-bold text-rose-800 dark:text-rose-300">
+                  Absent
+                </div>
+                <div className="font-display text-sm font-extrabold text-rose-700 dark:text-rose-400">
+                  {summary.ABSENT ?? records.filter((r) => r.status === "ABSENT").length}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-500/10 px-3 py-2">
+                <div className="text-[11px] font-bold text-purple-800 dark:text-purple-300">
+                  On Leave
+                </div>
+                <div className="font-display text-sm font-extrabold text-purple-700 dark:text-purple-400">
+                  {summary.ON_LEAVE ?? records.filter((r) => r.status === "ON_LEAVE").length}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-500/10 px-3 py-2">
+                <div className="text-[11px] font-bold text-orange-800 dark:text-orange-300">
+                  OT Hours
+                </div>
+                <div className="font-display text-sm font-extrabold text-orange-700 dark:text-orange-400">
+                  {fmtWorkedHours(totalOvertime)}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1332,17 +1487,11 @@ const Attendance = () => {
                 <thead>
                   <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
                     <th className="px-5 py-3 font-medium">Date</th>
-
-                    <th className="px-5 py-3 font-medium">Status</th>
-
                     <th className="px-5 py-3 font-medium">Check In</th>
-
                     <th className="px-5 py-3 font-medium">Check Out</th>
-
-                    <th className="px-5 py-3 font-medium">Worked</th>
-
-                    <th className="px-5 py-3 font-medium">Overtime</th>
-
+                    <th className="px-5 py-3 font-medium">Working Hours</th>
+                    <th className="px-5 py-3 font-medium">OT</th>
+                    <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Note</th>
                   </tr>
                 </thead>
@@ -1381,33 +1530,36 @@ const Attendance = () => {
                           )}
                         </td>
 
-                        <td className="px-5 py-3">
-                          <span
-                            title={meta.description || meta.label}
-                            className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
-                          >
-                            {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}
-                          </span>
-                        </td>
-
                         {r.status === "ON_LEAVE" ? (
-                          <td colSpan={5} className="px-5 py-3">
-                            <div className="w-full rounded-xl bg-purple-500/15 dark:bg-purple-500/25 border border-purple-200 dark:border-purple-800/40 px-4 py-2.5 text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center justify-between">
-                              <span className="flex items-center gap-2 font-bold text-sm">
-                                <CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                                On Leave
+                          <>
+                            <td colSpan={4} className="px-5 py-3">
+                              <div className="w-full rounded-xl bg-purple-500/15 dark:bg-purple-500/25 border border-purple-200 dark:border-purple-800/40 px-4 py-2.5 text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center justify-between">
+                                <span className="flex items-center gap-2 font-bold text-sm">
+                                  <CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                  On Leave
+                                </span>
+                                <span className="text-purple-700 dark:text-purple-300 font-medium">
+                                  {r.note || "Approved Leave"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span
+                                title={meta.description || meta.label}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
+                              >
+                                {meta.label}
                               </span>
-                              <span className="text-purple-700 dark:text-purple-300 font-medium">
-                                {r.note || "Approved Leave"}
-                              </span>
-                            </div>
-                          </td>
+                            </td>
+                            <td className="px-5 py-3 min-w-[200px]">
+                              <span className="text-xs text-muted-foreground">{r.note || "Approved Leave"}</span>
+                            </td>
+                          </>
                         ) : (
                           <>
                             <td className="px-5 py-3 whitespace-nowrap">
                               <span className="flex items-center gap-1.5">
                                 <LogIn className="h-3.5 w-3.5 text-emerald-600" />
-
                                 {fmtTime(r.checkIn)}
                               </span>
                             </td>
@@ -1415,7 +1567,6 @@ const Attendance = () => {
                             <td className="px-5 py-3 whitespace-nowrap">
                               <span className="flex items-center gap-1.5">
                                 <LogOut className="h-3.5 w-3.5 text-rose-600" />
-
                                 {fmtTime(r.checkOut)}
                               </span>
                             </td>
@@ -1433,6 +1584,15 @@ const Attendance = () => {
                               ) : (
                                 <span className="text-muted-foreground">—</span>
                               )}
+                            </td>
+
+                            <td className="px-5 py-3">
+                              <span
+                                title={meta.description || meta.label}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
+                              >
+                                {r.status === "HOLIDAY" ? (r.note || meta.label) : meta.label}
+                              </span>
                             </td>
 
                             <td className="px-5 py-3 min-w-[300px] max-w-[400px]">

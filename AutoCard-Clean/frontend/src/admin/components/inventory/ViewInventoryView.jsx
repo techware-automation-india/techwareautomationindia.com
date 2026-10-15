@@ -252,30 +252,30 @@ export default function ViewInventoryView({ onBackToHub }) {
   return (
     <div className="space-y-6">
       {/* Top Breadcrumb & Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex items-start sm:items-center gap-3">
           <button
             type="button"
             onClick={onBackToHub}
-            className="p-2 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+            className="p-2 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer shrink-0"
             title="Back to Inventory Submodules"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center text-violet-600 dark:text-violet-400">
-            <Boxes className="h-6 w-6" />
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center text-violet-600 dark:text-violet-400 shrink-0">
+            <Boxes className="h-5 w-5 sm:h-6 sm:w-6" />
           </div>
-          <div>
-            <h1 className="font-display text-2xl font-bold text-foreground">
+          <div className="min-w-0">
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-foreground truncate">
               View Inventory (Master Stock Catalog)
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Real-time stock catalog, high-resolution product photos, material valuation, and specifications.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           {/* View Mode Switch */}
           <div className="flex items-center bg-secondary/50 border border-border rounded-xl p-1">
             <button

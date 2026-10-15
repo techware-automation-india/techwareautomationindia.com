@@ -114,34 +114,60 @@ export function isModuleAllowed(moduleKey, permissions = {}) {
       permissions["inventory-in"] ||
       permissions["inventory-out"] ||
       permissions["view-inventory"] ||
-      permissions["inventory-approval"] ||
       permissions["inventory-alert"] ||
-      permissions["general-consumables"]
+      permissions["general-consumables"] ||
+      Object.keys(permissions).some((k) =>
+        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
+        (permissions[k]?.canView || permissions[k] === true || (typeof permissions[k] === "object" && Object.values(permissions[k]).some(Boolean)))
+      )
     );
   }
 
   if (moduleKey === "inventory-in") {
-    return !!(permissions["inventory"] || permissions["inventory-in"]);
+    return !!(
+      permissions["inventory-in"]?.canView ||
+      permissions["inventory-in"] === true ||
+      permissions["inventory-in:view"] ||
+      permissions["inventory-in:create"] ||
+      permissions["inventory-in:edit"]
+    );
   }
 
   if (moduleKey === "inventory-out") {
-    return !!(permissions["inventory"] || permissions["inventory-out"]);
+    return !!(
+      permissions["inventory-out"]?.canView ||
+      permissions["inventory-out"] === true ||
+      permissions["inventory-out:view"] ||
+      permissions["inventory-out:create"] ||
+      permissions["inventory-out:edit"]
+    );
   }
 
   if (moduleKey === "view-inventory") {
-    return !!(permissions["inventory"] || permissions["view-inventory"]);
-  }
-
-  if (moduleKey === "inventory-approval") {
-    return !!(permissions["inventory"] || permissions["inventory-approval"] || permissions["approvals-tools-inventory"]);
+    return !!(
+      permissions["view-inventory"]?.canView ||
+      permissions["view-inventory"] === true ||
+      permissions["view-inventory:view"]
+    );
   }
 
   if (moduleKey === "inventory-alert") {
-    return !!(permissions["inventory"] || permissions["inventory-alert"]);
+    return !!(
+      permissions["inventory-alert"]?.canView ||
+      permissions["inventory-alert"] === true ||
+      permissions["inventory-alert:view"] ||
+      permissions["inventory-alert:edit"]
+    );
   }
 
   if (moduleKey === "general-consumables") {
-    return !!(permissions["inventory"] || permissions["general-consumables"] || permissions["inventory-in"] || permissions["inventory-out"]);
+    return !!(
+      permissions["general-consumables"]?.canView ||
+      permissions["general-consumables"] === true ||
+      permissions["general-consumables:view"] ||
+      permissions["general-consumables:create"] ||
+      permissions["general-consumables:edit"]
+    );
   }
 
   return false;

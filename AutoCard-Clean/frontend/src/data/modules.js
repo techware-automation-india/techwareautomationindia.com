@@ -29,6 +29,37 @@ export const APPROVAL_SUBTYPES = [
   { key: 'approvals-tools-inventory', label: 'Tools & Inventory Approval', icon: Wrench, description: 'Approve tool requisitions & inventory returns' },
 ];
 
+export const INVENTORY_SUBMODULE_ACTIONS = {
+  'inventory-in': [
+    { key: 'view', label: 'View' },
+    { key: 'create', label: 'Create / Add' },
+    { key: 'edit', label: 'Edit' },
+    { key: 'delete', label: 'Delete' },
+  ],
+  'inventory-out': [
+    { key: 'view', label: 'View' },
+    { key: 'create', label: 'Create / Add' },
+    { key: 'edit', label: 'Edit' },
+    { key: 'delete', label: 'Delete' },
+  ],
+  'view-inventory': [
+    { key: 'view', label: 'View' },
+    { key: 'create', label: 'Create / Add' },
+    { key: 'edit', label: 'Edit' },
+    { key: 'delete', label: 'Delete' },
+  ],
+  'inventory-alert': [
+    { key: 'view', label: 'View' },
+    { key: 'edit', label: 'Edit Thresholds' },
+  ],
+  'general-consumables': [
+    { key: 'view', label: 'View' },
+    { key: 'create', label: 'Create / Issue' },
+    { key: 'edit', label: 'Edit' },
+    { key: 'delete', label: 'Delete' },
+  ],
+};
+
 export const MODULES = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'employee', label: 'Add Account', icon: UserPlus },
@@ -67,22 +98,22 @@ export const MODULES = [
       { key: 'leave-policy-holidays', label: 'Holiday Calendar', icon: CalendarDays, description: 'Manage organizational public holidays' },
     ],
   },
-  { key: 'academic-calendar', label: 'Academic Calendar', icon: CalendarDays },
+  {
+    key: 'projects',
+    label: 'Projects',
+    icon: FolderKanban,
+  },
   {
     key: 'inventory',
     label: 'Inventory',
     icon: Package,
     hasSubTypes: true,
     subModules: [
-      { key: 'inventory-in', label: 'Material Inward', icon: ArrowDownToLine, description: 'Manage incoming stock & receipts' },
-      { key: 'inventory-out', label: 'Material Outward', icon: ArrowUpFromLine, description: 'Manage outgoing stock & dispatch' },
-      { key: 'inventory-approval', label: 'Inventory Approvals', icon: CheckSquare, description: 'Approve store & dispatch issues' },
-      { key: 'view-inventory', label: 'View Stock', icon: Eye, description: 'Track real-time inventory balances' },
-      { key: 'inventory-request', label: 'Material Request', icon: ClipboardList, description: 'Raise indent for materials' },
-      { key: 'inventory-alert', label: 'Stock Alerts', icon: AlertTriangle, description: 'Low stock & reorder notifications' },
+      { key: 'inventory-in', label: '1. Inventory In', icon: ArrowDownToLine, description: 'Material Inward Register & Category Tree', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-in'] },
+      { key: 'inventory-out', label: '2. Inventory Out', icon: ArrowUpFromLine, description: 'Material Outward Register & Allocations', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-out'] },
+      { key: 'view-inventory', label: '3. View Stock', icon: Eye, description: 'Master Stock Catalog & Valuation', actions: INVENTORY_SUBMODULE_ACTIONS['view-inventory'] },
+      { key: 'inventory-alert', label: '4. Stock Alerts', icon: AlertTriangle, description: 'Low stock & reorder notifications', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-alert'] },
+      { key: 'general-consumables', label: '5. Tools & Consumables', icon: Wrench, description: 'Tools and consumables requisition register', actions: INVENTORY_SUBMODULE_ACTIONS['general-consumables'] },
     ],
   },
-  { key: 'projects', label: 'Projects (Master Admin)', icon: FolderKanban },
-  { key: 'assigned-projects', label: 'Assigned Projects', icon: FolderKanban },
-  { key: 'my-projects', label: 'My Projects', icon: FolderKanban },
 ];

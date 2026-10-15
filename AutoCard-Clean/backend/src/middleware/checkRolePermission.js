@@ -121,3 +121,108 @@ export function checkRolePermission(moduleKey) {
   };
 }
 
+/**
+ * Middleware to check if user has permission to perform a specific action on a module
+ * E.g., checkRoleActionPermission('inventory-in', 'create')
+ *       checkRoleActionPermission('inventory-in', 'delete')
+ */
+export function checkRoleActionPermission(moduleKey, action = "view") {
+  return async (req, res, next) => {
+    try {
+      if (req.user && req.user.role === "ADMIN") {
+        return next();
+      }
+
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: "Authentication required." });
+      }
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { 
+          role: true, 
+          roleId: true,
+          customRole: { select: { name: true } }
+        },
+      });
+
+      if (!dbUser) {
+        return res.status(401).json({ message: "User not found." });
+      }
+
+      if (dbUser.role === "ADMIN" || dbUser.customRole?.name?.toUpperCase() === "ADMIN") {
+        return next();
+      }
+
+      const roleId = dbUser.roleId || req.user.roleId;
+
+      // Check for specific action key, e.g. "inventory-in:delete" or "inventory-in:create"
+      const actionKey = `${moduleKey}:${action}`;
+      const searchKeys = [actionKey];
+
+      // If action is view, also allow base moduleKey or "inventory"
+      if (action === "view") {
+        searchKeys.push(moduleKey, "inventory");
+      }
+
+      if (roleId) {
+        const hasAction = await prisma.roleModule.findFirst({
+          where: {
+            roleId,
+            moduleKey: { in: searchKeys },
+          },
+        });
+
+        if (hasAction) {
+          return next();
+        }
+
+        // If action is NOT delete (e.g. create or edit), check if role has the bare moduleKey or "inventory"
+        // without ANY granular action keys defined (legacy full submodule access)
+        if (action !== "delete") {
+          const anySubActions = await prisma.roleModule.findFirst({
+            where: {
+              roleId,
+              moduleKey: { startsWith: `${moduleKey}:` },
+            },
+          });
+          if (!anySubActions) {
+            const hasBaseAccess = await prisma.roleModule.findFirst({
+              where: {
+                roleId,
+                moduleKey: { in: [moduleKey, "inventory"] },
+              },
+            });
+            if (hasBaseAccess) {
+              return next();
+            }
+          }
+        }
+      }
+
+      // Check fallback in modulePermission table
+      const userModPerm = await prisma.modulePermission.findFirst({
+        where: {
+          userId: req.user.id,
+          moduleKey,
+        },
+      });
+
+      if (userModPerm) {
+        if (action === "create" && userModPerm.canCreate) return next();
+        if (action === "edit" && userModPerm.canEdit) return next();
+        if (action === "delete" && userModPerm.canDelete) return next();
+        if (action === "view" && (userModPerm.canView || userModPerm.canCreate || userModPerm.canEdit || userModPerm.canDelete)) return next();
+      }
+
+      return res.status(403).json({
+        message: `Access denied: You do not have permission to ${action} in ${moduleKey}. Contact Admin.`,
+      });
+    } catch (err) {
+      console.error(`[checkRoleActionPermission] Error:`, err);
+      return res.status(500).json({ message: "Failed to verify action permissions." });
+    }
+  };
+}
+
+

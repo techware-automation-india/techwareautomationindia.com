@@ -16,22 +16,48 @@ export default function RolesTab() {
   const [modalMode, setModalMode] = useState('create');
   const [selectedRole, setSelectedRole] = useState(null);
 
-  // Fetch roles on mount
+  // Fetch roles on mount with 10-second background polling
   useEffect(() => {
-    loadRoles();
+    loadRoles(false);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadRoles(true);
+      }
+    }, 10000);
+
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        loadRoles(true);
+      }
+    };
+    window.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
-  const loadRoles = async () => {
-    setLoading(true);
-    setError('');
+  const loadRoles = async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const data = await fetchRoles();
       setRoles(data.roles || []);
     } catch (err) {
-      setError(err.message || 'Failed to load roles');
-      console.error('Load roles error:', err);
+      if (!isBackground) {
+        setError(err.message || 'Failed to load roles');
+        console.error('Load roles error:', err);
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   };
 
@@ -126,26 +152,33 @@ export default function RolesTab() {
   const defaultRoles = roles.filter(r => r.isDefault);
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      {/* Top Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-card border border-border rounded-2xl p-4 card-shadow">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Role Management</h2>
-          <p className="text-muted-foreground mt-1">Create and manage custom roles with module access</p>
+          <h2 className="text-base sm:text-lg font-bold text-foreground">Defined System Roles</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            Default system roles and custom granular roles with module permissions
+          </p>
         </div>
         <button
           onClick={handleCreateClick}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="cta-gradient text-white text-xs sm:text-sm font-semibold px-4 py-2.5 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0"
         >
-          <Plus className="h-5 w-5" />
-          Create Role
+          <Plus className="h-4 w-4" />
+          <span>Create New Role</span>
         </button>
       </div>
 
       {/* Default Roles Section */}
       {defaultRoles.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Default Roles</h3>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Default Roles</h3>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+              {defaultRoles.length}
+            </span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {defaultRoles.map(role => (
               <RoleCard
@@ -161,19 +194,24 @@ export default function RolesTab() {
       )}
 
       {/* Custom Roles Section */}
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">Custom Roles</h3>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Custom Roles</h3>
+          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+            {customRoles.length}
+          </span>
+        </div>
         {customRoles.length === 0 ? (
           <EmptyState
             icon={FolderOpen}
-            title="No custom roles yet"
-            message="Create your first custom role to get started with granular access control"
+            title="No custom roles created yet"
+            message="Create custom roles to grant specific module access to employees or managers."
             action={
               <button
                 onClick={handleCreateClick}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                className="cta-gradient text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
               >
-                Create Your First Role
+                Create First Custom Role
               </button>
             }
           />

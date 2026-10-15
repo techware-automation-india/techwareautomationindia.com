@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { Search, Filter, Users, Package, User, ShieldCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Filter, Users } from "lucide-react";
 import { fetchUsersWithRoles, assignUserRole } from "../../../lib/api/usersApi";
 import { fetchRoles } from "../../../lib/api/rolesApi";
 import LoadingSpinner from "../../../components/common/LoadingSpinner";
@@ -16,12 +16,34 @@ export default function AccessTab() {
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('all');
 
   useEffect(() => {
-    loadData();
+    loadData(false);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadData(true);
+      }
+    }, 10000);
+
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        loadData(true);
+      }
+    };
+    window.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError('');
+  const loadData = async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const [usersData, rolesData] = await Promise.all([
         fetchUsersWithRoles(),
@@ -31,10 +53,14 @@ export default function AccessTab() {
       setUsers(usersList);
       setRoles(rolesData?.roles || []);
     } catch (err) {
-      setError(err.message || 'Failed to load data');
-      console.error('Load data error:', err);
+      if (!isBackground) {
+        setError(err.message || 'Failed to load data');
+        console.error('Load data error:', err);
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   };
 
@@ -84,22 +110,6 @@ export default function AccessTab() {
     return matchesSearch && matchesRoleFilter;
   });
 
-  const inventoryInPersonnel = useMemo(() => {
-    return users.filter((u) => {
-      if (u.role === "ADMIN" || u.customRole?.name?.toUpperCase() === "ADMIN") return true;
-      const mods = Array.isArray(u.customRole?.modules) ? u.customRole.modules : [];
-      return mods.includes("inventory") || mods.includes("inventory-in");
-    });
-  }, [users]);
-
-  const inventoryOutPersonnel = useMemo(() => {
-    return users.filter((u) => {
-      if (u.role === "ADMIN" || u.customRole?.name?.toUpperCase() === "ADMIN") return true;
-      const mods = Array.isArray(u.customRole?.modules) ? u.customRole.modules : [];
-      return mods.includes("inventory") || mods.includes("inventory-out");
-    });
-  }, [users]);
-
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -121,123 +131,34 @@ export default function AccessTab() {
   }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">Account Access & Role Assignment</h2>
-        <p className="text-muted-foreground mt-1">Reassign or change the active role for any user account to update their module access.</p>
-      </div>
-
-      {/* Assigned Inventory Module Personnel Banner */}
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Inventory In Card */}
-        <div className="p-4 rounded-2xl border border-blue-200/80 bg-blue-50/40 dark:bg-blue-950/20 dark:border-blue-900/40 card-shadow space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <Package className="h-4 w-4" />
-              </div>
-              <h4 className="text-sm font-bold text-foreground">
-                Inventory In (Material Inward) Access
-              </h4>
-            </div>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300">
-              {inventoryInPersonnel.length} Assigned
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Personnel with module access to create categories, add products & log inward stock:
-          </p>
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {inventoryInPersonnel.length > 0 ? (
-              inventoryInPersonnel.map((u) => (
-                <span
-                  key={u.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-blue-300 dark:border-blue-800 text-foreground shadow-2xs"
-                >
-                  <User className="h-3 w-3 text-blue-600" />
-                  <span className="font-semibold">{u.fullName || u.email}</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">
-                    ({u.customRole?.name || u.role})
-                  </span>
-                </span>
-              ))
-            ) : (
-              <span className="text-xs text-muted-foreground italic">No users assigned yet</span>
-            )}
-          </div>
-        </div>
-
-        {/* Inventory Out Card */}
-        <div className="p-4 rounded-2xl border border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-900/40 card-shadow space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                <Package className="h-4 w-4" />
-              </div>
-              <h4 className="text-sm font-bold text-foreground">
-                Inventory Out (Material Outward) Access
-              </h4>
-            </div>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300">
-              {inventoryOutPersonnel.length} Assigned
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Personnel with module access to issue materials, dispatch stock & update returns:
-          </p>
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {inventoryOutPersonnel.length > 0 ? (
-              inventoryOutPersonnel.map((u) => (
-                <span
-                  key={u.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-amber-300 dark:border-amber-800 text-foreground shadow-2xs"
-                >
-                  <User className="h-3 w-3 text-amber-600" />
-                  <span className="font-semibold">{u.fullName || u.email}</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">
-                    ({u.customRole?.name || u.role})
-                  </span>
-                </span>
-              ))
-            ) : (
-              <span className="text-xs text-muted-foreground italic">No users assigned yet</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+    <div className="space-y-6">
+      {/* Top Action & Search Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card border border-border rounded-2xl p-4 card-shadow">
         {/* Search */}
-        <div className="flex-1">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-            />
-          </div>
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search employee by name or email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-input bg-background text-foreground rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-primary"
+          />
         </div>
 
         {/* Role Filter */}
-        <div className="sm:w-64">
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <select
-              value={selectedRoleFilter}
-              onChange={(e) => setSelectedRoleFilter(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary appearance-none"
-            >
-              <option value="all">All Roles</option>
-              {roles.map(role => (
-                <option key={role.id} value={role.id}>{role.name}</option>
-              ))}
-            </select>
-          </div>
+        <div className="sm:w-60 relative">
+          <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <select
+            value={selectedRoleFilter}
+            onChange={(e) => setSelectedRoleFilter(e.target.value)}
+            className="w-full pl-10 pr-8 py-2 border border-input bg-background text-foreground rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+          >
+            <option value="all">Filter by: All Roles</option>
+            {roles.map(role => (
+              <option key={role.id} value={role.id}>{role.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -249,70 +170,47 @@ export default function AccessTab() {
           message={searchQuery || selectedRoleFilter !== 'all' ? "Try adjusting your search or filters" : "No users are available in the system"}
         />
       ) : (
-        <div className="bg-card border border-border rounded-lg shadow overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl card-shadow overflow-hidden">
           {/* Desktop Table */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead className="bg-secondary/40 border-b border-border">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Name
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Employee Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Email
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Current Role
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Current Assigned Role
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Reassign / Change Role
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Change Role
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredUsers.map(user => (
-                  <tr key={user.id} className="hover:bg-secondary/40">
+                  <tr key={user.id} className="hover:bg-secondary/30 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-card-foreground">{user.fullName || 'N/A'}</div>
+                      <div className="font-semibold text-foreground text-sm">{user.fullName || 'N/A'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-muted-foreground">{user.email}</div>
+                      <div className="text-xs sm:text-sm text-muted-foreground">{user.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
                           {user.customRole?.name || user.role || 'No Role'}
                         </span>
-                        {(() => {
-                          const isAdmin = user.role === 'ADMIN' || user.customRole?.name?.toUpperCase() === 'ADMIN';
-                          const modules = Array.isArray(user.customRole?.modules) ? user.customRole.modules : [];
-                          const hasIn = isAdmin || modules.includes('inventory') || modules.includes('inventory-in');
-                          const hasOut = isAdmin || modules.includes('inventory') || modules.includes('inventory-out');
-
-                          if (!hasIn && !hasOut) return null;
-
-                          return (
-                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                              {hasIn && (
-                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
-                                  ✓ Inward (In)
-                                </span>
-                              )}
-                              {hasOut && (
-                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
-                                  ✓ Outward (Out)
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })()}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <select
                         value={user.roleId || ''}
                         onChange={(e) => handleRoleAssignment(user.id, e.target.value)}
-                        className="px-3 py-1.5 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
+                        className="px-3 py-1.5 border border-input bg-background text-foreground rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer"
                       >
                         <option value="">— Remove Role —</option>
                         {roles.map(role => (
@@ -333,46 +231,21 @@ export default function AccessTab() {
             {filteredUsers.map(user => (
               <div key={user.id} className="p-4 space-y-3">
                 <div>
-                  <div className="font-medium text-card-foreground">{user.fullName || 'N/A'}</div>
-                  <div className="text-sm text-muted-foreground">{user.email}</div>
+                  <div className="font-semibold text-foreground text-sm">{user.fullName || 'N/A'}</div>
+                  <div className="text-xs text-muted-foreground">{user.email}</div>
                 </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Current:</span>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                      {user.customRole?.name || user.role || 'No Role'}
-                    </span>
-                  </div>
-                  {(() => {
-                    const isAdmin = user.role === 'ADMIN' || user.customRole?.name?.toUpperCase() === 'ADMIN';
-                    const modules = Array.isArray(user.customRole?.modules) ? user.customRole.modules : [];
-                    const hasIn = isAdmin || modules.includes('inventory') || modules.includes('inventory-in');
-                    const hasOut = isAdmin || modules.includes('inventory') || modules.includes('inventory-out');
-
-                    if (!hasIn && !hasOut) return null;
-
-                    return (
-                      <div className="flex items-center gap-1 mt-1 flex-wrap">
-                        {hasIn && (
-                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
-                            ✓ Inward (In)
-                          </span>
-                        )}
-                        {hasOut && (
-                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
-                            ✓ Outward (Out)
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Current:</span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                    {user.customRole?.name || user.role || 'No Role'}
+                  </span>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Assign Role</label>
+                  <label className="block text-xs font-semibold text-foreground mb-1">Assign Role</label>
                   <select
                     value={user.roleId || ''}
                     onChange={(e) => handleRoleAssignment(user.id, e.target.value)}
-                    className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm"
+                    className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer"
                   >
                     <option value="">— Remove Role —</option>
                     {roles.map(role => (

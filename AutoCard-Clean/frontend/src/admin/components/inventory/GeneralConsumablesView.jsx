@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPut, apiPost } from "../../../lib/api.js";
+import { canPerformAction } from "../../../lib/permissions.js";
 
 const formatDate = (val) => {
   if (!val) return "—";
@@ -175,6 +176,7 @@ const parseTakingRequest = (req) => {
 };
 
 export default function GeneralConsumablesView({ defaultFolder = null, onBackToHub }) {
+  const canEdit = canPerformAction("general-consumables", "edit");
   // Folder State: null (Folder Selection Hub) | "tools" (Tools Page) | "general" (Consumables Page)
   const [selectedFolder, setSelectedFolder] = useState(defaultFolder);
 
@@ -463,30 +465,30 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
     return (
       <div className="space-y-8">
         {/* Header Banner */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-6">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-6">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4">
             <button
               type="button"
               onClick={onBackToHub}
-              className="p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer shrink-0"
               title="Back to Inventory Submodules"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className="w-14 h-14 rounded-2xl bg-teal-500/10 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-xs">
-              <Wrench className="h-7 w-7" />
+            <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-teal-500/10 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-xs shrink-0">
+              <Wrench className="h-5 w-5 sm:h-7 sm:w-7" />
             </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="font-display text-2xl lg:text-3xl font-bold tracking-tight text-foreground">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-foreground truncate">
                   Tools & Consumables Management
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/20">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/20 shrink-0">
                   Select Folder
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Select a folder below to open the dedicated page for Tools or Consumables management.
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                Select a folder below to open the dedicated page for Tools, Consumables, or Employee Returns management.
               </p>
             </div>
           </div>
@@ -495,7 +497,7 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
             type="button"
             onClick={loadData}
             disabled={loading}
-            className="p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2 text-xs font-semibold"
+            className="self-end sm:self-auto p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2 text-xs font-semibold shrink-0"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             <span>Refresh Submodule</span>
@@ -1093,42 +1095,48 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
 
                           {/* 9. Actions */}
                           <td className="px-5 py-4 text-right">
-                            {isPending ? (
-                              <div className="flex items-center justify-end gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateStatus(row.id, "APPROVED", `Are you sure you want to approve request for ${row.itemName}?`)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Approve Request"
-                                >
-                                  <Check className="h-3.5 w-3.5" /> Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateStatus(row.id, "REJECTED", `Are you sure you want to reject request for ${row.itemName}?`)}
-                                  className="px-2.5 py-1 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Reject Request"
-                                >
-                                  <Ban className="h-3.5 w-3.5" /> Reject
-                                </button>
-                              </div>
-                            ) : isApproved ? (
-                              row.actionType === "RETURN" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateStatus(row.id, "ISSUED", `Mark ${row.itemName} as found / returned?`)}
-                                  className="px-3 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <PackageCheck className="h-3.5 w-3.5" /> Found Item
-                                </button>
+                            {canEdit ? (
+                              isPending ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateStatus(row.id, "APPROVED", `Are you sure you want to approve request for ${row.itemName}?`)}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Approve Request"
+                                  >
+                                    <Check className="h-3.5 w-3.5" /> Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateStatus(row.id, "REJECTED", `Are you sure you want to reject request for ${row.itemName}?`)}
+                                    className="px-2.5 py-1 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Reject Request"
+                                  >
+                                    <Ban className="h-3.5 w-3.5" /> Reject
+                                  </button>
+                                </div>
+                              ) : isApproved ? (
+                                row.actionType === "RETURN" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateStatus(row.id, "ISSUED", `Mark ${row.itemName} as found / returned?`)}
+                                    className="px-3 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                  >
+                                    <PackageCheck className="h-3.5 w-3.5" /> Found Item
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 font-medium">
+                                    Awaiting Employee Found
+                                  </span>
+                                )
                               ) : (
-                                <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 font-medium">
-                                  Awaiting Employee Found
+                                <span className="text-xs text-muted-foreground italic">
+                                  Reviewed {row.reviewedBy ? `by ${row.reviewedBy}` : ""}
                                 </span>
                               )
                             ) : (
                               <span className="text-xs text-muted-foreground italic">
-                                Reviewed {row.reviewedBy ? `by ${row.reviewedBy}` : ""}
+                                View Only
                               </span>
                             )}
                           </td>
@@ -1426,7 +1434,7 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                               <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
                                 <CheckCircle2 className="h-3.5 w-3.5" /> Received in Store
                               </span>
-                            ) : (
+                            ) : canEdit ? (
                               <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                 {isPending && (
                                   <>
@@ -1471,6 +1479,8 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                                   <PackageCheck className="h-3.5 w-3.5" /> Confirm Received &amp; Restock
                                 </button>
                               </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">Read-only</span>
                             )}
                           </td>
                         </tr>
@@ -1721,7 +1731,7 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                                         <span className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
                                           <CheckCircle2 className="h-3 w-3" /> Restocked
                                         </span>
-                                      ) : (
+                                      ) : canEdit ? (
                                         <button
                                           type="button"
                                           onClick={() => handleConfirmReturnReceived(tool.id, tool.itemName)}
@@ -1729,8 +1739,10 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                                         >
                                           <PackageCheck className="h-3 w-3" /> Confirm Restock
                                         </button>
+                                      ) : (
+                                        <span className="text-[11px] text-muted-foreground italic">Pending Restock</span>
                                       )
-                                    ) : (
+                                    ) : canEdit ? (
                                       <>
                                         {isPending && (
                                           <>
@@ -1795,6 +1807,8 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                                           </button>
                                         )}
                                       </>
+                                    ) : (
+                                      <span className="text-[11px] text-muted-foreground italic">Read-only</span>
                                     )}
                                   </div>
                                 </td>

@@ -23,50 +23,53 @@ export default function RolesAccess() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <div className="bg-card border-b border-border">
-        <div className="px-6 py-4">
-          <div className="flex items-center gap-3 mb-4">
-            <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <ShieldCheck className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Roles & Access Control</h1>
-              <p className="text-muted-foreground text-sm">Manage roles and assign access to users</p>
-            </div>
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-5">
+        <div className="flex items-center gap-3.5">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="p-2.5 rounded-xl border border-border bg-background hover:bg-secondary text-muted-foreground hover:text-foreground transition-all shrink-0"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="w-11 h-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-xs shrink-0">
+            <ShieldCheck className="h-6 w-6" />
           </div>
+          <div>
+            <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+              Roles &amp; Access Control
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              Manage custom roles and assign module permissions to user accounts
+            </p>
+          </div>
+        </div>
 
-          {/* Tab Navigation */}
-          <div className="flex gap-1 border-b border-border">
-            <button
-              onClick={() => handleTabChange('roles')}
-              className={`
-                px-6 py-3 font-medium text-sm transition-colors relative
-                ${activeTab === 'roles'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-                }
-              `}
-            >
-              Roles
-            </button>
-            <button
-              onClick={() => handleTabChange('access')}
-              className={`
-                px-6 py-3 font-medium text-sm transition-colors relative
-                ${activeTab === 'access'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-                }
-              `}
-            >
-              Access
-            </button>
-          </div>
+        {/* Tab Navigation Pill Group */}
+        <div className="flex items-center gap-1.5 p-1 bg-secondary/60 rounded-xl border border-border self-start sm:self-auto">
+          <button
+            onClick={() => handleTabChange('roles')}
+            className={`px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer ${
+              activeTab === 'roles'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Roles
+          </button>
+          <button
+            onClick={() => handleTabChange('access')}
+            className={`px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer ${
+              activeTab === 'access'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Access Assignment
+          </button>
         </div>
       </div>
 

@@ -23,8 +23,13 @@ import {
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPut, apiDelete } from "../../../lib/api.js";
 import { getAuthUser } from "../../../lib/auth.js";
+import { canPerformAction } from "../../../lib/permissions.js";
 
 export default function InventoryOutView({ onBackToHub, assignedUsers: propAssignedUsers, currentUser: propCurrentUser }) {
+  const canCreate = canPerformAction("inventory-out", "create");
+  const canEdit = canPerformAction("inventory-out", "edit");
+  const canDelete = canPerformAction("inventory-out", "delete");
+
   const [issues, setIssues] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -218,46 +223,48 @@ export default function InventoryOutView({ onBackToHub, assignedUsers: propAssig
       </div>
 
       {/* Top Breadcrumb & Action */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex items-start sm:items-center gap-3">
           <button
             type="button"
             onClick={onBackToHub}
-            className="p-2 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="p-2 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
             title="Back to Inventory Submodules"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
-            <PackageMinus className="h-6 w-6" />
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+            <PackageMinus className="h-5 w-5 sm:h-6 sm:w-6" />
           </div>
-          <div>
-            <h1 className="font-display text-2xl font-bold text-foreground">
+          <div className="min-w-0">
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-foreground truncate">
               Sub-module 2: Inventory Out (Material Outward Logs)
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Track product outward logs, material dispatches, project tool allocations, and status returns.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <button
             type="button"
             onClick={loadData}
             disabled={loading}
-            className="p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            className="p-2.5 rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50 shrink-0"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            Issue Material / Stock Out
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span>Issue Material / Stock Out</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -313,13 +320,13 @@ export default function InventoryOutView({ onBackToHub, assignedUsers: propAssig
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-none">
           {["ALL", "ISSUED", "RETURNED", "CONSUMED", "DAMAGED"].map((status) => (
             <button
               key={status}
               type="button"
               onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
                 statusFilter === status
                   ? "bg-primary text-white shadow-xs"
                   : "bg-secondary/40 border border-border text-muted-foreground hover:bg-secondary"
@@ -418,25 +425,27 @@ export default function InventoryOutView({ onBackToHub, assignedUsers: propAssig
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {issue.status === "ISSUED" && (
+                          {canEdit && issue.status === "ISSUED" && (
                             <button
                               type="button"
                               onClick={() => handleReturn(issue.id)}
-                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors flex items-center gap-1"
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors flex items-center gap-1 cursor-pointer"
                               title="Mark Returned & Restock"
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
                               Return
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(issue.id)}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                            title="Delete record"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(issue.id)}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                              title="Delete record"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

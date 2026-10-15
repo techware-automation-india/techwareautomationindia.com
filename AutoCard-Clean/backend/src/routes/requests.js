@@ -832,6 +832,20 @@ router.post(["/my", "/"], async (req, res) => {
               "Check Out is already completed for this date.",
           });
         }
+
+        // If requesting only check-out, user MUST already have an existing Check In record
+        if (correction.punchType === "check-out" && (!attendance || !attendance.checkIn)) {
+          return res.status(400).json({
+            message: "Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.",
+          });
+        }
+      } else {
+        // In time-edit mode: if providing only check-out time without check-in time, existing record must have checkIn
+        if (!correction.checkInTime && correction.checkOutTime && (!attendance || !attendance.checkIn)) {
+          return res.status(400).json({
+            message: "Cannot set Check Out time without a Check In record. Please provide both Check In and Check Out times.",
+          });
+        }
       }
     }
 

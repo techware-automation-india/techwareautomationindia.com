@@ -34,6 +34,9 @@ function publicUser(user) {
       id: user.customRole.id,
       name: user.customRole.name,
       isDefault: user.customRole.isDefault,
+      modules: Array.isArray(user.customRole.modules)
+        ? user.customRole.modules.map((m) => (typeof m === 'string' ? m : m.moduleKey))
+        : [],
     } : null,
     onboardingStatus: user.employeeProfile?.onboardingStatus ?? null,
     employeeProfileId: user.employeeProfile?.id ?? null,
@@ -150,6 +153,7 @@ router.post("/login", async (req, res) => {
       try {
         user.customRole = await prisma.roleTable.findUnique({
           where: { id: user.roleId },
+          include: { modules: true },
         });
       } catch (roleErr) {
         console.warn("Failed to fetch customRole for user:", roleErr.message);
@@ -176,6 +180,7 @@ router.get("/me", requireAuth, async (req, res) => {
     if (user.roleId && !user.customRole) {
       user.customRole = await prisma.roleTable.findUnique({
         where: { id: user.roleId },
+        include: { modules: true },
       });
     }
     return res.json({ user: publicUser(user) });

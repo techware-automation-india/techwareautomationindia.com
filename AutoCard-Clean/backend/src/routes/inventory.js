@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { checkRolePermission } from "../middleware/checkRolePermission.js";
+import { checkRolePermission, checkRoleActionPermission } from "../middleware/checkRolePermission.js";
 
 const router = Router();
 
@@ -110,6 +110,231 @@ router.get("/assigned-users", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("Failed to fetch assigned inventory users:", err);
     res.status(500).json({ message: "Failed to fetch assigned inventory users." });
+  }
+});
+
+// GET /inventory/employee-permissions — List employees with their inventory submodule permissions
+router.get("/employee-permissions", requireAuth, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { isActive: true },
+      include: {
+        customRole: {
+          include: {
+            modules: true,
+          },
+        },
+        modulePermissions: true,
+      },
+      orderBy: { fullName: "asc" },
+    });
+
+    const inventorySubmodules = [
+      { key: "inventory-in", label: "Inventory In" },
+      { key: "inventory-out", label: "Inventory Out" },
+      { key: "view-inventory", label: "View Stock" },
+      { key: "inventory-alert", label: "Stock Alerts" },
+      { key: "general-consumables", label: "Tools & Consumables" },
+    ];
+
+    const employees = users.map((u) => {
+      const isAdmin = u.role === "ADMIN";
+      const roleModules = (u.customRole?.modules || []).map((m) => m.moduleKey);
+      const hasInventoryParent = roleModules.includes("inventory");
+
+      // Build permissions per submodule
+      const permissions = {};
+      inventorySubmodules.forEach((sub) => {
+        if (isAdmin) {
+          permissions[sub.key] = { canView: true, canCreate: true, canEdit: true, canDelete: true };
+        } else {
+          const hasSub = hasInventoryParent || roleModules.includes(sub.key);
+          const canView = hasSub || roleModules.includes(`${sub.key}:view`);
+          const canCreate = roleModules.includes(`${sub.key}:create`);
+          const canEdit = roleModules.includes(`${sub.key}:edit`);
+          const canDelete = roleModules.includes(`${sub.key}:delete`);
+
+          // Also check legacy modulePermissions if any
+          const legacy = u.modulePermissions?.find((mp) => mp.moduleKey === sub.key);
+
+          permissions[sub.key] = {
+            canView: canView || Boolean(legacy?.canView),
+            canCreate: canCreate || Boolean(legacy?.canCreate),
+            canEdit: canEdit || Boolean(legacy?.canEdit),
+            canDelete: canDelete || Boolean(legacy?.canDelete),
+          };
+        }
+      });
+
+      return {
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: u.role,
+        roleId: u.roleId,
+        roleName: u.customRole?.name || (isAdmin ? "Admin" : "Employee"),
+        isAdmin,
+        permissions,
+      };
+    });
+
+    res.json({ employees, submodules: inventorySubmodules });
+  } catch (err) {
+    console.error("Failed to load inventory permissions:", err);
+    res.status(500).json({ message: "Failed to load inventory permissions." });
+  }
+});
+
+// PUT /inventory/employee-permissions/:userId — Update an employee's inventory permissions
+router.put("/employee-permissions/:userId", requireAuth, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { permissions } = req.body; // e.g. { 'inventory-in': { canView, canCreate, canEdit, canDelete }, ... }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        customRole: {
+          include: {
+            modules: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (user.role === "ADMIN") {
+      return res.status(400).json({ message: "Admin users have full access by default." });
+    }
+
+    if (!permissions || typeof permissions !== "object") {
+      return res.status(400).json({ message: "Invalid permissions object." });
+    }
+
+    // Determine target role for this user
+    let targetRoleId = user.roleId;
+
+    if (targetRoleId) {
+      // Check if this role is shared by other users or is a default role
+      const isDefault = user.customRole?.isDefault;
+      const otherUsersCount = await prisma.user.count({
+        where: {
+          roleId: targetRoleId,
+          id: { not: userId },
+        },
+      });
+
+      // If it's a default role or shared with others, clone a private custom role for this employee
+      if (isDefault || otherUsersCount > 0) {
+        const empName = user.fullName || "Employee";
+        const newRole = await prisma.roleTable.create({
+          data: {
+            name: `${empName} (Custom)`,
+            isDefault: false,
+          },
+        });
+        targetRoleId = newRole.id;
+        await prisma.user.update({
+          where: { id: userId },
+          data: { roleId: targetRoleId },
+        });
+      }
+    } else {
+      // If user had no role, create one
+      const empName = user.fullName || "Employee";
+      const newRole = await prisma.roleTable.create({
+        data: {
+          name: `${empName} (Custom)`,
+          isDefault: false,
+        },
+      });
+      targetRoleId = newRole.id;
+      await prisma.user.update({
+        where: { id: userId },
+        data: { roleId: targetRoleId },
+      });
+    }
+
+    if (targetRoleId) {
+      const existingModules = (user.customRole?.modules || []).map((m) => m.moduleKey);
+
+      // Keep non-inventory modules
+      const inventoryPrefixes = ["inventory", "inventory-in", "inventory-out", "view-inventory", "inventory-alert", "general-consumables"];
+      let newModules = existingModules.filter((k) => !inventoryPrefixes.some((p) => k === p || k.startsWith(`${p}:`)));
+
+      // Add inventory permissions
+      let hasAnyInventoryAccess = false;
+      Object.entries(permissions).forEach(([subKey, perms]) => {
+        if (perms.canView) {
+          newModules.push(subKey);
+          newModules.push(`${subKey}:view`);
+          hasAnyInventoryAccess = true;
+        }
+        if (perms.canCreate) {
+          newModules.push(`${subKey}:create`);
+          hasAnyInventoryAccess = true;
+        }
+        if (perms.canEdit) {
+          newModules.push(`${subKey}:edit`);
+          hasAnyInventoryAccess = true;
+        }
+        if (perms.canDelete) {
+          newModules.push(`${subKey}:delete`);
+          hasAnyInventoryAccess = true;
+        }
+      });
+
+      if (hasAnyInventoryAccess && !newModules.includes("inventory")) {
+        newModules.push("inventory");
+      }
+
+      // Sync roleModule records for this user's dedicated role
+      await prisma.roleModule.deleteMany({
+        where: { roleId: targetRoleId },
+      });
+
+      const uniqueModules = [...new Set(newModules)];
+      await prisma.roleModule.createMany({
+        data: uniqueModules.map((moduleKey) => ({
+          roleId: targetRoleId,
+          moduleKey,
+        })),
+      });
+    }
+
+    // Also sync to modulePermission table for direct user fallback
+    for (const [subKey, perms] of Object.entries(permissions)) {
+      await prisma.modulePermission.upsert({
+        where: {
+          userId_moduleKey: {
+            userId,
+            moduleKey: subKey,
+          },
+        },
+        create: {
+          userId,
+          moduleKey: subKey,
+          canView: Boolean(perms.canView),
+          canCreate: Boolean(perms.canCreate),
+          canEdit: Boolean(perms.canEdit),
+          canDelete: Boolean(perms.canDelete),
+        },
+        update: {
+          canView: Boolean(perms.canView),
+          canCreate: Boolean(perms.canCreate),
+          canEdit: Boolean(perms.canEdit),
+          canDelete: Boolean(perms.canDelete),
+        },
+      });
+    }
+
+    res.json({ message: "Inventory permissions updated successfully." });
+  } catch (err) {
+    console.error("Failed to update inventory permissions:", err);
+    res.status(500).json({ message: "Failed to update inventory permissions." });
   }
 });
 
@@ -237,7 +462,7 @@ router.get("/categories/:id", requireAuth, async (req, res) => {
 });
 
 // POST /inventory/categories — Create category (enforces max 4 levels)
-router.post("/categories", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
+router.post("/categories", requireAuth, checkRoleActionPermission("inventory-in", "create"), async (req, res) => {
   try {
     const { name, code, description, parentId } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -288,7 +513,7 @@ router.post("/categories", requireAuth, checkRolePermission(["inventory", "inven
 });
 
 // PUT /inventory/categories/:id — Update category
-router.put("/categories/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
+router.put("/categories/:id", requireAuth, checkRoleActionPermission("inventory-in", "edit"), async (req, res) => {
   try {
     const { name, code, description } = req.body;
     const existing = await prisma.inventoryCategory.findUnique({
@@ -324,7 +549,7 @@ router.put("/categories/:id", requireAuth, checkRolePermission(["inventory", "in
 });
 
 // DELETE /inventory/categories/:id — Delete category (cascades subcategories)
-router.delete("/categories/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
+router.delete("/categories/:id", requireAuth, checkRoleActionPermission("inventory-in", "delete"), async (req, res) => {
   try {
     const existing = await prisma.inventoryCategory.findUnique({
       where: { id: req.params.id },
@@ -400,7 +625,7 @@ router.get("/items", requireAuth, async (req, res) => {
 });
 
 // POST /inventory/items — Create item with specs and photo
-router.post("/items", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
+router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "create"), async (req, res) => {
   try {
     const {
       name,
@@ -502,7 +727,7 @@ router.post("/items", requireAuth, checkRolePermission(["inventory", "inventory-
 });
 
 // PUT /inventory/items/:id — Update item
-router.put("/items/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
+router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", "edit"), async (req, res) => {
   try {
     const existing = await prisma.inventoryItem.findUnique({
       where: { id: req.params.id },
@@ -599,7 +824,7 @@ router.put("/items/:id", requireAuth, checkRolePermission(["inventory", "invento
 });
 
 // DELETE /inventory/items/:id — Delete item
-router.delete("/items/:id", requireAuth, checkRolePermission(["inventory", "inventory-in"]), async (req, res) => {
+router.delete("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", "delete"), async (req, res) => {
   try {
     const existing = await prisma.inventoryItem.findUnique({
       where: { id: req.params.id },
@@ -684,7 +909,7 @@ router.get("/issues/all", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/issues", requireAuth, checkRolePermission(["inventory", "inventory-out"]), async (req, res) => {
+router.post("/issues", requireAuth, checkRoleActionPermission("inventory-out", "create"), async (req, res) => {
   try {
     const parsed = issueSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -728,7 +953,7 @@ router.post("/issues", requireAuth, checkRolePermission(["inventory", "inventory
   }
 });
 
-router.put("/issues/:id", requireAuth, checkRolePermission(["inventory", "inventory-out"]), async (req, res) => {
+router.put("/issues/:id", requireAuth, checkRoleActionPermission("inventory-out", "edit"), async (req, res) => {
   try {
     const existing = await prisma.inventoryIssue.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ message: "Issue record not found." });
@@ -804,7 +1029,7 @@ router.put("/issues/:id", requireAuth, checkRolePermission(["inventory", "invent
   }
 });
 
-router.delete("/issues/:id", requireAuth, checkRolePermission(["inventory", "inventory-out"]), async (req, res) => {
+router.delete("/issues/:id", requireAuth, checkRoleActionPermission("inventory-out", "delete"), async (req, res) => {
   try {
     const existing = await prisma.inventoryIssue.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ message: "Issue record not found." });

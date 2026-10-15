@@ -20,8 +20,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../../lib/api.js";
+import { canPerformAction } from "../../../lib/permissions.js";
 
 export default function InventoryApprovalView({ onBackToHub }) {
+  const canAction = canPerformAction("inventory-approval", "action");
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("PENDING");
@@ -373,7 +375,7 @@ export default function InventoryApprovalView({ onBackToHub }) {
                 )}
 
                 {/* Action Footer */}
-                {isPending && (
+                {isPending && canAction && (
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                     <button
                       type="button"

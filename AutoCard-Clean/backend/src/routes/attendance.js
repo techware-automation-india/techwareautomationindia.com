@@ -2968,6 +2968,7 @@ router.get("/register/weekly", async (req, res) => {
         }
 
         const isHolOrSun = Boolean(holiday || !isWorkingDay(date));
+        const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
         const isShortDay = isShortDayHours(workedHours, isHolOrSun);
 
         if (summary[status] !== undefined) summary[status] += 1;
@@ -2988,6 +2989,7 @@ router.get("/register/weekly", async (req, res) => {
           checkOutLatitude: attendance?.checkOutLatitude ?? null,
           checkOutLongitude: attendance?.checkOutLongitude ?? null,
           workedHours,
+          overtimeHours,
           isShortDay,
           note,
         });
@@ -3329,6 +3331,7 @@ router.get(
             calculateWorkedHours(existing.checkIn, existing.checkOut);
 
           const isHolOrSun = Boolean(holidayObj || isSunday);
+          const overtimeHours = calculateOvertimeHours(calculatedWorkedHours, isHolOrSun);
           const isShortDay = isShortDayHours(calculatedWorkedHours, isHolOrSun);
 
           if (summary[status] !== undefined) summary[status] += 1;
@@ -3349,6 +3352,7 @@ router.get(
             checkOutLongitude: existing.checkOutLongitude,
             status,
             workedHours: calculatedWorkedHours,
+            overtimeHours,
             isShortDay,
             note: pendingCorrection
               ? `${existing.note || ""}${existing.note ? " | " : ""}Forgot Punch Check In pending approval.`

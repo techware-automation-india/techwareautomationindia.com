@@ -8,6 +8,7 @@ import {
 import { toast } from "sonner";
 import { apiGet, apiDelete } from "../../../lib/api.js";
 import { getAuthUser } from "../../../lib/auth.js";
+import { canPerformAction } from "../../../lib/permissions.js";
 import CategoryModal from "./CategoryModal.jsx";
 import ItemCardModal from "./ItemCardModal.jsx";
 import CategoryProductsModal from "./CategoryProductsModal.jsx";
@@ -123,6 +124,9 @@ const CategoryTreeNode = ({
   onEdit,
   onDelete,
   searchTerm,
+  canCreate = true,
+  canEdit = true,
+  canDelete = true,
 }) => {
   const isExpanded = expandedMap[cat.id] ?? true;
   const hasChildren = cat.children && cat.children.length > 0;
@@ -249,7 +253,7 @@ const CategoryTreeNode = ({
             </button>
 
             {/* Add Subcategory (Levels 1 to 3 only) */}
-            {level < 4 && (
+            {canCreate && level < 4 && (
               <button
                 type="button"
                 onClick={() => onAddSubcategory(cat)}
@@ -261,34 +265,40 @@ const CategoryTreeNode = ({
             )}
 
             {/* Add Item directly to this category */}
-            <button
-              type="button"
-              onClick={() => onAddItem(cat)}
-              className="p-1.5 rounded-lg border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer shadow-xs"
-              title="Add item into this category"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => onAddItem(cat)}
+                className="p-1.5 rounded-lg border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer shadow-xs"
+                title="Add item into this category"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             {/* Edit */}
-            <button
-              type="button"
-              onClick={() => onEdit(cat)}
-              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
-              title="Edit category"
-            >
-              <Edit3 className="h-3.5 w-3.5" />
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(cat)}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                title="Edit category"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             {/* Delete */}
-            <button
-              type="button"
-              onClick={() => onDelete(cat)}
-              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-              title="Delete category"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(cat)}
+                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                title="Delete category"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -310,6 +320,9 @@ const CategoryTreeNode = ({
               onEdit={onEdit}
               onDelete={onDelete}
               searchTerm={searchTerm}
+              canCreate={canCreate}
+              canEdit={canEdit}
+              canDelete={canDelete}
             />
           ))}
         </div>
@@ -377,6 +390,10 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   const currentLevel = currentCategory ? (currentCategory.level || 1) : 0;
   const canAddSubcategory = currentLevel < 4;
 
+  const canCreate = canPerformAction("inventory-in", "create");
+  const canEdit = canPerformAction("inventory-in", "edit");
+  const canDelete = canPerformAction("inventory-in", "delete");
+
   // Build recursive category tree from all categories
   const categoryTree = useMemo(() => buildCategoryTree(allCategories), [allCategories]);
 
@@ -423,8 +440,10 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   };
 
   // Load inventory data
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+    }
     try {
       // 1. Fetch all categories so tree and counts are always up-to-date
       const [catsRes, allItemsRes] = await Promise.all([
@@ -463,14 +482,38 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
       }
       setCategoryProductsRefresh((prev) => prev + 1);
     } catch (err) {
-      toast.error(err.message || "Failed to load inventory data.");
+      if (!isBackground) {
+        toast.error(err.message || "Failed to load inventory data.");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadData(true);
+      }
+    }, 10000);
+
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        loadData(true);
+      }
+    };
+    window.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [currentCategory?.id]);
 
   // Navigation handlers
@@ -604,13 +647,13 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
       </div>
 
       {/* ─── Breadcrumb Navigation & Back ─────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-4 bg-background border border-border rounded-2xl p-4 card-shadow">
-        <div className="flex items-center gap-2 flex-wrap text-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-background border border-border rounded-2xl p-4 card-shadow">
+        <div className="flex items-center gap-2 flex-wrap text-sm min-w-0">
           {navPath.length === 0 && onBackToHub && (
             <button
               type="button"
               onClick={onBackToHub}
-              className="mr-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              className="mr-1 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               title="Back to Inventory Submodules"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -622,7 +665,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             <button
               type="button"
               onClick={handleBack}
-              className="mr-2 p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              className="mr-1 p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               title="Go Back"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -632,7 +675,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           <button
             type="button"
             onClick={() => handleBreadcrumbClick(-1)}
-            className={`font-semibold cursor-pointer hover:text-primary transition-colors ${
+            className={`font-semibold cursor-pointer hover:text-primary transition-colors truncate ${
               navPath.length === 0 ? "text-primary" : "text-muted-foreground"
             }`}
           >
@@ -642,12 +685,12 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           {navPath.map((crumb, idx) => {
             const isLast = idx === navPath.length - 1;
             return (
-              <div key={crumb.id ? `crumb-${crumb.id}-${idx}` : `crumb-${idx}`} className="flex items-center gap-2">
-                <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
+              <div key={crumb.id ? `crumb-${crumb.id}-${idx}` : `crumb-${idx}`} className="flex items-center gap-1.5 max-w-full">
+                <ChevronRight className="h-4 w-4 text-muted-foreground/60 shrink-0" />
                 <button
                   type="button"
                   onClick={() => handleBreadcrumbClick(idx)}
-                  className={`font-semibold cursor-pointer transition-colors ${
+                  className={`font-semibold cursor-pointer transition-colors truncate max-w-[140px] sm:max-w-[200px] ${
                     isLast
                       ? "text-primary hover:underline"
                       : "text-muted-foreground hover:text-foreground"
@@ -662,55 +705,59 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         </div>
 
         {/* Global actions in current level */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           <button
             type="button"
             onClick={loadData}
-            className="p-2.5 rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            className="p-2.5 rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
             title="Refresh View"
           >
             <RefreshCw className="h-4 w-4" />
           </button>
 
           {/* Add Category / Subcategory button */}
-          {canAddSubcategory ? (
-            <button
-              type="button"
-              onClick={() => {
-                setCategoryToEdit(null);
-                setModalParentCategory(currentCategory);
-                setIsCategoryModalOpen(true);
-              }}
-              className="px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary text-sm font-semibold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
-            >
-              <FolderPlus className="h-4 w-4" />
-              {currentLevel === 0 ? "Add Root Category" : `Add Subcategory (Level ${currentLevel + 1})`}
-            </button>
-          ) : (
-            <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" />
-              <span>Max Level 4 Reached (Items Only)</span>
-            </div>
+          {canCreate && (
+            canAddSubcategory ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryToEdit(null);
+                  setModalParentCategory(currentCategory);
+                  setIsCategoryModalOpen(true);
+                }}
+                className="flex-1 sm:flex-initial px-3 sm:px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary text-xs sm:text-sm font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs whitespace-nowrap"
+              >
+                <FolderPlus className="h-4 w-4 shrink-0" />
+                <span>{currentLevel === 0 ? "Add Root Category" : `Add Subcategory (L${currentLevel + 1})`}</span>
+              </button>
+            ) : (
+              <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>Max Level 4 Reached</span>
+              </div>
+            )
           )}
 
           {/* Add Item button */}
-          <button
-            type="button"
-            onClick={() => {
-              setItemToEdit(null);
-              setItemTargetCategory(currentCategory);
-              setIsItemModalOpen(true);
-            }}
-            className="bg-[#1e3a5f] hover:bg-[#162b45] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> Add Item
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => {
+                setItemToEdit(null);
+                setItemTargetCategory(currentCategory);
+                setIsItemModalOpen(true);
+              }}
+              className="flex-1 sm:flex-initial bg-[#1e3a5f] hover:bg-[#162b45] text-white text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4 shrink-0" /> <span>Add Item</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* ─── Search & View Switcher ───────────────────────────────── */}
-      <div className="flex items-center justify-between gap-4 flex-wrap bg-background border border-border rounded-2xl p-4 card-shadow">
-        <div className="relative max-w-sm w-full">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-background border border-border rounded-2xl p-3 sm:p-4 card-shadow">
+        <div className="relative w-full md:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
@@ -727,20 +774,20 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between sm:justify-end w-full md:w-auto">
           {viewMode === "tree" && (
-            <div className="flex items-center gap-1.5 text-xs">
+            <div className="flex items-center gap-1.5 text-xs shrink-0">
               <button
                 type="button"
                 onClick={expandAll}
-                className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-xs"
               >
                 Expand All
               </button>
               <button
                 type="button"
                 onClick={collapseAll}
-                className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-xs"
               >
                 Collapse All
               </button>
@@ -748,11 +795,11 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           )}
 
           {/* View Mode Switcher: Tree View vs Folder Cards vs Table List */}
-          <div className="border border-border rounded-xl p-1 flex items-center bg-secondary/40 gap-1">
+          <div className="border border-border rounded-xl p-1 flex items-center bg-secondary/40 gap-1 overflow-x-auto max-w-full scrollbar-none">
             <button
               type="button"
               onClick={() => setViewMode("tree")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === "tree"
                   ? "bg-background text-primary shadow-xs font-bold ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
@@ -766,7 +813,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             <button
               type="button"
               onClick={() => setViewMode("grid")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === "grid"
                   ? "bg-background text-primary shadow-xs font-bold ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
@@ -774,13 +821,13 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               title="Folder Cards (Drill-Down)"
             >
               <LayoutGrid className="h-3.5 w-3.5" />
-              <span>Folder Cards</span>
+              <span>Cards</span>
             </button>
 
             <button
               type="button"
               onClick={() => setViewMode("table")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === "table"
                   ? "bg-background text-primary shadow-xs font-bold ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
@@ -788,13 +835,13 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               title="Hierarchical Table View"
             >
               <List className="h-3.5 w-3.5" />
-              <span>Table List</span>
+              <span>Table</span>
             </button>
 
             <button
               type="button"
               onClick={() => setViewMode("inward")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 viewMode === "inward"
                   ? "bg-background text-blue-600 shadow-xs font-bold ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
@@ -802,7 +849,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               title="Inventory Inward Logs (Product In Entries)"
             >
               <PackagePlus className="h-3.5 w-3.5 text-blue-600" />
-              <span>Inventory In Logs</span>
+              <span>In Logs</span>
             </button>
           </div>
         </div>
@@ -973,26 +1020,30 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setItemToEdit(item);
-                                setItemTargetCategory(item.categoryRef || null);
-                                setIsItemModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors"
-                              title="Edit Item Specs / Stock"
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteItemTarget(item)}
-                              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setItemToEdit(item);
+                                  setItemTargetCategory(item.categoryRef || null);
+                                  setIsItemModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors"
+                                title="Edit Item Specs / Stock"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteItemTarget(item)}
+                                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1059,6 +1110,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                   }}
                   onDelete={(cat) => setDeleteCatTarget(cat)}
                   searchTerm={search}
+                  canCreate={canCreate}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
                 />
               ))}
             </div>
@@ -1159,7 +1213,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             >
                               <ChevronRight className="h-3.5 w-3.5" />
                             </button>
-                            {cat.level < 4 && (
+                            {canCreate && cat.level < 4 && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1167,44 +1221,50 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                                   setModalParentCategory(cat);
                                   setIsCategoryModalOpen(true);
                                 }}
-                                className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10"
+                                className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 cursor-pointer"
                                 title="Add subcategory"
                               >
                                 <FolderPlus className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setItemToEdit(null);
-                                setItemTargetCategory(cat);
-                                setIsItemModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
-                              title="Add item"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCategoryToEdit(cat);
-                                setModalParentCategory(null);
-                                setIsCategoryModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600"
-                              title="Edit"
-                            >
-                              <Edit3 className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteCatTarget(cat)}
-                              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                              title="Delete"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            {canCreate && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setItemToEdit(null);
+                                  setItemTargetCategory(cat);
+                                  setIsItemModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"
+                                title="Add item"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCategoryToEdit(cat);
+                                  setModalParentCategory(null);
+                                  setIsCategoryModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 cursor-pointer"
+                                title="Edit"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteCatTarget(cat)}
+                                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive cursor-pointer"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1305,26 +1365,30 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             >
                               <Eye className="h-4 w-4" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCategoryToEdit(cat);
-                                setModalParentCategory(null);
-                                setIsCategoryModalOpen(true);
-                              }}
-                              className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
-                              title="Edit Category"
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteCatTarget(cat)}
-                              className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                              title="Delete Category"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCategoryToEdit(cat);
+                                  setModalParentCategory(null);
+                                  setIsCategoryModalOpen(true);
+                                }}
+                                className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                                title="Edit Category"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteCatTarget(cat)}
+                                className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                                title="Delete Category"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1454,26 +1518,30 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                           Updated: {fmtDate(item.updatedAt || item.createdAt)}
                         </span>
                         <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setItemToEdit(item);
-                              setItemTargetCategory(currentCategory);
-                              setIsItemModalOpen(true);
-                            }}
-                            className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
-                            title="Edit Item"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteItemTarget(item)}
-                            className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setItemToEdit(item);
+                                setItemTargetCategory(currentCategory);
+                                setIsItemModalOpen(true);
+                              }}
+                              className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                              title="Edit Item"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteItemTarget(item)}
+                              className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1495,19 +1563,19 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         onDrillDown={(cat) => {
           handleDrillDown(cat);
         }}
-        onAddItem={(cat) => {
+        onAddItem={canCreate ? (cat) => {
           setItemToEdit(null);
           setItemTargetCategory(cat);
           setIsItemModalOpen(true);
-        }}
-        onEditItem={(item, cat) => {
+        } : null}
+        onEditItem={canEdit ? (item, cat) => {
           setItemToEdit(item);
           setItemTargetCategory(cat);
           setIsItemModalOpen(true);
-        }}
-        onDeleteItem={(item) => {
+        } : null}
+        onDeleteItem={canDelete ? (item) => {
           setDeleteItemTarget(item);
-        }}
+        } : null}
         refreshTrigger={categoryProductsRefresh}
       />
 

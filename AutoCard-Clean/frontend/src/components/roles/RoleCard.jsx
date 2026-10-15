@@ -16,53 +16,67 @@ export default function RoleCard({ role, onEdit, onDelete, onClick }) {
   return (
     <div
       onClick={onClick}
-      className="bg-card rounded-lg shadow-sm border border-border p-6 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
+      className="group bg-card rounded-2xl border border-border p-5 card-shadow hover:shadow-md hover:border-primary/40 transition-all cursor-pointer flex flex-col justify-between"
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${role.isDefault ? 'bg-blue-500/10 dark:bg-blue-500/20' : 'bg-primary/10'}`}>
-            <Shield className={`h-5 w-5 ${role.isDefault ? 'text-blue-600 dark:text-blue-400' : 'text-primary'}`} />
-          </div>
-          <div>
-            <h3 className="font-semibold text-card-foreground">{role.name}</h3>
-            {role.isDefault && (
-              <span className="inline-block text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded mt-1">
-                Default Role
+      <div>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+              role.isDefault 
+                ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20' 
+                : 'bg-primary/10 text-primary border border-primary/20'
+            }`}>
+              <Shield className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-display text-base font-bold text-foreground group-hover:text-primary transition-colors truncate">
+                {role.name}
+              </h3>
+              <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full mt-0.5 border ${
+                role.isDefault
+                  ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20'
+                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+              }`}>
+                {role.isDefault ? 'Default Role' : 'Custom Role'}
               </span>
-            )}
+            </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(role);
-            }}
-            className="p-2 text-muted-foreground hover:text-primary hover:bg-secondary rounded transition-colors"
-            title="Edit role"
-          >
-            <Edit2 className="h-4 w-4" />
-          </button>
           
-          {!role.isDefault && (
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete(role);
+                onEdit(role);
               }}
-              className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors"
-              title="Delete role"
+              className="p-1.5 text-muted-foreground hover:text-primary hover:bg-secondary rounded-lg transition-colors"
+              title="Edit role"
             >
-              <Trash2 className="h-4 w-4" />
+              <Edit2 className="h-4 w-4" />
             </button>
-          )}
+            
+            {!role.isDefault && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(role);
+                }}
+                className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                title="Delete role"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
       
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="font-medium text-card-foreground">{moduleCount}</span>
-        <span>{moduleCount === 1 ? 'module' : 'modules'} assigned</span>
+      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">
+          {moduleCount} {moduleCount === 1 ? 'module' : 'modules'} enabled
+        </span>
+        <span className="text-primary font-semibold group-hover:underline inline-flex items-center gap-1">
+          Configure permissions &rarr;
+        </span>
       </div>
     </div>
   );

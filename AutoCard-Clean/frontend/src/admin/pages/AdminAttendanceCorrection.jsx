@@ -136,11 +136,15 @@ const AdminAttendanceCorrection = () => {
   const isTodayUnclosedBlocked =
     !selectedEmployeeId && date === indiaNow.date && hasUnclosedPreviousMissingCheckout;
 
+  const hasExistingCheckIn = !!existingAttendance?.record?.checkInTime;
+
   useEffect(() => {
     if (isTodayUnclosedBlocked && (punchType === "check-in" || punchType === "both")) {
       setPunchType("check-out");
+    } else if (!hasExistingCheckIn && punchType === "check-out" && !isTodayUnclosedBlocked) {
+      setPunchType("check-in");
     }
-  }, [isTodayUnclosedBlocked, punchType]);
+  }, [isTodayUnclosedBlocked, hasExistingCheckIn, punchType]);
 
   const getApprovedLeaveForDate = (selectedDateStr) => {
     if (!selectedDateStr || approvedLeaves.length === 0) return null;
@@ -331,6 +335,11 @@ const AdminAttendanceCorrection = () => {
     // -------------------------------------------
 
     if (requestMode === "forgot-punch") {
+      if (punchType === "check-out" && !hasExistingCheckIn) {
+        toast.error("Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.");
+        return;
+      }
+
       if ((punchType === "check-in" || punchType === "both") && !checkInTime) {
         toast.error("Please select check-in time.");
         return;
@@ -662,7 +671,11 @@ const AdminAttendanceCorrection = () => {
                     : "Check In"}
                 </option>
 
-                <option value="check-out">Check Out</option>
+                <option value="check-out" disabled={!hasExistingCheckIn}>
+                  {!hasExistingCheckIn
+                    ? "Check Out (Disabled — Check In required first)"
+                    : "Check Out"}
+                </option>
 
                 <option value="both" disabled={isTodayUnclosedBlocked}>
                   {isTodayUnclosedBlocked

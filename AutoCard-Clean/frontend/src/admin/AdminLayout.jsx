@@ -5,6 +5,7 @@ import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import { usePoll } from "../lib/pollContext.jsx";
+import logo from "../assets/techwareLogo.png";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
@@ -49,7 +50,7 @@ const AdminLayout = () => {
 
   const handleLogout = () => {
     clearAuth();
-    navigate("/");
+    navigate("/login");
   };
 
   // While redirecting, render nothing
@@ -153,12 +154,7 @@ const AdminLayout = () => {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <Link
-              to="/"
-              className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back to Site
-            </Link>
+           
           </div>
 
           <div className="flex items-center gap-3">
@@ -293,8 +289,22 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        <main className="flex-1 min-w-0 overflow-x-hidden px-4 pb-4 pt-20 lg:px-8 lg:pb-8 lg:pt-24">
-          <Outlet />
+        <main className="flex-1 min-w-0 overflow-x-hidden px-4 pb-4 pt-20 lg:px-8 lg:pb-8 lg:pt-24 relative">
+          {/* Subtle Transparent Company Watermark on every admin page for PC, Tablet & Mobile */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none select-none fixed inset-0 flex items-center justify-center z-0 overflow-hidden lg:pl-64 pt-16"
+          >
+            <img
+              src={logo}
+              alt=""
+              className="w-[70vw] max-w-[500px] sm:w-[55vw] sm:max-w-[580px] md:w-[45vw] md:max-w-[650px] h-auto object-contain opacity-[0.035] dark:opacity-[0.05] filter grayscale transition-opacity"
+            />
+          </div>
+
+          <div className="relative z-10">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

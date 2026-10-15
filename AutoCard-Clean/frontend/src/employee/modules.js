@@ -260,9 +260,12 @@ export function getModulesByPermissions(permissions = {}) {
       permissions["inventory-in"] ||
       permissions["inventory-out"] ||
       permissions["view-inventory"] ||
-      permissions["inventory-approval"] ||
       permissions["inventory-alert"] ||
-      permissions["general-consumables"]
+      permissions["general-consumables"] ||
+      Object.keys(permissions).some((k) => 
+        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
+        (permissions[k]?.canView || permissions[k] === true || (typeof permissions[k] === "object" && Object.values(permissions[k]).some(Boolean)))
+      )
     );
 
     if (hasLeavePolicySubPerm && !perm) {

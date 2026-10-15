@@ -49,7 +49,7 @@ const CustomerLayout = () => {
   const handleLogout = () => {
     console.log("🚪 [Customer Layout] Logging out");
     clearAuth();
-    navigate("/");
+    navigate("/login");
   };
 
   const sidebarContent = (
@@ -143,9 +143,9 @@ const CustomerLayout = () => {
             </button>
             <Link
               to="/"
-              className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="hidden sm:flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
-              <ChevronLeft className="h-4 w-4" /> Back to Site
+              Back to Site
             </Link>
           </div>
 

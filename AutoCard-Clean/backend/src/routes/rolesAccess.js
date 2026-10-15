@@ -36,10 +36,9 @@ const employeeModules = [
   { key: "inventory", label: "Inventory" },
   { key: "inventory-in", label: "Material Inward" },
   { key: "inventory-out", label: "Material Outward" },
-  { key: "inventory-approval", label: "Inventory Approvals" },
   { key: "view-inventory", label: "View Stock" },
-  { key: "inventory-request", label: "Material Request" },
   { key: "inventory-alert", label: "Stock Alerts" },
+  { key: "general-consumables", label: "Tools & Consumables" },
   { key: "roles-access", label: "Roles & Access" },
   { key: "shift-location", label: "Shift & Location" },
   { key: "roster", label: "Roster" },
@@ -111,13 +110,43 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
 
     if (roleModules.length > 0) {
       for (const m of roleModules) {
-        permissionMap[m.moduleKey] = {
+        if (m.moduleKey.includes(":")) {
+          const [subKey, act] = m.moduleKey.split(":");
+          if (!permissionMap[subKey]) {
+            permissionMap[subKey] = {
+              canView: false,
+              canCreate: false,
+              canEdit: false,
+              canDelete: false,
+            };
+          }
+          if (act === "view") permissionMap[subKey].canView = true;
+          if (act === "create") permissionMap[subKey].canCreate = true;
+          if (act === "edit") permissionMap[subKey].canEdit = true;
+          if (act === "delete") permissionMap[subKey].canDelete = true;
+          permissionMap[m.moduleKey] = true;
+        } else {
+          permissionMap[m.moduleKey] = {
+            canView: true,
+            canCreate: true,
+            canEdit: true,
+            canDelete: true,
+          };
+        }
+      }
+
+      // If user has any inventory submodule view permission, ensure 'inventory' parent module is granted
+      const inventorySubKeys = ["inventory-in", "inventory-out", "view-inventory", "inventory-alert", "general-consumables"];
+      const hasAnyInventorySub = inventorySubKeys.some((k) => permissionMap[k]?.canView || permissionMap[`${k}:view`]);
+      if (hasAnyInventorySub && !permissionMap["inventory"]) {
+        permissionMap["inventory"] = {
           canView: true,
-          canCreate: true,
-          canEdit: true,
-          canDelete: true,
+          canCreate: false,
+          canEdit: false,
+          canDelete: false,
         };
       }
+
       if (req.user?.role === "ADMIN") {
         permissionMap["overview"] = {
           canView: true,

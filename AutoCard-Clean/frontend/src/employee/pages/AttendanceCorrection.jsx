@@ -150,11 +150,16 @@ const AttendanceCorrection = ({ correctionType }) => {
   const isTodayUnclosedBlocked =
     date === indiaNow.date && hasUnclosedPreviousMissingCheckout;
 
+  const hasExistingCheckIn = !!existingAttendance?.record?.checkInTime;
+
   useEffect(() => {
     if (isTodayUnclosedBlocked && (punchType === "check-in" || punchType === "both")) {
       setPunchType("check-out");
+    } else if (!hasExistingCheckIn && punchType === "check-out" && !isTodayUnclosedBlocked) {
+      // If user has not checked in for this date, default punchType to check-in or both
+      setPunchType("check-in");
     }
-  }, [isTodayUnclosedBlocked, punchType]);
+  }, [isTodayUnclosedBlocked, hasExistingCheckIn, punchType]);
 
   const getApprovedLeaveForDate = (selectedDateStr) => {
     if (!selectedDateStr || approvedLeaves.length === 0) return null;
@@ -246,9 +251,18 @@ const AttendanceCorrection = ({ correctionType }) => {
       return;
     }
 
+    if (requestMode === "forgot-punch" && punchType === "check-out" && !hasExistingCheckIn) {
+      toast.error("Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.");
+      return;
+    }
+
     if (requestMode === "time-edit") {
       if (!time && !checkOutTime) {
         toast.error("Please provide at least check-in time or check-out time.");
+        return;
+      }
+      if (!time && checkOutTime && !hasExistingCheckIn) {
+        toast.error("Cannot set Check Out time without a Check In record. Please provide both Check In and Check Out times.");
         return;
       }
       if (time && checkOutTime && checkOutTime <= time) {
@@ -540,7 +554,11 @@ const AttendanceCorrection = ({ correctionType }) => {
                     ? "Check In (Closed — Complete Yesterday Check-Out First)"
                     : "Check In"}
                 </option>
-                <option value="check-out">Check Out</option>
+                <option value="check-out" disabled={!hasExistingCheckIn}>
+                  {!hasExistingCheckIn
+                    ? "Check Out (Disabled — Check In required first)"
+                    : "Check Out"}
+                </option>
                 <option value="both" disabled={isTodayUnclosedBlocked}>
                   {isTodayUnclosedBlocked
                     ? "Check In + Check Out (Closed — Complete Yesterday Check-Out First)"

@@ -292,10 +292,13 @@ const EmployeeLayout = () => {
             <div className="relative" ref={notifDropdownRef}>
               <button
                 type="button"
-                onClick={() => setNotifOpen((v) => !v)}
+                onClick={() => {
+                  setNotifOpen(false);
+                  navigate("/employee/requests/track");
+                }}
                 className="relative p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
                 aria-label={`Notifications${empNotifications.length ? `, ${empNotifications.length} new` : ""}`}
-                title="Notifications"
+                title="Track My Requests"
               >
                 <Bell className="h-5 w-5" />
                 {empNotifications.length > 0 && (

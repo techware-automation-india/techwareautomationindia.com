@@ -349,6 +349,24 @@ function calculateWorkedHours(checkIn, checkOut) {
   );
 }
 
+function calculateOvertimeHours(workedHours, isHolidayOrSunday = false) {
+  if (workedHours == null) return 0;
+  const hours = Number(workedHours);
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+
+  if (isHolidayOrSunday) {
+    const rawMinutes = Math.round(hours * 60);
+    const roundedOtMinutes = Math.floor(rawMinutes / 15) * 15;
+    return roundedOtMinutes > 0 ? parseFloat((roundedOtMinutes / 60).toFixed(2)) : 0;
+  }
+
+  if (hours <= 8) return 0;
+  const rawOvertimeHours = hours - 8;
+  const rawOvertimeMinutes = Math.round(rawOvertimeHours * 60);
+  const roundedOtMinutes = Math.floor(rawOvertimeMinutes / 15) * 15;
+  return roundedOtMinutes > 0 ? parseFloat((roundedOtMinutes / 60).toFixed(2)) : 0;
+}
+
 /*
 |--------------------------------------------------------------------------
 | PUNCH HELPER
@@ -380,7 +398,7 @@ async function getEmployeeProfile(userId) {
     return null;
   }
 
-  return prisma.employeeProfile.findFirst({
+  let profile = await prisma.employeeProfile.findFirst({
     where: {
       OR: [
         { userId },
@@ -388,6 +406,22 @@ async function getEmployeeProfile(userId) {
       ],
     },
   });
+
+  if (!profile) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (user && user.role === "ADMIN") {
+      profile = await prisma.employeeProfile.create({
+        data: {
+          userId: user.id,
+          employeeCode: "ADMIN",
+          jobTitle: "Administrator",
+          onboardingStatus: "APPROVED",
+        },
+      });
+    }
+  }
+
+  return profile;
 }
 
 /*
@@ -458,7 +492,18 @@ router.get("/my", async (req, res) => {
         where: {
           employeeId: employee.id,
         },
-
+        include: {
+          employee: {
+            include: {
+              user: {
+                select: {
+                  fullName: true,
+                  email: true,
+                },
+              },
+            },
+          },
+        },
         orderBy: {
           createdAt: "desc",
         },
@@ -805,21 +850,42 @@ router.post(["/my", "/"], async (req, res) => {
         const todayDateKey = getDateKey(new Date());
 
         if (requestsCheckIn && requestedDateKey === todayDateKey) {
-          const unclosedPrevious = await prisma.attendance.findFirst({
+          const lastAttendance = await prisma.attendance.findFirst({
             where: {
               employeeId: employee.id,
               date: { lt: new Date(todayDateKey + "T00:00:00+05:30") },
-              checkIn: { not: null },
-              checkOut: null,
             },
             orderBy: { date: "desc" },
           });
 
-          if (unclosedPrevious) {
-            const unclosedDateKey = getDateKey(unclosedPrevious.date);
-            return res.status(400).json({
-              message: `Check-in for today is disabled. You have an uncompleted check-in from ${unclosedDateKey}. Please complete yesterday's check-out first.`,
+          if (lastAttendance && lastAttendance.checkIn && !lastAttendance.checkOut) {
+            const unclosedDateKey = getDateKey(lastAttendance.date);
+            // Check if there is a pending or approved correction request for this checkout
+            const existingRequests = await prisma.employeeRequest.findMany({
+              where: {
+                employeeId: employee.id,
+                type: "CORRECTION",
+              },
+              orderBy: { createdAt: "desc" },
             });
+            const hasPendingOrApproved = existingRequests.some((req) => {
+              if (!req.description) return false;
+              const matchesDate =
+                req.description.includes(`"date":"${unclosedDateKey}"`) ||
+                req.description.includes(unclosedDateKey);
+              const matchesCheckout =
+                req.description.includes(`"punchType":"check-out"`) ||
+                req.description.includes(`"punchType":"both"`) ||
+                req.description.includes("check-out") ||
+                req.description.includes("Check Out");
+              return matchesDate && matchesCheckout && (req.status === "PENDING" || req.status === "APPROVED");
+            });
+
+            if (!hasPendingOrApproved) {
+              return res.status(400).json({
+                message: `Check-in for today is disabled. You have an uncompleted check-in from ${unclosedDateKey}. Please complete that day's check-out first.`,
+              });
+            }
           }
         }
 
@@ -953,20 +1019,87 @@ router.post(["/my", "/"], async (req, res) => {
         ? buildCorrectionDescription(correction)
         : parsed.data.description || "";
 
-    const createdRequest =
-      await prisma.employeeRequest.create({
-        data: {
-          employeeId: employee.id,
+    const isAdminUser = req.user && req.user.role === "ADMIN";
 
-          type: parsed.data.type,
+    let createdRequest = await prisma.employeeRequest.create({
+      data: {
+        employeeId: employee.id,
+        type: parsed.data.type,
+        subject: parsed.data.subject,
+        description: finalDescription,
+        status: isAdminUser ? "APPROVED" : "PENDING",
+        ...(isAdminUser && {
+          reviewNote: "Auto-approved (Admin request does not require approval).",
+          reviewedById: req.user.id,
+          reviewedAt: new Date(),
+        }),
+      },
+    });
 
-          subject: parsed.data.subject,
+    // If Admin submits a CORRECTION (Forgot Punch / Time Edit), automatically update attendance immediately
+    if (isAdminUser && correction && parsed.data.type === "CORRECTION") {
+      try {
+        const dateKey = getDateKey(correction.date);
+        const attendanceRange = dateKey ? getAttendanceDayRange(dateKey) : null;
+        if (attendanceRange) {
+          const requestedCheckIn = correction.checkInTime ? timeToDate(dateKey, correction.checkInTime) : null;
+          const requestedCheckOut = correction.checkOutTime ? timeToDate(dateKey, correction.checkOutTime) : null;
 
-          description: finalDescription,
+          const existingAttendance = await prisma.attendance.findFirst({
+            where: {
+              employeeId: employee.id,
+              date: {
+                gte: attendanceRange.start,
+                lt: attendanceRange.end,
+              },
+            },
+            orderBy: { date: "asc" },
+          });
 
-          status: "PENDING",
-        },
-      });
+          let finalCheckIn = existingAttendance?.checkIn || null;
+          let finalCheckOut = existingAttendance?.checkOut || null;
+
+          if (correction.punchType === "check-in" || correction.punchType === "both" || correction.punchType === "time-edit") {
+            if (requestedCheckIn) finalCheckIn = requestedCheckIn;
+          }
+          if (correction.punchType === "check-out" || correction.punchType === "both" || correction.punchType === "time-edit") {
+            if (requestedCheckOut) finalCheckOut = requestedCheckOut;
+          }
+
+          const workedHours = calculateWorkedHours(finalCheckIn, finalCheckOut);
+
+          if (existingAttendance) {
+            await prisma.attendance.update({
+              where: { id: existingAttendance.id },
+              data: {
+                checkIn: finalCheckIn,
+                checkOut: finalCheckOut,
+                workedHours,
+                status: "PRESENT",
+                note: [
+                  existingAttendance.note || "",
+                  `Admin Forgot Punch auto-approved. Reason: ${correction.reason || "Forgot Punch request."}`,
+                ].filter(Boolean).join(" "),
+              },
+            });
+          } else {
+            await prisma.attendance.create({
+              data: {
+                employeeId: employee.id,
+                date: attendanceRange.start,
+                checkIn: finalCheckIn,
+                checkOut: finalCheckOut,
+                workedHours,
+                status: "PRESENT",
+                note: `Admin Forgot Punch auto-approved. Reason: ${correction.reason || "Forgot Punch request."}`,
+              },
+            });
+          }
+        }
+      } catch (attErr) {
+        console.warn("⚠️ Failed to auto-apply attendance for admin correction:", attErr);
+      }
+    }
 
     // If this is a project-related equipment request, auto-add to the chosen project immediately
     if (parsed.data.type === "EQUIPMENT") {
@@ -980,18 +1113,33 @@ router.post(["/my", "/"], async (req, res) => {
           console.warn("⚠️ addOrEnsureProductInProject on request creation error:", projErr);
         }
       }
+      if (isAdminUser) {
+        try {
+          const finalReviewNote = await handleInventoryStockUpdate(createdRequest, "Admin equipment request auto-approved.");
+          if (finalReviewNote) {
+            createdRequest = await prisma.employeeRequest.update({
+              where: { id: createdRequest.id },
+              data: { reviewNote: finalReviewNote.slice(0, 4000) },
+            });
+          }
+        } catch (invErr) {
+          console.warn("⚠️ handleInventoryStockUpdate on admin request error:", invErr);
+        }
+      }
     }
 
     console.log(
       "✅ REQUEST CREATED:",
       createdRequest.id,
+      isAdminUser ? "(AUTO-APPROVED)" : "(PENDING)"
     );
 
     return res.status(201).json({
-      message:
-        "Request submitted successfully.",
-
+      message: isAdminUser
+        ? "Request submitted and auto-approved."
+        : "Request submitted successfully.",
       request: createdRequest,
+      autoApproved: isAdminUser,
     });
   } catch (error) {
     console.error(
@@ -2256,6 +2404,11 @@ async function validateInventoryStockAvailability(request) {
         finalCheckOut,
       );
 
+    const isHolOrSun = Boolean(
+      (attendanceRange?.start && new Date(attendanceRange.start).getDay() === 0)
+    );
+    const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
+
     /*
     |--------------------------------------------------------------------------
     | TRANSACTION
@@ -2289,6 +2442,8 @@ async function validateInventoryStockAvailability(request) {
                       finalCheckOut,
 
                     workedHours,
+
+                    overtimeHours,
 
                     status:
                       "PRESENT",
@@ -2327,6 +2482,8 @@ async function validateInventoryStockAvailability(request) {
                       finalCheckOut,
 
                     workedHours,
+
+                    overtimeHours,
 
                     status:
                       "PRESENT",

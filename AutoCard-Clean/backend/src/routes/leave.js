@@ -41,6 +41,25 @@ async function ensureBalance(employeeId, leaveTypeId, year, leaveType) {
   return balance;
 }
 
+/** Ensure a profile exists for a user (including ADMIN users) */
+async function ensureUserProfile(user) {
+  if (!user?.id) return null;
+  let profile = await prisma.employeeProfile.findUnique({
+    where: { userId: user.id },
+  });
+  if (!profile && user.role === "ADMIN") {
+    profile = await prisma.employeeProfile.create({
+      data: {
+        userId: user.id,
+        employeeCode: "ADMIN",
+        jobTitle: "Administrator",
+        onboardingStatus: "APPROVED",
+      },
+    });
+  }
+  return profile;
+}
+
 /** Create or update Attendance records to ON_LEAVE for approved leave request dates */
 async function syncLeaveAttendanceRecords(employeeId, startDate, endDate, leaveTypeName) {
   try {
@@ -109,9 +128,7 @@ router.get("/types", requireAuth, async (_req, res) => {
 // GET /api/leave/balances  – current year balances for logged-in employee
 router.get("/balances", requireAuth, async (req, res) => {
   try {
-    const profile = await prisma.employeeProfile.findUnique({
-      where: { userId: req.user.id },
-    });
+    const profile = await ensureUserProfile(req.user);
     if (!profile) return res.status(404).json({ message: "Employee profile not found." });
 
     const year = new Date().getFullYear();
@@ -144,14 +161,24 @@ router.get("/balances", requireAuth, async (req, res) => {
 // GET /api/leave/my  – leave history for logged-in employee
 router.get("/my", requireAuth, async (req, res) => {
   try {
-    const profile = await prisma.employeeProfile.findUnique({
-      where: { userId: req.user.id },
-    });
+    const profile = await ensureUserProfile(req.user);
     if (!profile) return res.status(404).json({ message: "Employee profile not found." });
 
     const requests = await prisma.leaveRequest.findMany({
       where: { employeeId: profile.id },
-      include: { leaveType: true },
+      include: {
+        leaveType: true,
+        employee: {
+          include: {
+            user: {
+              select: {
+                fullName: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -184,12 +211,12 @@ router.post("/apply", requireAuth, checkRolePermission(["requests-apply-leave", 
   }
 
   try {
-    const profile = await prisma.employeeProfile.findUnique({
-      where: { userId: req.user.id },
-    });
+    const profile = await ensureUserProfile(req.user);
     if (!profile) return res.status(404).json({ message: "Employee profile not found." });
 
-    if (profile.onboardingStatus !== "APPROVED") {
+    const isAdminUser = req.user && req.user.role === "ADMIN";
+
+    if (!isAdminUser && profile.onboardingStatus !== "APPROVED") {
       return res.status(403).json({ message: "Complete onboarding before applying for leave." });
     }
 
@@ -201,7 +228,7 @@ router.post("/apply", requireAuth, checkRolePermission(["requests-apply-leave", 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const advanceDays = leaveType.minAdvanceNoticeDays ?? 0;
-    if (advanceDays > 0) {
+    if (!isAdminUser && advanceDays > 0) {
       const minAllowedStart = new Date(today);
       minAllowedStart.setDate(minAllowedStart.getDate() + advanceDays);
       if (start < minAllowedStart) {
@@ -217,7 +244,7 @@ router.post("/apply", requireAuth, checkRolePermission(["requests-apply-leave", 
     }
 
     // ── Max consecutive days rule ─────────────────────────────
-    if (leaveType.maxConsecutiveDays && leaveType.maxConsecutiveDays > 0) {
+    if (!isAdminUser && leaveType.maxConsecutiveDays && leaveType.maxConsecutiveDays > 0) {
       if (totalDays > leaveType.maxConsecutiveDays) {
         return res.status(400).json({
           message: `You cannot take more than ${leaveType.maxConsecutiveDays} consecutive day(s) for ${leaveType.name}.`,
@@ -229,7 +256,7 @@ router.post("/apply", requireAuth, checkRolePermission(["requests-apply-leave", 
     const balance = await ensureBalance(profile.id, leaveTypeId, year, leaveType);
     const remaining = balance.allocated - balance.used;
 
-    if (totalDays > remaining) {
+    if (!isAdminUser && totalDays > remaining) {
       return res.status(400).json({
         message: `Insufficient balance. You have ${remaining} day(s) remaining for ${leaveType.name}.`,
       });
@@ -248,8 +275,7 @@ router.post("/apply", requireAuth, checkRolePermission(["requests-apply-leave", 
       return res.status(409).json({ message: "You already have a leave request overlapping these dates." });
     }
 
-    // Admin user / Emergency / no-approval leave → auto-approve and deduct balance immediately
-    const isAdminUser = req.user && req.user.role === "ADMIN";
+    // Emergency / no-approval leave → auto-approve and deduct balance immediately
     const isEmergencyLeave = leaveType.code === "EML";
     const isAutoApproved = isAdminUser || isEmergencyLeave || leaveType.requiresApproval === false;
 

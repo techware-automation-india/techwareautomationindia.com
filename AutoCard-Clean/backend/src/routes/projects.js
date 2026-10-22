@@ -270,7 +270,7 @@ router.get("/active-options", async (req, res) => {
 });
 
 // GET /api/projects/my-assigned - Get projects assigned to the logged-in employee
-router.get("/my-assigned", async (req, res) => {
+router.get("/my-assigned", checkRolePermission(["projects", "assigned-projects"]), async (req, res) => {
   try {
     const userId = req.user.id;
 

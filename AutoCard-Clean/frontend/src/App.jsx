@@ -258,7 +258,9 @@ const AppRoutes = () => {
             path="projects"
             element={
               <RequireOnboarding>
-                <EmployeeProjects />
+                <RequireModuleAccess moduleKey="assigned-projects">
+                  <EmployeeProjects />
+                </RequireModuleAccess>
               </RequireOnboarding>
             }
           />

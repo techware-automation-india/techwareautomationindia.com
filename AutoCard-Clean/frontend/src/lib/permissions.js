@@ -23,6 +23,8 @@ export function hasModuleAccess(key) {
     "leave",
     "my-tools",
     "my-projects",
+    "academic-calendar",
+    "academic-holidays",
   ];
 
   try {
@@ -66,23 +68,26 @@ export function hasModuleAccess(key) {
     if (key === "leave-policy-types" && (perms["leave-policy-types"] || perms["leave-policy"])) return true;
     if (key === "leave-policy-holidays" && (perms["leave-policy-holidays"] || perms["leave-policy"])) return true;
 
+    const checkValCanView = (val) => {
+      if (!val) return false;
+      if (val === true) return true;
+      if (typeof val === "object") return val.canView === true;
+      return false;
+    };
+
     if (key === "inventory") {
-      if (perms["inventory"]) {
-        const p = perms["inventory"];
-        if (p === true || p.canView === true || (typeof p === "object" && Object.values(p).some(Boolean))) return true;
+      if (perms["inventory"] && checkValCanView(perms["inventory"])) {
+        return true;
       }
       return Object.keys(perms).some((k) => 
         (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
-        (perms[k] === true || perms[k]?.canView || (typeof perms[k] === "object" && Object.values(perms[k]).some(Boolean)))
+        (checkValCanView(perms[k]) || checkValCanView(perms[`${k}:view`]))
       );
     }
 
     if (key.startsWith("inventory-") || key === "view-inventory" || key === "general-consumables") {
-      const p = perms[key];
-      if (p) {
-        if (p === true || p.canView === true || (typeof p === "object" && Object.values(p).some(Boolean))) return true;
-      }
-      if (perms[`${key}:view`] || perms[`${key}:create`] || perms[`${key}:edit`]) return true;
+      if (perms[key] && checkValCanView(perms[key])) return true;
+      if (perms[`${key}:view`] && checkValCanView(perms[`${key}:view`])) return true;
       return false;
     }
 

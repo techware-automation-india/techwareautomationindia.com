@@ -60,15 +60,22 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
   const [showPassword, setShowPassword] = useState(false);
 
   // Permission helpers - Admin has all permissions, Employee has assigned permissions
-  const permissions = employeePermissions || {
-    canView: true,
-    canCreate: true,
-    canEdit: true,
-    canDelete: true,
-  };
+  const permissions = isEmployeeView
+    ? (employeePermissions || {
+        canView: false,
+        canCreate: false,
+        canEdit: false,
+        canDelete: false,
+      })
+    : (employeePermissions || {
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+      });
   
-  const canCreate = permissions.canCreate;
-  const canDelete = permissions.canDelete;
+  const canCreate = Boolean(permissions.canCreate);
+  const canDelete = Boolean(permissions.canDelete);
 
   const loadData = async () => {
     try {

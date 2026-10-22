@@ -540,148 +540,15 @@ const TrackRequests = ({ isAdmin = false }) => {
   const currentYear = now.getFullYear();
 
   const currentUser = getAuthUser();
-  const [adminScope, setAdminScope] = useState("ALL");
-  const [employeeFilter, setEmployeeFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [yearFilter, setYearFilter] = useState(String(currentYear));
   const [monthFilter, setMonthFilter] = useState(String(currentMonth));
 
-  const isMyRequest = (req) => {
-    if (!currentUser) return false;
-    if (adminScope === "ME" || !isAdmin) return true;
-    const emp = req?.employee;
-    if (!emp) return false;
-    if (emp.id && currentUser.employeeProfile?.id && emp.id === currentUser.employeeProfile.id) return true;
-    if (emp.employeeCode && currentUser.employeeProfile?.employeeCode && emp.employeeCode === currentUser.employeeProfile.employeeCode) return true;
-    if (emp.email && currentUser.email && emp.email.toLowerCase() === currentUser.email.toLowerCase()) return true;
-    if (emp.user?.email && currentUser.email && emp.user.email.toLowerCase() === currentUser.email.toLowerCase()) return true;
-    if (emp.user?.id && currentUser.id && emp.user.id === currentUser.id) return true;
-    if (emp.fullName && currentUser.fullName && emp.fullName.toLowerCase() === currentUser.fullName.toLowerCase()) return true;
-    return false;
-  };
-
-  const employeesList = useMemo(() => {
-    if (!isAdmin) return [];
-    const map = new Map();
-    requests.forEach((r) => {
-      if (r.employee) {
-        const key = r.employee.id || r.employee.employeeCode || r.employee.fullName;
-        if (key && !map.has(key)) {
-          map.set(key, {
-            key,
-            id: r.employee.id,
-            employeeCode: r.employee.employeeCode,
-            fullName: r.employee.fullName || "Unknown",
-          });
-        }
-      }
-    });
-    return Array.from(map.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [isAdmin, requests]);
-
   const loadRequests = async () => {
     setLoadError("");
 
     try {
-      if (isAdmin && adminScope === "ALL") {
-        const results = await Promise.allSettled([
-          apiGet("/requests"),
-          apiGet("/leave/admin/all"),
-          apiGet("/attendance/pending-approvals"),
-        ]);
-
-        const requestResult = results[0];
-        const leaveResult = results[1];
-        const attendanceResult = results[2];
-
-        // 1. ALL COMPANY GENERAL / FORGOT PUNCH / EQUIPMENT REQUESTS
-        const allGeneralRequests =
-          requestResult.status === "fulfilled"
-            ? (requestResult.value.requests || []).map((request) => ({
-                ...request,
-                status: normalizeStatus(request.status, request.description || request.note, request.reviewNote),
-                forgotPunch: getForgotPunchData(request),
-                reviewedAt: request.reviewedAt || null,
-                employee: request.employee
-                  ? {
-                      id: request.employee.id,
-                      employeeCode: request.employee.employeeCode,
-                      fullName: request.employee.fullName || request.employee.user?.fullName || "Employee",
-                      email: request.employee.email || request.employee.user?.email || "",
-                    }
-                  : null,
-              }))
-            : [];
-
-        // 2. ALL COMPANY LEAVE REQUESTS
-        const allLeaveRequests =
-          leaveResult.status === "fulfilled"
-            ? (leaveResult.value.requests || []).map((request) => ({
-                id: `leave-${request.id}`,
-                type: "LEAVE",
-                subject: `${request.leaveType?.name || "Leave"} request`,
-                status: normalizeStatus(request.status, request.reason, request.reviewNote),
-                createdAt: request.createdAt,
-                reviewedAt: request.reviewedAt || null,
-                description:
-                  `${new Date(request.startDate).toLocaleDateString()} – ` +
-                  `${new Date(request.endDate).toLocaleDateString()} · ` +
-                  `${request.totalDays} day(s)` +
-                  (request.reason ? `\nReason: ${request.reason}` : ""),
-                reviewNote: request.reviewNote,
-                employee: request.employee
-                  ? {
-                      id: request.employee.id,
-                      employeeCode: request.employee.employeeCode,
-                      fullName: request.employee.user?.fullName || request.employee.fullName || "Employee",
-                      email: request.employee.user?.email || request.employee.email || "",
-                    }
-                  : null,
-              }))
-            : [];
-
-        // 3. ALL COMPANY ATTENDANCE APPROVAL REQUESTS
-        const allAttendanceRequests =
-          attendanceResult.status === "fulfilled"
-            ? (attendanceResult.value.pendingRecords || []).map((request) => ({
-                id: `attendance-${request.id}`,
-                type: "ATTENDANCE",
-                subject: "Attendance Location Approval",
-                status: normalizeStatus(request.status, request.note, request.reviewNote),
-                createdAt: request.createdAt || request.date,
-                reviewedAt: request.status !== "PENDING_APPROVAL" ? (request.updatedAt || null) : null,
-                checkInTime: request.checkIn || request.createdAt || request.date,
-                checkOutTime: request.checkOut || null,
-                description: request.note || "",
-                note: request.note || "",
-                reason: request.reason || "",
-                checkInLatitude: request.checkInLatitude ?? null,
-                checkInLongitude: request.checkInLongitude ?? null,
-                checkOutLatitude: request.checkOutLatitude ?? null,
-                checkOutLongitude: request.checkOutLongitude ?? null,
-                checkInDistance: request.checkInDistance ?? null,
-                checkOutDistance: request.checkOutDistance ?? null,
-                reviewNote: request.reviewNote,
-                employee: request.employee
-                  ? {
-                      id: request.employee.id,
-                      employeeCode: request.employee.employeeCode,
-                      fullName: request.employee.user?.fullName || request.employee.fullName || "Employee",
-                      email: request.employee.user?.email || request.employee.email || "",
-                    }
-                  : null,
-              }))
-            : [];
-
-        setRequests(
-          [...allGeneralRequests, ...allLeaveRequests, ...allAttendanceRequests].sort(
-            (first, second) =>
-              new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
-          ),
-        );
-        return;
-      }
 
       // ============================================================
       // EMPLOYEE OR ADMIN PERSONAL ("ME")
@@ -798,7 +665,7 @@ const TrackRequests = ({ isAdmin = false }) => {
         .filter(({ result }) => {
           if (result.status !== "rejected") return false;
           // If admin checking personal requests and no employee profile exists, 404 is expected
-          if (isAdmin && adminScope === "ME" && result.reason?.status === 404) return false;
+          if (isAdmin && result.reason?.status === 404) return false;
           return true;
         });
 
@@ -850,7 +717,7 @@ const TrackRequests = ({ isAdmin = false }) => {
 
   useEffect(() => {
     loadRequests();
-  }, [navigate, adminScope]);
+  }, [navigate]);
 
   // Silent background refresh every pollTick (every 5s)
   useEffect(() => {
@@ -937,18 +804,6 @@ const TrackRequests = ({ isAdmin = false }) => {
       return false;
     }
 
-    // =====================================================
-    // EMPLOYEE FILTER (Admin All Scope)
-    // =====================================================
-    if (isAdmin && adminScope === "ALL" && employeeFilter !== "ALL") {
-      const emp = request.employee;
-      if (!emp) return false;
-      const key = emp.id || emp.employeeCode || emp.fullName;
-      if (key !== employeeFilter && emp.id !== employeeFilter && emp.employeeCode !== employeeFilter) {
-        return false;
-      }
-    }
-
     return true;
   });
 
@@ -970,17 +825,15 @@ const TrackRequests = ({ isAdmin = false }) => {
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold">
-              {isAdmin ? "Track All Requests" : "Track My Request"}
+              Track My Request
             </h1>
             <p className="text-sm text-muted-foreground">
-              {isAdmin
-                ? "View and track all company-wide employee requests and their current status."
-                : "View your submitted requests and their current status."}
+              View your submitted requests and their current status.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={loadRequests}
@@ -1018,22 +871,6 @@ const TrackRequests = ({ isAdmin = false }) => {
         ))}
 
         <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap sm:flex-nowrap gap-2">
-          {/* Employee Filter (Admin in ALL scope) */}
-          {isAdmin && adminScope === "ALL" && employeesList.length > 0 && (
-            <select
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-            >
-              <option value="ALL">All Employees ({employeesList.length})</option>
-              {employeesList.map((emp) => (
-                <option key={emp.key} value={emp.key}>
-                  {emp.employeeCode ? `[${emp.employeeCode}] ` : ""}{emp.fullName}
-                </option>
-              ))}
-            </select>
-          )}
-
           {/* Request Type Filter */}
           <select
             value={typeFilter}
@@ -1044,6 +881,9 @@ const TrackRequests = ({ isAdmin = false }) => {
             <option value="LEAVE">Leave</option>
             <option value="CORRECTION">Forgot Punch / Time Edit</option>
             <option value="ATTENDANCE">Attendance</option>
+            <option value="EQUIPMENT">Tools & Inventory</option>
+            <option value="GENERAL">General Requests</option>
+            <option value="OTHER">Other</option>
           </select>
 
           {/* Month Filter */}
@@ -1171,27 +1011,6 @@ const TrackRequests = ({ isAdmin = false }) => {
                       </span>
                     );
                   })()}
-
-                  {/* Employee Badge */}
-                  {request.employee ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/80 px-2.5 py-1 text-xs font-medium text-foreground border border-border">
-                      <UserRound className="h-3 w-3 text-muted-foreground" />
-                      <span>
-                        {request.employee.employeeCode ? `[${request.employee.employeeCode}] ` : ""}
-                        {request.employee.fullName || "Employee"}
-                      </span>
-                      {isMyRequest(request) && (
-                        <span className="rounded bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold text-primary">
-                          Me
-                        </span>
-                      )}
-                    </span>
-                  ) : isMyRequest(request) && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary border border-primary/20">
-                      <UserRound className="h-3 w-3" />
-                      Me
-                    </span>
-                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -1634,11 +1453,6 @@ const TrackRequests = ({ isAdmin = false }) => {
                       {reasonModal.employee.employeeCode ? `[${reasonModal.employee.employeeCode}] ` : ""}
                       {reasonModal.employee.fullName || "Employee"}
                     </span>
-                    {isMyRequest(reasonModal) && (
-                      <span className="rounded bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold text-primary">
-                        Me
-                      </span>
-                    )}
                   </span>
                 )}
               </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Package, X, UploadCloud, Loader2, Plus, Image as ImageIcon, Trash2, Check,
   IndianRupee, Calculator, Hash, ShieldAlert, Tag, Barcode, Building2, MapPin,
@@ -54,6 +55,8 @@ const ItemCardModal = ({
   const [unit, setUnit] = useState("Nos");
   const [warehouse, setWarehouse] = useState("Main Warehouse");
   const [location, setLocation] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [vendorName, setVendorName] = useState("");
   const [unitsList, setUnitsList] = useState([]);
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
@@ -86,9 +89,28 @@ const ItemCardModal = ({
     }
   }, [isOpen]);
 
-  // Populate form if editing
+  const [isRestoredDraft, setIsRestoredDraft] = useState(false);
+  const currentUser = getAuthUser();
+  const currentUserId = currentUser?.id || "anon";
+  const DRAFT_STORAGE_KEY = `autocard_item_draft_${currentUserId}_${categoryId || "root"}`;
+
+  // Helper to clear draft from localStorage
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      localStorage.removeItem(`autocard_item_draft_${currentUserId}_root`);
+      localStorage.removeItem(`autocard_item_draft_${categoryId || "root"}`);
+      localStorage.removeItem("autocard_item_draft_root");
+    } catch {}
+    setIsRestoredDraft(false);
+  };
+
+  // Populate form if editing, or restore auto-saved draft if adding new
   useEffect(() => {
+    if (!isOpen) return;
+
     if (item) {
+      // Editing existing item - always use item data
       setName(item.name || "");
       setCode(item.code || item.sku || "");
       setPhotoUrl(item.photoUrl || "");
@@ -99,6 +121,8 @@ const ItemCardModal = ({
       setUnit(item.unit || "Nos");
       setWarehouse(item.warehouse || "Main Warehouse");
       setLocation(item.location || "");
+      setCompanyName(item.companyName || "");
+      setVendorName(item.vendorName || "");
 
       // Handle specifications: can be Array or Object (Unlimited)
       let initialSpecs = [];
@@ -121,24 +145,101 @@ const ItemCardModal = ({
         ];
       }
       setSpecs(initialSpecs);
+      setIsRestoredDraft(false);
     } else {
-      // Reset for new item
-      setName("");
-      setCode("");
-      setPhotoUrl("");
-      setQuantity(1);
-      setMinStock(5);
-      setMaxStock(100);
-      setCostPrice(0);
-      setUnit("Nos");
-      setWarehouse("Main Warehouse");
-      setLocation("");
-      setSpecs([
-        { key: "", value: "" },
-        { key: "", value: "" },
-      ]);
+      // Adding new item - check for previously auto-saved draft
+      let draftData = null;
+      try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY) || localStorage.getItem("autocard_item_draft_root");
+        if (raw) {
+          draftData = JSON.parse(raw);
+        }
+      } catch {}
+
+      if (draftData && (draftData.name || draftData.code || draftData.companyName || draftData.vendorName || draftData.location || draftData.photoUrl)) {
+        setName(draftData.name || "");
+        setCode(draftData.code || "");
+        setPhotoUrl(draftData.photoUrl || "");
+        setQuantity(draftData.quantity ?? 1);
+        setMinStock(draftData.minStock ?? 5);
+        setMaxStock(draftData.maxStock ?? 100);
+        setCostPrice(draftData.costPrice ?? 0);
+        setUnit(draftData.unit || "Nos");
+        setWarehouse(draftData.warehouse || "Main Warehouse");
+        setLocation(draftData.location || "");
+        setCompanyName(draftData.companyName || "");
+        setVendorName(draftData.vendorName || "");
+        setSpecs(Array.isArray(draftData.specs) && draftData.specs.length > 0 ? draftData.specs : [
+          { key: "", value: "" },
+          { key: "", value: "" },
+        ]);
+        setIsRestoredDraft(true);
+      } else {
+        // Fresh blank form
+        setName("");
+        setCode("");
+        setPhotoUrl("");
+        setQuantity(1);
+        setMinStock(5);
+        setMaxStock(100);
+        setCostPrice(0);
+        setUnit("Nos");
+        setWarehouse("Main Warehouse");
+        setLocation("");
+        setCompanyName("");
+        setVendorName("");
+        setSpecs([
+          { key: "", value: "" },
+          { key: "", value: "" },
+        ]);
+        setIsRestoredDraft(false);
+      }
     }
-  }, [item, isOpen]);
+  }, [item, isOpen, categoryId]);
+
+  // Auto-save draft whenever user changes fields (only for new item creations)
+  useEffect(() => {
+    if (!isOpen || item) return;
+
+    // Check if there is any user-entered content
+    const hasContent = Boolean(
+      name.trim() ||
+      code.trim() ||
+      photoUrl ||
+      companyName.trim() ||
+      vendorName.trim() ||
+      location.trim() ||
+      specs.some((s) => s.key.trim() || s.value.trim())
+    );
+
+    if (!hasContent) {
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {}
+      return;
+    }
+
+    const draft = {
+      name,
+      code,
+      photoUrl,
+      quantity,
+      minStock,
+      maxStock,
+      costPrice,
+      unit,
+      warehouse,
+      location,
+      companyName,
+      vendorName,
+      specs,
+      savedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [isOpen, item, name, code, photoUrl, quantity, minStock, maxStock, costPrice, unit, warehouse, location, companyName, vendorName, specs, DRAFT_STORAGE_KEY]);
 
   // Close on Escape key press
   useEffect(() => {
@@ -242,13 +343,19 @@ const ItemCardModal = ({
       return;
     }
 
+    // Disallow special characters like . , - @ # ! $ % ^ & * ( ) + = [ ] { } ; : ' " < > ? / \ | ` ~
+    if (/[^a-zA-Z0-9\s]/.test(name.trim())) {
+      toast.error("Special characters (.-,@# etc.) are not allowed in Item / Product Name. Only letters, numbers and spaces are permitted.");
+      return;
+    }
+
     if (!code.trim()) {
       toast.error("Item Code is mandatory and must be filled.");
       return;
     }
 
-    if (/[_\-]/.test(code.trim())) {
-      toast.error("Item Code / SKU cannot contain hyphen (-) or underscore (_) characters.");
+    if (/[^a-zA-Z0-9\s]/.test(code.trim())) {
+      toast.error("Item Code / SKU cannot contain special characters (.-,@# etc.). Only letters and numbers are allowed.");
       return;
     }
 
@@ -261,8 +368,8 @@ const ItemCardModal = ({
       return;
     }
 
-    const currentUser = getAuthUser();
-    const authorName = item?.createdByName || currentUser?.fullName || currentUser?.email || "Admin";
+    const authorName = item?.createdByName || currentUser?.fullName || currentUser?.email || "";
+    const authorId = currentUser?.id || null;
 
     const payload = {
       name: name.trim(),
@@ -277,7 +384,10 @@ const ItemCardModal = ({
       unit: unit || "Nos",
       warehouse: warehouse ? warehouse.trim() : null,
       location: location ? location.trim() : null,
+      companyName: companyName ? companyName.trim() : null,
+      vendorName: vendorName ? vendorName.trim() : null,
       createdByName: authorName,
+      createdById: authorId,
     };
 
     setSubmitting(true);
@@ -288,6 +398,7 @@ const ItemCardModal = ({
       } else {
         await apiPost("/inventory/items", payload);
         toast.success("Item added successfully!");
+        clearDraft();
       }
 
       if (onSuccess) {
@@ -309,34 +420,37 @@ const ItemCardModal = ({
 
   const totalValuation = Number(quantity || 0) * Number(costPrice || 0);
 
-  return (
+  if (!isOpen) return null;
+
+  return createPortal(
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
         }
       }}
-      className="fixed inset-0 z-[65] flex items-center justify-center bg-black/65 p-3 sm:p-6 backdrop-blur-sm overflow-y-auto"
+      className="fixed inset-0 z-[99999] flex justify-end bg-black/65 backdrop-blur-xs transition-opacity duration-300"
+      style={{ isolation: "isolate" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl rounded-3xl bg-card border border-border/80 shadow-2xl overflow-hidden my-4 flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
+        className="w-full max-w-2xl sm:max-w-3xl lg:max-w-4xl h-full bg-card border-l border-border/80 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 ease-out relative z-[100000]"
       >
         {/* ─── Premium Header Bar ───────────────────────────────────────── */}
-        <div className="bg-gradient-to-r from-[#142848] via-[#1e3a5f] to-[#254673] px-6 py-5 text-white flex items-center justify-between shadow-sm relative overflow-hidden">
+        <div className="bg-gradient-to-r from-[#142848] via-[#1e3a5f] to-[#254673] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between shadow-sm relative overflow-hidden shrink-0">
           {/* Subtle background glow */}
           <div className="absolute right-0 top-0 w-96 h-full bg-white/5 blur-2xl pointer-events-none" />
 
-          <div className="flex items-center gap-3.5 relative z-10">
-            <div className="w-11 h-11 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 flex items-center justify-center text-white shadow-inner">
-              <Package className="h-6 w-6 stroke-[1.8]" />
+          <div className="flex items-center gap-3 relative z-10 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 flex items-center justify-center text-white shadow-inner shrink-0">
+              <Package className="h-5 w-5 stroke-[1.8]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-xl font-bold tracking-tight text-white font-display">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-bold tracking-tight text-white font-display truncate">
                   {item ? "Edit Product" : "Add New Product"}
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white/90 border border-white/20">
+                <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-white/15 text-white/90 border border-white/20">
                   {item ? "Editing SKU" : "Inward Catalog"}
                 </span>
               </div>
@@ -366,125 +480,222 @@ const ItemCardModal = ({
         </div>
 
         {/* ─── Modal Form Body ─────────────────────────────────────────── */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6 flex-1">
-          {/* Top Notice Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-secondary/30 border border-border/70 rounded-2xl p-3 px-4 text-xs">
-            <div className="flex items-center gap-2 text-muted-foreground font-medium">
-              <Info className="h-4 w-4 text-primary shrink-0" />
-              <span>
-                Enter product identification, technical specifications, storage rack, and initial stock.
-              </span>
-            </div>
-            <div className="text-xs font-semibold text-muted-foreground shrink-0 flex items-center gap-1.5">
-              <span>Required:</span>
-              <span className="text-rose-500 font-bold">* Name, Code, Quantity</span>
-            </div>
-          </div>
-
-          {/* ─── Creator Banner (Created By Print Name) ──────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-primary/5 border border-primary/20 rounded-2xl p-3 px-4 text-xs">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                <User className="h-3.5 w-3.5" />
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-muted-foreground font-medium">Created by:</span>
-                <span className="font-bold text-foreground bg-primary/15 text-primary px-2.5 py-0.5 rounded-full border border-primary/25">
-                  {item?.createdByName || getAuthUser()?.fullName || getAuthUser()?.email || "Admin"}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden min-h-0">
+          <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 flex-1 min-h-0">
+            {/* Top Notice Bar with Auto-Save Indicator */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-secondary/30 border border-border/70 rounded-2xl p-2.5 sm:p-3 px-3.5 sm:px-4 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground font-medium flex-wrap">
+                <Info className="h-4 w-4 text-primary shrink-0" />
+                <span className="leading-tight">
+                  Enter product identification, technical specifications, storage rack, and initial stock.
                 </span>
-                {!item?.createdByName && item && (
-                  <span className="text-[10px] text-muted-foreground italic">(Saved originally without author)</span>
+                {!item && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    <CheckCircle2 className="h-3 w-3" /> Auto-Save Active
+                  </span>
+                )}
+                {isRestoredDraft && !item && (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                    <span>Draft Restored</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearDraft();
+                        setName("");
+                        setCode("");
+                        setPhotoUrl("");
+                        setQuantity(1);
+                        setMinStock(5);
+                        setMaxStock(100);
+                        setCostPrice(0);
+                        setUnit("Nos");
+                        setWarehouse("Main Warehouse");
+                        setLocation("");
+                        setCompanyName("");
+                        setVendorName("");
+                        setSpecs([
+                          { key: "", value: "" },
+                          { key: "", value: "" },
+                        ]);
+                        toast.info("Draft discarded.");
+                      }}
+                      className="underline text-amber-700 dark:text-amber-300 hover:text-foreground cursor-pointer font-normal"
+                    >
+                      Clear
+                    </button>
+                  </span>
                 )}
               </div>
-            </div>
-            {lastUpdatedDisplay && (
-              <div className="text-[11px] text-muted-foreground font-medium">
-                Last modified: <span className="font-semibold text-foreground">{lastUpdatedDisplay}</span>
+              <div className="text-xs font-semibold text-muted-foreground shrink-0 flex items-center gap-1.5">
+                <span>Required:</span>
+                <span className="text-rose-500 font-bold">* Name, Code, Quantity</span>
               </div>
-            )}
-          </div>
-
-          {/* ─── Section 1: Basic Information ────────────────────────── */}
-          <div className="bg-background rounded-2xl border border-border/80 p-5 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-              <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <Tag className="h-4 w-4" />
-              </div>
-              <h3 className="font-display text-sm font-bold text-foreground">
-                Basic Identification
-              </h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Product Name */}
+            {/* ─── Creator Banner (Created By Print Name) ──────────────── */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-primary/5 border border-primary/20 rounded-2xl p-2.5 sm:p-3 px-3.5 sm:px-4 text-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                  <User className="h-3.5 w-3.5" />
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-muted-foreground font-medium">Created by:</span>
+                  <span className="font-bold text-foreground bg-primary/15 text-primary px-2.5 py-0.5 rounded-full border border-primary/25">
+                    {item?.createdByName || getAuthUser()?.fullName || getAuthUser()?.email || "Admin"}
+                  </span>
+                  {!item?.createdByName && item && (
+                    <span className="text-[10px] text-muted-foreground italic">(Saved originally without author)</span>
+                  )}
+                </div>
+              </div>
+              {lastUpdatedDisplay && (
+                <div className="text-[11px] text-muted-foreground font-medium">
+                  Last modified: <span className="font-semibold text-foreground">{lastUpdatedDisplay}</span>
+                </div>
+              )}
+            </div>
+
+            {/* ─── Section 1: Basic Information ────────────────────────── */}
+            <div className="bg-background rounded-2xl border border-border/80 p-4 sm:p-5 space-y-4 shadow-xs">
+              <div className="flex items-center gap-2 border-b border-border/60 pb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <Tag className="h-4 w-4" />
+                </div>
+                <h3 className="font-display text-sm font-bold text-foreground">
+                  Basic Identification
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
+                {/* Product Name */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-foreground">
+                      Product Name <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      No special characters <code className="font-bold text-rose-500 bg-rose-500/10 px-1 py-0.5 rounded">.-,@#</code>
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="e.g. Heavy Duty Cable Ties 200mm"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
+                      value={name}
+                      onKeyDown={(e) => {
+                        if (e.key.length === 1 && /[^a-zA-Z0-9\s]/.test(e.key)) {
+                          e.preventDefault();
+                          toast.error(`Special character "${e.key}" is not allowed in Product Name.`);
+                        }
+                      }}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (/[^a-zA-Z0-9\s]/.test(raw)) {
+                          toast.error("Special characters (.-,@# etc.) are not allowed in Product Name.");
+                        }
+                        setName(raw.replace(/[^a-zA-Z0-9\s]/g, ""));
+                      }}
+                      required
+                    />
+                  </div>
+                  {/[^a-zA-Z0-9\s]/.test(name) && (
+                    <p className="text-[11px] text-rose-500 font-medium">
+                      Special characters are not allowed in Product Name.
+                    </p>
+                  )}
+                </div>
+
+                {/* Product Code / SKU */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-foreground">
+                      Item Code / SKU <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      Only letters & numbers
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+                      <Barcode className="h-4 w-4" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="e.g. CABTIE200"
+                      className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-mono font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
+                      value={code}
+                      onKeyDown={(e) => {
+                        if (e.key.length === 1 && /[^a-zA-Z0-9]/.test(e.key)) {
+                          e.preventDefault();
+                          toast.error(`Special character "${e.key}" is not allowed in Item Code.`);
+                        }
+                      }}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (/[^a-zA-Z0-9]/.test(raw)) {
+                          toast.error("Special characters (.-,@# etc.) are not allowed in Item Code.");
+                        }
+                        setCode(raw.replace(/[^a-zA-Z0-9]/g, ""));
+                      }}
+                      required
+                    />
+                  </div>
+                  {/[^a-zA-Z0-9]/.test(code) && (
+                    <p className="text-[11px] text-rose-500 font-medium">
+                      Item Code cannot contain special characters.
+                    </p>
+                  )}
+                </div>
+
+              {/* Company Name */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-foreground">
-                  Product Name <span className="text-rose-500">*</span>
+                  Company Name
                 </label>
                 <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="e.g. Heavy Duty Cable Ties 200mm"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Product Code / SKU */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-foreground">
-                    Item Code / SKU <span className="text-rose-500">*</span>
-                  </label>
-                  <span className="text-[10px] text-muted-foreground font-medium">
-                    No <code className="font-bold text-rose-500 bg-rose-500/10 px-1 py-0.5 rounded">-</code> or <code className="font-bold text-rose-500 bg-rose-500/10 px-1 py-0.5 rounded">_</code> allowed
-                  </span>
-                </div>
-                <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
-                    <Barcode className="h-4 w-4" />
+                    <Building2 className="h-4 w-4" />
                   </div>
                   <input
                     type="text"
-                    placeholder="e.g. CABTIE200"
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-mono font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
-                    value={code}
-                    onKeyDown={(e) => {
-                      if (e.key === "-" || e.key === "_") {
-                        e.preventDefault();
-                        toast.error("Hyphen (-) and underscore (_) characters are not allowed in Item Code.");
-                      }
-                    }}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      if (/[_\-]/.test(raw)) {
-                        toast.error("Hyphen (-) and underscore (_) characters are not allowed in Item Code.");
-                      }
-                      setCode(raw.replace(/[_\-]/g, ""));
-                    }}
-                    required
+                    placeholder="e.g. Techware Automation India"
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
                   />
                 </div>
-                {/[_\-]/.test(code) && (
-                  <p className="text-[11px] text-rose-500 font-medium">
-                    Item Code cannot contain hyphen (-) or underscore (_).
-                  </p>
-                )}
+              </div>
+
+              {/* Vendor / Supplier Name */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-foreground">
+                  Vendor Name
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="e.g. ABC Electricals / Fastener Supplier"
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
+                    value={vendorName}
+                    onChange={(e) => setVendorName(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </div>
 
           {/* ─── Section 2: Specifications (Left) & Photo (Right) ─────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-            {/* Left: 5 Specifications Builder (7 cols) */}
-            <div className="lg:col-span-7 rounded-2xl border border-border/80 bg-background p-5 flex flex-col justify-between shadow-xs">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-stretch">
+            {/* Left: Specifications Builder (7 cols) */}
+            <div className="lg:col-span-7 rounded-2xl border border-border/80 bg-background p-4 sm:p-5 flex flex-col justify-between shadow-xs">
               <div>
-                <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-3">
+                <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                       <Layers className="h-4 w-4" />
                     </div>
                     <div>
@@ -586,11 +797,11 @@ const ItemCardModal = ({
             </div>
 
             {/* Right: Modern Photo Upload Box (5 cols) */}
-            <div className="lg:col-span-5 rounded-2xl border border-border/80 bg-background p-5 flex flex-col justify-between shadow-xs">
+            <div className="lg:col-span-5 rounded-2xl border border-border/80 bg-background p-4 sm:p-5 flex flex-col justify-between shadow-xs">
               <div>
-                <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-3">
+                <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                       <ImageIcon className="h-4 w-4" />
                     </div>
                     <div>
@@ -643,6 +854,7 @@ const ItemCardModal = ({
                       : "border-border/80 hover:border-primary/60 hover:bg-secondary/40 bg-secondary/10"
                   }`}
                 >
+                  {/* Generic File Input */}
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -737,9 +949,9 @@ const ItemCardModal = ({
           </div>
 
           {/* ─── Section 3: Storage & Warehouse Location ─────────────── */}
-          <div className="bg-background rounded-2xl border border-border/80 p-5 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-              <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <div className="bg-background rounded-2xl border border-border/80 p-4 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xs">
+            <div className="flex items-center gap-2 border-b border-border/60 pb-2.5">
+              <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                 <Building2 className="h-4 w-4" />
               </div>
               <h3 className="font-display text-sm font-bold text-foreground">
@@ -747,7 +959,7 @@ const ItemCardModal = ({
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
               {/* Product Warehouse */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-foreground">
@@ -789,11 +1001,11 @@ const ItemCardModal = ({
           </div>
 
           {/* ─── Section 4: Stock Quantity, Min Box & Valuation Card ──── */}
-          <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-secondary/40 via-background to-secondary/20 p-5 space-y-4 shadow-sm">
+          <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-secondary/40 via-background to-secondary/20 p-4 sm:p-5 space-y-3.5 sm:space-y-4 shadow-sm">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-border/60 pb-3 flex-wrap gap-2">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2.5 flex-wrap gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shrink-0">
                   <Calculator className="h-4 w-4" />
                 </div>
                 <div>
@@ -812,21 +1024,21 @@ const ItemCardModal = ({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-end">
-              {/* 1. Quantity & Unit Selection (3 cols) */}
-              <div className="lg:col-span-3 space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4 items-end">
+              {/* 1. Quantity & Unit Selection */}
+              <div className="sm:col-span-2 md:col-span-3 lg:col-span-3 space-y-1.5">
                 <label className="block text-xs font-bold text-foreground flex items-center gap-1.5">
                   <Hash className="h-3.5 w-3.5 text-primary" />
                   Quantity & Unit <span className="text-rose-500">*</span>
                 </label>
                 <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
+                  <div className="relative flex-1 min-w-0">
                     <input
                       type="text"
                       inputMode="decimal"
                       pattern="[0-9]*[.]?[0-9]*"
                       placeholder="0"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground font-bold text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-2xs"
+                      className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-border bg-background text-foreground font-bold text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-2xs"
                       value={quantity}
                       onChange={(e) => {
                         const nextQuantity = e.target.value;
@@ -842,7 +1054,7 @@ const ItemCardModal = ({
                   <select
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="px-3 py-2.5 rounded-xl border border-border bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer shadow-2xs shrink-0"
+                    className="px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl border border-border bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer shadow-2xs shrink-0 max-w-[90px]"
                   >
                     {unitsList.map((u, idx) => {
                       const unitName = typeof u === "string" ? u : u?.name || String(u);
@@ -857,7 +1069,7 @@ const ItemCardModal = ({
                   <button
                     type="button"
                     onClick={() => setIsUnitModalOpen(true)}
-                    className="p-2.5 rounded-xl border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center shrink-0 transition-colors cursor-pointer shadow-2xs"
+                    className="p-2 sm:p-2.5 rounded-xl border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center shrink-0 transition-colors cursor-pointer shadow-2xs"
                     title="Add custom unit"
                   >
                     <Plus className="h-4 w-4" />
@@ -865,13 +1077,13 @@ const ItemCardModal = ({
                 </div>
               </div>
 
-              {/* 2. Min Box / Alert Stock Input (2 cols) */}
-              <div className="lg:col-span-2 space-y-1.5">
+              {/* 2. Min Box / Alert Stock Input */}
+              <div className="sm:col-span-1 md:col-span-3 lg:col-span-2 space-y-1.5">
                 <label
-                  className="block text-xs font-bold text-foreground flex items-center gap-1.5"
+                  className="block text-xs font-bold text-foreground flex items-center gap-1.5 truncate"
                   title="Minimum Stock Level / Box Threshold for Low Stock Alerts"
                 >
-                  <ShieldAlert className="h-3.5 w-3.5 text-amber-500" />
+                  <ShieldAlert className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                   Min Alert Qty
                 </label>
                 <div className="relative">
@@ -880,20 +1092,20 @@ const ItemCardModal = ({
                     min="0"
                     step="1"
                     placeholder="5"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-amber-500/30 bg-background text-foreground font-bold text-sm text-amber-700 dark:text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 shadow-2xs"
+                    className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-amber-500/30 bg-background text-foreground font-bold text-sm text-amber-700 dark:text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 shadow-2xs"
                     value={minStock}
                     onChange={(e) => setMinStock(e.target.value)}
                   />
                 </div>
               </div>
 
-              {/* 2b. Max Item / Capacity Stock Input (2 cols) */}
-              <div className="lg:col-span-2 space-y-1.5">
+              {/* 2b. Max Item / Capacity Stock Input */}
+              <div className="sm:col-span-1 md:col-span-3 lg:col-span-2 space-y-1.5">
                 <label
-                  className="block text-xs font-bold text-foreground flex items-center gap-1.5"
+                  className="block text-xs font-bold text-foreground flex items-center gap-1.5 truncate"
                   title="Maximum Item Stock Level / Box Capacity"
                 >
-                  <Layers className="h-3.5 w-3.5 text-blue-500" />
+                  <Layers className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                   Max Item Qty
                 </label>
                 <div className="relative">
@@ -902,18 +1114,18 @@ const ItemCardModal = ({
                     min="0"
                     step="1"
                     placeholder="100"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-blue-500/30 bg-background text-foreground font-bold text-sm text-blue-700 dark:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-2xs"
+                    className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-blue-500/30 bg-background text-foreground font-bold text-sm text-blue-700 dark:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-2xs"
                     value={maxStock}
                     onChange={(e) => setMaxStock(e.target.value)}
                   />
                 </div>
               </div>
 
-              {/* 3. Unit Price Input (2 cols) */}
-              <div className="lg:col-span-2 space-y-1.5">
-                <label className="block text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
-                  Price per Item (₹)
+              {/* 3. Unit Price Input */}
+              <div className="sm:col-span-1 md:col-span-3 lg:col-span-2 space-y-1.5">
+                <label className="block text-xs font-bold text-foreground flex items-center gap-1.5 truncate">
+                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  Price (₹)
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 dark:text-emerald-400 font-bold text-xs pointer-events-none">
@@ -924,54 +1136,55 @@ const ItemCardModal = ({
                     min="0"
                     step="any"
                     placeholder="0.00"
-                    className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-emerald-500/30 bg-background text-foreground font-bold text-sm text-emerald-700 dark:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-2xs"
+                    className="w-full pl-7 pr-3 py-2 sm:py-2.5 rounded-xl border border-emerald-500/30 bg-background text-foreground font-bold text-sm text-emerald-700 dark:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-2xs"
                     value={costPrice}
                     onChange={(e) => setCostPrice(e.target.value)}
                   />
                 </div>
               </div>
 
-              {/* 4. Live Calculated Total Price Card (3 cols) */}
-              <div className="lg:col-span-3 space-y-1.5">
-                <label className="block text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <Calculator className="h-3.5 w-3.5 text-emerald-600" />
+              {/* 4. Live Calculated Total Price Card */}
+              <div className="sm:col-span-1 md:col-span-6 lg:col-span-3 space-y-1.5">
+                <label className="block text-xs font-bold text-foreground flex items-center gap-1.5 truncate">
+                  <Calculator className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                   Total Valuation
                 </label>
-                <div className="px-3.5 py-2 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 via-emerald-500/10 to-teal-500/15 flex items-center justify-between text-emerald-800 dark:text-emerald-300 shadow-2xs min-h-[42px]">
-                  <div>
-                    <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 block leading-tight font-display">
+                <div className="px-3 py-1.5 sm:py-2 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 via-emerald-500/10 to-teal-500/15 flex items-center justify-between text-emerald-800 dark:text-emerald-300 shadow-2xs min-h-[38px] sm:min-h-[42px]">
+                  <div className="min-w-0">
+                    <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 block leading-tight font-display truncate">
                       ₹{totalValuation.toLocaleString("en-IN")}
                     </span>
                     <span className="text-[10px] text-muted-foreground font-medium block truncate">
                       ₹{Number(costPrice || 0).toLocaleString("en-IN")} / {unit} • {quantity || 0} {unit}
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[9px] font-bold uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[9px] font-bold uppercase tracking-wider shrink-0">
                     Total
                   </span>
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* ─── Modal Footer Actions ─────────────────────────────────── */}
-          <div className="flex items-center justify-between pt-4 border-t border-border flex-wrap gap-3">
+          {/* ─── Sticky Modal Footer Actions ───────────────────────────── */}
+          <div className="bg-card/95 backdrop-blur-md px-4 sm:px-6 py-3 sm:py-3.5 border-t border-border flex items-center justify-between gap-3 shrink-0 shadow-lg">
             <span className="text-xs text-muted-foreground hidden sm:inline-block">
               Press <kbd className="px-1.5 py-0.5 rounded bg-secondary border border-border text-[10px] font-mono">Esc</kbd> anytime to discard changes.
             </span>
 
-            <div className="flex items-center gap-3 ml-auto">
+            <div className="flex items-center gap-2.5 sm:gap-3 ml-auto w-full sm:w-auto justify-end">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 text-sm font-semibold rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-6 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs sm:text-sm font-semibold px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {submitting ? (
                   <>
@@ -1006,7 +1219,8 @@ const ItemCardModal = ({
           handleFileUpload(capturedFile);
         }}
       />
-    </div>
+    </div>,
+    document.body
   );
 };
 

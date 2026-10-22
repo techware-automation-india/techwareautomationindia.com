@@ -1089,6 +1089,35 @@ const Approvals = () => {
     return matchesStatus && matchesYear && matchesMonth && matchesEmployee && matchesType && matchesPermission;
   });
 
+  // Helper to determine whether the user can approve or reject a specific approval item
+  const getApprovalPermissions = (approval) => {
+    if (isAdmin) {
+      return { canApprove: true, canReject: true };
+    }
+
+    let subKey = "approvals";
+    if (approval.source === "LEAVE") {
+      subKey = "approvals-leave";
+    } else if (approval.source === "ATTENDANCE") {
+      subKey = "approvals-attendance";
+    } else if (approval.source === "REQUEST") {
+      if (approval.type === "EQUIPMENT") {
+        subKey = "approvals-tools-inventory";
+      } else if (approval.type === "CORRECTION") {
+        subKey = "approvals-forgot-punch";
+      }
+    }
+
+    const subPerm = permissions?.[subKey] || permissions?.[subKey.replace("-inventory", "")];
+    const mainPerm = permissions?.["approvals"];
+
+    // canCreate represents "Approve", canDelete represents "Reject"
+    const canApprove = Boolean(subPerm?.canCreate ?? mainPerm?.canCreate);
+    const canReject = Boolean(subPerm?.canDelete ?? mainPerm?.canDelete);
+
+    return { canApprove, canReject };
+  };
+
   const review = async (approval, decision, reason = "") => {
     if (decision === "approve" && approval.source === "REQUEST" && approval.type === "EQUIPMENT") {
       const matchedInvItem = getInventoryItemLocation(approval);
@@ -1586,50 +1615,69 @@ const Approvals = () => {
                           ) : approval.status === "PENDING" ? (
                             <>
                               {/* Standard Approve/Hold/Reject Buttons for non-return requests */}
-                              <div className="flex w-full gap-2 flex-wrap sm:flex-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={() => review(approval, "approve")}
-                                  disabled={acting}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:from-emerald-700 hover:to-emerald-800 hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                                >
-                                  <span key={acting ? "approve-loading" : "approve-icon"} className="inline-flex items-center justify-center">
-                                    {acting ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Check className="h-4 w-4" />
+                              {(() => {
+                                const { canApprove, canReject } = getApprovalPermissions(approval);
+                                return (
+                                  <div className="flex w-full gap-2 flex-wrap sm:flex-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => review(approval, "approve")}
+                                      disabled={acting || !canApprove}
+                                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-lg transition ${
+                                        !canApprove
+                                          ? "bg-emerald-600/50 opacity-60 cursor-not-allowed"
+                                          : "bg-gradient-to-r from-emerald-600 to-emerald-700 shadow-emerald-500/20 hover:from-emerald-700 hover:to-emerald-800 hover:shadow-xl cursor-pointer"
+                                      }`}
+                                      title={!canApprove ? "View-only access: you cannot approve this request." : "Approve request"}
+                                    >
+                                      <span key={acting ? "approve-loading" : "approve-icon"} className="inline-flex items-center justify-center">
+                                        {acting ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <Check className="h-4 w-4" />
+                                        )}
+                                      </span>
+                                      <span>Approve</span>
+                                    </button>
+
+                                    {approval.source === "REQUEST" && approval.type === "EQUIPMENT" && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setHoldModal({ approval })}
+                                        disabled={acting || !canApprove}
+                                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-amber-300 bg-amber-500/10 px-3 py-2.5 text-xs font-bold text-amber-700 transition dark:text-amber-400 ${
+                                          !canApprove
+                                            ? "opacity-60 cursor-not-allowed"
+                                            : "hover:bg-amber-500/20 cursor-pointer"
+                                        }`}
+                                        title={!canApprove ? "View-only access: you cannot hold this request." : "Put request on hold due to product out of stock"}
+                                      >
+                                        <span key="hold-btn-icon" className="inline-flex items-center justify-center">
+                                          <PauseCircle className="h-4 w-4" />
+                                        </span>
+                                        <span>Hold (Out of Stock)</span>
+                                      </button>
                                     )}
-                                  </span>
-                                  <span>Approve</span>
-                                </button>
 
-                                {approval.source === "REQUEST" && approval.type === "EQUIPMENT" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setHoldModal({ approval })}
-                                    disabled={acting}
-                                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-amber-300 bg-amber-500/10 px-3 py-2.5 text-xs font-bold text-amber-700 transition hover:bg-amber-500/20 dark:text-amber-400 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                                    title="Put request on hold due to product out of stock"
-                                  >
-                                    <span key="hold-btn-icon" className="inline-flex items-center justify-center">
-                                      <PauseCircle className="h-4 w-4" />
-                                    </span>
-                                    <span>Hold (Out of Stock)</span>
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => setRejectModal({ approval })}
-                                  disabled={acting}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20 cursor-pointer"
-                                >
-                                  <span key="reject-btn-icon" className="inline-flex items-center justify-center">
-                                    <X className="h-4 w-4" />
-                                  </span>
-                                  <span>Reject</span>
-                                </button>
-                              </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRejectModal({ approval })}
+                                      disabled={acting || !canReject}
+                                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 transition dark:bg-background ${
+                                        !canReject
+                                          ? "opacity-60 cursor-not-allowed"
+                                          : "hover:bg-rose-50 hover:shadow-md dark:hover:bg-rose-950/20 cursor-pointer"
+                                      }`}
+                                      title={!canReject ? "View-only access: you cannot reject this request." : "Reject request"}
+                                    >
+                                      <span key="reject-btn-icon" className="inline-flex items-center justify-center">
+                                        <X className="h-4 w-4" />
+                                      </span>
+                                      <span>Reject</span>
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                             </>
                           ) : (
                             <div className="flex w-full items-center justify-center rounded-xl px-4 py-3 text-center min-w-[140px] bg-secondary/50 border border-border">
@@ -2129,146 +2177,186 @@ const Approvals = () => {
 
             {/* ================= FOOTER ================= */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-6 py-4">
-              {isAdmin && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {(() => {
-                    const returnStep = reasonModal.source === "REQUEST" ? getReturnStep(reasonModal) : 0;
-                    if (returnStep === 1) {
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const target = reasonModal;
-                              setReasonModal(null);
-                              setQualityModal(target);
-                              setQualityCondition("Good Condition - Restock to Warehouse Stock");
-                              setQualityRemarks("Quality inspected and verified by Admin.");
-                            }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold shadow-md hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
-                          >
-                            <CheckCheck className="h-4 w-4" />
-                            Quality Test & Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const target = reasonModal;
-                              setReasonModal(null);
-                              setRejectModal({ approval: target });
-                            }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-rose-300 bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-500/20 cursor-pointer"
-                          >
-                            <X className="h-4 w-4" />
-                            Reject Return
-                          </button>
-                        </>
-                      );
-                    }
-                    if (returnStep === 2) {
-                      return (
-                        <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
-                          <CheckCheck className="h-3.5 w-3.5 text-purple-600" />
-                          <span>Quality Tested ✓ Awaiting Employee to click <strong>Item Return</strong></span>
-                        </div>
-                      );
-                    }
-                    if (returnStep === 3) {
-                      return (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const target = reasonModal;
-                            setReasonModal(null);
-                            await handleAdminFoundItem(target);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md hover:from-emerald-700 hover:to-teal-700 cursor-pointer"
-                        >
-                          <PackageCheck className="h-4 w-4" />
-                          Product Found
-                        </button>
-                      );
-                    }
-                    if (reasonModal.status === "APPROVED") {
-                      const isFound = reasonModal.reviewNote?.includes("[PRODUCT_FOUND]") || reasonModal.status === "COMPLETED";
-                      const isNotFound = reasonModal.reviewNote?.includes("[ITEM_NOT_FOUND]");
-                      if (isFound) {
+              {(() => {
+                const { canApprove, canReject } = getApprovalPermissions(reasonModal);
+                const acting = Boolean(actingId);
+                return (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(() => {
+                      const returnStep = reasonModal.source === "REQUEST" ? getReturnStep(reasonModal) : 0;
+                      if (returnStep === 1) {
                         return (
-                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-                            Completed / Product Found ✓
-                          </span>
-                        );
-                      }
-                      if (isNotFound) {
-                        return (
-                          <span className="text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20">
-                            EMPLOYEE: ITEM NOT FOUND ✕
-                          </span>
-                        );
-                      }
-                      if (reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT") {
-                        return (
-                          <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
-                            Approved (Awaiting Employee Confirmation)
-                          </span>
-                        );
-                      }
-                      return (
-                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-                          Approved ✓
-                        </span>
-                      );
-                    }
-                    if (reasonModal.status === "PENDING") {
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const target = reasonModal;
-                              setReasonModal(null);
-                              await review(target, "approve");
-                            }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
-                          >
-                            <Check className="h-4 w-4" />
-                            Approve
-                          </button>
-
-                          {reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT" && (
+                          <>
                             <button
                               type="button"
                               onClick={() => {
                                 const target = reasonModal;
                                 setReasonModal(null);
-                                setHoldModal({ approval: target });
+                                setQualityModal(target);
+                                setQualityCondition("Good Condition - Restock to Warehouse Stock");
+                                setQualityRemarks("Quality inspected and verified by Admin.");
                               }}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-amber-300 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-bold hover:bg-amber-500/20 cursor-pointer"
+                              disabled={acting || !canApprove}
+                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-md ${
+                                !canApprove
+                                  ? "bg-purple-600/50 opacity-60 cursor-not-allowed"
+                                  : "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
+                              }`}
+                              title={!canApprove ? "View-only access: you cannot approve return." : "Quality Test & Approve"}
                             >
-                              <PauseCircle className="h-4 w-4" />
-                              Hold (Out of Stock)
+                              <CheckCheck className="h-4 w-4" />
+                              Quality Test & Approve
                             </button>
-                          )}
-
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const target = reasonModal;
+                                setReasonModal(null);
+                                setRejectModal({ approval: target });
+                              }}
+                              disabled={acting || !canReject}
+                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-rose-300 text-rose-700 dark:text-rose-300 text-xs font-bold ${
+                                !canReject
+                                  ? "bg-rose-500/5 opacity-60 cursor-not-allowed"
+                                  : "bg-rose-500/10 hover:bg-rose-500/20 cursor-pointer"
+                              }`}
+                              title={!canReject ? "View-only access: you cannot reject return." : "Reject Return"}
+                            >
+                              <X className="h-4 w-4" />
+                              Reject Return
+                            </button>
+                          </>
+                        );
+                      }
+                      if (returnStep === 2) {
+                        return (
+                          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                            <CheckCheck className="h-3.5 w-3.5 text-purple-600" />
+                            <span>Quality Tested ✓ Awaiting Employee to click <strong>Item Return</strong></span>
+                          </div>
+                        );
+                      }
+                      if (returnStep === 3) {
+                        return (
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={async () => {
                               const target = reasonModal;
                               setReasonModal(null);
-                              setRejectModal({ approval: target });
+                              await handleAdminFoundItem(target);
                             }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-rose-300 bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-500/20 cursor-pointer"
+                            disabled={acting || !canApprove}
+                            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-md ${
+                              !canApprove
+                                ? "bg-emerald-600/50 opacity-60 cursor-not-allowed"
+                                : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer"
+                            }`}
+                            title={!canApprove ? "View-only access: you cannot confirm product found." : "Product Found"}
                           >
-                            <X className="h-4 w-4" />
-                            Reject
+                            <PackageCheck className="h-4 w-4" />
+                            Product Found
                           </button>
-                        </>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
-              )}
+                        );
+                      }
+                      if (reasonModal.status === "APPROVED") {
+                        const isFound = reasonModal.reviewNote?.includes("[PRODUCT_FOUND]") || reasonModal.status === "COMPLETED";
+                        const isNotFound = reasonModal.reviewNote?.includes("[ITEM_NOT_FOUND]");
+                        if (isFound) {
+                          return (
+                            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                              Completed / Product Found ✓
+                            </span>
+                          );
+                        }
+                        if (isNotFound) {
+                          return (
+                            <span className="text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20">
+                              EMPLOYEE: ITEM NOT FOUND ✕
+                            </span>
+                          );
+                        }
+                        if (reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT") {
+                          return (
+                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
+                              Approved (Awaiting Employee Confirmation)
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                            Approved ✓
+                          </span>
+                        );
+                      }
+                      if (reasonModal.status === "PENDING") {
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const target = reasonModal;
+                                setReasonModal(null);
+                                await review(target, "approve");
+                              }}
+                              disabled={acting || !canApprove}
+                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-xs ${
+                                !canApprove
+                                  ? "bg-emerald-600/50 opacity-60 cursor-not-allowed"
+                                  : "bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
+                              }`}
+                              title={!canApprove ? "View-only access: you cannot approve this request." : "Approve"}
+                            >
+                              <Check className="h-4 w-4" />
+                              Approve
+                            </button>
+
+                            {reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const target = reasonModal;
+                                  setReasonModal(null);
+                                  setHoldModal({ approval: target });
+                                }}
+                                disabled={acting || !canApprove}
+                                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-amber-300 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-bold ${
+                                  !canApprove
+                                    ? "opacity-60 cursor-not-allowed"
+                                    : "hover:bg-amber-500/20 cursor-pointer"
+                                }`}
+                                title={!canApprove ? "View-only access: you cannot hold this request." : "Hold (Out of Stock)"}
+                              >
+                                <PauseCircle className="h-4 w-4" />
+                                Hold (Out of Stock)
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const target = reasonModal;
+                                setReasonModal(null);
+                                setRejectModal({ approval: target });
+                              }}
+                              disabled={acting || !canReject}
+                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-rose-300 text-rose-700 dark:text-rose-300 text-xs font-bold ${
+                                !canReject
+                                  ? "bg-rose-500/5 opacity-60 cursor-not-allowed"
+                                  : "bg-rose-500/10 hover:bg-rose-500/20 cursor-pointer"
+                              }`}
+                              title={!canReject ? "View-only access: you cannot reject this request." : "Reject"}
+                            >
+                              <X className="h-4 w-4" />
+                              Reject
+                            </button>
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => setReasonModal(null)}

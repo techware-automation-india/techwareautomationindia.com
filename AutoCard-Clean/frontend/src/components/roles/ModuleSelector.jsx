@@ -13,7 +13,7 @@ import InventorySettingsModal from "../../admin/components/inventory/InventorySe
  * @param {boolean} disabled - Whether the selector is disabled
  */
 export default function ModuleSelector({ selectedModules = [], onChange, disabled = false }) {
-  const [isInventorySettingsOpen, setIsInventorySettingsOpen] = useState(false);
+  const [activeSettingsModule, setActiveSettingsModule] = useState(null);
   const handleToggleParent = (module) => {
     if (disabled) return;
 
@@ -226,19 +226,17 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
                     </div>
                   </button>
 
-                  {/* Bulk Actions for Submodules */}
+                  {/* Bulk Actions & Settings for Submodules */}
                   <div className="flex items-center gap-2 ml-auto">
-                    {module.key === "inventory" && (
-                      <button
-                        type="button"
-                        onClick={() => setIsInventorySettingsOpen(true)}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs group"
-                        title="Open Inventory Access Settings (Employee permissions table)"
-                      >
-                        <Settings className="h-3.5 w-3.5 group-hover:rotate-45 transition-transform" />
-                        <span>Settings</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setActiveSettingsModule({ key: module.key, label: module.label })}
+                      className="px-2.5 py-1 text-xs font-semibold rounded-md bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs group"
+                      title={`Open ${module.label} Access Settings (Employee permissions table)`}
+                    >
+                      <Settings className="h-3.5 w-3.5 group-hover:rotate-45 transition-transform" />
+                      <span>Settings</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleSelectAllSub(module)}
@@ -306,6 +304,37 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
                               )}
                             </div>
                           </div>
+
+                          {/* Granular Action Checkboxes (View, Create, Edit, Delete) */}
+                          {hasActions && isSubActive && (
+                            <div className="mt-2.5 pt-2 border-t border-border/60 flex flex-wrap items-center gap-1.5">
+                              {subModule.actions.map((action) => {
+                                const fullActionKey = `${subKey}:${action.key}`;
+                                const isActionSelected = selectedModules.includes(fullActionKey);
+
+                                return (
+                                  <button
+                                    key={action.key}
+                                    type="button"
+                                    onClick={(e) => handleActionToggle(module, subModule, action.key, e)}
+                                    disabled={disabled}
+                                    className={`
+                                      inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all cursor-pointer border
+                                      ${isActionSelected
+                                        ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                                        : "bg-background border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                      }
+                                      ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+                                    `}
+                                    title={`Toggle ${action.label}`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isActionSelected ? "bg-white" : "bg-muted-foreground/50"}`} />
+                                    <span>{action.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -355,11 +384,15 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
         })}
       </div>
 
-      {/* Inventory Settings Modal */}
-      <InventorySettingsModal
-        isOpen={isInventorySettingsOpen}
-        onClose={() => setIsInventorySettingsOpen(false)}
-      />
+      {/* Module Access Settings Modal for any submodule-enabled module */}
+      {activeSettingsModule && (
+        <InventorySettingsModal
+          isOpen={Boolean(activeSettingsModule)}
+          onClose={() => setActiveSettingsModule(null)}
+          parentModuleKey={activeSettingsModule.key}
+          moduleTitle={activeSettingsModule.label}
+        />
+      )}
     </div>
   );
 }

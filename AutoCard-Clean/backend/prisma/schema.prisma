@@ -781,6 +781,7 @@ model InventoryItem {
   purchaseDate   DateTime?
   date           DateTime?
   companyName    String?
+  vendorName     String?
   createdById    String?
   createdByName  String?
   issues         InventoryIssue[]

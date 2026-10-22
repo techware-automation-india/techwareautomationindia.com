@@ -37,7 +37,8 @@ const EmployeeAssignedProjects = () => {
   const [commentText, setCommentText] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
 
-  const handlePostComment = async (projectId) => {
+  const handlePostComment 
+  = async (projectId) => {
     if (!commentText.trim() || submittingComment) return;
     setSubmittingComment(true);
     try {
@@ -152,11 +153,15 @@ const EmployeeAssignedProjects = () => {
   };
 
   const filteredProjects = projects.filter((project) => {
+    if (!project) return false;
+    const term = (searchTerm || "").trim().toLowerCase();
     const matchesSearch =
-      project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (project.customer?.name && project.customer.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (project.myTasks && project.myTasks.some((t) => t.title.toLowerCase().includes(searchTerm.toLowerCase())));
+      !term ||
+      (project.name || "").toLowerCase().includes(term) ||
+      (project.code || "").toLowerCase().includes(term) ||
+      (project.customer?.name || "").toLowerCase().includes(term) ||
+      (project.description || "").toLowerCase().includes(term) ||
+      (Array.isArray(project.myTasks) && project.myTasks.some((t) => (t?.title || "").toLowerCase().includes(term)));
 
     const matchesFilter = filterStatus === "ALL" || project.status === filterStatus;
     return matchesSearch && matchesFilter;
@@ -240,8 +245,18 @@ const EmployeeAssignedProjects = () => {
               placeholder="Search projects, code, or tasks..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm"
+              className="w-full pl-10 pr-9 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Clear Search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <select

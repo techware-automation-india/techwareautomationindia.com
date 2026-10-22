@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Camera, X, RotateCcw, Check, SwitchCamera, VideoOff, Loader2, Sparkles, AlertCircle
 } from "lucide-react";
@@ -10,6 +11,8 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
   const [facingMode, setFacingMode] = useState("environment"); // "environment" (back) or "user" (front)
   const [cameraError, setCameraError] = useState(null);
   const [loadingCamera, setLoadingCamera] = useState(false);
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fallbackInputRef = useRef(null);
@@ -28,8 +31,34 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
     }
   };
 
-  // Start camera
-  const startCamera = async (mode = facingMode) => {
+  // Ensure video element plays the stream whenever stream changes
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [stream]);
+
+  // Enumerate all available cameras (built-in webcam, mobile connected camera, USB camera, etc.)
+  const loadVideoDevices = async () => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === "videoinput");
+      setVideoDevices(videoInputs);
+      if (videoInputs.length > 0 && !selectedDeviceId) {
+        // Default to the first device or keep existing
+        const activeTrack = stream?.getVideoTracks()?.[0];
+        const currentDeviceId = activeTrack?.getSettings()?.deviceId || videoInputs[0].deviceId;
+        setSelectedDeviceId(currentDeviceId);
+      }
+    } catch (err) {
+      console.warn("Error enumerating video devices:", err);
+    }
+  };
+
+  // Start camera with either a specific deviceId or facingMode
+  const startCamera = async (mode = facingMode, specificDeviceId = selectedDeviceId) => {
     stopStream();
     setCameraError(null);
     setLoadingCamera(true);
@@ -41,12 +70,23 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
     }
 
     try {
+      // If a specific device is selected (like Windows Virtual Camera / Phone),
+      // we request that device without strict width/height limits to avoid driver conflicts.
+      let videoConstraints = {};
+
+      if (specificDeviceId) {
+        videoConstraints = {
+          deviceId: { exact: specificDeviceId },
+        };
+      } else {
+        videoConstraints = {
+          facingMode: { ideal: mode },
+          aspectRatio: { ideal: 9 / 16 },
+        };
+      }
+
       const constraints = {
-        video: {
-          facingMode: mode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
+        video: videoConstraints,
         audio: false,
       };
 
@@ -56,13 +96,23 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         videoRef.current.play().catch(() => {});
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch((e) => console.warn("Video play error:", e));
+        };
       }
+
+      // Re-enumerate devices now that camera permission has been granted (labels are populated)
+      loadVideoDevices();
     } catch (err) {
-      console.warn("Camera start error with requested facingMode:", err);
-      // Fallback: try default without facingMode constraint
+      console.warn("Camera start error with requested constraints:", err);
+      // Fallback 1: Try deviceId directly without any extra constraints
       try {
+        const fallbackConstraints = specificDeviceId
+          ? { deviceId: specificDeviceId }
+          : true;
+
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: fallbackConstraints,
           audio: false,
         });
         setStream(fallbackStream);
@@ -70,15 +120,30 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
           videoRef.current.srcObject = fallbackStream;
           videoRef.current.play().catch(() => {});
         }
+        loadVideoDevices();
       } catch (fallbackErr) {
-        console.error("Camera access completely failed:", fallbackErr);
-        let msg = "Unable to access camera.";
-        if (fallbackErr.name === "NotAllowedError" || fallbackErr.name === "PermissionDeniedError") {
-          msg = "Camera permission was denied. Please allow camera access in browser settings.";
-        } else if (fallbackErr.name === "NotFoundError" || fallbackErr.name === "DevicesNotFoundError") {
-          msg = "No camera device found on this system.";
+        // Fallback 2: Any available camera
+        try {
+          const basicStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          setStream(basicStream);
+          if (videoRef.current) {
+            videoRef.current.srcObject = basicStream;
+            videoRef.current.play().catch(() => {});
+          }
+          loadVideoDevices();
+        } catch (basicErr) {
+          console.error("Camera access completely failed:", basicErr);
+          let msg = "Unable to access camera.";
+          if (basicErr.name === "NotAllowedError" || basicErr.name === "PermissionDeniedError") {
+            msg = "Camera permission was denied. Please allow camera access in browser settings.";
+          } else if (basicErr.name === "NotFoundError" || basicErr.name === "DevicesNotFoundError") {
+            msg = "No camera device found on this system.";
+          }
+          setCameraError(msg);
         }
-        setCameraError(msg);
       }
     } finally {
       setLoadingCamera(false);
@@ -87,30 +152,68 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
 
   // Switch facing mode (front / back)
   const handleToggleFacingMode = () => {
-    const nextMode = facingMode === "environment" ? "user" : "environment";
-    setFacingMode(nextMode);
-    startCamera(nextMode);
+    if (videoDevices.length > 1) {
+      // If we have multiple devices, cycle to the next device
+      const currentIndex = videoDevices.findIndex((d) => d.deviceId === selectedDeviceId);
+      const nextIndex = (currentIndex + 1) % videoDevices.length;
+      const nextDevice = videoDevices[nextIndex];
+      setSelectedDeviceId(nextDevice.deviceId);
+      startCamera(facingMode, nextDevice.deviceId);
+    } else {
+      const nextMode = facingMode === "environment" ? "user" : "environment";
+      setFacingMode(nextMode);
+      setSelectedDeviceId("");
+      startCamera(nextMode, "");
+    }
   };
 
-  // Capture current frame from video feed
+  // Handle manual selection from dropdown
+  const handleDeviceChange = (deviceId) => {
+    setSelectedDeviceId(deviceId);
+    startCamera(facingMode, deviceId);
+  };
+
+  // Capture current frame from video feed in exact 9:16 (1080 x 1920) portrait format
   const handleCaptureSnapshot = () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current || document.createElement("canvas");
 
-    const w = video.videoWidth || 640;
-    const h = video.videoHeight || 480;
+    const vw = video.videoWidth || 1080;
+    const vh = video.videoHeight || 1920;
 
-    canvas.width = w;
-    canvas.height = h;
+    // Target 9:16 dimensions
+    const targetW = 1080;
+    const targetH = 1920;
+    canvas.width = targetW;
+    canvas.height = targetH;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Draw frame
-    ctx.drawImage(video, 0, 0, w, h);
+    // Compute center-crop coordinates to match 9:16 ratio perfectly
+    const targetAspect = 9 / 16;
+    const videoAspect = vw / vh;
 
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    let sx = 0;
+    let sy = 0;
+    let sWidth = vw;
+    let sHeight = vh;
+
+    if (videoAspect > targetAspect) {
+      // Video is wider than 9:16 (crop sides)
+      sWidth = vh * targetAspect;
+      sx = (vw - sWidth) / 2;
+    } else {
+      // Video is taller than 9:16 (crop top/bottom)
+      sHeight = vw / targetAspect;
+      sy = (vh - sHeight) / 2;
+    }
+
+    // Draw the cropped 9:16 frame onto canvas
+    ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetW, targetH);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
     setCapturedPhoto(dataUrl);
 
     // Stop live stream tracks while previewing
@@ -181,16 +284,17 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-3 sm:p-5 backdrop-blur-md overflow-y-auto"
+      className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/85 p-3 sm:p-5 backdrop-blur-md overflow-y-auto"
+      style={{ isolation: "isolate" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl rounded-3xl bg-card border border-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
+        className="w-full max-w-sm sm:max-w-md rounded-3xl bg-card border border-border shadow-2xl overflow-hidden flex flex-col max-h-[94vh] animate-in fade-in zoom-in-95 duration-200 relative z-[1000000]"
       >
         {/* Header */}
         <div className="bg-[#142848] px-5 py-4 text-white flex items-center justify-between border-b border-white/10">
@@ -199,9 +303,14 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
               <Camera className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-base font-bold text-white">
-                Take Product Photo
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-display text-base font-bold text-white">
+                  Take Product Photo
+                </h3>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  9:16 (1080 × 1920)
+                </span>
+              </div>
               <p className="text-xs text-white/70">
                 {capturedPhoto
                   ? "Review snapshot or retake"
@@ -220,8 +329,29 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
         </div>
 
         {/* Viewfinder / Preview Body */}
-        <div className="p-4 sm:p-6 bg-background flex flex-col items-center">
-          <div className="w-full relative aspect-4/3 max-h-[380px] rounded-2xl bg-black overflow-hidden flex items-center justify-center border border-border/80 shadow-inner">
+        <div className="p-3 sm:p-5 bg-background flex flex-col items-center">
+          {/* Camera Device Switcher when multiple video devices exist */}
+          {videoDevices.length > 1 && !capturedPhoto && (
+            <div className="w-full flex items-center justify-between gap-2 mb-2.5 px-1">
+              <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                <SwitchCamera className="h-3.5 w-3.5 text-primary" /> Camera Source:
+              </span>
+              <select
+                value={selectedDeviceId}
+                onChange={(e) => handleDeviceChange(e.target.value)}
+                disabled={loadingCamera}
+                className="text-xs bg-secondary/60 hover:bg-secondary border border-border rounded-lg px-2 py-1 text-foreground font-medium outline-hidden focus:ring-1 focus:ring-primary max-w-[210px] truncate cursor-pointer"
+              >
+                {videoDevices.map((dev, idx) => (
+                  <option key={dev.deviceId || idx} value={dev.deviceId}>
+                    {dev.label || `Camera ${idx + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="w-full relative aspect-[9/16] max-h-[520px] rounded-2xl bg-black overflow-hidden flex items-center justify-center border border-border/80 shadow-inner">
             {/* Hidden canvas for snapshot rendering */}
             <canvas ref={canvasRef} className="hidden" />
 
@@ -369,7 +499,8 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

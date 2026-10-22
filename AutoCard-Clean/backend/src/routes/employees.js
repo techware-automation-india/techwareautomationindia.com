@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
-import { checkRolePermission } from "../middleware/checkRolePermission.js";
+import { checkRolePermission, checkRoleActionPermission } from "../middleware/checkRolePermission.js";
 import { sendWelcomeEmail } from "../utils/emailService.js";
 
 const router = Router();
@@ -81,7 +81,7 @@ router.get(
 
 router.post(
   "/",
-  checkRolePermission("employee"),
+  checkRoleActionPermission("employee", "create"),
   async (req, res) => {
     const parsed = createEmployeeSchema.safeParse(req.body);
 
@@ -270,7 +270,7 @@ router.post(
 
 router.delete(
   "/:id",
-  checkRolePermission("employee"),
+  checkRoleActionPermission("employee", "delete"),
   async (req, res) => {
     const { id } = req.params;
 

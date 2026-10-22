@@ -594,6 +594,8 @@ router.get("/items", requireAuth, async (req, res) => {
         { warehouse: { contains: q } },
         { location: { contains: q } },
         { description: { contains: q } },
+        { companyName: { contains: q } },
+        { vendorName: { contains: q } },
       ];
     }
 
@@ -643,6 +645,7 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       description,
       costPrice,
       companyName,
+      vendorName,
       date,
       createdByName,
     } = req.body;
@@ -651,14 +654,20 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       return res.status(400).json({ message: "Item name is required." });
     }
 
+    if (/[^a-zA-Z0-9\s]/.test(name.trim())) {
+      return res.status(400).json({
+        message: "Special characters (.-,@# etc.) are not allowed in Item / Product Name.",
+      });
+    }
+
     const itemCode = (code || sku || "").trim();
     if (!itemCode) {
       return res.status(400).json({ message: "Item code is required." });
     }
 
-    if (/[_\-]/.test(itemCode)) {
+    if (/[^a-zA-Z0-9\s]/.test(itemCode)) {
       return res.status(400).json({
-        message: "Item Code / SKU cannot contain hyphen (-) or underscore (_) characters.",
+        message: "Item Code / SKU cannot contain special characters (.-,@# etc.).",
       });
     }
 
@@ -675,15 +684,19 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       return res.status(409).json({ message: `Item Code / SKU "${itemCode}" already exists.` });
     }
 
-    // Resolve author name and ID
+    // Resolve author ID and User Name directly from authenticated user
+    const authorId = req.user?.id || req.body.createdById || null;
     let authorName = (createdByName || "").trim();
-    const authorId = req.user?.id || null;
-    if (!authorName && authorId) {
+
+    if (authorId) {
       const u = await prisma.user.findUnique({
         where: { id: authorId },
         select: { fullName: true, email: true },
       });
-      authorName = u?.fullName || u?.email || "Admin";
+      // Prioritize the actual authenticated user's name from database
+      if (u?.fullName || u?.email) {
+        authorName = u.fullName || u.email;
+      }
     }
     if (!authorName) {
       authorName = "Admin";
@@ -712,6 +725,7 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
         description: description ? description.trim() : null,
         costPrice: costPrice !== undefined && costPrice !== "" ? Number(costPrice) : null,
         companyName: companyName ? companyName.trim() : null,
+        vendorName: vendorName ? vendorName.trim() : null,
         date: date ? new Date(date) : null,
         createdByName: authorName,
         createdById: authorId,
@@ -752,6 +766,7 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       description,
       costPrice,
       companyName,
+      vendorName,
       date,
       createdByName,
     } = req.body;
@@ -760,8 +775,15 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       return res.status(400).json({ message: "Quantity must be a valid number greater than or equal to zero." });
     }
 
-    if (name !== undefined && (!name || typeof name !== "string" || !name.trim())) {
-      return res.status(400).json({ message: "Item name cannot be empty." });
+    if (name !== undefined) {
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "Item name cannot be empty." });
+      }
+      if (/[^a-zA-Z0-9\s]/.test(name.trim())) {
+        return res.status(400).json({
+          message: "Special characters (.-,@# etc.) are not allowed in Item / Product Name.",
+        });
+      }
     }
 
     const itemCode = (code !== undefined ? code : sku !== undefined ? sku : existing.code || existing.sku || "").trim();
@@ -769,9 +791,9 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       return res.status(400).json({ message: "Item code cannot be empty." });
     }
 
-    if (itemCode && /[_\-]/.test(itemCode)) {
+    if (itemCode && /[^a-zA-Z0-9\s]/.test(itemCode)) {
       return res.status(400).json({
-        message: "Item Code / SKU cannot contain hyphen (-) or underscore (_) characters.",
+        message: "Item Code / SKU cannot contain special characters (.-,@# etc.).",
       });
     }
 
@@ -810,6 +832,7 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
         description: description !== undefined ? (description ? description.trim() : null) : existing.description,
         costPrice: costPrice !== undefined ? (costPrice !== "" ? Number(costPrice) : null) : existing.costPrice,
         companyName: companyName !== undefined ? (companyName ? companyName.trim() : null) : existing.companyName,
+        vendorName: vendorName !== undefined ? (vendorName ? vendorName.trim() : null) : existing.vendorName,
         date: date !== undefined ? (date ? new Date(date) : null) : existing.date,
         createdByName: createdByName !== undefined ? (createdByName ? createdByName.trim() : null) : existing.createdByName,
       },

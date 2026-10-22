@@ -176,7 +176,20 @@ const Inventory = ({ defaultSubmodule = null }) => {
 
   useEffect(() => {
     const nextSub = getSelectedSubmodule();
-    setActiveSubmodule(nextSub);
+    if (nextSub) {
+      setActiveSubmodule(nextSub);
+    } else if (currentUser?.role === "EMPLOYEE") {
+      // If employee opens inventory without a submodule param, check how many submodules they have access to
+      const allowedSubs = INVENTORY_SUBMODULES.filter((sub) => hasModuleAccess(sub.key));
+      if (allowedSubs.length === 1) {
+        // Automatically direct them straight into their permitted submodule!
+        setActiveSubmodule(allowedSubs[0].id);
+      } else {
+        setActiveSubmodule(null);
+      }
+    } else {
+      setActiveSubmodule(null);
+    }
   }, [paramSubmodule, searchParams.get("submodule"), searchParams.get("tab")]);
 
   const handleSelectSubmodule = (subId) => {
@@ -195,6 +208,9 @@ const Inventory = ({ defaultSubmodule = null }) => {
       setSearchParams(searchParams);
     }
   };
+
+  // Find first accessible submodule for the quick-action button
+  const firstAccessibleSub = INVENTORY_SUBMODULES.find((sub) => hasModuleAccess(sub.key)) || INVENTORY_SUBMODULES[0];
 
   // Render Submodule 1: Inventory In
   if (activeSubmodule === "in") {
@@ -363,12 +379,14 @@ const Inventory = ({ defaultSubmodule = null }) => {
             </button>
           )}
 
-          <button
-            onClick={() => handleSelectSubmodule("in")}
-            className="cta-gradient text-white text-xs sm:text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm cursor-pointer flex-1 sm:flex-initial"
-          >
-            <PackagePlus className="h-4 w-4" /> <span>Go to Inventory In</span>
-          </button>
+          {hasModuleAccess(firstAccessibleSub.key) && (
+            <button
+              onClick={() => handleSelectSubmodule(firstAccessibleSub.id)}
+              className="cta-gradient text-white text-xs sm:text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm cursor-pointer flex-1 sm:flex-initial"
+            >
+              <PackagePlus className="h-4 w-4" /> <span>Go to {firstAccessibleSub.title.replace(/^\d+\.\s*/, "")}</span>
+            </button>
+          )}
         </div>
       </div>
 

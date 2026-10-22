@@ -263,14 +263,14 @@ const AdminMarkAttendance = () => {
 
   const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
 
+  const isUnclosedPreviousCorrectionPending =
+    !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
+
   const hasUnclosedPreviousMissingCheckout =
     !!unclosedPrevious?.record &&
     (!unclosedPrevious.correctionRequest ||
       (unclosedPrevious.correctionRequest.status !== "APPROVED" &&
         unclosedPrevious.correctionRequest.status !== "PENDING"));
-
-  const isUnclosedPreviousCorrectionPending =
-    !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
 
   const handleCheckIn = async () => {
     if (checkingIn || capturingLocation) return;
@@ -280,7 +280,7 @@ const AdminMarkAttendance = () => {
     }
     if (hasUnclosedPreviousMissingCheckout) {
       toast.error(
-        `Check-in is disabled. Please complete yesterday's attendance (${unclosedPrevious.record.dateKey}) first.`,
+        `Check-in is disabled. Please complete attendance check-out for ${unclosedPrevious.record.dateKey} first.`,
       );
       return;
     }
@@ -532,7 +532,6 @@ const AdminMarkAttendance = () => {
             </div>
           )}
 
-          {/* Unclosed Previous Day Missing Check-Out Alert */}
           {hasUnclosedPreviousMissingCheckout && !isUnclosedPreviousCorrectionPending && (
             <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900/50 p-4 space-y-3">
               <div className="flex items-start gap-3">
@@ -541,10 +540,10 @@ const AdminMarkAttendance = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                    Missing Check-Out for Yesterday ({unclosedPrevious?.record?.dateKey})
+                    Missing Check-Out ({unclosedPrevious?.record?.dateKey})
                   </h3>
                   <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Please complete yesterday's check-out request first.
+                    You checked in on <strong>{unclosedPrevious?.record?.dateKey}</strong> but forgot to check out. Please complete that day's check-out request first.
                   </p>
                 </div>
               </div>
@@ -565,7 +564,7 @@ const AdminMarkAttendance = () => {
                   className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-all"
                 >
                   <ScanLine className="h-3.5 w-3.5" />
-                  <span>Complete Yesterday's Check-Out ({unclosedPrevious?.record?.dateKey})</span>
+                  <span>Complete Check-Out ({unclosedPrevious?.record?.dateKey})</span>
                 </button>
               </div>
             </div>
@@ -575,7 +574,7 @@ const AdminMarkAttendance = () => {
             <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
               <Clock className="h-4 w-4 text-blue-600 shrink-0" />
               <div>
-                <span className="font-bold">Yesterday's Attendance Under Review:</span> Your attendance request for yesterday ({unclosedPrevious?.record?.dateKey}) is waiting for approval. You can proceed with today's Check In below.
+                <span className="font-bold">Previous Check-Out Under Review (Pending):</span> Your attendance request for {unclosedPrevious?.record?.dateKey} is waiting for approval. You can proceed with today's Check In below.
               </div>
             </div>
           )}
@@ -606,7 +605,7 @@ const AdminMarkAttendance = () => {
                 : isOnLeaveToday
                 ? "Check-In Frozen (On Approved Leave)"
                 : hasUnclosedPreviousMissingCheckout
-                ? "Yesterday Attendance Incomplete"
+                ? "Previous Attendance Incomplete"
                 : "Check In"}
             </button>
           )}

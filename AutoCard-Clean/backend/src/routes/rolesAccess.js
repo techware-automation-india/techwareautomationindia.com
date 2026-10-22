@@ -27,6 +27,7 @@ const employeeModules = [
   { key: "leave-policy", label: "Leave Policy & Holiday" },
   { key: "leave-policy-types", label: "Leave Policy" },
   { key: "leave-policy-holidays", label: "Holiday Calendar" },
+  { key: "academic-calendar", label: "Academic Calendar" },
   { key: "academic-holidays", label: "Academic Holidays" },
   { key: "holidays", label: "Holidays" },
   { key: "projects", label: "Projects" },
@@ -109,6 +110,15 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
     const permissionMap = buildPermissionMap(legacyPermissions);
 
     if (roleModules.length > 0) {
+      // First pass: collect all action permissions
+      const hasActionKeyForSub = {};
+      for (const m of roleModules) {
+        if (m.moduleKey.includes(":")) {
+          const [subKey] = m.moduleKey.split(":");
+          hasActionKeyForSub[subKey] = true;
+        }
+      }
+
       for (const m of roleModules) {
         if (m.moduleKey.includes(":")) {
           const [subKey, act] = m.moduleKey.split(":");
@@ -126,25 +136,79 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
           if (act === "delete") permissionMap[subKey].canDelete = true;
           permissionMap[m.moduleKey] = true;
         } else {
-          permissionMap[m.moduleKey] = {
-            canView: true,
-            canCreate: true,
-            canEdit: true,
-            canDelete: true,
-          };
+          // If this key already has granular action keys (e.g. employee:view), bare 'employee' should NOT grant canCreate/canEdit/canDelete!
+          if (!hasActionKeyForSub[m.moduleKey]) {
+            // Legacy / simple assignment without granular actions: default to full permissions
+            if (!permissionMap[m.moduleKey]) {
+              permissionMap[m.moduleKey] = {
+                canView: true,
+                canCreate: true,
+                canEdit: true,
+                canDelete: true,
+              };
+            }
+          } else {
+            // Granular actions exist; bare moduleKey just ensures canView is at least true
+            if (!permissionMap[m.moduleKey]) {
+              permissionMap[m.moduleKey] = {
+                canView: true,
+                canCreate: false,
+                canEdit: false,
+                canDelete: false,
+              };
+            } else {
+              permissionMap[m.moduleKey].canView = true;
+            }
+          }
         }
       }
 
-      // If user has any inventory submodule view permission, ensure 'inventory' parent module is granted
-      const inventorySubKeys = ["inventory-in", "inventory-out", "view-inventory", "inventory-alert", "general-consumables"];
-      const hasAnyInventorySub = inventorySubKeys.some((k) => permissionMap[k]?.canView || permissionMap[`${k}:view`]);
-      if (hasAnyInventorySub && !permissionMap["inventory"]) {
-        permissionMap["inventory"] = {
-          canView: true,
-          canCreate: false,
-          canEdit: false,
-          canDelete: false,
-        };
+      // If user has any submodule view permission, ensure parent module is granted
+      const subKeyToParent = [
+        {
+          parent: "inventory",
+          subKeys: ["inventory-in", "inventory-out", "view-inventory", "inventory-alert", "general-consumables"],
+        },
+        {
+          parent: "requests",
+          subKeys: ["requests-apply-leave", "requests-forgot-punch", "requests-tools-inventory", "requests-track"],
+        },
+        {
+          parent: "approvals",
+          subKeys: ["approvals-leave", "approvals-attendance", "approvals-forgot-punch", "approvals-tools-inventory", "approvals-tools"],
+        },
+        {
+          parent: "leave-policy",
+          subKeys: ["leave-policy-types", "leave-policy-holidays"],
+        },
+      ];
+
+      for (const group of subKeyToParent) {
+        const hasAnySub = group.subKeys.some((k) => permissionMap[k]?.canView || permissionMap[`${k}:view`]);
+        if (hasAnySub) {
+          if (!permissionMap[group.parent]) {
+            permissionMap[group.parent] = {
+              canView: true,
+              canCreate: false,
+              canEdit: false,
+              canDelete: false,
+            };
+          } else {
+            permissionMap[group.parent].canView = true;
+          }
+        } else {
+          // If no submodule has view access, parent module must NOT be visible
+          if (permissionMap[group.parent]) {
+            permissionMap[group.parent].canView = false;
+          } else {
+            permissionMap[group.parent] = {
+              canView: false,
+              canCreate: false,
+              canEdit: false,
+              canDelete: false,
+            };
+          }
+        }
       }
 
       if (req.user?.role === "ADMIN") {
@@ -317,6 +381,505 @@ router.patch("/employees/:userId/permissions", async (req, res) => {
   } catch (err) {
     console.error("RolesAccess update permissions error:", err);
     res.status(500).json({ message: "Failed to save permissions." });
+  }
+});
+
+/**
+ * Submodule mapping for all modules in system
+ */
+const MODULE_SUBMODULE_MAP = {
+  inventory: [
+    { key: "inventory-in", label: "Inventory In" },
+    { key: "inventory-out", label: "Inventory Out" },
+    { key: "view-inventory", label: "View Stock" },
+    { key: "inventory-alert", label: "Stock Alerts" },
+    { key: "general-consumables", label: "Tools & Consumables" },
+  ],
+  requests: [
+    { key: "requests-apply-leave", label: "Apply for Leave" },
+    { key: "requests-forgot-punch", label: "Forgot Punch / Time Edit" },
+    { key: "requests-tools-inventory", label: "Request Tools / Inventory" },
+    { key: "requests-track", label: "Track All Requests" },
+  ],
+  approvals: [
+    { key: "approvals-leave", label: "Leave Approval" },
+    { key: "approvals-attendance", label: "Unassign Location Approval" },
+    { key: "approvals-forgot-punch", label: "Forgot Punch Approval" },
+    { key: "approvals-tools-inventory", label: "Tools & Inventory Approval" },
+  ],
+  "leave-policy": [
+    { key: "leave-policy-types", label: "Leave Policy" },
+    { key: "leave-policy-holidays", label: "Holiday Calendar" },
+  ],
+};
+
+/**
+ * GET /roles-access/module-permissions?module=<moduleKey>
+ * Returns all active users and their granular permissions (canView, canCreate, canEdit, canDelete)
+ * for the requested parent module or submodule.
+ */
+router.get("/module-permissions", async (req, res) => {
+  try {
+    const parentKey = req.query.module || "all";
+
+    const users = await prisma.user.findMany({
+      where: { isActive: true },
+      include: {
+        customRole: {
+          include: {
+            modules: true,
+          },
+        },
+        modulePermissions: true,
+      },
+      orderBy: { fullName: "asc" },
+    });
+
+    const employees = users.map((u) => {
+      const isAdmin = u.role === "ADMIN";
+      const roleModules = (u.customRole?.modules || []).map((m) => m.moduleKey);
+
+      // Build permissions per module and submodule
+      const permissions = {};
+
+      const checkSubPerms = (key, parentKeyFallback = null) => {
+        if (isAdmin) {
+          return { canView: true, canCreate: true, canEdit: true, canDelete: true };
+        }
+        const hasDirect = roleModules.includes(key);
+        const canView = hasDirect || roleModules.includes(`${key}:view`);
+        const canCreate = roleModules.includes(`${key}:create`);
+        const canEdit = roleModules.includes(`${key}:edit`);
+        const canDelete = roleModules.includes(`${key}:delete`);
+
+        const legacy = u.modulePermissions?.find((mp) => mp.moduleKey === key);
+
+        return {
+          canView: canView || Boolean(legacy?.canView),
+          canCreate: canCreate || Boolean(legacy?.canCreate),
+          canEdit: canEdit || Boolean(legacy?.canEdit),
+          canDelete: canDelete || Boolean(legacy?.canDelete),
+        };
+      };
+
+      // Check standard top-level modules
+      const allTopKeys = [
+        "overview",
+        "employee",
+        "requests",
+        "approvals",
+        "mark-attendance",
+        "attendance",
+        "attendance-management",
+        "roles-access",
+        "shift-location",
+        "roster",
+        "leave-policy",
+        "projects",
+        "inventory",
+      ];
+
+      allTopKeys.forEach((k) => {
+        permissions[k] = checkSubPerms(k);
+      });
+
+      // Check all submodules
+      Object.entries(MODULE_SUBMODULE_MAP).forEach(([parent, subs]) => {
+        subs.forEach((sub) => {
+          permissions[sub.key] = checkSubPerms(sub.key, parent);
+        });
+      });
+
+      return {
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: u.role,
+        roleId: u.roleId,
+        roleName: u.customRole?.name || (isAdmin ? "Admin" : "Employee"),
+        isAdmin,
+        permissions,
+      };
+    });
+
+    res.json({
+      employees,
+      moduleSubmodules: MODULE_SUBMODULE_MAP,
+    });
+  } catch (err) {
+    console.error("Failed to load module permissions:", err);
+    res.status(500).json({ message: "Failed to load module permissions." });
+  }
+});
+
+/**
+ * PUT /roles-access/module-permissions/:userId
+ * Updates an employee's permissions across modules/submodules.
+ * Creates an isolated custom role if the user was on a shared/default role.
+ */
+router.put("/module-permissions/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { permissions, defaultModules } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        customRole: {
+          include: {
+            modules: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (user.role === "ADMIN") {
+      return res.status(400).json({ message: "Admin users have full access by default." });
+    }
+
+    if (!permissions || typeof permissions !== "object") {
+      return res.status(400).json({ message: "Invalid permissions object." });
+    }
+
+    let targetRoleId = user.roleId;
+
+    if (targetRoleId) {
+      const isDefault = user.customRole?.isDefault;
+      const otherUsersCount = await prisma.user.count({
+        where: {
+          roleId: targetRoleId,
+          id: { not: userId },
+        },
+      });
+
+      if (isDefault || otherUsersCount > 0) {
+        const empName = user.fullName || "Employee";
+        let roleName = `${empName} (Custom)`;
+        // Check if roleName already exists, if so append user ID slice
+        const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
+        if (existingRole) {
+          roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+        }
+        const newRole = await prisma.roleTable.upsert({
+          where: { name: roleName },
+          update: {},
+          create: {
+            name: roleName,
+            isDefault: false,
+          },
+        });
+        targetRoleId = newRole.id;
+        await prisma.user.update({
+          where: { id: userId },
+          data: { roleId: targetRoleId },
+        });
+      }
+    } else {
+      const empName = user.fullName || "Employee";
+      let roleName = `${empName} (Custom)`;
+      const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
+      if (existingRole) {
+        roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+      }
+      const newRole = await prisma.roleTable.upsert({
+        where: { name: roleName },
+        update: {},
+        create: {
+          name: roleName,
+          isDefault: false,
+        },
+      });
+      targetRoleId = newRole.id;
+      await prisma.user.update({
+        where: { id: userId },
+        data: { roleId: targetRoleId },
+      });
+    }
+
+    if (targetRoleId) {
+      const existingModules = (user.customRole?.modules || []).map((m) => m.moduleKey);
+      const incomingKeys = Object.keys(permissions);
+
+      // Remove existing permissions that are being overwritten
+      let newModules = existingModules.filter((k) => {
+        const baseKey = k.includes(":") ? k.split(":")[0] : k;
+        return !incomingKeys.includes(baseKey) && !incomingKeys.includes(k);
+      });
+
+      // Add new permissions
+      incomingKeys.forEach((key) => {
+        const p = permissions[key];
+        if (!p) return;
+        if (p.canView) {
+          newModules.push(key);
+          newModules.push(`${key}:view`);
+        }
+        if (p.canCreate) {
+          newModules.push(`${key}:create`);
+        }
+        if (p.canEdit) {
+          newModules.push(`${key}:edit`);
+        }
+        if (p.canDelete) {
+          newModules.push(`${key}:delete`);
+        }
+      });
+
+      // Synchronize parent modules:
+      // 1. If any submodule has view permission, grant the parent module
+      // 2. If NO submodule has view permission for a parent module, ensure the parent module is REMOVED from newModules
+      Object.entries(MODULE_SUBMODULE_MAP).forEach(([parent, subs]) => {
+        const subKeys = subs.map((s) => s.key);
+        const hasSubView = subKeys.some((sk) => newModules.includes(sk) || newModules.includes(`${sk}:view`));
+        if (hasSubView) {
+          if (!newModules.includes(parent)) {
+            newModules.push(parent);
+          }
+        } else {
+          // If no submodule has view, strip parent and parent actions from newModules
+          newModules = newModules.filter((k) => k !== parent && !k.startsWith(`${parent}:`));
+        }
+      });
+
+      // Sync roleModule records
+      await prisma.roleModule.deleteMany({
+        where: { roleId: targetRoleId },
+      });
+
+      const uniqueModules = [...new Set(newModules)];
+      await prisma.roleModule.createMany({
+        data: uniqueModules.map((moduleKey) => ({
+          roleId: targetRoleId,
+          moduleKey,
+        })),
+      });
+
+      // Sync legacy modulePermissions table for immediate fallback
+      for (const [key, perms] of Object.entries(permissions)) {
+        await prisma.modulePermission.upsert({
+          where: { userId_moduleKey: { userId, moduleKey: key } },
+          create: {
+            userId,
+            moduleKey: key,
+            canView: Boolean(perms.canView),
+            canCreate: Boolean(perms.canCreate),
+            canEdit: Boolean(perms.canEdit),
+            canDelete: Boolean(perms.canDelete),
+          },
+          update: {
+            canView: Boolean(perms.canView),
+            canCreate: Boolean(perms.canCreate),
+            canEdit: Boolean(perms.canEdit),
+            canDelete: Boolean(perms.canDelete),
+          },
+        });
+      }
+
+      // Also ensure parent records in modulePermission table are updated if all submodules revoked
+      for (const [parent, subs] of Object.entries(MODULE_SUBMODULE_MAP)) {
+        const subKeys = subs.map((s) => s.key);
+        const hasSubView = subKeys.some((sk) => {
+          const sp = permissions[sk];
+          return sp ? Boolean(sp.canView) : false;
+        });
+        if (!hasSubView) {
+          await prisma.modulePermission.upsert({
+            where: { userId_moduleKey: { userId, moduleKey: parent } },
+            create: {
+              userId,
+              moduleKey: parent,
+              canView: false,
+              canCreate: false,
+              canEdit: false,
+              canDelete: false,
+            },
+            update: {
+              canView: false,
+              canCreate: false,
+              canEdit: false,
+              canDelete: false,
+            },
+          });
+        }
+      }
+    }
+
+    res.json({ message: "Permissions updated successfully." });
+  } catch (err) {
+    console.error("Failed to update module permissions:", err);
+    res.status(500).json({ message: "Failed to update module permissions." });
+  }
+});
+
+/**
+ * PUT /roles-access/module-permissions-batch
+ * Batch saves updated permissions for multiple employees efficiently
+ */
+router.put("/module-permissions-batch", async (req, res) => {
+  try {
+    const { updates } = req.body; // array of { userId, permissions }
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.json({ message: "No updates to process." });
+    }
+
+    for (const item of updates) {
+      const { userId, permissions } = item;
+      if (!userId || !permissions) continue;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { customRole: { include: { modules: true } } },
+      });
+      if (!user || user.role === "ADMIN") continue;
+
+      let targetRoleId = user.roleId;
+      if (targetRoleId) {
+        const isDefault = user.customRole?.isDefault;
+        const otherUsersCount = await prisma.user.count({
+          where: { roleId: targetRoleId, id: { not: userId } },
+        });
+
+        if (isDefault || otherUsersCount > 0) {
+          const empName = user.fullName || "Employee";
+          let roleName = `${empName} (Custom)`;
+          const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
+          if (existingRole) roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+
+          const newRole = await prisma.roleTable.upsert({
+            where: { name: roleName },
+            update: {},
+            create: { name: roleName, isDefault: false },
+          });
+          targetRoleId = newRole.id;
+          await prisma.user.update({
+            where: { id: userId },
+            data: { roleId: targetRoleId },
+          });
+        }
+      } else {
+        const empName = user.fullName || "Employee";
+        let roleName = `${empName} (Custom)`;
+        const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
+        if (existingRole) roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+
+        const newRole = await prisma.roleTable.upsert({
+          where: { name: roleName },
+          update: {},
+          create: { name: roleName, isDefault: false },
+        });
+        targetRoleId = newRole.id;
+        await prisma.user.update({
+          where: { id: userId },
+          data: { roleId: targetRoleId },
+        });
+      }
+
+      if (targetRoleId) {
+        const existingModules = (user.customRole?.modules || []).map((m) => m.moduleKey);
+        const incomingKeys = Object.keys(permissions);
+
+        let newModules = existingModules.filter((k) => {
+          const baseKey = k.includes(":") ? k.split(":")[0] : k;
+          return !incomingKeys.includes(baseKey) && !incomingKeys.includes(k);
+        });
+
+        incomingKeys.forEach((key) => {
+          const p = permissions[key];
+          if (!p) return;
+          if (p.canView) {
+            newModules.push(key);
+            newModules.push(`${key}:view`);
+          }
+          if (p.canCreate) newModules.push(`${key}:create`);
+          if (p.canEdit) newModules.push(`${key}:edit`);
+          if (p.canDelete) newModules.push(`${key}:delete`);
+        });
+
+        // Synchronize parent modules:
+        // 1. If any submodule has view permission, grant the parent module
+        // 2. If NO submodule has view permission for a parent module, ensure the parent module is REMOVED from newModules
+        Object.entries(MODULE_SUBMODULE_MAP).forEach(([parent, subs]) => {
+          const subKeys = subs.map((s) => s.key);
+          const hasSubView = subKeys.some((sk) => newModules.includes(sk) || newModules.includes(`${sk}:view`));
+          if (hasSubView) {
+            if (!newModules.includes(parent)) {
+              newModules.push(parent);
+            }
+          } else {
+            newModules = newModules.filter((k) => k !== parent && !k.startsWith(`${parent}:`));
+          }
+        });
+
+        await prisma.roleModule.deleteMany({
+          where: { roleId: targetRoleId },
+        });
+
+        const uniqueModules = [...new Set(newModules)];
+        await prisma.roleModule.createMany({
+          data: uniqueModules.map((moduleKey) => ({
+            roleId: targetRoleId,
+            moduleKey,
+          })),
+        });
+
+        for (const [key, perms] of Object.entries(permissions)) {
+          await prisma.modulePermission.upsert({
+            where: { userId_moduleKey: { userId, moduleKey: key } },
+            create: {
+              userId,
+              moduleKey: key,
+              canView: Boolean(perms.canView),
+              canCreate: Boolean(perms.canCreate),
+              canEdit: Boolean(perms.canEdit),
+              canDelete: Boolean(perms.canDelete),
+            },
+            update: {
+              canView: Boolean(perms.canView),
+              canCreate: Boolean(perms.canCreate),
+              canEdit: Boolean(perms.canEdit),
+              canDelete: Boolean(perms.canDelete),
+            },
+          });
+        }
+
+        // Also ensure parent records in modulePermission table are updated if all submodules revoked
+        for (const [parent, subs] of Object.entries(MODULE_SUBMODULE_MAP)) {
+          const subKeys = subs.map((s) => s.key);
+          const hasSubView = subKeys.some((sk) => {
+            const sp = permissions[sk];
+            return sp ? Boolean(sp.canView) : false;
+          });
+          if (!hasSubView) {
+            await prisma.modulePermission.upsert({
+              where: { userId_moduleKey: { userId, moduleKey: parent } },
+              create: {
+                userId,
+                moduleKey: parent,
+                canView: false,
+                canCreate: false,
+                canEdit: false,
+                canDelete: false,
+              },
+              update: {
+                canView: false,
+                canCreate: false,
+                canEdit: false,
+                canDelete: false,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    res.json({ message: "All permissions updated successfully." });
+  } catch (err) {
+    console.error("Failed to batch update module permissions:", err);
+    res.status(500).json({ message: "Failed to batch update module permissions." });
   }
 });
 

@@ -352,20 +352,46 @@ const MarkAttendance = () => {
         day: "2-digit",
       }).format(new Date());
       // -----------------------------------------------
-      // FIND TODAY'S CORRECTION
+      // FIND TODAY'S OR ACTIVE 24H CORRECTION
       // -----------------------------------------------
 
-      const todayCorrection =
+      const nowTime = new Date().getTime();
+      const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+
+      const activeCorrection =
         requests
           .filter((request) => request?.type === "CORRECTION")
           .filter((request) => {
             const description = String(request.description || "");
-
             const match = description.match(
-              /"date"\s*:\s*"?(\d{4}-\d{2}-\d{2})/,
+              /\[ATTENDANCE_CORRECTION\]\s*(\{[\s\S]*\})\s*$/,
             );
+            if (!match?.[1]) return false;
 
-            return match?.[1] === todayKey;
+            try {
+              const parsed = JSON.parse(match[1]);
+              if (parsed?.date === todayKey) return true;
+
+              // Check if it is a pending check-in from within the last 24 hours
+              if (
+                request.status === "PENDING" &&
+                parsed?.date &&
+                parsed?.checkInTime &&
+                (parsed.punchType === "check-in" || parsed.punchType === "both" || parsed.punchType === "time-edit")
+              ) {
+                const [h, m] = String(parsed.checkInTime).split(":").map(Number);
+                if (Number.isFinite(h) && Number.isFinite(m)) {
+                  const checkInDateTime = new Date(`${parsed.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
+                  if (nowTime - checkInDateTime.getTime() <= twentyFourHoursMs && nowTime >= checkInDateTime.getTime()) {
+                    return true;
+                  }
+                }
+              }
+            } catch (e) {
+              return false;
+            }
+
+            return false;
           })
           .sort(
             (a, b) =>
@@ -373,7 +399,7 @@ const MarkAttendance = () => {
               new Date(a.createdAt || 0).getTime(),
           )[0] || null;
 
-      setCorrectionRequest(todayCorrection);
+      setCorrectionRequest(activeCorrection);
     } catch (err) {
       if (err?.status === 401 || err?.message?.includes("Authentication required")) {
         return;
@@ -744,7 +770,7 @@ const MarkAttendance = () => {
     }
   };
 
-  const formatManualPunchTime = (time) => {
+  const formatManualPunchTime = (time, dateStr = null) => {
     if (!time) return null;
 
     const [hours, minutes] = String(time).split(":").map(Number);
@@ -753,9 +779,13 @@ const MarkAttendance = () => {
       return null;
     }
 
-    const date = new Date();
-
-    date.setHours(hours, minutes, 0, 0);
+    let date;
+    if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      date = new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`);
+    } else {
+      date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+    }
 
     return date.toLocaleTimeString("en-IN", {
       hour: "2-digit",
@@ -763,13 +793,17 @@ const MarkAttendance = () => {
       hour12: true,
     });
   };
-  const getManualPunchDate = (time) => {
+  const getManualPunchDate = (time, dateStr = null) => {
     if (!time) return null;
 
     const [hours, minutes] = String(time).split(":").map(Number);
 
     if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
       return null;
+    }
+
+    if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+05:30`);
     }
 
     const date = new Date();
@@ -782,10 +816,12 @@ const MarkAttendance = () => {
 
   const forgotPunchCheckIn = formatManualPunchTime(
     forgotPunchData?.checkInTime,
+    forgotPunchData?.date,
   );
 
   const forgotPunchCheckOut = formatManualPunchTime(
     forgotPunchData?.checkOutTime,
+    forgotPunchData?.date,
   );
 
   const isCorrectionPending = correctionStatus === "PENDING";
@@ -816,14 +852,14 @@ const MarkAttendance = () => {
    * CHECK IN
    */
 
+  const isUnclosedPreviousCorrectionPending =
+    !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
+
   const hasUnclosedPreviousMissingCheckout =
     !!unclosedPrevious?.record &&
     (!unclosedPrevious.correctionRequest ||
       (unclosedPrevious.correctionRequest.status !== "APPROVED" &&
         unclosedPrevious.correctionRequest.status !== "PENDING"));
-
-  const isUnclosedPreviousCorrectionPending =
-    !!unclosedPrevious?.record && unclosedPrevious.correctionRequest?.status === "PENDING";
 
   const canCheckIn =
     !hasCheckedIn &&
@@ -867,7 +903,7 @@ const MarkAttendance = () => {
   const normalCheckInDate = record?.checkIn ? new Date(record.checkIn) : null;
 
   const forgotPunchCheckInDate = isCorrectionPending
-    ? getManualPunchDate(forgotPunchData?.checkInTime)
+    ? getManualPunchDate(forgotPunchData?.checkInTime, forgotPunchData?.date)
     : null;
 
   const effectiveCheckInDate = normalCheckInDate || forgotPunchCheckInDate;
@@ -994,7 +1030,9 @@ const MarkAttendance = () => {
 
           <div className="flex items-center justify-between">
             <h2 className="font-display text-base font-semibold">
-              Today's Attendance
+              {forgotPunchData?.date && forgotPunchData.date !== todayKey
+                ? `Attendance (${forgotPunchData.date})`
+                : "Today's Attendance"}
             </h2>
 
             {statusMeta && (
@@ -1038,14 +1076,14 @@ const MarkAttendance = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                    Missing Check-Out for Yesterday ({fmtDate(unclosedPrevious.record.date)})
+                    Missing Check-Out ({fmtDate(unclosedPrevious.record.date)})
                   </h3>
                   <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Please complete yesterday's check-out request first.
+                    You checked in on <strong>{fmtDate(unclosedPrevious.record.date)}</strong> at <strong>{fmtTime(unclosedPrevious.record.checkIn)}</strong> but forgot to check out. Please complete that day's check-out request first.
                   </p>
                   {unclosedPrevious.correctionRequest?.status === "REJECTED" && (
                     <p className="mt-1 text-xs font-semibold text-rose-600 dark:text-rose-400">
-                      Previous request was rejected: {unclosedPrevious.correctionRequest.reviewNote || "Rejected by Admin"}
+                      Previous request was rejected: {unclosedPrevious.correctionRequest.reviewNote || "Rejected by Admin"}. Please submit a corrected check-out request.
                     </p>
                   )}
                 </div>
@@ -1068,7 +1106,7 @@ const MarkAttendance = () => {
                 >
                   <ScanLine className="h-3.5 w-3.5" />
                   <span>
-                    Complete Check-Out for Yesterday ({unclosedPrevious.record.dateKey})
+                    Complete Check-Out ({unclosedPrevious.record.dateKey})
                   </span>
                 </button>
               </div>
@@ -1079,7 +1117,7 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900/50 px-4 py-3 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
               <Clock className="h-4 w-4 text-blue-600 shrink-0" />
               <div>
-                <span className="font-bold">Yesterday's Check-Out Under Review:</span> Your check-out request for yesterday ({fmtDate(unclosedPrevious.record.date)}) is waiting for admin approval. You can proceed to check in for today below.
+                <span className="font-bold">Previous Check-Out Under Review (Pending):</span> Your check-out request for {fmtDate(unclosedPrevious.record.date)} is waiting for admin approval. You can proceed to check in for today below.
               </div>
             </div>
           )}
@@ -1096,7 +1134,7 @@ const MarkAttendance = () => {
               </div>
 
               <div className="mt-1">
-                Your requested Check In time ({forgotPunchCheckIn || "Pending"}) is waiting for admin approval.
+                Your requested Check In time ({forgotPunchCheckIn || "Pending"}{forgotPunchData?.date && forgotPunchData.date !== todayKey ? ` on ${forgotPunchData.date}` : ""}) is waiting for admin approval.
                 <br />
                 <strong>You can Check Out below while the request is pending.</strong>
               </div>
@@ -1307,7 +1345,7 @@ const MarkAttendance = () => {
                 <>
                   <AlertTriangle className="h-5 w-5 text-amber-600" />
 
-                  <span>Yesterday Attendance Incomplete</span>
+                  <span>Previous Attendance Incomplete</span>
                 </>
               ) : hasCheckedIn ? (
                 <>

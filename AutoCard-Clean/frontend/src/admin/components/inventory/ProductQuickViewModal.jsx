@@ -54,7 +54,11 @@ export default function ProductQuickViewModal({
   let currCat = item.categoryRef;
   let catDepth = 0;
   while (currCat && catDepth < 6) {
-    categoryChain.unshift(currCat.name);
+    categoryChain.unshift({
+      id: currCat.id,
+      name: currCat.name,
+      level: currCat.level || 1,
+    });
     currCat = currCat.parent;
     catDepth++;
   }
@@ -182,23 +186,56 @@ export default function ProductQuickViewModal({
                   >
                     {qty === 0 ? "Out of Stock" : isLowStock ? "Low Stock Alert" : "In Stock"}
                   </span>
+                  {/* Hierarchy Visual Diagram matching Level 1 -> Level 2 -> Level 3 -> Level 4 */}
                   {categoryChain.length > 0 ? (
-                    <>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20">
-                        <Layers className="h-3 w-3" />
-                        Level 1: {categoryChain[0]}
-                      </span>
-                      {categoryChain.length > 1 && (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-secondary text-foreground border border-border">
-                          › {categoryChain.slice(1).join(" › ")}
-                        </span>
-                      )}
-                    </>
+                    <div className="w-full my-2 p-3 rounded-2xl bg-secondary/30 border border-primary/20">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground mb-2">
+                        <Layers className="h-3.5 w-3.5 text-primary" />
+                        <span>Category Hierarchy Structure (Level 1 to Level 4)</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap overflow-x-auto py-1">
+                        {categoryChain.map((node, cIdx) => {
+                          const lvl = node.level || cIdx + 1;
+                          const styles = {
+                            1: "border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-blue-500/20",
+                            2: "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 ring-indigo-500/20",
+                            3: "border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 ring-amber-500/20",
+                            4: "border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 ring-rose-500/20",
+                          };
+                          return (
+                            <div key={node.id || cIdx} className="flex items-center gap-1.5 shrink-0">
+                              {cIdx > 0 && (
+                                <div className="flex flex-col items-center justify-center text-muted-foreground/60 px-0.5">
+                                  <span className="text-xs font-bold leading-none">→</span>
+                                </div>
+                              )}
+                              <div
+                                className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl border-2 shadow-xs transition-all ${
+                                  styles[lvl] || styles[1]
+                                }`}
+                              >
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-75">
+                                  Level {lvl}
+                                </span>
+                                <span className="text-xs font-bold text-center truncate max-w-[120px]">
+                                  {node.name}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ) : item.category ? (
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-secondary text-foreground border border-border">
                       {item.category}
                     </span>
-                  ) : null}
+                  ) : (
+                    <div className="w-full my-1.5 p-2 rounded-xl bg-secondary/20 border border-border text-[11px] text-muted-foreground italic flex items-center gap-1">
+                      <Layers className="h-3 w-3" />
+                      <span>Direct Item (No Parent Category Assigned)</span>
+                    </div>
+                  )}
                 </div>
 
                 <h3 className="font-display text-xl font-bold text-foreground">

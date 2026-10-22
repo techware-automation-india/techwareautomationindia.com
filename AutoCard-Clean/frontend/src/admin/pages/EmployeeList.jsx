@@ -48,14 +48,21 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
   }, [filterStatus]);
 
   // Permission helpers
-  const permissions = employeePermissions || {
-    canView: true,
-    canCreate: true,
-    canEdit: true,
-    canDelete: true,
-  };
+  const permissions = isEmployeeView
+    ? (employeePermissions || {
+        canView: false,
+        canCreate: false,
+        canEdit: false,
+        canDelete: false,
+      })
+    : (employeePermissions || {
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+      });
   
-  const canDelete = permissions.canDelete;
+  const canDelete = Boolean(permissions.canDelete);
 
   const loadEmployees = async () => {
     console.log("🔄 [Frontend] Loading employees and roles...");

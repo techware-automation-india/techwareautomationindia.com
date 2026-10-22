@@ -25,7 +25,9 @@ export function isModuleAllowed(moduleKey, permissions = {}) {
     "requests-track",
     "leave",
     "my-tools",
-    "my-projects"
+    "my-projects",
+    "academic-calendar",
+    "academic-holidays",
   ];
 
   if (defaultBaseKeys.includes(moduleKey)) {
@@ -107,40 +109,36 @@ export function isModuleAllowed(moduleKey, permissions = {}) {
     );
   }
 
+  // Helper to check view permission
+  const checkHasView = (val) => {
+    if (!val) return false;
+    if (val === true) return true;
+    if (typeof val === "object") return val.canView === true;
+    return false;
+  };
+
   // Inventory parent key & sub-module access checks
   if (moduleKey === "inventory") {
     return !!(
-      permissions["inventory"] ||
-      permissions["inventory-in"] ||
-      permissions["inventory-out"] ||
-      permissions["view-inventory"] ||
-      permissions["inventory-alert"] ||
-      permissions["general-consumables"] ||
+      checkHasView(permissions["inventory"]) ||
+      checkHasView(permissions["inventory-in"]) ||
+      checkHasView(permissions["inventory-out"]) ||
+      checkHasView(permissions["view-inventory"]) ||
+      checkHasView(permissions["inventory-alert"]) ||
+      checkHasView(permissions["general-consumables"]) ||
       Object.keys(permissions).some((k) =>
         (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
-        (permissions[k]?.canView || permissions[k] === true || (typeof permissions[k] === "object" && Object.values(permissions[k]).some(Boolean)))
+        checkHasView(permissions[k])
       )
     );
   }
 
   if (moduleKey === "inventory-in") {
-    return !!(
-      permissions["inventory-in"]?.canView ||
-      permissions["inventory-in"] === true ||
-      permissions["inventory-in:view"] ||
-      permissions["inventory-in:create"] ||
-      permissions["inventory-in:edit"]
-    );
+    return checkHasView(permissions["inventory-in"]) || !!permissions["inventory-in:view"];
   }
 
   if (moduleKey === "inventory-out") {
-    return !!(
-      permissions["inventory-out"]?.canView ||
-      permissions["inventory-out"] === true ||
-      permissions["inventory-out:view"] ||
-      permissions["inventory-out:create"] ||
-      permissions["inventory-out:edit"]
-    );
+    return checkHasView(permissions["inventory-out"]) || !!permissions["inventory-out:view"];
   }
 
   if (moduleKey === "view-inventory") {
@@ -176,8 +174,28 @@ export function isModuleAllowed(moduleKey, permissions = {}) {
 const RequireModuleAccess = ({ moduleKey, children }) => {
   const navigate = useNavigate();
   const outletContext = useOutletContext() || {};
-  const [permissions, setPermissions] = useState(outletContext.permissions || null);
-  const [loading, setLoading] = useState(!outletContext.permissions);
+  const [permissions, setPermissions] = useState(() => {
+    if (outletContext.permissions && Object.keys(outletContext.permissions).length > 0) {
+      return outletContext.permissions;
+    }
+    try {
+      const cached = localStorage.getItem("employee_permissions");
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch {}
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    if (outletContext.permissions && Object.keys(outletContext.permissions).length > 0) {
+      return false;
+    }
+    try {
+      const cached = localStorage.getItem("employee_permissions");
+      if (cached) return false;
+    } catch {}
+    return true;
+  });
 
   useEffect(() => {
     if (outletContext.permissions && Object.keys(outletContext.permissions).length > 0) {

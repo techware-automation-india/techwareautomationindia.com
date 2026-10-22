@@ -22,11 +22,25 @@ import {
   AlertTriangle,
 } from "lucide-react";
 
+export const STANDARD_SUBMODULE_ACTIONS = [
+  { key: 'view', label: 'View' },
+  { key: 'create', label: 'Create / Add' },
+  { key: 'edit', label: 'Edit' },
+  { key: 'delete', label: 'Delete' },
+];
+
+export const APPROVAL_ACTIONS = [
+  { key: 'view', label: 'View' },
+  { key: 'create', label: 'Approve' },
+  { key: 'edit', label: 'Edit / Notes' },
+  { key: 'delete', label: 'Reject' },
+];
+
 export const APPROVAL_SUBTYPES = [
-  { key: 'approvals-leave', label: 'Leave Approval', icon: CalendarDays, description: 'Approve employee leave applications' },
-  { key: 'approvals-attendance', label: 'Unassign Location Approval', icon: MapPin, description: 'Approve out-of-office & GPS punches' },
-  { key: 'approvals-forgot-punch', label: 'Forgot Punch / Time Edit Approval', icon: Clock, description: 'Review employee check in, check out and time edit requests' },
-  { key: 'approvals-tools-inventory', label: 'Tools & Inventory Approval', icon: Wrench, description: 'Approve tool requisitions & inventory returns' },
+  { key: 'approvals-leave', label: 'Leave Approval', icon: CalendarDays, description: 'Approve employee leave applications', actions: APPROVAL_ACTIONS },
+  { key: 'approvals-attendance', label: 'Unassign Location Approval', icon: MapPin, description: 'Approve out-of-office & GPS punches', actions: APPROVAL_ACTIONS },
+  { key: 'approvals-forgot-punch', label: 'Forgot Punch / Time Edit Approval', icon: Clock, description: 'Review employee check in, check out and time edit requests', actions: APPROVAL_ACTIONS },
+  { key: 'approvals-tools-inventory', label: 'Tools & Inventory Approval', icon: Wrench, description: 'Approve tool requisitions & inventory returns', actions: APPROVAL_ACTIONS },
 ];
 
 export const INVENTORY_SUBMODULE_ACTIONS = {
@@ -69,10 +83,10 @@ export const MODULES = [
     icon: ClipboardList,
     hasSubTypes: true,
     subModules: [
-      { key: 'requests-apply-leave', label: 'Apply for Leave', icon: CalendarDays, description: 'Submit leave applications' },
-      { key: 'requests-forgot-punch', label: 'Forgot Punch / Time Edit', icon: Clock, description: 'Review employee check in, check out and time edit requests' },
-      { key: 'requests-tools-inventory', label: 'Request Tools / Inventory', icon: Wrench, description: 'Request or return project tools and equipment' },
-      { key: 'requests-track', label: 'Track All Requests', icon: FileText, description: 'View status of all submitted requests' },
+      { key: 'requests-apply-leave', label: 'Apply for Leave', icon: CalendarDays, description: 'Submit leave applications', actions: STANDARD_SUBMODULE_ACTIONS },
+      { key: 'requests-forgot-punch', label: 'Forgot Punch / Time Edit', icon: Clock, description: 'Review employee check in, check out and time edit requests', actions: STANDARD_SUBMODULE_ACTIONS },
+      { key: 'requests-tools-inventory', label: 'Request Tools / Inventory', icon: Wrench, description: 'Request or return project tools and equipment', actions: STANDARD_SUBMODULE_ACTIONS },
+      { key: 'requests-track', label: 'Track All Requests', icon: FileText, description: 'View status of all submitted requests', actions: STANDARD_SUBMODULE_ACTIONS },
     ],
   },
   {
@@ -84,6 +98,7 @@ export const MODULES = [
   },
   { key: 'mark-attendance', label: 'Mark Attendance', icon: Clock },
   { key: 'attendance', label: 'My Attendance', icon: Calendar },
+  { key: 'academic-calendar', label: 'Academic Calendar', icon: CalendarDays },
   { key: 'attendance-management', label: 'Team Attendance (All Employees)', icon: CalendarCheck },
   { key: 'roles-access', label: 'Roles & Access', icon: ShieldCheck },
   { key: 'shift-location', label: 'Shifts & Locations', icon: MapPin },
@@ -94,8 +109,8 @@ export const MODULES = [
     icon: ClipboardList,
     hasSubTypes: true,
     subModules: [
-      { key: 'leave-policy-types', label: 'Leave Policy', icon: FileText, description: 'Configure leave types, quotas & rules' },
-      { key: 'leave-policy-holidays', label: 'Holiday Calendar', icon: CalendarDays, description: 'Manage organizational public holidays' },
+      { key: 'leave-policy-types', label: 'Leave Policy', icon: FileText, description: 'Configure leave types, quotas & rules', actions: STANDARD_SUBMODULE_ACTIONS },
+      { key: 'leave-policy-holidays', label: 'Holiday Calendar', icon: CalendarDays, description: 'Manage organizational public holidays', actions: STANDARD_SUBMODULE_ACTIONS },
     ],
   },
   {

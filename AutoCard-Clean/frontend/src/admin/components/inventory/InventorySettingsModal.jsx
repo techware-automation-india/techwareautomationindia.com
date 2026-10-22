@@ -17,16 +17,22 @@ import { apiGet, apiPut } from "../../../lib/api.js";
 import { toast } from "sonner";
 
 /**
- * InventorySettingsModal
- * Allows Admin to configure per-employee granular inventory permissions across all submodules:
+ * InventorySettingsModal / ModuleAccessSettingsModal
+ * Allows Admin to configure per-employee granular permissions across all submodules of a module:
+ * (Inventory, Requests, Approvals, Leave Policy, etc.)
  * Columns: Employee Name, View, Create, Edit, Delete
  */
-export default function InventorySettingsModal({ isOpen, onClose }) {
+export default function InventorySettingsModal({
+  isOpen,
+  onClose,
+  parentModuleKey = "inventory",
+  moduleTitle = null,
+}) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [submodules, setSubmodules] = useState([]);
-  const [selectedSubmoduleKey, setSelectedSubmoduleKey] = useState("inventory-in");
+  const [selectedSubmoduleKey, setSelectedSubmoduleKey] = useState("");
   const [search, setSearch] = useState("");
   // Local state for permissions: { [userId]: { [submoduleKey]: { canView, canCreate, canEdit, canDelete } } }
   const [permissionState, setPermissionState] = useState({});
@@ -34,17 +40,19 @@ export default function InventorySettingsModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen) {
+      setSelectedSubmoduleKey("");
       loadPermissions();
     }
-  }, [isOpen]);
+  }, [isOpen, parentModuleKey]);
 
   const loadPermissions = async () => {
     setLoading(true);
     try {
-      const data = await apiGet("/inventory/employee-permissions");
+      // Use the unified /roles-access/module-permissions?module=<parentModuleKey> endpoint
+      const data = await apiGet(`/roles-access/module-permissions?module=${parentModuleKey}`);
       setEmployees(data.employees || []);
       setSubmodules(data.submodules || []);
-      if (data.submodules?.length > 0 && !selectedSubmoduleKey) {
+      if (data.submodules?.length > 0) {
         setSelectedSubmoduleKey(data.submodules[0].key);
       }
 
@@ -122,16 +130,16 @@ export default function InventorySettingsModal({ isOpen, onClose }) {
       if (userId) {
         // Save single employee
         const perms = permissionState[userId] || {};
-        await apiPut(`/inventory/employee-permissions/${userId}`, { permissions: perms });
+        await apiPut(`/roles-access/module-permissions/${userId}?module=${parentModuleKey}`, { permissions: perms });
         toast.success("Employee permissions updated.");
       } else {
         // Save all non-admin employees who have changes
         const nonAdminEmps = employees.filter((e) => !e.isAdmin);
         for (const emp of nonAdminEmps) {
           const perms = permissionState[emp.id] || {};
-          await apiPut(`/inventory/employee-permissions/${emp.id}`, { permissions: perms });
+          await apiPut(`/roles-access/module-permissions/${emp.id}?module=${parentModuleKey}`, { permissions: perms });
         }
-        toast.success("All inventory permissions saved successfully.");
+        toast.success(`All ${displayModuleName} permissions saved successfully.`);
       }
       setHasChanges(false);
       loadPermissions();
@@ -145,6 +153,14 @@ export default function InventorySettingsModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const currentSubmodule = submodules.find((s) => s.key === selectedSubmoduleKey) || submodules[0];
+
+  const displayModuleName = moduleTitle || (
+    parentModuleKey === "inventory" ? "Inventory" :
+    parentModuleKey === "requests" ? "Requests" :
+    parentModuleKey === "approvals" ? "Approvals" :
+    parentModuleKey === "leave-policy" ? "Leave Policy & Holiday" :
+    parentModuleKey.charAt(0).toUpperCase() + parentModuleKey.slice(1)
+  );
 
   const filteredEmployees = employees.filter((emp) => {
     if (!search.trim()) return true;
@@ -168,14 +184,14 @@ export default function InventorySettingsModal({ isOpen, onClose }) {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-display text-lg sm:text-xl font-bold text-foreground">
-                  Inventory Access &amp; Permissions
+                  {displayModuleName} Access &amp; Permissions
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20">
                   Admin Control
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-                Assign granular permissions (View, Create, Edit, Delete) to employees for each Inventory submodule.
+                Assign granular permissions (View, Create, Edit, Delete) to employees for each {displayModuleName} submodule.
               </p>
             </div>
           </div>

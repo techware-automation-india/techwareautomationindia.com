@@ -636,7 +636,7 @@ const AdminAttendanceCorrection = () => {
               You checked in on <strong>{unclosedPrevious.record.dateKey}</strong> but did not check out.
               {unclosedPrevious.correctionRequest?.status === "PENDING"
                 ? " Your check-out request for that day is pending approval. Once approved, today's check-in will open."
-                : " You must complete yesterday's check-out first before today's check-in can be saved."}
+                : " You must complete that day's check-out first before today's check-in can be saved."}
             </p>
             {(!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status === "REJECTED") && (
               <div className="pt-1">

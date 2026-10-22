@@ -12,8 +12,8 @@ const RequestsHome = () => {
   // Base request services available to all
   const baseRequestServices = [
     {
-      label: "Track All Requests",
-      description: "View and track all company-wide employee requests and your own requests.",
+      label: "Track My Request",
+      description: "View and track submitted requests and their current status.",
       path: "/admin/requests/track",
       icon: ClipboardList,
     },

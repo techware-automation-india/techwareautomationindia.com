@@ -518,10 +518,10 @@ const AttendanceCorrection = ({ correctionType }) => {
           <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900/50 p-4 space-y-2 text-xs text-amber-900 dark:text-amber-200">
             <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300 text-sm">
               <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-              Check-In for Today is Blocked — Yesterday's Check-Out Missing
+              Check-In for Today is Blocked — Previous Check-Out Missing
             </div>
             <p>
-              You checked in on <strong>{unclosedPrevious.record.dateKey}</strong> but did not check out. You must submit yesterday's check-out first before today's check-in can be submitted.
+              You checked in on <strong>{unclosedPrevious.record.dateKey}</strong> but did not check out. You must submit that day's check-out first before today's check-in can be submitted.
             </p>
             {(!unclosedPrevious.correctionRequest || unclosedPrevious.correctionRequest.status === "REJECTED") && (
               <div className="pt-1">
@@ -533,7 +533,7 @@ const AttendanceCorrection = ({ correctionType }) => {
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
                 >
-                  Complete Yesterday's Check-Out ({unclosedPrevious.record.dateKey})
+                  Complete Check-Out ({unclosedPrevious.record.dateKey})
                 </button>
               </div>
             )}

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS `inventory_items` (
     `purchaseDate` DATETIME(3) NULL,
     `date` DATETIME(3) NULL,
     `companyName` VARCHAR(191) NULL,
+    `vendorName` VARCHAR(191) NULL,
     `createdById` VARCHAR(191) NULL,
     `createdByName` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -141,6 +142,11 @@ ALTER TABLE `leave_types`
 ALTER TABLE `projects` 
     ADD COLUMN IF NOT EXISTS `progress` INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS `isArchived` BOOLEAN NOT NULL DEFAULT false;
+
+-- inventory_items: companyName & vendorName (for vendor and manufacturer tracking)
+ALTER TABLE `inventory_items`
+    ADD COLUMN IF NOT EXISTS `companyName` VARCHAR(191) NULL,
+    ADD COLUMN IF NOT EXISTS `vendorName` VARCHAR(191) NULL;
 
 -- ------------------------------------------------------------------------------
 -- 4. INSERT DEFAULT INVENTORY UNITS (Skip if already present)

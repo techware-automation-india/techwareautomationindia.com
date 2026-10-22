@@ -12,6 +12,7 @@ import { canPerformAction } from "../../../lib/permissions.js";
 import CategoryModal from "./CategoryModal.jsx";
 import ItemCardModal from "./ItemCardModal.jsx";
 import CategoryProductsModal from "./CategoryProductsModal.jsx";
+import ProductQuickViewModal from "./ProductQuickViewModal.jsx";
 
 const resolveImageUrl = (url) => {
   if (!url) return "";
@@ -343,8 +344,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   const [allInwardItems, setAllInwardItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  // Default to 'tree' view so the hierarchy is immediately visible!
-  const [viewMode, setViewMode] = useState("tree"); // 'tree' | 'grid' | 'table' | 'inward'
+  const [levelFilter, setLevelFilter] = useState("all"); // 'all' | '1' | '2' | '3' | '4'
+  // Default to 'grid' (Cards) view so product cards, categories, and items are immediately visible!
+  const [viewMode, setViewMode] = useState("grid"); // 'grid' | 'tree' | 'table' | 'inward'
   const [expandedNodes, setExpandedNodes] = useState({});
 
   // Assigned personnel
@@ -380,6 +382,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   const [viewingCategoryProducts, setViewingCategoryProducts] = useState(null);
   const [categoryProductsRefresh, setCategoryProductsRefresh] = useState(0);
 
+  // Quick Product View Modal
+  const [viewingProductQuickView, setViewingProductQuickView] = useState(null);
+
   // Delete confirmations
   const [deleteCatTarget, setDeleteCatTarget] = useState(null);
   const [deleteItemTarget, setDeleteItemTarget] = useState(null);
@@ -398,10 +403,21 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   const categoryTree = useMemo(() => buildCategoryTree(allCategories), [allCategories]);
 
   // Flattened tree for Table View with complete breadcrumb paths
-  const flattenedCategories = useMemo(
-    () => flattenTreeWithPath(categoryTree),
-    [categoryTree]
-  );
+  const flattenedCategories = useMemo(() => {
+    const list = flattenTreeWithPath(categoryTree);
+    return list.filter((cat) => {
+      if (levelFilter !== "all" && String(cat.level) !== String(levelFilter)) {
+        return false;
+      }
+      if (!search.trim()) return true;
+      const q = search.trim().toLowerCase();
+      return (
+        (cat.name || "").toLowerCase().includes(q) ||
+        (cat.fullPath || "").toLowerCase().includes(q) ||
+        (cat.code && cat.code.toLowerCase().includes(q))
+      );
+    });
+  }, [categoryTree, search, levelFilter]);
 
   const filteredInwardLogs = useMemo(() => {
     if (!search.trim()) return allInwardItems;
@@ -577,31 +593,69 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
     }
   };
 
-  // Filter categories by search
-  const filteredCategories = categories.filter((cat) => {
+  // Filter categories by search and Level (1, 2, 3, 4, or all)
+  // When search or levelFilter is active, search across allCategories so users can find subcategories at Level 2, 3, 4 even from root view!
+  const sourceCategories = (search.trim() || levelFilter !== "all") ? allCategories : categories;
+
+  const filteredCategories = sourceCategories.filter((cat) => {
+    const catLevel = cat.level || 1;
+    if (levelFilter !== "all" && String(catLevel) !== String(levelFilter)) {
+      return false;
+    }
     if (!search.trim()) return true;
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     return (
-      cat.name.toLowerCase().includes(q) ||
+      (cat.name || "").toLowerCase().includes(q) ||
       (cat.code && cat.code.toLowerCase().includes(q)) ||
       (cat.description && cat.description.toLowerCase().includes(q))
     );
   });
 
-  // Filter items by search
-  const filteredItems = items.filter((i) => {
+  // Filter items by search and Level (1, 2, 3, 4, or all)
+  // When at root level OR when searching/level filtering, search across all inward items across all categories & levels
+  const sourceItems = (!currentCategory || search.trim() || levelFilter !== "all") ? allInwardItems : items;
+
+  const filteredItems = sourceItems.filter((i) => {
+    // Level filtering for items (checks item's category level or direct root item level 1)
+    const itemLevel = i.categoryRef?.level ? String(i.categoryRef.level) : "1";
+    if (levelFilter !== "all" && itemLevel !== String(levelFilter)) {
+      return false;
+    }
+
     if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    const nameMatch = i.name.toLowerCase().includes(q);
+    const q = search.trim().toLowerCase();
+    const nameMatch = (i.name || "").toLowerCase().includes(q);
     const codeMatch =
-      (i.code && i.code.toLowerCase().includes(q)) ||
-      (i.sku && i.sku.toLowerCase().includes(q));
+      ((i.code || "") && (i.code || "").toLowerCase().includes(q)) ||
+      ((i.sku || "") && (i.sku || "").toLowerCase().includes(q));
+    const compMatch = (i.companyName || "").toLowerCase().includes(q);
+    const vendMatch = (i.vendorName || "").toLowerCase().includes(q);
+    const locMatch =
+      ((i.location || "") && (i.location || "").toLowerCase().includes(q)) ||
+      ((i.warehouse || "") && (i.warehouse || "").toLowerCase().includes(q));
+    const unitMatch = (i.unit || "").toLowerCase().includes(q);
+    const createdByMatch = (i.createdByName || "").toLowerCase().includes(q);
+
+    // Check all ancestor category names in the hierarchy chain (L1 -> L2 -> L3 -> L4)
+    let catChainMatch = false;
+    let currCat = i.categoryRef;
+    while (currCat) {
+      if (
+        (currCat.name && currCat.name.toLowerCase().includes(q)) ||
+        (currCat.code && currCat.code.toLowerCase().includes(q))
+      ) {
+        catChainMatch = true;
+        break;
+      }
+      currCat = currCat.parent;
+    }
+
     let specMatch = false;
     if (Array.isArray(i.specifications)) {
       specMatch = i.specifications.some(
         (s) =>
           (s?.key && s.key.toLowerCase().includes(q)) ||
-          (s?.value && s.value.toLowerCase().includes(q))
+          (s?.value && String(s.value).toLowerCase().includes(q))
       );
     } else if (i.specifications && typeof i.specifications === "object") {
       specMatch = Object.entries(i.specifications).some(
@@ -609,7 +663,18 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
       );
     }
-    return nameMatch || codeMatch || specMatch;
+
+    return (
+      nameMatch ||
+      codeMatch ||
+      compMatch ||
+      vendMatch ||
+      locMatch ||
+      unitMatch ||
+      createdByMatch ||
+      catChainMatch ||
+      specMatch
+    );
   });
 
   return (
@@ -646,9 +711,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         )}
       </div>
 
-      {/* ─── Breadcrumb Navigation & Back ─────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-background border border-border rounded-2xl p-4 card-shadow">
-        <div className="flex items-center gap-2 flex-wrap text-sm min-w-0">
+      {/* ─── Breadcrumb Navigation & Action Buttons ────────────────── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 bg-background border border-border rounded-2xl p-3.5 sm:p-4 card-shadow">
+        <div className="flex items-center gap-2 flex-wrap text-sm min-w-0 flex-1">
           {navPath.length === 0 && onBackToHub && (
             <button
               type="button"
@@ -705,11 +770,11 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         </div>
 
         {/* Global actions in current level */}
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
           <button
             type="button"
             onClick={loadData}
-            className="p-2.5 rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+            className="p-2 sm:p-2.5 rounded-xl border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
             title="Refresh View"
           >
             <RefreshCw className="h-4 w-4" />
@@ -725,13 +790,13 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                   setModalParentCategory(currentCategory);
                   setIsCategoryModalOpen(true);
                 }}
-                className="flex-1 sm:flex-initial px-3 sm:px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary text-xs sm:text-sm font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs whitespace-nowrap"
+                className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary text-xs sm:text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer shadow-xs whitespace-nowrap"
               >
                 <FolderPlus className="h-4 w-4 shrink-0" />
                 <span>{currentLevel === 0 ? "Add Root Category" : `Add Subcategory (L${currentLevel + 1})`}</span>
               </button>
             ) : (
-              <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+              <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 shrink-0">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 <span>Max Level 4 Reached</span>
               </div>
@@ -747,7 +812,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                 setItemTargetCategory(currentCategory);
                 setIsItemModalOpen(true);
               }}
-              className="flex-1 sm:flex-initial bg-[#1e3a5f] hover:bg-[#162b45] text-white text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+              className="bg-[#1e3a5f] hover:bg-[#162b45] text-white text-xs sm:text-sm font-semibold px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Plus className="h-4 w-4 shrink-0" /> <span>Add Item</span>
             </button>
@@ -757,21 +822,90 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
 
       {/* ─── Search & View Switcher ───────────────────────────────── */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-background border border-border rounded-2xl p-3 sm:p-4 card-shadow">
-        <div className="relative w-full md:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder={
-              viewMode === "tree"
-                ? "Filter hierarchy tree categories..."
-                : currentLevel === 4
-                ? "Search items in this level..."
-                : "Search categories and items..."
-            }
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-2 pl-10 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:max-w-2xl flex-1">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search product, SKU, specs, category..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full px-4 py-2 pl-9 pr-8 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Clear Search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Level 1, 2, 3, 4 Filter Buttons */}
+          <div className="flex items-center gap-1 bg-secondary/50 p-1 rounded-xl border border-border overflow-x-auto shrink-0 scrollbar-none">
+            <button
+              type="button"
+              onClick={() => setLevelFilter("all")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                levelFilter === "all"
+                  ? "bg-background text-foreground shadow-xs border border-border"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All Levels
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("1")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                levelFilter === "1"
+                  ? "bg-blue-500 text-white shadow-xs"
+                  : "text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-300 inline-block" />
+              L1 Root
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("2")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                levelFilter === "2"
+                  ? "bg-indigo-500 text-white shadow-xs"
+                : "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 inline-block" />
+              L2 Sub
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("3")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                levelFilter === "3"
+                  ? "bg-amber-500 text-white shadow-xs"
+                  : "text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-300 inline-block" />
+              L3 Sub
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("4")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                levelFilter === "4"
+                  ? "bg-rose-500 text-white shadow-xs"
+                  : "text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-300 inline-block" />
+              L4 Final
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between sm:justify-end w-full md:w-auto">
@@ -971,7 +1105,12 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                               <div className="font-bold text-foreground">{item.name}</div>
                               {item.companyName && (
                                 <div className="text-xs font-normal text-muted-foreground">
-                                  Supplier: {item.companyName}
+                                  Company: <span className="font-medium text-foreground/80">{item.companyName}</span>
+                                </div>
+                              )}
+                              {item.vendorName && (
+                                <div className="text-xs font-normal text-muted-foreground">
+                                  Vendor: <span className="font-medium text-foreground/80">{item.vendorName}</span>
                                 </div>
                               )}
                             </div>
@@ -1115,6 +1254,93 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                   canDelete={canDelete}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Search / Filter Results inside Tree View */}
+          {(search.trim() || levelFilter !== "all") && (
+            <div className="mt-6 pt-6 border-t border-border space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-[#1e3a5f]" />
+                  <h4 className="font-display text-sm font-bold text-foreground">
+                    Matching Products across Levels ({filteredItems.length})
+                  </h4>
+                  {levelFilter !== "all" && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                      Level {levelFilter} Filter
+                    </span>
+                  )}
+                </div>
+                {search.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="text-xs text-muted-foreground hover:text-foreground font-medium flex items-center gap-1 cursor-pointer"
+                  >
+                    <X className="h-3 w-3" /> Clear Search
+                  </button>
+                )}
+              </div>
+
+              {filteredItems.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-secondary/10 p-6 text-center text-muted-foreground text-xs">
+                  No products matched "{search}".
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                  {filteredItems.slice(0, 12).map((item, idx) => (
+                    <div
+                      key={item.id ? `tree-item-${item.id}` : idx}
+                      className="rounded-xl border border-border bg-background p-3.5 card-shadow flex flex-col justify-between hover:border-primary/50 transition-all text-xs"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-12 h-12 rounded-lg bg-secondary/40 border border-border shrink-0 overflow-hidden flex items-center justify-center">
+                          {item.photoUrl ? (
+                            <img
+                              src={resolveImageUrl(item.photoUrl)}
+                              alt={item.name}
+                              className="w-full h-full object-contain"
+                            />
+                          ) : (
+                            <Package className="h-5 w-5 text-muted-foreground/50" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h5 className="font-bold text-foreground truncate">{item.name}</h5>
+                          {(item.code || item.sku) && (
+                            <span className="font-mono text-[10px] text-muted-foreground block truncate">
+                              {item.code || item.sku}
+                            </span>
+                          )}
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                              ₹{Number(item.costPrice || 0).toLocaleString("en-IN")}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-secondary text-muted-foreground">
+                              Qty: {item.quantity} {item.unit || "Nos"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2.5 pt-2 border-t border-border/60 flex items-center justify-between text-[10px]">
+                        <span className="text-muted-foreground truncate max-w-[130px]">
+                          {item.categoryRef?.name ? `L${item.categoryRef.level || 1}: ${item.categoryRef.name}` : "Root Item"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setViewingProductQuickView(item)}
+                          className="p-1 rounded-md border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer shrink-0"
+                          title="Quick View Details"
+                        >
+                          <Eye className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1280,14 +1506,43 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         /* VIEW MODE 3: FOLDER CARDS VIEW (Drill-Down for Current Level)  */
         /* ═══════════════════════════════════════════════════════════════ */
         <div className="space-y-8">
-          {/* Subcategories Section (Hidden at Level 4) */}
-          {canAddSubcategory && (
+          {/* Active Search & Filter Indicator Banner */}
+          {(search.trim() || levelFilter !== "all") && (
+            <div className="flex items-center justify-between p-3.5 px-4 rounded-2xl bg-primary/5 border border-primary/20 text-xs text-primary font-medium">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Search className="h-4 w-4 shrink-0" />
+                <span>
+                  Showing results across all 4 levels: <strong>{filteredItems.length} Products</strong> and <strong>{filteredCategories.length} Categories</strong>
+                  {search.trim() ? ` matching "${search}"` : ""}
+                  {levelFilter !== "all" ? ` (Level ${levelFilter})` : ""}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setLevelFilter("all");
+                }}
+                className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>Reset Search</span>
+              </button>
+            </div>
+          )}
+
+          {/* Subcategories Section */}
+          {(canAddSubcategory || search.trim() || levelFilter !== "all") && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Folder className="h-5 w-5 text-primary" />
                   <h3 className="font-display text-base font-bold text-foreground">
-                    {currentLevel === 0
+                    {search.trim()
+                      ? `Categories matching "${search}"`
+                      : levelFilter !== "all"
+                      ? `Level ${levelFilter} Categories`
+                      : currentLevel === 0
                       ? "Categories (Level 1 Root)"
                       : `Subcategories in "${currentCategory.name}" (Level ${currentLevel + 1})`}
                   </h3>
@@ -1407,8 +1662,17 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                 <h3 className="font-display text-base font-bold text-foreground">
                   {currentCategory
                     ? `Items in "${currentCategory.name}"`
+                    : search.trim()
+                    ? `Search Results for "${search}"`
+                    : levelFilter !== "all"
+                    ? `Inventory Items in Level ${levelFilter}`
                     : "Direct Inventory Items (Root Level)"}
                 </h3>
+                {levelFilter !== "all" && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                    Level {levelFilter} Filter Active
+                  </span>
+                )}
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-semibold">
                   {filteredItems.length}
                 </span>
@@ -1483,12 +1747,68 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                         </div>
 
                         {/* Created By Print Name */}
-                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
                           <span className="font-semibold text-foreground/80">Created by:</span>
                           <span className="inline-flex items-center gap-1 font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]">
                             {item.createdByName || "Admin"}
                           </span>
+                          {item.companyName && (
+                            <span className="inline-flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 text-[10px]">
+                              🏢 {item.companyName}
+                            </span>
+                          )}
+                          {item.vendorName && (
+                            <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 text-[10px]">
+                              👤 {item.vendorName}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Hierarchy Path Badge (Root -> Level 1 -> Level 2 -> Level 3 -> Level 4) */}
+                        {(() => {
+                          const chain = [];
+                          let parent = item.categoryRef;
+                          while (parent) {
+                            chain.unshift({ id: parent.id, name: parent.name, level: parent.level || 1 });
+                            parent = parent.parent;
+                          }
+                          if (chain.length > 0) {
+                            return (
+                              <div className="mt-2.5 p-2 rounded-xl bg-secondary/35 border border-border/70 text-[10px]">
+                                <div className="flex items-center gap-1 text-muted-foreground font-semibold mb-1">
+                                  <Layers className="h-3 w-3 text-primary shrink-0" />
+                                  <span>Hierarchy Classification:</span>
+                                </div>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {chain.map((c, cIdx) => (
+                                    <div key={c.id || cIdx} className="flex items-center gap-1">
+                                      {cIdx > 0 && <span className="text-muted-foreground font-bold">›</span>}
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded font-medium border text-[10px] ${
+                                          c.level === 1
+                                            ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20"
+                                            : c.level === 2
+                                            ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20"
+                                            : c.level === 3
+                                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
+                                            : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20"
+                                        }`}
+                                      >
+                                        L{c.level}: {c.name}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="mt-2 text-[10px] text-muted-foreground italic flex items-center gap-1">
+                              <Layers className="h-3 w-3 text-muted-foreground/60" />
+                              <span>Direct Root Level Item</span>
+                            </div>
+                          );
+                        })()}
 
                         {/* Specifications Preview (No Limit) */}
                         {specsArr.length > 0 && (
@@ -1518,6 +1838,14 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                           Updated: {fmtDate(item.updatedAt || item.createdAt)}
                         </span>
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingProductQuickView(item)}
+                            className="p-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                            title="Quick View Details & Hierarchy"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
                           {canEdit && (
                             <button
                               type="button"
@@ -1526,20 +1854,20 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                                 setItemTargetCategory(currentCategory);
                                 setIsItemModalOpen(true);
                               }}
-                              className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
                               title="Edit Item"
                             >
-                              <Edit3 className="h-4 w-4" />
+                              <Edit3 className="h-3.5 w-3.5" />
                             </button>
                           )}
                           {canDelete && (
                             <button
                               type="button"
                               onClick={() => setDeleteItemTarget(item)}
-                              className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
                               title="Delete Item"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
@@ -1658,56 +1986,221 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         </div>
       )}
 
-      {/* Delete Item Modal */}
-      {deleteItemTarget && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setDeleteItemTarget(null);
-          }}
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
-        >
+      {/* Delete Item Modal with Level 1 to Level 4 Category Hierarchy & Next Items */}
+      {deleteItemTarget && (() => {
+        // Build Level 1 to Level 4 hierarchy breadcrumb path for this item
+        const itemCatId = deleteItemTarget.categoryId || deleteItemTarget.categoryRef?.id;
+        const categoryMap = new Map(allCategories.map((c) => [c.id, c]));
+        const hierarchyChain = [];
+        let curr = itemCatId ? categoryMap.get(itemCatId) : null;
+        while (curr) {
+          hierarchyChain.unshift(curr);
+          curr = curr.parentId ? categoryMap.get(curr.parentId) : null;
+        }
+
+        // Sibling items in the same category or root
+        const siblingItems = allInwardItems.filter(
+          (i) => i.id !== deleteItemTarget.id && (i.categoryId || null) === (itemCatId || null)
+        );
+
+        return (
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl bg-card border border-border p-6 space-y-4 shadow-2xl"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setDeleteItemTarget(null);
+            }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-3 sm:p-4 backdrop-blur-xs overflow-y-auto"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold text-foreground">
-                Delete Item
-              </h3>
-              <button
-                type="button"
-                onClick={() => setDeleteItemTarget(null)}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-secondary cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Are you sure you want to delete item{" "}
-              <strong className="text-foreground">{deleteItemTarget.name}</strong> (
-              <span className="font-mono text-xs">{deleteItemTarget.code || deleteItemTarget.sku}</span>)?
-              This cannot be undone.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteItemTarget(null)}
-                className="px-4 py-2 text-sm font-semibold rounded-xl border border-border hover:bg-secondary cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteItem}
-                disabled={deleting}
-                className="px-4 py-2 text-sm font-semibold rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
-              >
-                {deleting ? "Deleting..." : "Yes, Delete"}
-              </button>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg rounded-3xl bg-card border border-border p-5 sm:p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-150"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-border/70 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20">
+                    <Trash2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-base font-bold text-foreground">
+                      Confirm Delete Item
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Permanent deletion warning & hierarchy impact
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteItemTarget(null)}
+                  className="rounded-xl p-1.5 text-muted-foreground hover:bg-secondary cursor-pointer"
+                  title="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Item Card Details */}
+              <div className="bg-secondary/30 rounded-2xl p-3.5 border border-border/70 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">Target Item:</span>
+                  <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-background border border-border text-foreground font-bold">
+                    {deleteItemTarget.code || deleteItemTarget.sku}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground">
+                  {deleteItemTarget.name}
+                </p>
+                {(deleteItemTarget.companyName || deleteItemTarget.vendorName) && (
+                  <div className="flex items-center gap-2 flex-wrap text-[11px] pt-1">
+                    {deleteItemTarget.companyName && (
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium border border-indigo-500/20">
+                        🏢 {deleteItemTarget.companyName}
+                      </span>
+                    )}
+                    {deleteItemTarget.vendorName && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20">
+                        👤 {deleteItemTarget.vendorName}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Category Hierarchy (Level 1 to Level 4) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-primary" />
+                    Category Hierarchy (Level 1 to Level 4):
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-semibold">
+                    {hierarchyChain.length === 0 ? "Root Level" : `${hierarchyChain.length} Level(s)`}
+                  </span>
+                </div>
+
+                <div className="bg-background rounded-xl border border-border/70 p-3 space-y-1.5 text-xs">
+                  {hierarchyChain.length === 0 ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                      <span className="font-semibold text-foreground">Root Level (Direct Item)</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">(No parent category)</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {hierarchyChain.map((cat, idx) => {
+                        const lvl = cat.level || idx + 1;
+                        const colors = {
+                          1: "text-blue-600 bg-blue-500/10 border-blue-500/20",
+                          2: "text-indigo-600 bg-indigo-500/10 border-indigo-500/20",
+                          3: "text-amber-600 bg-amber-500/10 border-amber-500/20",
+                          4: "text-rose-600 bg-rose-500/10 border-rose-500/20",
+                        };
+                        return (
+                          <div key={cat.id || idx} className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${colors[lvl] || colors[1]}`}>
+                              Level {lvl}
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {cat.name}
+                            </span>
+                            {cat.code && (
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                ({cat.code})
+                              </span>
+                            )}
+                            {idx < hierarchyChain.length - 1 && (
+                              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sibling Items in Hierarchy */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Package className="h-3.5 w-3.5 text-emerald-600" />
+                    Other Items in this Category ({siblingItems.length}):
+                  </span>
+                </div>
+
+                <div className="bg-secondary/20 rounded-xl border border-border/70 p-2.5 max-h-28 overflow-y-auto space-y-1 text-xs">
+                  {siblingItems.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground italic py-1 text-center">
+                      No other items found at this category level.
+                    </p>
+                  ) : (
+                    siblingItems.slice(0, 8).map((sib, sIdx) => (
+                      <div
+                        key={sib.id || sIdx}
+                        className="flex items-center justify-between px-2 py-1 rounded-lg bg-background border border-border/50 text-[11px]"
+                      >
+                        <span className="font-medium text-foreground truncate max-w-[240px]">
+                          {sib.name}
+                        </span>
+                        <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                          {sib.code || sib.sku || `Qty: ${sib.quantity || 0}`}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                  {siblingItems.length > 8 && (
+                    <p className="text-[10px] text-muted-foreground text-center pt-1 font-medium">
+                      + {siblingItems.length - 8} more item(s) remain in this category
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Confirmation question */}
+              <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-700 dark:text-rose-300 font-medium">
+                Are you sure you want to permanently delete this item? This action cannot be undone.
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/60">
+                <button
+                  type="button"
+                  onClick={() => setDeleteItemTarget(null)}
+                  className="px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-border hover:bg-secondary cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteItem}
+                  disabled={deleting}
+                  className="px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer transition-all shadow-md flex items-center gap-1.5"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Deleting...
+                    </>
+                  ) : (
+                    "Yes, Delete Item"
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Product Quick View Modal */}
+      <ProductQuickViewModal
+        isOpen={Boolean(viewingProductQuickView)}
+        onClose={() => setViewingProductQuickView(null)}
+        item={viewingProductQuickView}
+        onEdit={canEdit ? (item) => {
+          setItemToEdit(item);
+          setItemTargetCategory(item.categoryRef || currentCategory);
+          setIsItemModalOpen(true);
+        } : null}
+      />
     </div>
   );
 };

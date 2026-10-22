@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Clock,
+  Clock3,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -8,6 +9,7 @@ import {
   Users,
   X,
   CheckCircle2,
+  XCircle,
   AlertCircle,
   MapPin,
   Printer,
@@ -20,6 +22,9 @@ import {
   Calendar,
   Search,
   Download,
+  LogIn,
+  LogOut,
+  MessageSquare,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -220,6 +225,113 @@ const formatAttendanceNote = (note) => {
     .join("\n");
 };
 
+const parseAttendanceNoteSegment = (segment, record) => {
+  const text = segment.trim();
+  const lower = text.toLowerCase();
+
+  const isCheckIn = lower.includes("checkin") || lower.includes("check in");
+  const isCheckOut = lower.includes("checkout") || lower.includes("check out");
+  const isForgotPunch = lower.includes("forgot punch");
+  const isManualCorrection = lower.includes("manual attendance");
+
+  let type = "Attendance Note";
+  if (isForgotPunch) {
+    type = "Forgot Punch";
+  } else if (isManualCorrection) {
+    type = "Attendance Correction";
+  } else if (isCheckIn) {
+    type = "Check In Request";
+  } else if (isCheckOut) {
+    type = "Check Out Request";
+  }
+
+  // Extract Reason using regex matching or manual correction reason
+  let userReason = null;
+  const reasonMatch = text.match(/Reason:\s*(.*?)(?=\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin|Approved|Rejected)\b|\s*\||\.|$)/i);
+  if (reasonMatch && reasonMatch[1].trim()) {
+    userReason = reasonMatch[1].trim();
+  } else if (isManualCorrection) {
+    const manualM = text.match(/manual attendance(?:\s+correction)?:\s*(.*?)(?=\s*Check-In Location:|\s*Check-Out Location:|\s*CheckIn Location:|\s*CheckOut Location:|\.|$)/i);
+    if (manualM && manualM[1].trim()) {
+      userReason = manualM[1].trim();
+    }
+  }
+
+  // Extract distance if present
+  const distMatch = text.match(/\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i);
+  const distance = distMatch ? distMatch[1].trim() : null;
+
+  let status = "INFO";
+  let statusLabel = null;
+  const isAdminRecord =
+    record?.employee?.user?.role === "ADMIN" ||
+    record?.employee?.employeeCode?.startsWith("ADMIN") ||
+    record?.user?.role === "ADMIN";
+
+  if (lower.includes("pending")) {
+    if (isAdminRecord) {
+      status = "APPROVED";
+      statusLabel = "Approved (Auto-Approved)";
+    } else {
+      status = "PENDING";
+      statusLabel = "Pending Approval";
+    }
+  } else if (lower.includes("approved")) {
+    status = "APPROVED";
+    statusLabel = "Approved";
+  } else if (lower.includes("rejected")) {
+    status = "REJECTED";
+    statusLabel = "Rejected";
+  } else if (isManualCorrection || isForgotPunch || isAdminRecord) {
+    status = "APPROVED";
+    statusLabel = "Approved";
+  }
+
+  let locationInfo = null;
+  if (lower.includes("unassigned location")) {
+    const locM = text.match(/unassigned location:\s*([^.]+?)(?=\.|\s*Reason:|\s*Pending|$)/i);
+    const locName = locM ? locM[1].trim() : "Unassigned Location";
+    locationInfo = distance ? `${locName} (${distance} away)` : locName;
+  } else if (lower.includes("outside assigned location")) {
+    locationInfo = distance ? `Outside (${distance} away)` : "Outside Location";
+  }
+
+  let timeStr = null;
+  if (isCheckIn && record?.checkIn) {
+    timeStr = fmtTime(record.checkIn);
+  } else if (isCheckOut && record?.checkOut) {
+    timeStr = fmtTime(record.checkOut);
+  }
+
+  let cleanSummary = text
+    .replace(/^Checkin\s+(from|to|location)?[^.]*?\.\s*/i, "")
+    .replace(/^Checkout\s+(recorded|from|to|location|outside)?[^.]*?\.\s*/i, "")
+    .replace(/Forgot Punch\s*(approved|rejected|pending approval)?\.?/gi, "")
+    .replace(/\s*Pending admin approval\.?/gi, "")
+    .replace(/\s*Approved by admin\.?/gi, "")
+    .replace(/\s*Rejected by admin\.?/gi, "")
+    .replace(/\s*Admin approved\.?/gi, "")
+    .replace(/\s*Admin rejected\.?/gi, "")
+    .replace(/\s*Approved\.?/gi, "")
+    .replace(/\s*Rejected\.?/gi, "")
+    .trim();
+
+  return {
+    type,
+    isCheckIn,
+    isCheckOut,
+    isForgotPunch,
+    timeStr,
+    userReason,
+    status,
+    statusLabel,
+    locationInfo,
+    distance,
+    rawText: text,
+    cleanSummary,
+  };
+};
+
 const extractSubmittedReason = (note) => {
   if (!note) return "No reason provided.";
 
@@ -233,8 +345,10 @@ const extractSubmittedReason = (note) => {
 };
 
 const hasSubmittedReason = (note) => {
-  if (!note) return false;
-  return /reason:|unassigned|outside|unapproved|forgot punch|pending/i.test(note);
+  if (!note || typeof note !== "string") return false;
+  const trimmed = note.trim();
+  if (!trimmed || trimmed === "—" || trimmed === "-") return false;
+  return true;
 };
 
 const getCalendarLocationCode = (note, type) => {
@@ -1010,8 +1124,12 @@ const Attendance = () => {
       employeeName: employeeName || "Employee",
       employeeId: employeeId || record.employeeId || record.employee?.id || (selectedId !== "all" ? selectedId : null),
       reason: extractSubmittedReason(record.note),
+      note: record.note,
+      record: record,
       recordId: record.id,
       date: record.date,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
       checkIn: record.checkIn,
       checkOut: record.checkOut,
       checkInLatitude: record.checkInLatitude,
@@ -1203,6 +1321,7 @@ const Attendance = () => {
           ABSENT: summary?.ABSENT ?? records.filter((r) => r.status === "ABSENT").length,
           ON_LEAVE: summary?.ON_LEAVE ?? records.filter((r) => r.status === "ON_LEAVE").length,
           PRESENT: summary?.PRESENT ?? records.filter((r) => r.status === "PRESENT").length,
+          OT_DAYS: overtimeDays,
           OT_HOURS_TEXT: fmtMinutesToHM(individualTotals.otMinutes),
           TOTAL_WORKED_TEXT: fmtMinutesToHM(individualTotals.workedMinutes),
         },
@@ -1422,7 +1541,7 @@ const Attendance = () => {
                                 {fmtTime(rec.checkOut) ?? "—"}
                               </td>
                               <td className="py-3 pr-4">
-                                {fmtWorkedHours(Math.min(Number(rec.workedHours), 8))}
+                                {fmtWorkedHours(Number(rec.workedHours))}
                               </td>
                               <td className="py-3 pr-4">
                                 {otHours ? (
@@ -1471,19 +1590,32 @@ const Attendance = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-4">
-        <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
-          <ArrowLeft className="h-4 w-4" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-secondary" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Clock className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-bold">Attendance</h1>
+            <p className="text-sm text-muted-foreground">
+              View employee attendance logs in a calendar.
+            </p>
+          </div>
+        </div>
+
+        {/* Unified Download PDF button in one place */}
+        <button
+          type="button"
+          onClick={handleDownloadAttendancePdf}
+          title="Download Attendance PDF"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2.5 text-sm font-bold shadow-2xs transition-colors self-start sm:self-center"
+        >
+          <Download className="h-4 w-4" />
+          <span>Download PDF</span>
         </button>
-        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-          <Clock className="h-6 w-6 text-primary" />
-        </div>
-        <div>
-          <h1 className="font-display text-2xl font-bold">Attendance</h1>
-          <p className="text-sm text-muted-foreground">
-            View employee attendance logs in a calendar.
-          </p>
-        </div>
       </div>
 
       {/* Controls */}
@@ -1719,19 +1851,6 @@ const Attendance = () => {
                     );
                   })}
                 </select>
-              </div>
-
-              {/* Download PDF Button */}
-              <div className="self-end pb-0.5">
-                <button
-                  type="button"
-                  onClick={handleDownloadAttendancePdf}
-                  title="Download Attendance PDF"
-                  className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-3 text-sm font-bold shadow-2xs transition-colors"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download PDF</span>
-                </button>
               </div>
             </div>
           </div>
@@ -2142,456 +2261,799 @@ const Attendance = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="text-[11px] font-bold text-muted-foreground">
-                    Showing {registerEmployees.length} employees &bull; {visibleRegisterDates.length} days
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleDownloadAttendancePdf}
-                    title="Download Team Attendance PDF"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1 text-xs font-bold transition-colors shadow-2xs"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Download PDF</span>
-                  </button>
+                <div className="text-[11px] font-bold text-muted-foreground">
+                  Showing {registerEmployees.length} employees &bull; {visibleRegisterDates.length} days
                 </div>
               </div>
 
-              {/* Calendar / employee matrix - Fixed sticky headers and column prevents scrolling overlap */}
-              <div className="relative max-h-[calc(80vh-160px)] min-h-[400px] overflow-auto overscroll-contain bg-card border-t border-border">
-                <table
-                  className="min-w-[1485px] w-full border-separate border-spacing-0 text-sm"
-                  style={{ zoom: `${calendarZoom}%` }}
-                >
-                  <thead>
-                    <tr>
-                      <th
-                        className="sticky left-0 top-0 z-[40]
-                          w-[240px] min-w-[240px] max-w-[240px]
-                          h-[72px] min-h-[72px]
-                          border-r-2 border-b-2 border-border border-b-blue-600
-                          bg-card px-5 py-3.5
-                          text-left shadow-[4px_4px_8px_rgba(0,0,0,0.06)]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-700 dark:text-blue-300">
-                            Team Members
-                          </span>
-                          <span className="rounded-full bg-blue-500/15 border border-blue-500/25 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300">
-                            {registerEmployees.length}
-                          </span>
-                        </div>
+              {/* Selected Single Date View vs. Monthly Matrix View */}
+              {selectedDate && isAllEmployees ? (
+                (() => {
+                  const targetDate = visibleRegisterDates[0] || new Date(`${selectedDate}T00:00:00Z`);
+                  const dateKey = formatDateKey(targetDate);
+                  const isRegisterToday = dateKey === todayKey;
+                  const isSunday = targetDate.getUTCDay() === 0;
+                  const isSaturday = targetDate.getUTCDay() === 6;
 
-                        <div className="mt-1 text-xs font-bold text-foreground truncate">
-                          {selectedDate
-                            ? "Selected Date View"
-                            : selectedWeek
-                              ? `Week ${selectedWeek} Attendance`
-                              : `${monthNames[month - 1]} ${year}`}
-                        </div>
-                      </th>
+                  const holidayName = registerData?.holidays?.find(
+                    (h) => formatDateKey(new Date(h.date)) === dateKey,
+                  )?.name;
+                  const isHolidayDate = Boolean(holidayName) || isSunday;
 
-                      {visibleRegisterDates.map((date) => {
-                        const dateKey = formatDateKey(date);
-                        const isRegisterToday = dateKey === todayKey;
-                        const isSunday = date.getUTCDay() === 0;
-                        const isSaturday = date.getUTCDay() === 6;
+                  // Compute summary stats for this specific day across all registerEmployees
+                  let presentCount = 0;
+                  let shortDayCount = 0;
+                  let absentCount = 0;
+                  let leaveCount = 0;
+                  let holidayCount = 0;
+                  let totalWorkedMinutes = 0;
+                  let totalOtMinutes = 0;
 
-                        return (
-                          <th
-                            key={dateKey}
-                            className={`sticky top-0 z-[30] min-w-[172px] max-w-[185px] border-b-2 px-3 py-3 text-center shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)] will-change-transform ${
+                  registerEmployees.forEach((emp) => {
+                    let rec = attendanceByDateEmployee.get(`${dateKey}:${emp.id}`);
+                    if (rec && rec.status === "ABSENT" && dateKey >= todayKey) {
+                      rec = null;
+                    }
+                    const isHol = isHolidayDate || rec?.status === "HOLIDAY";
+                    if (isHol && !isWorkedRecord(rec)) {
+                      holidayCount++;
+                    } else if (rec?.status === "ABSENT") {
+                      absentCount++;
+                    } else if (rec?.status === "ON_LEAVE") {
+                      leaveCount++;
+                    } else if (rec && isWorkedRecord(rec)) {
+                      if (isShortDayRecord(rec)) {
+                        shortDayCount++;
+                      } else {
+                        presentCount++;
+                      }
+                      if (rec.workedHours != null) {
+                        const actualWorkedHrs = isHol ? 0 : Number(rec.workedHours);
+                        totalWorkedMinutes += Math.round(actualWorkedHrs * 60);
+                        const otHrs = isHol ? Number(rec.workedHours) : Math.max(0, Number(rec.workedHours) - 8);
+                        totalOtMinutes += Math.round(otHrs * 60);
+                      }
+                    }
+                  });
+
+                  const totalWorkedFormatted = `${Math.floor(totalWorkedMinutes / 60)}h ${totalWorkedMinutes % 60}m`;
+                  const totalOtFormatted = totalOtMinutes > 0 ? `${Math.floor(totalOtMinutes / 60)}h ${totalOtMinutes % 60}m` : null;
+
+                  return (
+                    <div className="flex flex-col bg-card border-t border-border">
+                      {/* Daily Highlights & Overview Header */}
+                      <div className="border-b border-border/80 bg-linear-to-r from-primary/5 via-background to-secondary/30 px-6 py-4">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-12 w-12 items-center justify-center rounded-2xl font-display text-lg font-black shadow-xs ${
                               isRegisterToday
-                                ? "bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200 border-b-blue-600"
+                                ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
                                 : isSunday
-                                  ? "bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-b-rose-500"
-                                  : isSaturday
-                                    ? "bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border-b-blue-500"
-                                    : "bg-card text-foreground border-b-blue-600/30"
-                            }`}
-                          >
-                            <div className="flex items-center justify-center gap-1.5">
-                              <span
-                                className={`text-[11px] font-extrabold uppercase tracking-wider ${
-                                  isSunday
-                                    ? "text-rose-600 dark:text-rose-400"
-                                    : isRegisterToday
-                                      ? "text-blue-700 dark:text-blue-300"
-                                      : "text-blue-900/80 dark:text-blue-300/90"
-                                }`}
-                              >
-                                {weekdays[date.getUTCDay()]}
-                              </span>
-                              {isRegisterToday && (
-                                <span className="rounded-full bg-blue-600 px-1.5 py-0.2 text-[9px] font-black uppercase text-white shadow-xs">
-                                  Today
+                                  ? "bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                                  : "bg-secondary text-foreground border border-border"
+                            }`}>
+                              {String(targetDate.getUTCDate()).padStart(2, "0")}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-base font-extrabold text-foreground">
+                                  {weekdays[targetDate.getUTCDay()]}, {targetDate.getUTCDate()} {monthNames[targetDate.getUTCMonth()]} {targetDate.getUTCFullYear()}
+                                </h3>
+                                {isRegisterToday && (
+                                  <span className="rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-black uppercase text-primary-foreground shadow-2xs">
+                                    Today
+                                  </span>
+                                )}
+                                {holidayName && (
+                                  <span className="rounded-full bg-blue-500/15 border border-blue-500/30 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:text-blue-300">
+                                    {holidayName}
+                                  </span>
+                                )}
+                                {isSunday && (
+                                  <span className="rounded-full bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 text-xs font-bold text-rose-700 dark:text-rose-300">
+                                    Sunday Off
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Showing attendance status for {registerEmployees.length} registered employees
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Quick Stats Pill Strip */}
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
+                            <div className="flex items-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 font-bold text-emerald-700 dark:text-emerald-300">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                              <span>Present: {presentCount}</span>
+                            </div>
+                            {shortDayCount > 0 && (
+                              <div className="flex items-center gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 font-bold text-amber-700 dark:text-amber-300">
+                                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                                <span>Short: {shortDayCount}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-1.5 font-bold text-rose-700 dark:text-rose-300">
+                              <span className="h-2 w-2 rounded-full bg-rose-500" />
+                              <span>Absent: {absentCount}</span>
+                            </div>
+                            {leaveCount > 0 && (
+                              <div className="flex items-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-1.5 font-bold text-violet-700 dark:text-violet-300">
+                                <span className="h-2 w-2 rounded-full bg-violet-500" />
+                                <span>Leave: {leaveCount}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-1.5 font-bold text-primary">
+                              <span>Total Worked: {totalWorkedFormatted}</span>
+                              {totalOtFormatted && (
+                                <span className="ml-1 text-[11px] text-orange-600 dark:text-orange-400 font-extrabold">
+                                  (+{totalOtFormatted} OT)
                                 </span>
                               )}
                             </div>
+                          </div>
+                        </div>
+                      </div>
 
-                            <div
-                              className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-xl font-display text-sm font-bold ${
+                      {/* Clean Dedicated Daily Attendance Data Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/40 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                              <th className="px-5 py-3.5 w-[280px]">Employee</th>
+                              <th className="px-4 py-3.5 w-[160px] text-center">Status</th>
+                              <th className="px-4 py-3.5 w-[160px]">Punch In</th>
+                              <th className="px-4 py-3.5 w-[160px]">Punch Out</th>
+                              <th className="px-4 py-3.5 w-[150px] text-center">Worked Hours</th>
+                              <th className="px-4 py-3.5 w-[130px] text-center">Overtime</th>
+                              <th className="px-5 py-3.5 min-w-[200px]">Notes & Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60">
+                            {registerEmployees.length > 0 ? (
+                              registerEmployees.map((emp) => {
+                                let rec = attendanceByDateEmployee.get(`${dateKey}:${emp.id}`);
+                                if (rec && rec.status === "ABSENT" && dateKey >= todayKey) {
+                                  rec = null;
+                                }
+
+                                const isHoliday = isHolidayDate || rec?.status === "HOLIDAY";
+                                const isAbsent = rec?.status === "ABSENT";
+                                const isShortDay = isShortDayRecord(rec);
+                                const isWorked = isWorkedRecord(rec);
+                                const meta = rec ? (isShortDay ? statusMeta.SHORT_DAY : statusMeta[rec.status]) : null;
+                                const checkInLocationCode = getCalendarLocationCode(rec?.note, "check-in");
+                                const checkOutLocationCode = getCalendarLocationCode(rec?.note, "check-out");
+                                const overtimeText = fmtOvertimeHours(rec, isHoliday);
+                                const hasReason = hasSubmittedReason(rec?.note);
+
+                                return (
+                                  <tr
+                                    key={emp.id}
+                                    className="group hover:bg-muted/40 transition-colors"
+                                  >
+                                    {/* Employee Info */}
+                                    <td className="px-5 py-3.5 align-middle">
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-extrabold text-primary shadow-2xs">
+                                          {emp.fullName
+                                            .split(" ")
+                                            .map((name) => name[0])
+                                            .join("")
+                                            .slice(0, 2)
+                                            .toUpperCase()}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div
+                                            className="font-bold text-foreground text-sm hover:text-primary transition-colors cursor-pointer leading-tight"
+                                            title={emp.fullName}
+                                            onClick={() => handleEmployeeChange(emp.id)}
+                                          >
+                                            {emp.fullName.split(" ").map((part, pIdx) => (
+                                              <div key={pIdx} className="break-words">{part}</div>
+                                            ))}
+                                          </div>
+                                          <div className="flex items-center gap-2 mt-0.5">
+                                            {emp.employeeCode ? (
+                                              <span className="rounded-md bg-secondary border border-border/70 px-1.5 py-0.2 text-[11px] font-bold text-muted-foreground">
+                                                {emp.employeeCode}
+                                              </span>
+                                            ) : (
+                                              <span className="text-[11px] text-muted-foreground truncate" title={emp.email}>
+                                                {emp.email}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Status Badge */}
+                                    <td className="px-4 py-3.5 align-middle text-center">
+                                      {isHoliday && !isWorked ? (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 border border-blue-500/25 px-3 py-1 text-xs font-bold text-blue-700 dark:text-blue-300">
+                                          <span className="h-2 w-2 rounded-full bg-blue-500" />
+                                          {holidayName || (isSunday ? "Sunday" : "Holiday")}
+                                        </span>
+                                      ) : isAbsent ? (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/15 border border-rose-500/25 px-3 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
+                                          <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                          Absent
+                                        </span>
+                                      ) : rec?.status === "ON_LEAVE" ? (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/15 border border-violet-500/25 px-3 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">
+                                          <span className="h-2 w-2 rounded-full bg-violet-500" />
+                                          On Leave
+                                        </span>
+                                      ) : isWorked ? (
+                                        <span
+                                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold shadow-2xs ${
+                                            meta?.cell || "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
+                                          }`}
+                                        >
+                                          <span className={`h-2 w-2 rounded-full ${meta?.dot || "bg-emerald-500"}`} />
+                                          {meta?.label || rec.status}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                                          — No Punch
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Punch In */}
+                                    <td className="px-4 py-3.5 align-middle">
+                                      {rec?.checkIn ? (
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex flex-col">
+                                            <span className="font-extrabold text-foreground text-sm">
+                                              {fmtTime(rec.checkIn)}
+                                            </span>
+                                            <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
+                                              Check In
+                                            </span>
+                                          </div>
+                                          {checkInLocationCode && (
+                                            <span
+                                              title={`Check In Location: ${checkInLocationCode === "UL" ? "Unassigned Location" : checkInLocationCode === "A" ? "Assigned Location" : "Office"}`}
+                                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                checkInLocationCode === "UL"
+                                                  ? "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25"
+                                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25"
+                                              }`}
+                                            >
+                                              {checkInLocationCode}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground font-semibold">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Punch Out */}
+                                    <td className="px-4 py-3.5 align-middle">
+                                      {rec?.checkOut ? (
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex flex-col">
+                                            <span className="font-extrabold text-foreground text-sm">
+                                              {fmtTime(rec.checkOut)}
+                                            </span>
+                                            <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400">
+                                              Check Out
+                                            </span>
+                                          </div>
+                                          {checkOutLocationCode && (
+                                            <span
+                                              title={`Check Out Location: ${checkOutLocationCode === "UL" ? "Unassigned Location" : checkOutLocationCode === "A" ? "Assigned Location" : "Office"}`}
+                                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                checkOutLocationCode === "UL"
+                                                  ? "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25"
+                                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25"
+                                              }`}
+                                            >
+                                              {checkOutLocationCode}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground font-semibold">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Worked Hours */}
+                                    <td className="px-4 py-3.5 align-middle text-center">
+                                      {rec?.workedHours != null ? (
+                                        <span className="inline-flex items-center justify-center rounded-lg bg-secondary border border-border/80 px-2.5 py-1 text-xs font-bold text-foreground">
+                                          {fmtWorkedHours(isHoliday ? 0 : Number(rec.workedHours))}
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground font-semibold">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Overtime */}
+                                    <td className="px-4 py-3.5 align-middle text-center">
+                                      {overtimeText ? (
+                                        <span className="inline-flex items-center justify-center rounded-lg bg-orange-500/15 border border-orange-500/25 px-2.5 py-1 text-xs font-extrabold text-orange-600 dark:text-orange-400">
+                                          +{overtimeText}
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground font-medium">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Notes & Actions */}
+                                    <td className="px-5 py-3.5 align-middle">
+                                      <div className="flex items-center gap-2">
+                                        {hasReason ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => openAttendanceReason(rec, emp.fullName, emp.id)}
+                                            className="inline-flex items-center gap-1 rounded-lg bg-amber-500/15 border border-amber-500/25 px-2.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors cursor-pointer"
+                                          >
+                                            View Reason
+                                          </button>
+                                        ) : rec?.note ? (
+                                          <span className="text-xs text-muted-foreground truncate max-w-[240px]" title={rec.note}>
+                                            {rec.note}
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground/60">—</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              <tr>
+                                <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                                  No employees registered.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                /* Full Month / Multi-Week Matrix Calendar Table */
+                <div className="relative max-h-[calc(80vh-160px)] min-h-[400px] overflow-auto overscroll-contain bg-card border-t border-border">
+                  <table
+                    className="w-full border-separate border-spacing-0 text-sm min-w-[1485px]"
+                    style={{ zoom: `${calendarZoom}%` }}
+                  >
+                    <thead>
+                      <tr>
+                        <th
+                          className="sticky left-0 top-0 z-[40]
+                            border-r-2 border-b-2 border-border border-b-blue-600
+                            bg-white dark:bg-slate-900 px-3 py-2.5
+                            text-left shadow-[4px_0_8px_rgba(0,0,0,0.06)] w-[175px] min-w-[160px] max-w-[185px]"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-extrabold uppercase tracking-widest text-blue-700 dark:text-blue-300">
+                              Team Members
+                            </span>
+                            <span className="rounded-full bg-blue-500/15 border border-blue-500/25 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:text-blue-300">
+                              {registerEmployees.length}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-sm font-bold text-foreground truncate">
+                            {selectedWeek
+                              ? `Week ${selectedWeek} Attendance`
+                              : `${monthNames[month - 1]} ${year}`}
+                          </div>
+                        </th>
+
+                        {visibleRegisterDates.map((date) => {
+                          const dateKey = formatDateKey(date);
+                          const isRegisterToday = dateKey === todayKey;
+                          const isSunday = date.getUTCDay() === 0;
+                          const isSaturday = date.getUTCDay() === 6;
+
+                          return (
+                            <th
+                              key={dateKey}
+                              className={`sticky top-0 z-[30] border-b-2 px-4 py-3 text-center shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)] min-w-[200px] max-w-[220px] ${
                                 isRegisterToday
-                                  ? "bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/30"
+                                  ? "bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200 border-b-blue-600"
                                   : isSunday
-                                    ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                                    : "bg-blue-500/10 dark:bg-blue-900/30 text-blue-900 dark:text-blue-200 border border-blue-500/20"
+                                    ? "bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-b-rose-500"
+                                    : isSaturday
+                                      ? "bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border-b-blue-500"
+                                      : "bg-card text-foreground border-b-blue-600/30"
                               }`}
                             >
-                              {String(date.getUTCDate()).padStart(2, "0")}
-                            </div>
-
-                            <div className="mt-0.5 text-[10px] font-semibold text-muted-foreground/90">
-                              {String(date.getUTCMonth() + 1).padStart(2, "0")}/{date.getUTCFullYear()}
-                            </div>
-                          </th>
-                        );
-                      })}
-
-                      {isAllEmployees && !selectedDate && !selectedWeek && (
-                        <>
-                          <th className="sticky top-0 z-[30] min-w-[75px] border-l border-b-2 border-border/80 border-b-emerald-500 bg-card px-2 py-3 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
-                            Present
-                          </th>
-                          <th
-                            className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-amber-500 bg-card px-2 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]"
-                            title="Short Day: Worked hours less than standard 8 hours"
-                          >
-                            Short
-                          </th>
-                          <th className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-rose-500 bg-card px-2 py-3 text-center text-xs font-bold text-rose-600 dark:text-rose-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
-                            Absent
-                          </th>
-                          <th className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-violet-500 bg-card px-2 py-3 text-center text-xs font-bold text-violet-600 dark:text-violet-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
-                            Leave
-                          </th>
-                          <th className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-blue-500 bg-card px-2 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
-                            Holiday
-                          </th>
-                          <th className="sticky top-0 z-[30] min-w-[105px] border-b-2 border-border/80 border-b-blue-600 bg-card px-2.5 py-3 text-center text-xs font-bold text-blue-700 dark:text-blue-300 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
-                            Worked
-                          </th>
-                          <th className="sticky top-0 z-[30] min-w-[95px] border-b-2 border-border/80 border-b-amber-500 bg-card px-2.5 py-3 text-center text-xs font-bold text-amber-700 dark:text-amber-300 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
-                            Overtime
-                          </th>
-                        </>
-                      )}
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-border/60">
-                    {registerEmployees.length > 0 ? (
-                      registerEmployees.map((emp) => (
-                        <tr key={emp.id} className="group hover:bg-muted/30 transition-colors">
-                          {/* Sticky Employee Details Column (z-20 opaque) */}
-                          <td className="sticky left-0 z-[20] border-r-2 border-b border-border/90 bg-card px-4 py-3 shadow-[4px_0_8px_rgba(0,0,0,0.05)] transition-colors group-hover:bg-secondary/40">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-xs font-extrabold text-primary shadow-2xs">
-                                {emp.fullName
-                                  .split(" ")
-                                  .map((name) => name[0])
-                                  .join("")
-                                  .slice(0, 2)
-                                  .toUpperCase()}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div
-                                  className="truncate text-sm font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
-                                  title={emp.fullName}
-                                  onClick={() => handleEmployeeChange(emp.id)}
+                              <div className="flex items-center justify-center gap-1.5">
+                                <span
+                                  className={`text-xs font-extrabold uppercase tracking-wider ${
+                                    isSunday
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : isRegisterToday
+                                        ? "text-blue-700 dark:text-blue-300"
+                                        : "text-blue-900/80 dark:text-blue-300/90"
+                                  }`}
                                 >
-                                  {emp.fullName}
-                                </div>
-
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  {emp.employeeCode && (
-                                    <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                                      {emp.employeeCode}
-                                    </span>
-                                  )}
-                                  {emp.email && !emp.employeeCode && (
-                                    <span className="truncate text-[11px] text-muted-foreground" title={emp.email}>
-                                      {emp.email}
-                                    </span>
-                                  )}
-                                </div>
+                                  {weekdays[date.getUTCDay()]}
+                                </span>
+                                {isRegisterToday && (
+                                  <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black uppercase text-white shadow-xs">
+                                    Today
+                                  </span>
+                                )}
                               </div>
-                            </div>
-                          </td>
 
-                          {visibleRegisterDates.map((date) => {
-                            const dateKey = formatDateKey(date);
-                            const isRegisterToday = dateKey === todayKey;
-                            const isSunday = date.getUTCDay() === 0;
-                            const isSaturday = date.getUTCDay() === 6;
-
-                            let rec = attendanceByDateEmployee.get(
-                              `${dateKey}:${emp.id}`,
-                            );
-
-                            if (
-                              rec &&
-                              rec.status === "ABSENT" &&
-                              dateKey >= todayKey
-                            ) {
-                              rec = null;
-                            }
-
-                            const holidayName = registerData?.holidays?.find(
-                              (h) =>
-                                formatDateKey(new Date(h.date)) === dateKey,
-                            )?.name;
-
-                            const isHoliday =
-                              Boolean(holidayName) ||
-                              rec?.status === "HOLIDAY" ||
-                              isSunday;
-                            const isAbsent = rec?.status === "ABSENT";
-                            const isShortDay = isShortDayRecord(rec);
-                            const meta = rec ? (isShortDay ? statusMeta.SHORT_DAY : statusMeta[rec.status]) : null;
-                            const checkInLocationCode = getCalendarLocationCode(
-                              rec?.note,
-                              "check-in",
-                            );
-                            const checkOutLocationCode =
-                              getCalendarLocationCode(rec?.note, "check-out");
-                            const overtimeText = fmtOvertimeHours(rec, isHoliday);
-
-                            return (
-                              <td
-                                key={dateKey}
-                                className={`border-b border-border/60 px-2 py-2 align-middle text-center bg-card ${
+                              <div
+                                className={`mx-auto mt-1 flex h-9 w-9 items-center justify-center rounded-xl font-display text-base font-bold ${
                                   isRegisterToday
-                                    ? "bg-primary/[0.04]"
+                                    ? "bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/30"
                                     : isSunday
-                                      ? "bg-rose-500/[0.02]"
-                                      : isSaturday
-                                        ? "bg-secondary/25"
-                                        : ""
+                                      ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                                      : "bg-blue-500/10 dark:bg-blue-900/30 text-blue-900 dark:text-blue-200 border border-blue-500/20"
                                 }`}
                               >
-                                {isHoliday && !isWorkedRecord(rec) ? (
-                                  <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-blue-200/60 dark:border-blue-900/40 bg-blue-50/40 dark:bg-blue-950/20 p-2 text-center shadow-2xs">
-                                    <div className="h-2 w-2 rounded-full bg-blue-500 mb-1.5" />
-                                    <div className="text-xs font-bold text-blue-700 dark:text-blue-300 line-clamp-1 px-1">
-                                      {holidayName || rec?.note || (isSunday ? "Sunday" : "Holiday")}
-                                    </div>
-                                    <div className="text-[10px] font-semibold text-blue-600/70 dark:text-blue-400/70">
-                                      {isSunday ? "Weekly Off" : "Public Holiday"}
-                                    </div>
+                                {String(date.getUTCDate()).padStart(2, "0")}
+                              </div>
+
+                              <div className="mt-0.5 text-xs font-semibold text-muted-foreground/90">
+                                {String(date.getUTCMonth() + 1).padStart(2, "0")}/{date.getUTCFullYear()}
+                              </div>
+                            </th>
+                          );
+                        })}
+
+                        {isAllEmployees && !selectedDate && !selectedWeek && (
+                          <>
+                            <th className="sticky top-0 z-[30] min-w-[75px] border-l border-b-2 border-border/80 border-b-emerald-500 bg-card px-2 py-3 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
+                              Present
+                            </th>
+                            <th
+                              className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-amber-500 bg-card px-2 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]"
+                              title="Short Day: Worked hours less than standard 8 hours"
+                            >
+                              Short
+                            </th>
+                            <th className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-rose-500 bg-card px-2 py-3 text-center text-xs font-bold text-rose-600 dark:text-rose-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
+                              Absent
+                            </th>
+                            <th className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-violet-500 bg-card px-2 py-3 text-center text-xs font-bold text-violet-600 dark:text-violet-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
+                              Leave
+                            </th>
+                            <th className="sticky top-0 z-[30] min-w-[75px] border-b-2 border-border/80 border-b-blue-500 bg-card px-2 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
+                              Holiday
+                            </th>
+                            <th className="sticky top-0 z-[30] min-w-[105px] border-b-2 border-border/80 border-b-blue-600 bg-card px-2.5 py-3 text-center text-xs font-bold text-blue-700 dark:text-blue-300 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
+                              Worked
+                            </th>
+                            <th className="sticky top-0 z-[30] min-w-[95px] border-b-2 border-border/80 border-b-amber-500 bg-card px-2.5 py-3 text-center text-xs font-bold text-amber-700 dark:text-amber-300 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.06)]">
+                              Overtime
+                            </th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-border/60">
+                      {registerEmployees.length > 0 ? (
+                        registerEmployees.map((emp) => (
+                          <tr key={emp.id} className="group hover:bg-muted/30 transition-colors">
+                            {/* Sticky Employee Details Column (compact width matching header) */}
+                            <td className="sticky left-0 z-[25] border-r-2 border-b border-border/90 bg-white dark:bg-slate-900 px-3 py-2.5 shadow-[4px_0_8px_rgba(0,0,0,0.06)] transition-colors group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 w-[175px] min-w-[160px] max-w-[185px]">
+                              <div className="flex items-center gap-2.5">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-black text-primary shadow-2xs">
+                                  {emp.fullName
+                                    .split(" ")
+                                    .map((name) => name[0])
+                                    .join("")
+                                    .slice(0, 2)
+                                    .toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div
+                                    className="text-sm font-bold text-foreground hover:text-primary transition-colors cursor-pointer leading-tight"
+                                    title={emp.fullName}
+                                    onClick={() => handleEmployeeChange(emp.id)}
+                                  >
+                                    {emp.fullName.split(" ").map((part, pIdx) => (
+                                      <div key={pIdx} className="break-words">{part}</div>
+                                    ))}
                                   </div>
-                                ) : isAbsent ? (
-                                  <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-rose-200/60 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 p-2 text-center shadow-2xs">
-                                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-600 dark:text-rose-400 mb-1">
-                                      ✕
-                                    </div>
-                                    <div className="text-xs font-extrabold text-rose-700 dark:text-rose-300">
-                                      Absent
-                                    </div>
-                                    <div className="text-[10px] text-rose-600/70 dark:text-rose-400/70 font-medium">
-                                      No Punch Recorded
-                                    </div>
-                                  </div>
-                                ) : rec?.status === "ON_LEAVE" ? (
-                                  <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-violet-200/60 dark:border-violet-900/40 bg-violet-50/40 dark:bg-violet-950/20 p-2 text-center shadow-2xs">
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                                      On Leave
-                                    </span>
-                                    {rec.note && (
-                                      <div className="mt-1.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 line-clamp-2 px-1" title={rec.note}>
-                                        {rec.note}
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : rec ? (
-                                  /* Active Attendance Card */
-                                  <div className="flex min-h-[110px] flex-col justify-between rounded-xl border border-border/90 bg-card p-2 text-left shadow-2xs hover:border-primary/40 hover:shadow-sm transition-all duration-150">
-                                    {/* Card Header: Status Pill & Location tags */}
-                                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                                      <span
-                                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold leading-none ${meta?.cell || "bg-secondary text-foreground"}`}
-                                        title={meta?.description || meta?.label}
-                                      >
-                                        <span className={`h-1.5 w-1.5 rounded-full ${meta?.dot || "bg-current"}`} />
-                                        <span className="truncate max-w-[65px]">{meta?.label || rec.status}</span>
+
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    {emp.employeeCode && emp.employeeCode !== emp.fullName ? (
+                                      <span className="rounded bg-secondary border border-border/70 px-1.5 py-0.5 text-xs font-bold text-foreground/80">
+                                        {emp.employeeCode}
                                       </span>
-
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        {checkInLocationCode && (
-                                          <span
-                                            title={`Check In Location: ${checkInLocationCode === "UL" ? "Unassigned" : checkInLocationCode === "A" ? "Assigned" : "Office"}`}
-                                            className={`rounded px-1 py-0.5 text-[9px] font-extrabold ${
-                                              checkInLocationCode === "UL"
-                                                ? "bg-orange-500/15 text-orange-700 dark:text-orange-300"
-                                                : "bg-blue-500/15 text-blue-700 dark:text-blue-300"
-                                            }`}
-                                          >
-                                            {checkInLocationCode}
-                                          </span>
-                                        )}
-                                        {checkOutLocationCode && (
-                                          <span
-                                            title={`Check Out Location: ${checkOutLocationCode === "UL" ? "Unassigned" : checkOutLocationCode === "A" ? "Assigned" : "Office"}`}
-                                            className={`rounded px-1 py-0.5 text-[9px] font-extrabold ${
-                                              checkOutLocationCode === "UL"
-                                                ? "bg-orange-500/15 text-orange-700 dark:text-orange-300"
-                                                : "bg-blue-500/15 text-blue-700 dark:text-blue-300"
-                                            }`}
-                                          >
-                                            {checkOutLocationCode}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Punch In / Out chips */}
-                                    <div className="grid grid-cols-2 gap-1 mb-1.5">
-                                      <div className="rounded-lg bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/15 px-1.5 py-1">
-                                        <div className="text-[8px] font-extrabold uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">
-                                          In
-                                        </div>
-                                        <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300 truncate">
-                                          {rec.checkIn ? fmtTime(rec.checkIn) : "—"}
-                                        </div>
-                                      </div>
-                                      <div className="rounded-lg bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/15 px-1.5 py-1">
-                                        <div className="text-[8px] font-extrabold uppercase tracking-wider text-rose-600/80 dark:text-rose-400/80">
-                                          Out
-                                        </div>
-                                        <div className="text-xs font-bold text-rose-700 dark:text-rose-400 truncate">
-                                          {rec.checkOut ? fmtTime(rec.checkOut) : "—"}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Worked Hours & OT footer */}
-                                    {rec.workedHours != null && (
-                                      <div className="flex items-center justify-between rounded-lg bg-secondary/50 px-2 py-1 text-[10px] font-bold">
-                                        <span className="text-foreground">
-                                          {fmtWorkedHours(isHoliday ? 0 : Math.min(Number(rec.workedHours), 8))}
-                                        </span>
-                                        {overtimeText && (
-                                          <span className="rounded bg-orange-500/15 px-1 py-0.2 text-[9px] font-extrabold text-orange-600 dark:text-orange-400">
-                                            +{overtimeText}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* View Reason button */}
-                                    {hasSubmittedReason(rec.note) && (
-                                      <div className="mt-1">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openAttendanceReason(rec, emp.fullName, emp.id);
-                                          }}
-                                          className="w-full rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 text-center transition-colors"
-                                        >
-                                          View Reason
-                                        </button>
-                                      </div>
+                                    ) : null}
+                                    {emp.email && !emp.employeeCode && (
+                                      <span className="break-all text-xs text-muted-foreground" title={emp.email}>
+                                        {emp.email}
+                                      </span>
                                     )}
                                   </div>
-                                ) : (
-                                  /* Empty Day Cell */
-                                  <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-secondary/15 text-center p-2">
-                                    <span className="text-xs text-muted-foreground/50 font-bold">—</span>
-                                    <span className="text-[9px] text-muted-foreground/60 font-medium mt-0.5">No punch</span>
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
+                                </div>
+                              </div>
+                            </td>
 
-                          {/* Summary Totals Columns */}
-                          {isAllEmployees && !selectedDate && !selectedWeek && (
-                            (() => {
-                              const monthSummary = getEmployeeMonthSummary(emp);
+                            {visibleRegisterDates.map((date) => {
+                              const dateKey = formatDateKey(date);
+                              const isRegisterToday = dateKey === todayKey;
+                              const isSunday = date.getUTCDay() === 0;
+                              const isSaturday = date.getUTCDay() === 6;
+
+                              let rec = attendanceByDateEmployee.get(
+                                `${dateKey}:${emp.id}`,
+                              );
+
+                              if (
+                                rec &&
+                                rec.status === "ABSENT" &&
+                                dateKey >= todayKey
+                              ) {
+                                rec = null;
+                              }
+
+                              const holidayName = registerData?.holidays?.find(
+                                (h) =>
+                                  formatDateKey(new Date(h.date)) === dateKey,
+                              )?.name;
+
+                              const isHoliday =
+                                Boolean(holidayName) ||
+                                rec?.status === "HOLIDAY" ||
+                                isSunday;
+                              const isAbsent = rec?.status === "ABSENT";
+                              const isShortDay = isShortDayRecord(rec);
+                              const meta = rec ? (isShortDay ? statusMeta.SHORT_DAY : statusMeta[rec.status]) : null;
+                              const checkInLocationCode = getCalendarLocationCode(
+                                rec?.note,
+                                "check-in",
+                              );
+                              const checkOutLocationCode =
+                                getCalendarLocationCode(rec?.note, "check-out");
+                              const overtimeText = fmtOvertimeHours(rec, isHoliday);
 
                               return (
-                                <>
-                                  <td className="border-l border-b border-border/80 bg-emerald-500/[0.03] px-2 py-2 text-center align-middle">
-                                    <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                      {monthSummary.present}
-                                    </span>
-                                  </td>
-                                  <td
-                                    className="border-b border-border/80 bg-amber-500/[0.03] px-2 py-2 text-center align-middle"
-                                    title={`Short Days: ${monthSummary.shortDay} (Worked < 8 hrs)`}
-                                  >
-                                    <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-600 dark:text-amber-400">
-                                      {monthSummary.shortDay}
-                                    </span>
-                                  </td>
-                                  <td className="border-b border-border/80 bg-rose-500/[0.03] px-2 py-2 text-center align-middle">
-                                    <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-rose-500/15 px-2 py-1 text-xs font-bold text-rose-600 dark:text-rose-400">
-                                      {monthSummary.absent}
-                                    </span>
-                                  </td>
-                                  <td className="border-b border-border/80 bg-violet-500/[0.03] px-2 py-2 text-center align-middle">
-                                    <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-violet-500/15 px-2 py-1 text-xs font-bold text-violet-600 dark:text-violet-400">
-                                      {monthSummary.leave}
-                                    </span>
-                                  </td>
-                                  <td className="border-b border-border/80 bg-blue-500/[0.03] px-2 py-2 text-center align-middle">
-                                    <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-blue-500/15 px-2 py-1 text-xs font-bold text-blue-600 dark:text-blue-400">
-                                      {monthSummary.holiday}
-                                    </span>
-                                  </td>
-                                  <td className="border-b border-border/80 bg-blue-600/[0.03] px-2 py-2 text-center align-middle">
-                                    <span className="inline-flex min-w-[50px] items-center justify-center rounded-lg bg-blue-600/15 px-2 py-1 text-xs font-bold text-blue-700 dark:text-blue-300">
-                                      {monthSummary.totalWorkedText}
-                                    </span>
-                                  </td>
-                                  <td className="border-b border-border/80 bg-amber-500/[0.03] px-2 py-2 text-center align-middle">
-                                    <span className="inline-flex min-w-[50px] items-center justify-center rounded-lg bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
-                                      {monthSummary.totalOtText}
-                                    </span>
-                                  </td>
-                                </>
-                              );
-                            })()
-                          )}
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={
-                            registerDates.length +
-                            1 +
-                            (isAllEmployees && !selectedDate && !selectedWeek
-                              ? 7
-                              : 0)
-                          }
-                          className="px-6 py-14 text-center"
-                        >
-                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
-                            <Users className="h-5 w-5 text-muted-foreground" />
-                          </div>
-                          <div className="mt-3 text-sm font-semibold text-foreground">
-                            No attendance records found
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            There are no employee attendance records for this selected period.
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                                <td
+                                  key={dateKey}
+                                  className={`border-b border-border/60 px-2 py-2 align-middle text-center bg-card ${
+                                    isRegisterToday
+                                      ? "bg-primary/[0.04]"
+                                      : isSunday
+                                        ? "bg-rose-500/[0.02]"
+                                        : isSaturday
+                                          ? "bg-secondary/25"
+                                          : ""
+                                  }`}
+                                >
+                                  {isHoliday && !isWorkedRecord(rec) ? (
+                                    <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-blue-200/60 dark:border-blue-900/40 bg-blue-50/40 dark:bg-blue-950/20 text-center shadow-2xs p-2">
+                                      <div className="h-2.5 w-2.5 rounded-full bg-blue-500 mb-1.5" />
+                                      <div className="text-sm font-bold text-blue-700 dark:text-blue-300 line-clamp-1 px-1">
+                                        {holidayName || rec?.note || (isSunday ? "Sunday" : "Holiday")}
+                                      </div>
+                                      <div className="text-xs font-semibold text-blue-600/80 dark:text-blue-400/80 mt-0.5">
+                                        {isSunday ? "Weekly Off" : "Public Holiday"}
+                                      </div>
+                                    </div>
+                                  ) : isAbsent ? (
+                                    <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-rose-200/60 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 text-center shadow-2xs p-2">
+                                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-500/15 text-sm font-bold text-rose-600 dark:text-rose-400 mb-1.5">
+                                        ✕
+                                      </div>
+                                      <div className="text-sm font-extrabold text-rose-700 dark:text-rose-300">
+                                        Absent
+                                      </div>
+                                      <div className="text-xs text-rose-600/80 dark:text-rose-400/80 font-medium mt-0.5">
+                                        No Punch Recorded
+                                      </div>
+                                    </div>
+                                  ) : rec?.status === "ON_LEAVE" ? (
+                                    <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-violet-200/60 dark:border-violet-900/40 bg-violet-50/40 dark:bg-violet-950/20 text-center shadow-2xs p-2">
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/15 px-3 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">
+                                        <span className="h-2 w-2 rounded-full bg-violet-500" />
+                                        On Leave
+                                      </span>
+                                      {rec.note && (
+                                        <div className="mt-2 text-xs font-medium text-violet-600 dark:text-violet-400 line-clamp-2 px-1" title={rec.note}>
+                                          {rec.note}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : rec ? (
+                                    /* Active Attendance Card */
+                                    <div className="flex flex-col justify-between rounded-xl border border-border/90 bg-card text-left shadow-2xs hover:border-primary/40 hover:shadow-sm transition-all duration-150 p-2 min-h-[110px]">
+                                      {/* Card Header: Status Pill & Location tags */}
+                                      <div className="flex items-center justify-between gap-1 mb-2">
+                                        <span
+                                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-bold leading-none text-[11px] ${meta?.cell || "bg-secondary text-foreground"}`}
+                                          title={meta?.description || meta?.label}
+                                        >
+                                          <span className={`h-2 w-2 rounded-full ${meta?.dot || "bg-current"}`} />
+                                          <span className="truncate max-w-[120px]">{meta?.label || rec.status}</span>
+                                        </span>
 
-              {/* Bottom Docked Zoom & Controls Toolbar */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border bg-card px-5 py-3 rounded-b-2xl shadow-2xs">
-                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                  <ZoomIn className="h-4 w-4 text-primary" />
-                  <span>Display Scale</span>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          {checkInLocationCode && (
+                                            <span
+                                              title={`Check In Location: ${checkInLocationCode === "UL" ? "Unassigned" : checkInLocationCode === "A" ? "Assigned" : "Office"}`}
+                                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                checkInLocationCode === "UL"
+                                                  ? "bg-orange-500/15 text-orange-700 dark:text-orange-300"
+                                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300"
+                                              }`}
+                                            >
+                                              {checkInLocationCode}
+                                            </span>
+                                          )}
+                                          {checkOutLocationCode && (
+                                            <span
+                                              title={`Check Out Location: ${checkOutLocationCode === "UL" ? "Unassigned" : checkOutLocationCode === "A" ? "Assigned" : "Office"}`}
+                                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                checkOutLocationCode === "UL"
+                                                  ? "bg-orange-500/15 text-orange-700 dark:text-orange-300"
+                                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300"
+                                              }`}
+                                            >
+                                              {checkOutLocationCode}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Punch In / Out chips */}
+                                      <div className="grid gap-2 mb-2 grid-cols-2">
+                                        <div className="rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 px-2.5 py-1.5 flex flex-col justify-center">
+                                          <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                            In
+                                          </div>
+                                          <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap tabular-nums">
+                                            {rec.checkIn ? fmtTime(rec.checkIn) : "—"}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/20 px-2.5 py-1.5 flex flex-col justify-center">
+                                          <div className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                                            Out
+                                          </div>
+                                          <div className="text-xs font-bold text-rose-700 dark:text-rose-400 whitespace-nowrap tabular-nums">
+                                            {rec.checkOut ? fmtTime(rec.checkOut) : "—"}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Worked Hours & OT footer */}
+                                      {rec.workedHours != null && (
+                                        <div className="flex items-center justify-between rounded-lg bg-secondary/70 px-2.5 py-1.5 text-xs font-bold">
+                                          <span className="text-foreground">
+                                            {fmtWorkedHours(isHoliday ? 0 : Number(rec.workedHours))}
+                                          </span>
+                                          {overtimeText && (
+                                            <span className="rounded-md bg-orange-500/20 px-1.5 py-0.5 text-[10px] font-extrabold text-orange-600 dark:text-orange-400">
+                                              +{overtimeText}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* View Reason button */}
+                                      {hasSubmittedReason(rec.note) && (
+                                        <div className="mt-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openAttendanceReason(rec, emp.fullName, emp.id);
+                                            }}
+                                            className="w-full rounded-lg bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 text-center transition-colors cursor-pointer"
+                                          >
+                                            View Reason
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    /* Empty Day Cell */
+                                    <div className="flex min-h-[110px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-secondary/15 text-center p-2">
+                                      <span className="text-sm text-muted-foreground/50 font-bold">—</span>
+                                      <span className="text-xs text-muted-foreground/60 font-medium mt-0.5">No punch</span>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+
+                            {/* Summary Totals Columns */}
+                            {isAllEmployees && !selectedDate && !selectedWeek && (
+                              (() => {
+                                const monthSummary = getEmployeeMonthSummary(emp);
+
+                                return (
+                                  <>
+                                    <td className="border-l border-b border-border/80 bg-emerald-500/[0.03] px-2 py-2 text-center align-middle">
+                                      <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-emerald-500/15 px-2 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                        {monthSummary.present}
+                                      </span>
+                                    </td>
+                                    <td
+                                      className="border-b border-border/80 bg-amber-500/[0.03] px-2 py-2 text-center align-middle"
+                                      title={`Short Days: ${monthSummary.shortDay} (Worked < 8 hrs)`}
+                                    >
+                                      <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-600 dark:text-amber-400">
+                                        {monthSummary.shortDay}
+                                      </span>
+                                    </td>
+                                    <td className="border-b border-border/80 bg-rose-500/[0.03] px-2 py-2 text-center align-middle">
+                                      <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-rose-500/15 px-2 py-1 text-xs font-bold text-rose-600 dark:text-rose-400">
+                                        {monthSummary.absent}
+                                      </span>
+                                    </td>
+                                    <td className="border-b border-border/80 bg-violet-500/[0.03] px-2 py-2 text-center align-middle">
+                                      <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-violet-500/15 px-2 py-1 text-xs font-bold text-violet-600 dark:text-violet-400">
+                                        {monthSummary.leave}
+                                      </span>
+                                    </td>
+                                    <td className="border-b border-border/80 bg-blue-500/[0.03] px-2 py-2 text-center align-middle">
+                                      <span className="inline-flex min-w-[32px] items-center justify-center rounded-lg bg-blue-500/15 px-2 py-1 text-xs font-bold text-blue-600 dark:text-blue-400">
+                                        {monthSummary.holiday}
+                                      </span>
+                                    </td>
+                                    <td className="border-b border-border/80 bg-blue-600/[0.03] px-2 py-2 text-center align-middle">
+                                      <span className="inline-flex min-w-[50px] items-center justify-center rounded-lg bg-blue-600/15 px-2 py-1 text-xs font-bold text-blue-700 dark:text-blue-300">
+                                        {monthSummary.totalWorkedText}
+                                      </span>
+                                    </td>
+                                    <td className="border-b border-border/80 bg-amber-500/[0.03] px-2 py-2 text-center align-middle">
+                                      <span className="inline-flex min-w-[50px] items-center justify-center rounded-lg bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+                                        {monthSummary.totalOtText}
+                                      </span>
+                                    </td>
+                                  </>
+                                );
+                              })()
+                            )}
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td
+                            colSpan={
+                              registerDates.length +
+                              1 +
+                              (isAllEmployees && !selectedDate && !selectedWeek
+                                ? 7
+                                : 0)
+                            }
+                            className="px-6 py-14 text-center"
+                          >
+                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
+                              <Users className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                            <div className="mt-3 text-sm font-semibold text-foreground">
+                              No attendance records found
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              There are no employee attendance records for this selected period.
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
+              )}
+
+              {/* Bottom Docked Zoom & Controls Toolbar - Only needed for multi-day/monthly view, hidden on selected date view */}
+              {!(selectedDate && isAllEmployees) && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border bg-card px-5 py-3 rounded-b-2xl shadow-2xs">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                    <ZoomIn className="h-4 w-4 text-primary" />
+                    <span>Display Scale</span>
+                  </div>
 
                 {/* Zoom +/- Controls with min 60% and max 100% */}
                 <div className="flex items-center gap-2.5">
@@ -2647,6 +3109,7 @@ const Attendance = () => {
                   )}
                 </div>
               </div>
+              )}
             </div>
           ) : (
             /* Calendar */
@@ -2684,46 +3147,6 @@ const Attendance = () => {
                         </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleDownloadAttendancePdf}
-                      title="Download Attendance PDF"
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-bold transition-colors shadow-2xs"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>Download PDF</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Small Summary Metrics: Short Days, Absent, On Leave, OT Hours */}
-                <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div className="flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-500/10 px-3 py-2">
-                    <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300">Short Days (&lt;8h)</span>
-                    <span className="font-display text-sm font-extrabold text-amber-700 dark:text-amber-400">
-                      {summary?.SHORT_DAY ?? shortDays}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-500/10 px-3 py-2">
-                    <span className="text-[11px] font-bold text-rose-800 dark:text-rose-300">Absent</span>
-                    <span className="font-display text-sm font-extrabold text-rose-700 dark:text-rose-400">
-                      {summary?.ABSENT ?? records.filter((r) => r.status === "ABSENT").length}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-500/10 px-3 py-2">
-                    <span className="text-[11px] font-bold text-purple-800 dark:text-purple-300">On Leave</span>
-                    <span className="font-display text-sm font-extrabold text-purple-700 dark:text-purple-400">
-                      {summary?.ON_LEAVE ?? records.filter((r) => r.status === "ON_LEAVE").length}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-500/10 px-3 py-2">
-                    <span className="text-[11px] font-bold text-orange-800 dark:text-orange-300">OT Hours</span>
-                    <span className="font-display text-sm font-extrabold text-orange-700 dark:text-orange-400">
-                      {fmtMinutesToHM(individualTotals.otMinutes)}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -2915,7 +3338,7 @@ const Attendance = () => {
                                       {fmtWorkedHours(
                                         isHolidayDate(selectedRecord.date)
                                           ? 0
-                                          : Math.min(Number(selectedRecord.workedHours), 8)
+                                          : Number(selectedRecord.workedHours)
                                       )}
                                     </div>
                                   </div>
@@ -3190,7 +3613,7 @@ const Attendance = () => {
                                     <div className="flex items-center justify-between gap-1 px-2 py-1 rounded-lg bg-secondary/50 border border-border/60 text-[11px]">
                                       <span className="text-[10px] text-muted-foreground font-semibold">Worked</span>
                                       <span className="font-bold text-foreground">
-                                        {fmtWorkedHours(isHolidayCell ? 0 : Math.min(Number(rec.workedHours || 0), 8))}
+                                        {fmtWorkedHours(isHolidayCell ? 0 : Number(rec.workedHours || 0))}
                                       </span>
                                       {overtimeText && (
                                         <span className="text-[10px] font-extrabold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-950/50 px-1.5 py-0.2 rounded-md">
@@ -3307,138 +3730,228 @@ const Attendance = () => {
             </div>
 
             {/* Details */}
-            <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
-              <div className="mb-5 grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-border bg-secondary/30 p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="max-h-[75vh] overflow-y-auto px-6 py-5 space-y-4">
+              {/* Basic Overview Strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="rounded-xl border border-border bg-secondary/30 p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Date
                   </div>
-                  <div className="mt-1.5 text-[15px] font-bold text-foreground">
+                  <div className="mt-1 text-sm font-bold text-foreground">
                     {fmtDateDMY(attendanceReasonModal.date)}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-3.5 dark:border-amber-800/40 dark:bg-amber-500/20">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-2.5 dark:border-amber-800/40 dark:bg-amber-500/20">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                     Status
                   </div>
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 text-[15px] font-bold text-amber-800 dark:text-amber-300">
+                  <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-bold text-amber-800 dark:text-amber-300">
                     <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    {attendanceReasonModal.statusLabel ||
-                      attendanceReasonModal.status ||
-                      ""}
+                    {attendanceReasonModal.statusLabel || attendanceReasonModal.status || "—"}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border bg-card p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <div className="rounded-xl border border-border bg-card p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Check In
                   </div>
-                  <div className="mt-1.5 text-[15px] font-bold text-foreground">
+                  <div className="mt-1 text-sm font-bold text-foreground">
                     {fmtTime(attendanceReasonModal.checkIn) || "—"}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border bg-card p-3.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <div className="rounded-xl border border-border bg-card p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Check Out
                   </div>
-                  <div className="mt-1.5 text-[15px] font-bold text-foreground">
+                  <div className="mt-1 text-sm font-bold text-foreground">
                     {fmtTime(attendanceReasonModal.checkOut) || "—"}
                   </div>
                 </div>
               </div>
 
-              {/* Submitted reason */}
-              <div className="mb-5">
-                <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-base font-bold text-foreground">
-                    Submitted Reason
-                  </h4>
-                  <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
-                    Review
-                  </span>
-                </div>
+              {/* Note / Request Segments (matches Employee Panel) */}
+              {attendanceReasonModal.note ? (
+                <div className="space-y-3">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Attendance Request Details
+                  </div>
+                  {attendanceReasonModal.note.split("|").map((segment, idx) => {
+                    const parsed = parseAttendanceNoteSegment(segment, attendanceReasonModal);
 
+                    return (
+                      <div
+                        key={idx}
+                        className="rounded-xl border border-border bg-secondary/20 p-3.5 space-y-3"
+                      >
+                        {/* Header Row: Type & Status */}
+                        <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border/60">
+                          <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                            {parsed.isCheckIn ? (
+                              <LogIn className="h-4 w-4 text-emerald-600" />
+                            ) : parsed.isCheckOut ? (
+                              <LogOut className="h-4 w-4 text-rose-600" />
+                            ) : (
+                              <Clock3 className="h-4 w-4 text-amber-600" />
+                            )}
+                            {parsed.type}
+                          </span>
+
+                          {parsed.statusLabel && (
+                            <span
+                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                                parsed.status === "PENDING"
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                                  : parsed.status === "APPROVED"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                                  : parsed.status === "REJECTED"
+                                  ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300"
+                                  : "bg-secondary text-muted-foreground"
+                              }`}
+                            >
+                              {parsed.status === "PENDING" && <Clock className="h-3 w-3" />}
+                              {parsed.status === "APPROVED" && <CheckCircle2 className="h-3 w-3" />}
+                              {parsed.status === "REJECTED" && <XCircle className="h-3 w-3" />}
+                              {parsed.statusLabel}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Details Grid */}
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {/* Punch Time */}
+                          {parsed.timeStr && (
+                            <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                              <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                                Punch Time
+                              </div>
+                              <div className="font-bold text-foreground mt-0.5">
+                                {parsed.timeStr}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Location Info */}
+                          {parsed.locationInfo && (
+                            <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                              <div className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
+                                <MapPin className="h-3 w-3 text-primary" /> Location / Dist
+                              </div>
+                              <div className="font-bold text-foreground mt-0.5 truncate">
+                                {parsed.locationInfo}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Request Submitted Time */}
+                          <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                            <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                              Request Submitted Time
+                            </div>
+                            <div className="font-bold text-foreground mt-0.5">
+                              {attendanceReasonModal.createdAt
+                                ? `${fmtDateDMY(attendanceReasonModal.createdAt)} ${fmtTime(attendanceReasonModal.createdAt)}`
+                                : parsed.timeStr
+                                ? `${fmtDateDMY(attendanceReasonModal.date)} ${parsed.timeStr}`
+                                : `${fmtDateDMY(attendanceReasonModal.date)} —`}
+                            </div>
+                          </div>
+
+                          {/* Request Approved / Reviewed Time */}
+                          <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                            <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                              {parsed.status === "APPROVED"
+                                ? "Approved Time"
+                                : parsed.status === "REJECTED"
+                                ? "Rejected Time"
+                                : "Approved / Status Date"}
+                            </div>
+                            <div className="font-bold text-foreground mt-0.5">
+                              {parsed.status === "APPROVED" || parsed.status === "REJECTED"
+                                ? attendanceReasonModal.updatedAt
+                                  ? `${fmtDateDMY(attendanceReasonModal.updatedAt)} ${fmtTime(attendanceReasonModal.updatedAt)}`
+                                  : "—"
+                                : "Awaiting Approval"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Reason / Note Details */}
+                        <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                            {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
+                          </div>
+                          <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
+                            {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
+                          </div>
+                          {parsed.distance && (
+                            <div className="text-[11px] font-semibold text-primary pt-0.5">
+                              Distance from office: {parsed.distance} away
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Fallback submitted reason */
                 <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-4 dark:border-amber-800/40 dark:bg-amber-500/20">
-                  <p className="whitespace-pre-wrap text-[16px] leading-7 text-foreground">
+                  <div className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1">
+                    Submitted Reason
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                     {attendanceReasonModal.reason || "No reason provided."}
                   </p>
                 </div>
-              </div>
+              )}
 
-              {/* Locations */}
-              <div>
-                <div className="mb-2 text-base font-bold text-foreground">
-                  Attendance Location
+              {/* Map Coordinates / Attendance Location if available */}
+              {(Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) ||
+                Number.isFinite(Number(attendanceReasonModal.checkOutLatitude))) && (
+                <div className="pt-1">
+                  <div className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Map Location
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) &&
+                    Number.isFinite(Number(attendanceReasonModal.checkInLongitude)) ? (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-500/10 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-500/20 dark:border-blue-800/40 dark:text-blue-400"
+                      >
+                        <MapPin className="h-3.5 w-3.5 transition group-hover:scale-110" />
+                        Check-in Map Pin
+                      </a>
+                    ) : null}
+
+                    {Number.isFinite(Number(attendanceReasonModal.checkOutLatitude)) &&
+                    Number.isFinite(Number(attendanceReasonModal.checkOutLongitude)) ? (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-500/20 dark:border-rose-800/40 dark:text-rose-400"
+                      >
+                        <MapPin className="h-3.5 w-3.5 transition group-hover:scale-110" />
+                        Check-out Map Pin
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
-
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {Number.isFinite(
-                    Number(attendanceReasonModal.checkInLatitude),
-                  ) &&
-                  Number.isFinite(
-                    Number(attendanceReasonModal.checkInLongitude),
-                  ) ? (
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-500/10 px-3 py-2.5 text-[15px] font-bold text-blue-700 transition hover:bg-blue-500/20 dark:border-blue-800/40 dark:text-blue-400"
-                    >
-                      <MapPin className="h-4 w-4 transition group-hover:scale-110" />
-                      View Check-in
-                    </a>
-                  ) : (
-                    <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2.5 text-center text-[13px] font-medium text-muted-foreground">
-                      Check-in location unavailable
-                    </div>
-                  )}
-
-                  {Number.isFinite(
-                    Number(attendanceReasonModal.checkOutLatitude),
-                  ) &&
-                  Number.isFinite(
-                    Number(attendanceReasonModal.checkOutLongitude),
-                  ) ? (
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-3 py-2.5 text-[15px] font-bold text-rose-700 transition hover:bg-rose-500/20 dark:border-rose-800/40 dark:text-rose-400"
-                    >
-                      <MapPin className="h-4 w-4 transition group-hover:scale-110" />
-                      View Check-out
-                    </a>
-                  ) : (
-                    <div className="rounded-xl border border-border bg-secondary/30 px-3 py-2.5 text-center text-[13px] font-medium text-muted-foreground">
-                      Check-out location unavailable
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between border-t border-border bg-card px-6 py-3">
-              <button
-                type="button"
-                onClick={() => {
-                  const dateStr = formatDateKey(new Date(attendanceReasonModal.date));
-                  const empParam = attendanceReasonModal.employeeId
-                    ? `&employeeId=${encodeURIComponent(attendanceReasonModal.employeeId)}`
-                    : "";
-                  navigate(`/admin/requests/forgot-punch?mode=time-edit&date=${dateStr}${empParam}`);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-[14px] font-bold text-primary transition hover:bg-primary/20"
-              >
-                <Clock className="h-4 w-4" />
-                Edit Attendance Time
-              </button>
+            <div className="flex items-center justify-end border-t border-border bg-card px-6 py-3">
               <button
                 type="button"
                 onClick={() => setAttendanceReasonModal(null)}
-                className="rounded-xl bg-secondary px-5 py-2 text-[15px] font-bold text-secondary-foreground transition hover:bg-secondary/80 focus:outline-none focus:ring-2"
+                className="rounded-xl bg-secondary px-6 py-2 text-[15px] font-bold text-secondary-foreground transition hover:bg-secondary/80 focus:outline-none focus:ring-2"
               >
                 Close
               </button>

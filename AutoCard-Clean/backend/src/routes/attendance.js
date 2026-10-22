@@ -360,49 +360,46 @@ const isHolidayOrSundayDate = async (date) => {
 
 const getUnclosedPreviousAttendance = async (profileId) => {
   const now = new Date();
-  const todayKey = getIndiaDateKey(now);
   const { start: todayStart } = getIndiaDayRange(now);
 
-  // Yesterday in India timezone
-  const yesterdayObj = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-  const yesterdayKey = getIndiaDateKey(yesterdayObj);
-  const { start: yesterdayStart, end: yesterdayEnd } = getIndiaDayRange(yesterdayObj);
-
-  // Check if yesterday had an approved leave or holiday or Sunday (optional, but attendance check is key)
-  // Find yesterday's attendance record
-  const yesterdayRecord = await prisma.attendance.findFirst({
+  // Find the immediate last attendance record strictly before today
+  // (e.g. yesterday, or the most recent prior working day)
+  const lastRecord = await prisma.attendance.findFirst({
     where: {
       employeeId: profileId,
       date: {
-        gte: yesterdayStart,
-        lte: yesterdayEnd,
+        lt: todayStart,
       },
     },
     orderBy: { date: "desc" },
   });
 
-  // Also check if employee was on approved leave yesterday
-  const yesterdayLeave = await prisma.leaveRequest.findFirst({
+  // Only check if THAT immediate last attendance record has checkIn without checkOut
+  if (!lastRecord || !lastRecord.checkIn || lastRecord.checkOut) {
+    return null;
+  }
+
+  const previousRecord = lastRecord;
+
+  const prevDateKey = getIndiaDateKey(previousRecord.date);
+  const { start: prevStart, end: prevEnd } = getIndiaDayRange(previousRecord.date);
+
+  // Also check if employee was on approved leave on that previous day
+  const previousLeave = await prisma.leaveRequest.findFirst({
     where: {
       employeeId: profileId,
       status: "APPROVED",
-      startDate: { lte: yesterdayEnd },
-      endDate: { gte: yesterdayStart },
+      startDate: { lte: prevEnd },
+      endDate: { gte: prevStart },
     },
   });
 
-  // If yesterday was approved leave, no uncompleted attendance required
-  if (yesterdayLeave) {
+  // If approved leave on that day, no uncompleted attendance required
+  if (previousLeave) {
     return null;
   }
 
-  // If employee did NOT check in yesterday (no record or no checkIn), do NOT block or ask to complete.
-  // We ONLY check if employee checked in yesterday but forgot to check out!
-  if (!yesterdayRecord || !yesterdayRecord.checkIn || yesterdayRecord.checkOut) {
-    return null;
-  }
-
-  // Find any check-out correction request for yesterday
+  // Find any check-out correction request for that previous day
   const employeeRequests = await prisma.employeeRequest.findMany({
     where: {
       employeeId: profileId,
@@ -415,8 +412,8 @@ const getUnclosedPreviousAttendance = async (profileId) => {
   for (const req of employeeRequests) {
     if (!req.description) continue;
     const isMatchingDate =
-      req.description.includes(`"date":"${yesterdayKey}"`) ||
-      req.description.includes(yesterdayKey);
+      req.description.includes(`"date":"${prevDateKey}"`) ||
+      req.description.includes(prevDateKey);
     const isCheckoutType =
       req.description.includes(`"punchType":"check-out"`) ||
       req.description.includes(`"punchType":"both"`) ||
@@ -431,10 +428,10 @@ const getUnclosedPreviousAttendance = async (profileId) => {
 
   return {
     record: {
-      id: yesterdayRecord.id,
-      date: yesterdayRecord.date,
-      dateKey: yesterdayKey,
-      checkIn: yesterdayRecord.checkIn,
+      id: previousRecord.id,
+      date: previousRecord.date,
+      dateKey: prevDateKey,
+      checkIn: previousRecord.checkIn,
       isMissingEntireAttendance: false,
     },
     correctionRequest: matchingRequest
@@ -717,7 +714,7 @@ router.get("/me/today", requireAuth, async (req, res) => {
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
-    const [record, approvedLeave, unclosedPrevious] = await Promise.all([
+    const [todayRecord, approvedLeave, unclosedPrevious] = await Promise.all([
       prisma.attendance.findFirst({
         where: {
           employeeId: profile.id,
@@ -739,7 +736,30 @@ router.get("/me/today", requireAuth, async (req, res) => {
       getUnclosedPreviousAttendance(profile.id),
     ]);
 
-    let finalRecord = record;
+    // Check if there is an active check-in from within the last 24 hours without check-out
+    let activeRecord = todayRecord;
+    let effectiveUnclosedPrevious = unclosedPrevious;
+
+    if (!activeRecord) {
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const recentUnclosed = await prisma.attendance.findFirst({
+        where: {
+          employeeId: profile.id,
+          date: { lt: today },
+          checkIn: { gte: twentyFourHoursAgo, not: null },
+          checkOut: null,
+        },
+        orderBy: { date: "desc" },
+      });
+
+      if (recentUnclosed) {
+        // Less than 24 hours have passed since check-in: keep check-out button open!
+        activeRecord = recentUnclosed;
+        effectiveUnclosedPrevious = null;
+      }
+    }
+
+    let finalRecord = activeRecord;
     if (!finalRecord && approvedLeave) {
       finalRecord = {
         id: null,
@@ -759,7 +779,7 @@ router.get("/me/today", requireAuth, async (req, res) => {
     res.json({
       record: finalRecord ?? null,
       approvedLeave: approvedLeave ?? null,
-      unclosedPrevious: unclosedPrevious ?? null,
+      unclosedPrevious: effectiveUnclosedPrevious ?? null,
     });
   } catch (err) {
     console.error("Employee get today attendance error:", err);
@@ -1035,7 +1055,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     const { start: todayStart } = getIndiaDayRange(new Date());
     const isToday = selectedDate.getTime() === todayStart.getTime();
 
-    // Prevent today's check-in if previous attendance check-out is missing or incomplete (allow if PENDING or APPROVED)
+    // Prevent today's check-in if previous attendance check-out is missing (allowed if request is PENDING or APPROVED)
     if (
       isToday &&
       !isTimeEdit &&
@@ -1049,7 +1069,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
             unclosedPrevious.correctionRequest.status !== "PENDING"))
       ) {
         return res.status(400).json({
-          message: `Check-in for today is disabled. You checked in yesterday (${unclosedPrevious.record.dateKey}) but forgot to check out. Please complete yesterday's check-out first.`,
+          message: `Check-in for today is disabled. You checked in on ${unclosedPrevious.record.dateKey} but forgot to check out. Please complete that day's check-out first.`,
         });
       }
     }
@@ -1267,20 +1287,40 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // NOTE
     // --------------------------------------------------
 
+    const approvalSuffix = req.user.role === "ADMIN" ? ". Approved by admin." : "";
     updates.note = fitAttendanceNote(
-      `Manual attendance correction: ${manualReason}`,
+      `Manual attendance correction: ${manualReason}${approvalSuffix}`,
     );
 
     // --------------------------------------------------
-    // UPDATE SAME RECORD
+    // RECORD EMPLOYEE REQUEST FOR TRACKING
     // --------------------------------------------------
+    try {
+      const CORRECTION_MARKER = "[ATTENDANCE_CORRECTION]";
+      const metadata = JSON.stringify({
+        date,
+        punchType: normalizedType,
+        checkInTime: updates.checkIn ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updates.checkIn)) : null,
+        checkOutTime: updates.checkOut ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updates.checkOut)) : null,
+      });
+      const readableText = `Forgot Punch request for ${normalizedType} on ${date}.\n\n${manualReason}`;
+      const finalDescription = `${readableText}\n\n${CORRECTION_MARKER}${metadata}`;
 
-    const updated = await prisma.attendance.update({
-      where: {
-        id: record.id,
-      },
-      data: updates,
-    });
+      await prisma.employeeRequest.create({
+        data: {
+          employeeId: profile.id,
+          type: "CORRECTION",
+          subject: isTimeEdit ? "Time Edit Request" : `Forgot Punch - ${normalizedType === "both" ? "Check In + Out" : normalizedType === "check-out" ? "Check Out" : "Check In"}`,
+          description: finalDescription,
+          status: "APPROVED",
+          reviewNote: "Auto-approved (Admin correction / manual update).",
+          reviewedById: req.user.id,
+          reviewedAt: new Date(),
+        },
+      });
+    } catch (reqErr) {
+      console.warn("⚠️ Failed to create EmployeeRequest record for manual-correction:", reqErr);
+    }
 
     return res.json({
       record: updated,
@@ -1403,17 +1443,17 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     }
 
     // ----------------------------------------------------------
-    // UNCLOSED PREVIOUS DAY PUNCH CHECK (YESTERDAY ONLY)
+    // UNCLOSED PREVIOUS DAY PUNCH CHECK
     // ----------------------------------------------------------
 
     const unclosedPrevious = await getUnclosedPreviousAttendance(profile.id);
 
     if (unclosedPrevious) {
       const { record: unclosedRec, correctionRequest: unclosedReq } = unclosedPrevious;
-      // If request is submitted and PENDING or APPROVED, allow user to check in today!
+      // If employee already submitted a check-out request and status is PENDING or APPROVED, open check-in!
       const isAllowed = unclosedReq && (unclosedReq.status === "APPROVED" || unclosedReq.status === "PENDING");
       if (!isAllowed) {
-        const detail = `You checked in yesterday (${unclosedRec.dateKey}) but forgot to check out. Please complete yesterday's check-out first.`;
+        const detail = `You checked in on ${unclosedRec.dateKey} but forgot to check out. Please complete that day's check-out first.`;
         return res.status(400).json({
           message: `Check-in disabled. ${detail}`,
           unclosedPrevious,
@@ -1921,6 +1961,23 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       },
     });
 
+    if (!record || !record.checkIn) {
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const activeUnclosed = await prisma.attendance.findFirst({
+        where: {
+          employeeId: profile.id,
+          date: { lt: today },
+          checkIn: { gte: twentyFourHoursAgo, not: null },
+          checkOut: null,
+        },
+        orderBy: { date: "desc" },
+      });
+
+      if (activeUnclosed) {
+        record = activeUnclosed;
+      }
+    }
+
     if (approvedLeaveToday && (!record || !record.checkIn)) {
       return res.status(400).json({
         message: `Check-out is disabled because you are on approved leave today (${approvedLeaveToday.leaveType?.name || "Leave"}).`,
@@ -1948,7 +2005,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
 
       if (record.checkOut) {
         return res.status(400).json({
-          message: "You have already checked out today.",
+          message: "You have already checked out.",
         });
       }
 
@@ -2053,14 +2110,33 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       try {
         const correction = JSON.parse(match[1]);
         const todayKey = getIndiaDateKey(now);
-
-        if (
+        const isTodayCorrection =
           correction.date === todayKey &&
           (correction.punchType === "check-in" ||
             correction.punchType === "both" ||
             correction.punchType === "time-edit") &&
-          correction.checkInTime
+          correction.checkInTime;
+
+        let isWithin24HoursCorrection = false;
+        if (
+          !isTodayCorrection &&
+          correction.date &&
+          correction.checkInTime &&
+          (correction.punchType === "check-in" ||
+            correction.punchType === "both" ||
+            correction.punchType === "time-edit")
         ) {
+          const [h, m] = String(correction.checkInTime).split(":").map(Number);
+          if (Number.isFinite(h) && Number.isFinite(m)) {
+            const checkInDateTime = new Date(`${correction.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
+            const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+            if (now.getTime() - checkInDateTime.getTime() <= twentyFourHoursMs && now.getTime() >= checkInDateTime.getTime()) {
+              isWithin24HoursCorrection = true;
+            }
+          }
+        }
+
+        if (isTodayCorrection || isWithin24HoursCorrection) {
           pendingForgotPunchCheckIn = {
             request,
             correction,
@@ -2080,11 +2156,14 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // --------------------------------------------------------
 
     if (!record && hasPendingForgotPunchCheckIn) {
+      const correctionDate = pendingForgotPunchCheckIn.correction?.date;
+      const recordDate = correctionDate ? new Date(`${correctionDate}T00:00:00.000+05:30`) : today;
+
       record = await prisma.attendance.create({
         data: {
           employeeId: profile.id,
 
-          date: today,
+          date: recordDate,
 
           checkIn: null,
 
@@ -2131,7 +2210,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
 
     if (record.checkOut) {
       return res.status(400).json({
-        message: "You have already checked out today.",
+        message: "You have already checked out.",
       });
     }
 
@@ -2526,12 +2605,25 @@ router.get("/pending-approvals", async (req, res) => {
 // GET /api/attendance/my-requests - attendance approval history for employee
 router.get("/my-requests", requireAuth, async (req, res) => {
   try {
-    const profile = await prisma.employeeProfile.findUnique({
+    let profile = await prisma.employeeProfile.findUnique({
       where: { userId: req.user.id },
       include: { location: true },
     });
-    if (!profile)
-      return res.status(404).json({ message: "Employee profile not found." });
+    if (!profile) {
+      if (req.user.role === "ADMIN") {
+        profile = await prisma.employeeProfile.create({
+          data: {
+            userId: req.user.id,
+            employeeCode: "ADMIN",
+            jobTitle: "Administrator",
+            onboardingStatus: "APPROVED",
+          },
+          include: { location: true },
+        });
+      } else {
+        return res.status(404).json({ message: "Employee profile not found." });
+      }
+    }
 
     const records = await prisma.attendance.findMany({
       where: {
@@ -2542,8 +2634,20 @@ router.get("/my-requests", requireAuth, async (req, res) => {
           { note: { contains: "Admin rejected" } },
           { note: { contains: "Approved by admin" } },
           { note: { contains: "Rejected by admin" } },
+          { note: { contains: "Manual attendance correction" } },
+          { note: { contains: "Manual attendance:" } },
           { status: "PENDING_APPROVAL" },
         ],
+      },
+      include: {
+        employee: {
+          include: {
+            user: {
+              select: { fullName: true, email: true },
+            },
+            location: true,
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
     });

@@ -109,17 +109,10 @@ const getOvertimeHours = (workedHours, isHolidayOrSunday = false) => {
 
 
 const isComplexNote = (note) => {
-  if (!note) return false;
-  const lower = note.toLowerCase();
-  return (
-    lower.includes("unassigned") ||
-    lower.includes("outside") ||
-    lower.includes("forgot punch") ||
-    lower.includes("pending") ||
-    lower.includes("reject") ||
-    lower.includes("approve") ||
-    lower.includes("reason")
-  );
+  if (!note || typeof note !== "string") return false;
+  const trimmed = note.trim();
+  if (!trimmed || trimmed === "—" || trimmed === "-") return false;
+  return true;
 };
 
 const parseNoteSegment = (segment, record) => {
@@ -129,21 +122,29 @@ const parseNoteSegment = (segment, record) => {
   const isCheckIn = lower.includes("checkin") || lower.includes("check in");
   const isCheckOut = lower.includes("checkout") || lower.includes("check out");
   const isForgotPunch = lower.includes("forgot punch");
+  const isManualCorrection = lower.includes("manual attendance");
 
   let type = "Attendance Note";
   if (isForgotPunch) {
     type = "Forgot Punch";
+  } else if (isManualCorrection) {
+    type = "Attendance Correction";
   } else if (isCheckIn) {
     type = "Check In Request";
   } else if (isCheckOut) {
     type = "Check Out Request";
   }
 
-  // Extract Reason using TrackRequests style regex matching
+  // Extract Reason using TrackRequests style regex matching or manual correction reason
   let userReason = null;
   const reasonMatch = text.match(/Reason:\s*(.*?)(?=\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin|Approved|Rejected)\b|\s*\||\.|$)/i);
   if (reasonMatch && reasonMatch[1].trim()) {
     userReason = reasonMatch[1].trim();
+  } else if (isManualCorrection) {
+    const manualM = text.match(/manual attendance(?:\s+correction)?:\s*(.*?)(?=\s*Check-In Location:|\s*Check-Out Location:|\s*CheckIn Location:|\s*CheckOut Location:|\.|$)/i);
+    if (manualM && manualM[1].trim()) {
+      userReason = manualM[1].trim();
+    }
   }
 
   // Extract distance if present
@@ -152,15 +153,28 @@ const parseNoteSegment = (segment, record) => {
 
   let status = "INFO";
   let statusLabel = null;
+  const isAdminRecord =
+    record?.employee?.user?.role === "ADMIN" ||
+    record?.employee?.employeeCode?.startsWith("ADMIN") ||
+    record?.user?.role === "ADMIN";
+
   if (lower.includes("pending")) {
-    status = "PENDING";
-    statusLabel = "Pending Approval";
+    if (isAdminRecord) {
+      status = "APPROVED";
+      statusLabel = "Approved (Auto-Approved)";
+    } else {
+      status = "PENDING";
+      statusLabel = "Pending Approval";
+    }
   } else if (lower.includes("approved")) {
     status = "APPROVED";
     statusLabel = "Approved";
   } else if (lower.includes("rejected")) {
     status = "REJECTED";
     statusLabel = "Rejected";
+  } else if (isManualCorrection || isForgotPunch || isAdminRecord) {
+    status = "APPROVED";
+    statusLabel = "Approved";
   }
 
   let locationInfo = null;
@@ -231,6 +245,19 @@ const fmtDate = (v) => {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+  }).format(date);
+};
+
+const fmtDay = (v) => {
+  if (!v) return "—";
+
+  const date = new Date(v);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
   }).format(date);
 };
 
@@ -415,7 +442,8 @@ const Attendance = () => {
     if (!r) return false;
     const d = getIndiaDayNumber(r.date);
     if (!d) return false;
-    const dayOfWeek = new Date(year, month - 1, d).getDay();
+    const dateObj = new Date(year, month - 1, d);
+    const dayOfWeek = dateObj.getDay();
     return dayOfWeek === 0 || Boolean(holidayByDay[d]) || r.status === "HOLIDAY";
   };
 
@@ -429,9 +457,11 @@ const Attendance = () => {
     0,
   );
 
-  const totalOvertimeDays = records.filter(
-    (r) => (r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolidayOrSundayRecord(r))) > 0,
-  ).length;
+  const totalOvertimeDays = records.filter((r) => {
+    const isHolOrSun = isHolidayOrSundayRecord(r);
+    const ot = r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolOrSun);
+    return ot > 0;
+  }).length;
 
   const totalShortDayWorked = records.filter(
     (r) =>
@@ -504,6 +534,7 @@ const Attendance = () => {
         ABSENT: absentCount,
         ON_LEAVE: leaveCount,
         PRESENT: summary.PRESENT ?? records.filter((r) => r.status === "PRESENT").length,
+        OT_DAYS: totalOvertimeDays,
         OT_HOURS_TEXT: totalOvertime > 0 ? fmtWorkedHours(totalOvertime) : "0h 0m",
         TOTAL_WORKED_TEXT: fmtWorkedHours(totalWorked),
       },
@@ -586,8 +617,24 @@ const Attendance = () => {
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Check In</th>
                     <th className="px-5 py-3 font-medium">Check Out</th>
-                    <th className="px-5 py-3 font-medium">Worked</th>
-                    <th className="px-5 py-3 font-medium">Overtime</th>
+                    <th className="px-5 py-3 font-medium">
+                      <div className="flex flex-col">
+                        <span>Worked</span>
+                        <span className="text-[11px] font-bold text-primary normal-case tracking-normal">
+                          Total: {fmtWorkedHours(totalWorked)}
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-5 py-3 font-medium">
+                      <div className="flex flex-col">
+                        <span>Overtime</span>
+                        {totalOvertime > 0 && (
+                          <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 normal-case tracking-normal">
+                            Total: {fmtWorkedHours(totalOvertime)}
+                          </span>
+                        )}
+                      </div>
+                    </th>
                     <th className="px-5 py-3 font-medium min-w-[300px]">
                       Note
                     </th>
@@ -683,10 +730,13 @@ const Attendance = () => {
   // ── overtime page ──
   if (showOvertime) {
     const overtimeRecords = records
-      .map((r) => ({
-        ...r,
-        overtimeHours: getOvertimeHours(r.workedHours),
-      }))
+      .map((r) => {
+        const isHolOrSun = isHolidayOrSundayRecord(r);
+        return {
+          ...r,
+          overtimeHours: r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolOrSun),
+        };
+      })
       .filter((r) => r.overtimeHours > 0);
 
     return (
@@ -843,7 +893,11 @@ const Attendance = () => {
                       </td>
 
                       <td className="px-5 py-4 font-medium">
-                        {fmtWorkedHours(getRegularHours(r.workedHours))}
+                        {fmtWorkedHours(
+                          isHolidayOrSundayRecord(r)
+                            ? (r.workedHours ?? 0)
+                            : getRegularHours(r.workedHours)
+                        )}
                       </td>
 
                       <td className="px-5 py-4">
@@ -1183,54 +1237,6 @@ const Attendance = () => {
                 Overtime
               </span>
             </div>
-
-            {/* Small summary div: Short Days, Absent, On Leave, OT Hours */}
-            <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-500/10 px-3 py-2">
-                <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300">
-                  Short Days (&lt;8h)
-                </div>
-                <div className="font-display text-sm font-extrabold text-amber-700 dark:text-amber-400">
-                  {summary.SHORT_DAY ??
-                    records.filter(
-                      (r) =>
-                        r.isShortDay ||
-                        (Number(r.workedHours) > 0 &&
-                          Number(r.workedHours) < REGULAR_HOURS &&
-                          !isHolidayOrSundayRecord(r) &&
-                          r.status !== "ON_LEAVE" &&
-                          r.status !== "ABSENT"),
-                    ).length}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-500/10 px-3 py-2">
-                <div className="text-[11px] font-bold text-rose-800 dark:text-rose-300">
-                  Absent
-                </div>
-                <div className="font-display text-sm font-extrabold text-rose-700 dark:text-rose-400">
-                  {summary.ABSENT ?? records.filter((r) => r.status === "ABSENT").length}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-500/10 px-3 py-2">
-                <div className="text-[11px] font-bold text-purple-800 dark:text-purple-300">
-                  On Leave
-                </div>
-                <div className="font-display text-sm font-extrabold text-purple-700 dark:text-purple-400">
-                  {summary.ON_LEAVE ?? records.filter((r) => r.status === "ON_LEAVE").length}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-500/10 px-3 py-2">
-                <div className="text-[11px] font-bold text-orange-800 dark:text-orange-300">
-                  OT Hours
-                </div>
-                <div className="font-display text-sm font-extrabold text-orange-700 dark:text-orange-400">
-                  {fmtWorkedHours(totalOvertime)}
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Calendar */}
@@ -1453,10 +1459,10 @@ const Attendance = () => {
                   {records.length} record{records.length !== 1 ? "s" : ""} in{" "}
                   {MONTH_NAMES[month - 1]}
                 </span>
-                <span>
-                  {totalWorked.toFixed(1)} hrs worked
+                <span className="font-semibold text-foreground">
+                  Total Worked: {totalWorked.toFixed(1)} hrs
                   {totalOvertime > 0
-                    ? ` • ${fmtWorkedHours(totalOvertime)} overtime`
+                    ? ` • Total OT: ${fmtWorkedHours(totalOvertime)}`
                     : ""}
                 </span>
               </div>
@@ -1471,6 +1477,9 @@ const Attendance = () => {
             <h2 className="font-display text-base font-semibold">
               Daily Records
             </h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Table register showing date, punch times, regular hours, overtime, and notes.
+            </p>
           </div>
 
           {records.length === 0 ? (
@@ -1486,13 +1495,14 @@ const Attendance = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                    <th className="px-5 py-3 font-medium">Date</th>
-                    <th className="px-5 py-3 font-medium">Check In</th>
-                    <th className="px-5 py-3 font-medium">Check Out</th>
-                    <th className="px-5 py-3 font-medium">Working Hours</th>
-                    <th className="px-5 py-3 font-medium">OT</th>
-                    <th className="px-5 py-3 font-medium">Status</th>
-                    <th className="px-5 py-3 font-medium">Note</th>
+                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium">Day</th>
+                    <th className="px-4 py-3 font-medium">Check In</th>
+                    <th className="px-4 py-3 font-medium">Check Out</th>
+                    <th className="px-4 py-3 font-medium">Total Working Hours</th>
+                    <th className="px-4 py-3 font-medium">OT</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium">Reason</th>
                   </tr>
                 </thead>
 
@@ -1504,14 +1514,17 @@ const Attendance = () => {
                     const meta = isShortDayRow ? STATUS_META.SHORT_DAY : (STATUS_META[r.status] ?? STATUS_META.PRESENT);
 
                     const rowOvertime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isSunOrHolRow);
-                    const rowWorkedTotal = isSunOrHolRow
-                      ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
-                      : getRegularHours(r.workedHours);
+                    const rowCompleteWorkedHours = Number(
+                      r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0)
+                    );
 
                     const isToday =
                       year === today.getFullYear() &&
                       month === today.getMonth() + 1 &&
                       getIndiaDayNumber(r.date) === today.getDate();
+
+                    const dayName = fmtDay(r.date);
+                    const isSunday = new Date(r.date).getDay() === 0;
 
                     return (
                       <tr
@@ -1520,7 +1533,7 @@ const Attendance = () => {
                           isToday ? "bg-primary/5" : ""
                         }`}
                       >
-                        <td className="px-5 py-3 font-medium whitespace-nowrap">
+                        <td className="px-4 py-3 font-medium whitespace-nowrap">
                           {fmtDate(r.date)}
 
                           {isToday && (
@@ -1530,9 +1543,15 @@ const Attendance = () => {
                           )}
                         </td>
 
+                        <td className="px-4 py-3 whitespace-nowrap font-medium text-xs">
+                          <span className={isSunday ? "text-rose-600 dark:text-rose-400 font-bold" : "text-muted-foreground"}>
+                            {dayName}
+                          </span>
+                        </td>
+
                         {r.status === "ON_LEAVE" ? (
                           <>
-                            <td colSpan={4} className="px-5 py-3">
+                            <td colSpan={4} className="px-4 py-3">
                               <div className="w-full rounded-xl bg-purple-500/15 dark:bg-purple-500/25 border border-purple-200 dark:border-purple-800/40 px-4 py-2.5 text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center justify-between">
                                 <span className="flex items-center gap-2 font-bold text-sm">
                                   <CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" />
@@ -1543,7 +1562,7 @@ const Attendance = () => {
                                 </span>
                               </div>
                             </td>
-                            <td className="px-5 py-3">
+                            <td className="px-4 py-3">
                               <span
                                 title={meta.description || meta.label}
                                 className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${meta.bg} ${meta.text}`}
@@ -1557,25 +1576,29 @@ const Attendance = () => {
                           </>
                         ) : (
                           <>
-                            <td className="px-5 py-3 whitespace-nowrap">
+                            <td className="px-4 py-3 whitespace-nowrap">
                               <span className="flex items-center gap-1.5">
                                 <LogIn className="h-3.5 w-3.5 text-emerald-600" />
                                 {fmtTime(r.checkIn)}
                               </span>
                             </td>
 
-                            <td className="px-5 py-3 whitespace-nowrap">
+                            <td className="px-4 py-3 whitespace-nowrap">
                               <span className="flex items-center gap-1.5">
                                 <LogOut className="h-3.5 w-3.5 text-rose-600" />
                                 {fmtTime(r.checkOut)}
                               </span>
                             </td>
 
-                            <td className="px-5 py-3 font-medium">
-                              {fmtWorkedHours(rowWorkedTotal)}
+                            <td className="px-4 py-3 font-medium">
+                              {rowCompleteWorkedHours > 0
+                                ? fmtWorkedHours(rowCompleteWorkedHours)
+                                : r.status === "ABSENT" || (!r.checkIn && !r.checkOut)
+                                  ? <span className="text-muted-foreground">—</span>
+                                  : "0h 0m"}
                             </td>
 
-                            <td className="px-5 py-3">
+                            <td className="px-4 py-3">
                               {rowOvertime > 0 ? (
                                 <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700">
                                   <Clock3 className="h-3.5 w-3.5" />
@@ -1632,6 +1655,22 @@ const Attendance = () => {
               </table>
             </div>
           )}
+
+          {/* Table footer */}
+          <div className="px-4 py-3 bg-secondary/20 border-t border-border">
+            <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-muted-foreground">
+              <span>
+                {records.length} record{records.length !== 1 ? "s" : ""} in{" "}
+                {MONTH_NAMES[month - 1]}
+              </span>
+              <span className="font-semibold text-foreground">
+                Total Worked: {totalWorked.toFixed(1)} hrs
+                {totalOvertime > 0
+                  ? ` • Total OT: ${fmtWorkedHours(totalOvertime)}`
+                  : ""}
+              </span>
+            </div>
+          </div>
         </div>
       )}
       {/* Note Details Modal */}

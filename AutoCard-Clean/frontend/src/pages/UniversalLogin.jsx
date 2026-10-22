@@ -71,13 +71,11 @@ const UniversalLogin = () => {
         <div className="rounded-2xl bg-background/95 backdrop-blur-md border border-border card-shadow p-8">
           {/* Header with Prominent Company Logo */}
           <div className="flex flex-col items-center text-center mb-8">
-            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-white dark:bg-card border border-border shadow-lg flex items-center justify-center p-3.5 mb-4 transition-transform hover:scale-105">
-              <img
-                src={logo}
-                alt="Techware Automation India Logo"
-                className="w-full h-full object-contain drop-shadow-sm"
-              />
-            </div>
+            <img
+              src={logo}
+              alt="Techware Automation India Logo"
+              className="h-24 sm:h-28 w-auto object-contain mb-4 transition-transform hover:scale-105"
+            />
             <h1 className="font-display text-2xl font-bold">Techware Management System</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Sign in to access your dashboard

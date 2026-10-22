@@ -265,6 +265,27 @@ SET @preparedStatement = (SELECT IF(
   'SELECT 1',
   'ALTER TABLE `employee_profiles` ADD COLUMN `assignedTools` TEXT NULL AFTER `skills`;'
 ));
+-- ----------------------------------------------------------------------------
+-- 11. ADD `companyName` & `vendorName` TO `inventory_items` TABLE (IF EXISTS)
+-- ----------------------------------------------------------------------------
+SET @tablename = 'inventory_items';
+
+-- companyName
+SET @columnname = 'companyName';
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname) > 0,
+  'SELECT 1',
+  'ALTER TABLE `inventory_items` ADD COLUMN `companyName` VARCHAR(191) NULL;'
+));
+PREPARE stmt FROM @preparedStatement; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- vendorName
+SET @columnname = 'vendorName';
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname) > 0,
+  'SELECT 1',
+  'ALTER TABLE `inventory_items` ADD COLUMN `vendorName` VARCHAR(191) NULL;'
+));
 PREPARE stmt FROM @preparedStatement; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SELECT '✅ Hostinger Schema Update / Patch Script Executed Successfully!' AS status;

@@ -162,10 +162,13 @@ const AdminLayout = () => {
             <div className="relative" ref={notifDropdownRef}>
               <button
                 type="button"
-                onClick={() => setNotifOpen((v) => !v)}
+                onClick={() => {
+                  setNotifOpen(false);
+                  navigate("/admin/approvals");
+                }}
                 className="relative p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
                 aria-label={`Notifications${adminPendingCount ? `, ${adminPendingCount} pending` : ""}`}
-                title="Notifications"
+                title="Approvals"
               >
                 <Bell className="h-5 w-5" />
                 {adminPendingCount > 0 && (

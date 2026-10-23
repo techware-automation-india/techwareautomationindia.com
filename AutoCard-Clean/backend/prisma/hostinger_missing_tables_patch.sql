@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS `inventory_items` (
     `categoryId` VARCHAR(191) NULL,
     `category` VARCHAR(191) NULL,
     `photoUrl` TEXT NULL,
+    `img` TEXT NULL,
     `specifications` JSON NULL,
     `quantity` DOUBLE NOT NULL DEFAULT 0,
     `minStock` INTEGER NOT NULL DEFAULT 5,

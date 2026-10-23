@@ -47,7 +47,7 @@ router.post("/upload", requireAuth, upload.single("photo"), (req, res) => {
       return res.status(400).json({ message: "No file uploaded." });
     }
     const photoUrl = `/uploads/inventory/${req.file.filename}`;
-    res.json({ photoUrl, message: "Photo uploaded successfully." });
+    res.json({ photoUrl, img: photoUrl, url: photoUrl, message: "Photo uploaded successfully." });
   } catch (err) {
     console.error("Upload failed:", err);
     res.status(500).json({ message: "Failed to upload photo." });
@@ -633,6 +633,7 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       sku,
       categoryId,
       photoUrl,
+      img,
       specifications,
       quantity,
       unit,
@@ -646,6 +647,8 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       date,
       createdByName,
     } = req.body;
+
+    const resolvedPhoto = img || photoUrl || null;
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ message: "Item name is required." });
@@ -701,7 +704,8 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
         code: itemCode || null,
         sku: itemCode || null,
         categoryId: categoryId || null,
-        photoUrl: photoUrl || null,
+        photoUrl: resolvedPhoto,
+        img: resolvedPhoto,
         specifications: parsedSpecs,
         quantity: quantity !== undefined ? Number(quantity) : 0,
         unit: unit && unit.trim() ? unit.trim() : "Nos",
@@ -742,6 +746,7 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       sku,
       categoryId,
       photoUrl,
+      img,
       specifications,
       quantity,
       unit,
@@ -755,6 +760,8 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       date,
       createdByName,
     } = req.body;
+
+    const resolvedPhoto = img !== undefined ? img : photoUrl;
 
     if (quantity !== undefined && (!Number.isFinite(Number(quantity)) || Number(quantity) < 0)) {
       return res.status(400).json({ message: "Quantity must be a valid number greater than or equal to zero." });
@@ -799,7 +806,8 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
         code: itemCode || null,
         sku: itemCode || null,
         categoryId: categoryId !== undefined ? categoryId : existing.categoryId,
-        photoUrl: photoUrl !== undefined ? photoUrl : existing.photoUrl,
+        photoUrl: resolvedPhoto !== undefined ? resolvedPhoto : existing.photoUrl,
+        img: resolvedPhoto !== undefined ? resolvedPhoto : (existing.img || existing.photoUrl),
         specifications: parsedSpecs,
         quantity: quantity !== undefined ? Number(quantity) : existing.quantity,
         unit: unit !== undefined ? unit.trim() : existing.unit,

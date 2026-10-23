@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import prisma from "./prismaClient.js";
 import authRouter from "./routes/auth.js";

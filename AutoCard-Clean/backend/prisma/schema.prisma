@@ -768,8 +768,8 @@ model InventoryItem {
   categoryId     String?
   categoryRef    InventoryCategory? @relation("CategoryItems", fields: [categoryId], references: [id], onDelete: SetNull)
   category       String?            // Legacy string category support
-  photoUrl       String?            @db.Text
-  img            String?            @db.Text
+  photoUrl       String?            @db.LongText
+  img            String?            @db.LongText
   specifications Json?              // Up to 5 key-value pairs stored as JSON
   quantity       Float              @default(0)
   minStock       Int                @default(5)

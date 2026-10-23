@@ -295,34 +295,90 @@ const ItemCardModal = ({
     });
   };
 
-  const handleFileUpload = async (file) => {
-    if (!file) return;
+  // Compress an image file or Base64 string to a lightweight Base64 Data URI
+  const compressImageToBase64 = (imageInput, maxWidth = 900, maxHeight = 900, quality = 0.8) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
 
-    if (!file.type.match(/^image\/(jpeg|png|jpg|webp)$/i)) {
-      toast.error("Please upload a valid image file (JPG, PNG or WEBP).");
-      return;
-    }
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image size must be less than 5MB.");
-      return;
-    }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
 
-    const formData = new FormData();
-    formData.append("photo", file);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Unable to create canvas rendering context"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress as JPEG
+        const base64Data = canvas.toDataURL("image/jpeg", quality);
+        resolve(base64Data);
+      };
+
+      img.onerror = (err) => reject(err);
+
+      if (typeof imageInput === "string") {
+        img.src = imageInput;
+      } else if (imageInput instanceof Blob || imageInput instanceof File) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          img.src = e.target.result;
+        };
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(imageInput);
+      } else {
+        reject(new Error("Unsupported image format"));
+      }
+    });
+  };
+
+  const handleFileUpload = async (fileOrDataUrl) => {
+    if (!fileOrDataUrl) return;
 
     setUploadingPhoto(true);
     try {
-      const res = await apiUpload("/inventory/upload", formData);
-      const uploaded = res?.photoUrl || res?.url;
-      if (uploaded) {
-        setPhotoUrl(uploaded);
-        toast.success("Photo uploaded successfully.");
-      } else {
-        toast.error("Upload succeeded but no photo URL was returned.");
+      if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) {
+        // Already a data URL (e.g. from camera), compress it to ensure small size
+        const compressed = await compressImageToBase64(fileOrDataUrl, 900, 900, 0.8);
+        setPhotoUrl(compressed);
+        toast.success("Photo attached successfully.");
+        return;
       }
+
+      const file = fileOrDataUrl;
+      if (file.type && !file.type.match(/^image\/(jpeg|png|jpg|webp)$/i)) {
+        toast.error("Please upload a valid image file (JPG, PNG or WEBP).");
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Image file size should be less than 10MB.");
+        return;
+      }
+
+      // Convert and compress to base64 data URI directly in browser
+      const base64Data = await compressImageToBase64(file, 900, 900, 0.8);
+      setPhotoUrl(base64Data);
+      toast.success("Photo attached successfully.");
     } catch (err) {
-      toast.error(err.message || "Failed to upload photo.");
+      console.error("Photo compression error:", err);
+      toast.error("Failed to process image.");
     } finally {
       setUploadingPhoto(false);
     }

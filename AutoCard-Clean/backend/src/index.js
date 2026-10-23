@@ -200,19 +200,56 @@ app.get("/favicon.ico", (_req, res) => {
   res.status(204).end();
 });
 
-// Serve uploaded files (skip on Vercel as files are in /tmp and not persistent)
-if (process.env.VERCEL !== "1") {
-  const uploadsStaticPath = path.join(__dirname, "../uploads");
-  const staticOptions = {
-    setHeaders: (res) => {
+// Serve uploaded files across both local and Hostinger production layouts
+const staticOptions = {
+  setHeaders: (res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  },
+};
+
+// 1. Path relative to src: backend/uploads
+const uploadsFromDir = path.join(__dirname, "../uploads");
+app.use("/uploads", express.static(uploadsFromDir, staticOptions));
+app.use("/api/uploads", express.static(uploadsFromDir, staticOptions));
+
+// 2. Path relative to current working directory: ./uploads or ./backend/uploads
+const uploadsFromCwd = path.resolve("uploads");
+const uploadsFromCwdBackend = path.resolve("backend/uploads");
+if (fs.existsSync(uploadsFromCwd)) {
+  app.use("/uploads", express.static(uploadsFromCwd, staticOptions));
+  app.use("/api/uploads", express.static(uploadsFromCwd, staticOptions));
+}
+if (fs.existsSync(uploadsFromCwdBackend)) {
+  app.use("/uploads", express.static(uploadsFromCwdBackend, staticOptions));
+  app.use("/api/uploads", express.static(uploadsFromCwdBackend, staticOptions));
+}
+
+// 3. Fallback direct file streamer for /uploads and /api/uploads
+app.get(["/uploads/*", "/api/uploads/*"], (req, res, next) => {
+  // Extract relative path after /uploads/ or /api/uploads/
+  const relativePath = req.path.replace(/^\/(api\/)?uploads\//, "");
+  const candidates = [
+    path.join(__dirname, "../uploads", relativePath),
+    path.join(process.cwd(), "uploads", relativePath),
+    path.join(process.cwd(), "backend", "uploads", relativePath),
+    path.join(__dirname, "../../uploads", relativePath),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    },
-  };
-  // Handle direct /uploads and reverse-proxied /api/uploads (common on Hostinger)
-  app.use("/uploads", express.static(uploadsStaticPath, staticOptions));
-  app.use("/api/uploads", express.static(uploadsStaticPath, staticOptions));
-}
+      return res.sendFile(path.resolve(candidate));
+    }
+  }
+
+  return res.status(404).json({
+    error: "File Not Found",
+    message: `Uploaded file not found on server for path: ${relativePath}`,
+    searchedPaths: process.env.NODE_ENV !== "production" ? candidates : undefined,
+  });
+});
 
 // API Routes
 app.use("/api/auth", authRouter);

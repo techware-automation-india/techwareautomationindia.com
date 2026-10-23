@@ -1090,9 +1090,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                         </td>
                         <td className="p-4 font-semibold text-foreground">
                           <div className="flex items-center gap-3">
-                            {item.photoUrl ? (
+                            {(item.photoUrl || item.img || item.url) ? (
                               <img
-                                src={resolveImageUrl(item.photoUrl)}
+                                src={resolveImageUrl(item.photoUrl || item.img || item.url)}
                                 alt={item.name}
                                 className="w-9 h-9 rounded-lg object-cover border border-border shadow-xs shrink-0"
                               />
@@ -1296,9 +1296,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                     >
                       <div className="flex items-start gap-2.5">
                         <div className="w-12 h-12 rounded-lg bg-secondary/40 border border-border shrink-0 overflow-hidden flex items-center justify-center">
-                          {item.photoUrl ? (
+                          {(item.photoUrl || item.img || item.url) ? (
                             <img
-                              src={resolveImageUrl(item.photoUrl)}
+                              src={resolveImageUrl(item.photoUrl || item.img || item.url)}
                               alt={item.name}
                               className="w-full h-full object-contain"
                             />

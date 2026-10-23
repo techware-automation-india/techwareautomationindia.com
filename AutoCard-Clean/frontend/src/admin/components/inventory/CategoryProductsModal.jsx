@@ -381,9 +381,9 @@ const CategoryProductsModal = ({
                         className="w-full h-40 rounded-xl bg-secondary/30 border border-border/60 overflow-hidden flex items-center justify-center mb-3 relative group-hover:bg-secondary/40 transition-colors cursor-pointer"
                         title="Click to view product details & photo"
                       >
-                        {item.photoUrl ? (
+                        {(item.photoUrl || item.img || item.url) ? (
                           <img
-                            src={resolveImageUrl(item.photoUrl)}
+                            src={resolveImageUrl(item.photoUrl || item.img || item.url)}
                             alt={item.name}
                             className="w-full h-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
                           />

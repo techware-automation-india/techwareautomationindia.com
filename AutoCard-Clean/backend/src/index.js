@@ -209,6 +209,13 @@ const staticOptions = {
   },
 };
 
+// Persistent Hostinger shared uploads directory
+const hostingerSharedBase = "/home/u553274077/shared_uploads";
+if (fs.existsSync(hostingerSharedBase)) {
+  app.use("/uploads", express.static(hostingerSharedBase, staticOptions));
+  app.use("/api/uploads", express.static(hostingerSharedBase, staticOptions));
+}
+
 // 1. Path relative to src: backend/uploads
 const uploadsFromDir = path.join(__dirname, "../uploads");
 app.use("/uploads", express.static(uploadsFromDir, staticOptions));
@@ -231,6 +238,7 @@ app.get(["/uploads/*", "/api/uploads/*"], (req, res, next) => {
   // Extract relative path after /uploads/ or /api/uploads/
   const relativePath = req.path.replace(/^\/(api\/)?uploads\//, "");
   const candidates = [
+    path.join(hostingerSharedBase, relativePath),
     path.join(__dirname, "../uploads", relativePath),
     path.join(process.cwd(), "uploads", relativePath),
     path.join(process.cwd(), "backend", "uploads", relativePath),

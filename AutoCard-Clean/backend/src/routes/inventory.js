@@ -15,7 +15,14 @@ const router = Router();
 // ═══════════════════════════════════════════════════════════════════════
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadDir = path.join(__dirname, "../../uploads/inventory");
+
+// Automatic Hostinger persistent uploads path or local uploads fallback
+const hostingerSharedDir = "/home/u553274077/shared_uploads/inventory";
+const localUploadDir = path.join(__dirname, "../../uploads/inventory");
+const uploadDir = fs.existsSync("/home/u553274077/shared_uploads") 
+  ? hostingerSharedDir 
+  : localUploadDir;
+
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

@@ -630,7 +630,11 @@ router.get("/items", requireAuth, async (req, res) => {
     res.json({ items });
   } catch (err) {
     console.error("Failed to list items:", err);
-    res.status(500).json({ message: "Failed to load inventory items." });
+    res.status(500).json({ 
+      message: err.message || "Failed to load inventory items.", 
+      error: err.toString(),
+      code: err.code 
+    });
   }
 });
 

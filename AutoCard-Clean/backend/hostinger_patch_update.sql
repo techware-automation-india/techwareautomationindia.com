@@ -288,4 +288,16 @@ SET @preparedStatement = (SELECT IF(
 ));
 PREPARE stmt FROM @preparedStatement; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- ----------------------------------------------------------------------------
+-- 11. ADD `img` COLUMN TO `inventory_items` TABLE (IF NOT EXISTS)
+-- ----------------------------------------------------------------------------
+SET @tablename = 'inventory_items';
+SET @columnname = 'img';
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname) > 0,
+  'SELECT 1',
+  'ALTER TABLE `inventory_items` ADD COLUMN `img` TEXT NULL AFTER `photoUrl`;'
+));
+PREPARE stmt FROM @preparedStatement; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 SELECT '✅ Hostinger Schema Update / Patch Script Executed Successfully!' AS status;

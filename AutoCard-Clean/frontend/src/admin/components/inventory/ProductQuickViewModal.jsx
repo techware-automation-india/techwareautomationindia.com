@@ -9,7 +9,7 @@ export const resolveImageUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("data:") || url.startsWith("blob:")) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:4001";
+  const baseUrl = import.meta.env.VITE_API_URL || (window.location.hostname === "localhost" ? "http://localhost:4000" : "https://api.techwareautomation.in");
   return `${baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
 };
 

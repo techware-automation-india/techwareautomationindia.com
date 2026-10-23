@@ -366,7 +366,7 @@ const EmployeeLayout = () => {
                   {(assignedRoleName || user?.roleName || user?.customRole?.name || user?.role) && (
                     <div className="flex items-center justify-end mt-0.5">
                       <span className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold uppercase">
-                        {assignedRoleName || user?.roleName || user?.customRole?.name || user?.role}
+                        {(assignedRoleName || user?.roleName || user?.customRole?.name || user?.role || "").replace(/\s*\(Custom.*?\)/gi, "")}
                       </span>
                     </div>
                   )}
@@ -436,7 +436,7 @@ const EmployeeLayout = () => {
                     </div>
 
                     <span className="inline-flex mt-3 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold tracking-wide uppercase">
-                      {assignedRoleName || user?.roleName || user?.customRole?.name || user?.role || "EMPLOYEE"}
+                      {(assignedRoleName || user?.roleName || user?.customRole?.name || user?.role || "EMPLOYEE").replace(/\s*\(Custom.*?\)/gi, "")}
                     </span>
                   </div>
 

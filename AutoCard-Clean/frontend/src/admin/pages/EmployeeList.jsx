@@ -466,7 +466,7 @@ const EmployeeList = ({ employeePermissions = null, isEmployeeView = false }) =>
                     <td className="px-6 py-4 text-muted-foreground">{emp.email}</td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                        {emp.roleName || emp.role || "No Role"}
+                        {(emp.roleName ? emp.roleName.replace(/\s*\(Custom.*?\)/gi, "") : emp.role) || "No Role"}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">{emp.jobTitle || "—"}</td>

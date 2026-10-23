@@ -47,7 +47,7 @@ export default function ProductQuickViewModal({
   const cost = Number(item.costPrice || 0);
   const totalValuation = qty * cost;
   const isLowStock = qty <= minStock;
-  const photoSrc = resolveImageUrl(item.photoUrl);
+  const photoSrc = resolveImageUrl(item.photoUrl || item.img);
 
   // Resolve category hierarchy chain
   const categoryChain = [];

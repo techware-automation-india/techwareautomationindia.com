@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
+import { fileURLToPath } from "url";
 import fs from "fs";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -12,7 +13,9 @@ const router = Router();
 // ═══════════════════════════════════════════════════════════════════════
 // 1. FILE UPLOAD CONFIGURATION (Multer for Item Photos)
 // ═══════════════════════════════════════════════════════════════════════
-const uploadDir = path.resolve("uploads/inventory");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadDir = path.join(__dirname, "../../uploads/inventory");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

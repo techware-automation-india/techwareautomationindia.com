@@ -114,7 +114,7 @@ const ItemCardModal = ({
       // Editing existing item - always use item data
       setName(item.name || "");
       setCode(item.code || item.sku || "");
-      setPhotoUrl(item.photoUrl || "");
+      setPhotoUrl(item.photoUrl || item.img || "");
       setQuantity(item.quantity ?? 1);
       setMinStock(item.minStock ?? 5);
       setMaxStock(item.maxStock ?? 100);

@@ -546,7 +546,7 @@ export default function ViewInventoryView({ onBackToHub }) {
             const isLowStock = qty > 0 && qty <= minS;
             const isOutOfStock = qty === 0;
             const { rootName, subName } = getItemCategoryDetails(item, categories);
-            const photoSrc = resolveImageUrl(item.photoUrl);
+            const photoSrc = resolveImageUrl(item.photoUrl || item.img);
 
             const specsArr = Array.isArray(item.specifications)
               ? item.specifications
@@ -747,7 +747,7 @@ export default function ViewInventoryView({ onBackToHub }) {
                   const isLowStock = qty > 0 && qty <= minS;
                   const isOutOfStock = qty === 0;
                   const { rootName, subName } = getItemCategoryDetails(item, categories);
-                  const photoSrc = resolveImageUrl(item.photoUrl);
+                  const photoSrc = resolveImageUrl(item.photoUrl || item.img);
 
                   return (
                     <tr

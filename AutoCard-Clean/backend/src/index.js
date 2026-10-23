@@ -202,7 +202,16 @@ app.get("/favicon.ico", (_req, res) => {
 
 // Serve uploaded files (skip on Vercel as files are in /tmp and not persistent)
 if (process.env.VERCEL !== "1") {
-  app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+  const uploadsStaticPath = path.join(__dirname, "../uploads");
+  const staticOptions = {
+    setHeaders: (res) => {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  };
+  // Handle direct /uploads and reverse-proxied /api/uploads (common on Hostinger)
+  app.use("/uploads", express.static(uploadsStaticPath, staticOptions));
+  app.use("/api/uploads", express.static(uploadsStaticPath, staticOptions));
 }
 
 // API Routes

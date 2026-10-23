@@ -49,6 +49,11 @@ router.post("/upload", requireAuth, upload.single("photo"), (req, res) => {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded." });
     }
+    // Ensure file is readable by the web server on Linux/Hostinger
+    try {
+      fs.chmodSync(req.file.path, 0o644);
+    } catch (_) {}
+
     const photoUrl = `/uploads/inventory/${req.file.filename}`;
     res.json({ photoUrl, img: photoUrl, url: photoUrl, message: "Photo uploaded successfully." });
   } catch (err) {

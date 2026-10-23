@@ -353,32 +353,41 @@ const ItemCardModal = ({
 
     setUploadingPhoto(true);
     try {
+      let fileToUpload = fileOrDataUrl;
+
+      // If it's a data URL (e.g. from camera), convert it to a File object
       if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) {
-        // Already a data URL (e.g. from camera), compress it to ensure small size
-        const compressed = await compressImageToBase64(fileOrDataUrl, 900, 900, 0.8);
-        setPhotoUrl(compressed);
-        toast.success("Photo attached successfully.");
-        return;
+        const res = await fetch(fileOrDataUrl);
+        const blob = await res.blob();
+        fileToUpload = new File([blob], `camera_snap_${Date.now()}.jpg`, {
+          type: "image/jpeg",
+        });
       }
 
-      const file = fileOrDataUrl;
-      if (file.type && !file.type.match(/^image\/(jpeg|png|jpg|webp)$/i)) {
+      if (fileToUpload.type && !fileToUpload.type.match(/^image\/(jpeg|png|jpg|webp)$/i)) {
         toast.error("Please upload a valid image file (JPG, PNG or WEBP).");
         return;
       }
 
-      if (file.size > 10 * 1024 * 1024) {
+      if (fileToUpload.size > 10 * 1024 * 1024) {
         toast.error("Image file size should be less than 10MB.");
         return;
       }
 
-      // Convert and compress to base64 data URI directly in browser
-      const base64Data = await compressImageToBase64(file, 900, 900, 0.8);
-      setPhotoUrl(base64Data);
-      toast.success("Photo attached successfully.");
+      const formData = new FormData();
+      formData.append("photo", fileToUpload);
+
+      const res = await apiUpload("/inventory/upload", formData);
+      const uploaded = res?.photoUrl || res?.url || res?.img;
+      if (uploaded) {
+        setPhotoUrl(uploaded);
+        toast.success("Photo uploaded to Hostinger server successfully!");
+      } else {
+        toast.error("Upload succeeded but no photo URL was returned.");
+      }
     } catch (err) {
-      console.error("Photo compression error:", err);
-      toast.error("Failed to process image.");
+      console.error("Photo upload error:", err);
+      toast.error(err.message || "Failed to upload photo to server.");
     } finally {
       setUploadingPhoto(false);
     }

@@ -1705,18 +1705,27 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                       <div>
                         {/* Photo Thumbnail */}
                         <div className="w-full h-36 rounded-xl bg-secondary/40 border border-border/60 overflow-hidden flex items-center justify-center mb-3 relative">
-                          {item.photoUrl ? (
+                          {(item.photoUrl || item.img) ? (
                             <img
-                              src={resolveImageUrl(item.photoUrl)}
+                              src={resolveImageUrl(item.photoUrl || item.img)}
                               alt={item.name}
                               className="w-full h-full object-contain p-2"
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                if (e.currentTarget.nextSibling) {
+                                  e.currentTarget.nextSibling.style.display = "flex";
+                                }
+                              }}
                             />
-                          ) : (
-                            <div className="flex flex-col items-center text-muted-foreground/60">
-                              <Package className="h-10 w-10 stroke-[1.2]" />
-                              <span className="text-[11px] mt-1 font-mono">No Image</span>
-                            </div>
-                          )}
+                          ) : null}
+                          <div
+                            className={`flex flex-col items-center text-muted-foreground/60 ${
+                              item.photoUrl || item.img ? "hidden" : "flex"
+                            }`}
+                          >
+                            <Package className="h-10 w-10 stroke-[1.2]" />
+                            <span className="text-[11px] mt-1 font-mono">No Image</span>
+                          </div>
 
                           <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-background/90 backdrop-blur-xs border border-border text-[11px] font-bold text-foreground shadow-xs">
                             {item.quantity} {item.unit || "Nos"}

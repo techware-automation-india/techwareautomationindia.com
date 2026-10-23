@@ -55,6 +55,7 @@ const defaultModules = [
     path: "/employee/requests",
     icon: FileText,
     description: "Submit and track requests.",
+    alwaysVisible: true,
   },
   {
     key: "academic-calendar",
@@ -172,8 +173,14 @@ export function getModulesByPermissions(permissions = {}) {
   const allowedModules = [];
 
   allModules.forEach((module) => {
-    // Default base modules marked alwaysVisible (like Overview and Academic Calendar) are always visible to employees
-    if (module.alwaysVisible || module.key === "overview" || module.key === "academic-calendar" || module.key === "my-tools") {
+    // Default base modules marked alwaysVisible (like Overview, Academic Calendar, Requests) are always visible to employees
+    if (
+      module.alwaysVisible ||
+      module.key === "overview" ||
+      module.key === "academic-calendar" ||
+      module.key === "requests" ||
+      module.key === "my-tools"
+    ) {
       if (!allowedModules.some((m) => m.path === module.path || m.key === module.key)) {
         allowedModules.push(module);
       }

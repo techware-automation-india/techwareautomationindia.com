@@ -650,16 +650,21 @@ const ItemCardModal = ({
 
               {/* Company Name */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-foreground">
-                  Company Name
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-foreground">
+                    Company Name
+                  </label>
+                  <span className="text-[10px] text-muted-foreground/70 font-medium">
+                    (Optional)
+                  </span>
+                </div>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
                     <Building2 className="h-4 w-4" />
                   </div>
                   <input
                     type="text"
-                    placeholder="e.g. Techware Automation India"
+                    placeholder="e.g. Techware Automation India (Optional)"
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
@@ -669,16 +674,21 @@ const ItemCardModal = ({
 
               {/* Vendor / Supplier Name */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-foreground">
-                  Vendor Name
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-foreground">
+                    Vendor Name
+                  </label>
+                  <span className="text-[10px] text-muted-foreground/70 font-medium">
+                    (Optional)
+                  </span>
+                </div>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
                     <User className="h-4 w-4" />
                   </div>
                   <input
                     type="text"
-                    placeholder="e.g. ABC Electricals / Fastener Supplier"
+                    placeholder="e.g. ABC Electricals / Fastener Supplier (Optional)"
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
                     value={vendorName}
                     onChange={(e) => setVendorName(e.target.value)}

@@ -7,7 +7,7 @@ import { apiGet } from "../../lib/api.js";
 /**
  * Helper function to check if a specific module key is allowed based on user permissions
  */
-export function isModuleAllowed(moduleKey, permissions = {}) {
+function isModuleAllowed(moduleKey, permissions = {}) {
   // Support array of module keys
   if (Array.isArray(moduleKey)) {
     return moduleKey.some((k) => isModuleAllowed(k, permissions));

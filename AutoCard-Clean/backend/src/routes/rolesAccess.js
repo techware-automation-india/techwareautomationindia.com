@@ -196,19 +196,22 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
           } else {
             permissionMap[group.parent].canView = true;
           }
-        } else {
-          // If no submodule has view access, parent module must NOT be visible
+        } else if (group.parent !== "requests") {
+          // If no submodule has view access, non-default parent module must not be visible
           if (permissionMap[group.parent]) {
             permissionMap[group.parent].canView = false;
-          } else {
-            permissionMap[group.parent] = {
-              canView: false,
-              canCreate: false,
-              canEdit: false,
-              canDelete: false,
-            };
           }
         }
+      }
+
+      // Requests is a default employee module: ensure canView is always true for employees
+      if (!permissionMap["requests"] || !permissionMap["requests"].canView) {
+        permissionMap["requests"] = {
+          canView: true,
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+        };
       }
 
       if (req.user?.role === "ADMIN") {

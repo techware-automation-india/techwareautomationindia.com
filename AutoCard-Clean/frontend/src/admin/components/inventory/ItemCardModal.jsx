@@ -1234,50 +1234,53 @@ const ItemCardModal = ({
       />
 
       {/* Full Image View Modal */}
-      {isImageViewOpen && photoUrl && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setIsImageViewOpen(false)}
-        >
+      {isImageViewOpen && photoUrl &&
+        createPortal(
           <div
-            className="relative max-w-4xl max-h-[90vh] bg-card border border-border/80 rounded-2xl shadow-2xl p-4 overflow-hidden flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+            style={{ isolation: "isolate" }}
+            onClick={() => setIsImageViewOpen(false)}
           >
-            <div className="w-full flex items-center justify-between pb-3 border-b border-border/50">
-              <div className="flex items-center gap-2">
-                <ImageIcon className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold text-foreground">
-                  {name ? `${name} - Item Photo` : "Item Photo Preview"}
-                </span>
+            <div
+              className="relative max-w-4xl max-h-[90vh] w-full bg-card border border-border/80 rounded-3xl shadow-2xl p-4 sm:p-6 overflow-hidden flex flex-col items-center z-[10000000]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-full flex items-center justify-between pb-3 border-b border-border/50">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-5 w-5 text-primary" />
+                  <span className="text-sm sm:text-base font-bold text-foreground">
+                    {name ? `${name} - Item Photo` : "Item Photo Preview"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsImageViewOpen(false)}
+                  className="w-8 h-8 rounded-full bg-secondary/80 hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsImageViewOpen(false)}
-                className="w-8 h-8 rounded-full bg-secondary/80 hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="mt-4 max-h-[72vh] w-full overflow-auto flex items-center justify-center bg-black/10 rounded-2xl p-2 border border-border/40">
+                <img
+                  src={resolveImageUrl(photoUrl)}
+                  alt={name || "Product image"}
+                  className="max-h-[68vh] w-auto max-w-full object-contain rounded-xl shadow-md"
+                />
+              </div>
+              <div className="w-full mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsImageViewOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold border border-border transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-            <div className="mt-4 max-h-[75vh] max-w-full overflow-auto flex items-center justify-center bg-black/10 rounded-xl p-2">
-              <img
-                src={resolveImageUrl(photoUrl)}
-                alt={name || "Product image"}
-                className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg shadow-sm"
-              />
-            </div>
-            <div className="w-full mt-3 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsImageViewOpen(false)}
-                className="px-4 py-1.5 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold border border-border transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Camera Live Viewfinder & Capture Modal */}
       <CameraCaptureModal

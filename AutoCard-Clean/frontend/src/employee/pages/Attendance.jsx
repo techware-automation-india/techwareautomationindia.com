@@ -112,7 +112,16 @@ const isComplexNote = (note) => {
   if (!note || typeof note !== "string") return false;
   const trimmed = note.trim();
   if (!trimmed || trimmed === "—" || trimmed === "-") return false;
-  return true;
+  const lower = trimmed.toLowerCase();
+  return (
+    lower.includes("reason:") ||
+    lower.includes("unassigned") ||
+    lower.includes("outside") ||
+    lower.includes("pending") ||
+    lower.includes("forgot punch") ||
+    lower.includes("manual attendance") ||
+    lower.includes("reject")
+  );
 };
 
 const parseNoteSegment = (segment, record) => {

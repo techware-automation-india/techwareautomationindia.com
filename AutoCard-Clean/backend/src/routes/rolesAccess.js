@@ -561,11 +561,11 @@ router.put("/module-permissions/:userId", async (req, res) => {
 
       if (isDefault || otherUsersCount > 0) {
         const empName = user.fullName || "Employee";
-        let roleName = `${empName} (Custom)`;
+        let roleName = `${empName}`;
         // Check if roleName already exists, if so append user ID slice
         const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
         if (existingRole) {
-          roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+          roleName = `${empName}-${userId.slice(0, 4)}`;
         }
         const newRole = await prisma.roleTable.upsert({
           where: { name: roleName },
@@ -583,10 +583,10 @@ router.put("/module-permissions/:userId", async (req, res) => {
       }
     } else {
       const empName = user.fullName || "Employee";
-      let roleName = `${empName} (Custom)`;
+      let roleName = `${empName}`;
       const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
       if (existingRole) {
-        roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+        roleName = `${empName}-${userId.slice(0, 4)}`;
       }
       const newRole = await prisma.roleTable.upsert({
         where: { name: roleName },
@@ -748,9 +748,9 @@ router.put("/module-permissions-batch", async (req, res) => {
 
         if (isDefault || otherUsersCount > 0) {
           const empName = user.fullName || "Employee";
-          let roleName = `${empName} (Custom)`;
+          let roleName = `${empName}`;
           const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
-          if (existingRole) roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+          if (existingRole) roleName = `${empName}-${userId.slice(0, 4)}`;
 
           const newRole = await prisma.roleTable.upsert({
             where: { name: roleName },
@@ -765,9 +765,9 @@ router.put("/module-permissions-batch", async (req, res) => {
         }
       } else {
         const empName = user.fullName || "Employee";
-        let roleName = `${empName} (Custom)`;
+        let roleName = `${empName}`;
         const existingRole = await prisma.roleTable.findUnique({ where: { name: roleName } });
-        if (existingRole) roleName = `${empName} (Custom-${userId.slice(0, 6)})`;
+        if (existingRole) roleName = `${empName}-${userId.slice(0, 4)}`;
 
         const newRole = await prisma.roleTable.upsert({
           where: { name: roleName },

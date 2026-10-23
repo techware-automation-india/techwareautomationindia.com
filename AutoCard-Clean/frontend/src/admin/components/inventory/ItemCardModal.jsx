@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Package, X, UploadCloud, Loader2, Plus, Image as ImageIcon, Trash2, Check,
   IndianRupee, Calculator, Hash, ShieldAlert, Tag, Barcode, Building2, MapPin,
-  Sparkles, Layers, Info, CheckCircle2, Camera, User
+  Sparkles, Layers, Info, CheckCircle2, Camera, User, Eye
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPut, apiUpload } from "../../../lib/api.js";
@@ -60,6 +60,7 @@ const ItemCardModal = ({
   const [unitsList, setUnitsList] = useState([]);
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isImageViewOpen, setIsImageViewOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef(null);
@@ -894,6 +895,17 @@ const ItemCardModal = ({
                       <div className="flex items-center gap-2 flex-wrap justify-center">
                         <button
                           type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsImageViewOpen(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold border border-primary/20 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                          title="View image full size"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View Img
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => fileInputRef.current?.click()}
                           className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold border border-border transition-colors cursor-pointer flex items-center gap-1"
                           title="Upload another photo file"
@@ -1220,6 +1232,52 @@ const ItemCardModal = ({
           setUnit(newUnit);
         }}
       />
+
+      {/* Full Image View Modal */}
+      {isImageViewOpen && photoUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsImageViewOpen(false)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-card border border-border/80 rounded-2xl shadow-2xl p-4 overflow-hidden flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold text-foreground">
+                  {name ? `${name} - Item Photo` : "Item Photo Preview"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImageViewOpen(false)}
+                className="w-8 h-8 rounded-full bg-secondary/80 hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-4 max-h-[75vh] max-w-full overflow-auto flex items-center justify-center bg-black/10 rounded-xl p-2">
+              <img
+                src={resolveImageUrl(photoUrl)}
+                alt={name || "Product image"}
+                className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg shadow-sm"
+              />
+            </div>
+            <div className="w-full mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsImageViewOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold border border-border transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Camera Live Viewfinder & Capture Modal */}
       <CameraCaptureModal

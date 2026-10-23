@@ -581,7 +581,7 @@ export default function AccessTab() {
                               )}
                             </div>
                             <span className="text-[11px] text-muted-foreground truncate block">
-                              {emp.email} • {emp.roleName}
+                              {emp.email} • {emp.roleName ? emp.roleName.replace(/\s*\(Custom.*?\)/gi, '') : ''}
                             </span>
                           </div>
                         </div>

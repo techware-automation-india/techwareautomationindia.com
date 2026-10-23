@@ -285,6 +285,9 @@ const parseAttendanceNoteSegment = (segment, record) => {
   } else if (isManualCorrection || isForgotPunch || isAdminRecord) {
     status = "APPROVED";
     statusLabel = "Approved";
+  } else if (!userReason && (lower.startsWith("checkin:") || lower.startsWith("checkout:"))) {
+    status = "APPROVED";
+    statusLabel = "Verified";
   }
 
   let locationInfo = null;
@@ -348,7 +351,17 @@ const hasSubmittedReason = (note) => {
   if (!note || typeof note !== "string") return false;
   const trimmed = note.trim();
   if (!trimmed || trimmed === "—" || trimmed === "-") return false;
-  return true;
+  const lower = trimmed.toLowerCase();
+  // Standard check-in / check-out to assigned office or location without reason/outside/pending is not a reason request
+  return (
+    lower.includes("reason:") ||
+    lower.includes("unassigned") ||
+    lower.includes("outside") ||
+    lower.includes("pending") ||
+    lower.includes("forgot punch") ||
+    lower.includes("manual attendance") ||
+    lower.includes("reject")
+  );
 };
 
 const getCalendarLocationCode = (note, type) => {
@@ -3706,8 +3719,8 @@ const Attendance = () => {
             {/* Header */}
             <div className="relative border-b border-border bg-card px-6 py-5">
               <div className="flex items-start gap-3 pr-10">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
-                  <AlertCircle className="h-5 w-5" />
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${attendanceReasonModal.status === "PRESENT" ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"}`}>
+                  {attendanceReasonModal.status === "PRESENT" ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div
@@ -3742,12 +3755,12 @@ const Attendance = () => {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-2.5 dark:border-amber-800/40 dark:bg-amber-500/20">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                <div className={`rounded-xl border p-2.5 ${attendanceReasonModal.status === "PRESENT" ? "border-emerald-200 bg-emerald-500/10 text-emerald-800 dark:border-emerald-800/40 dark:text-emerald-300" : "border-amber-200 bg-amber-500/10 text-amber-800 dark:border-amber-800/40 dark:text-amber-300"}`}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">
                     Status
                   </div>
-                  <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-bold text-amber-800 dark:text-amber-300">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-bold">
+                    <span className={`h-2 w-2 rounded-full ${attendanceReasonModal.status === "PRESENT" ? "bg-emerald-500" : "bg-amber-500"}`} />
                     {attendanceReasonModal.statusLabel || attendanceReasonModal.status || "—"}
                   </div>
                 </div>
@@ -3862,16 +3875,18 @@ const Attendance = () => {
                           <div className="rounded-lg bg-background p-2.5 border border-border/50">
                             <div className="text-[10px] uppercase font-semibold text-muted-foreground">
                               {parsed.status === "APPROVED"
-                                ? "Approved Time"
+                                ? (parsed.statusLabel === "Verified" ? "Verification Status" : "Approved Time")
                                 : parsed.status === "REJECTED"
                                 ? "Rejected Time"
                                 : "Approved / Status Date"}
                             </div>
                             <div className="font-bold text-foreground mt-0.5">
                               {parsed.status === "APPROVED" || parsed.status === "REJECTED"
-                                ? attendanceReasonModal.updatedAt
-                                  ? `${fmtDateDMY(attendanceReasonModal.updatedAt)} ${fmtTime(attendanceReasonModal.updatedAt)}`
-                                  : "—"
+                                ? (parsed.statusLabel === "Verified"
+                                    ? "Standard Punch (Within Location)"
+                                    : attendanceReasonModal.updatedAt
+                                    ? `${fmtDateDMY(attendanceReasonModal.updatedAt)} ${fmtTime(attendanceReasonModal.updatedAt)}`
+                                    : "—")
                                 : "Awaiting Approval"}
                             </div>
                           </div>

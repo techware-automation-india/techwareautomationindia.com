@@ -232,7 +232,7 @@ router.put("/employee-permissions/:userId", requireAuth, requireRole("ADMIN"), a
         const empName = user.fullName || "Employee";
         const newRole = await prisma.roleTable.create({
           data: {
-            name: `${empName} (Custom)`,
+            name: `${empName}`,
             isDefault: false,
           },
         });
@@ -247,7 +247,7 @@ router.put("/employee-permissions/:userId", requireAuth, requireRole("ADMIN"), a
       const empName = user.fullName || "Employee";
       const newRole = await prisma.roleTable.create({
         data: {
-          name: `${empName} (Custom)`,
+          name: `${empName}`,
           isDefault: false,
         },
       });

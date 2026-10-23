@@ -69,14 +69,9 @@ const AdminLayout = () => {
 
           {/* App Name */}
           <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[16px] font-bold leading-tight text-[#2A3791]">
-                Techware
-              </span>
-              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20 leading-tight">
-                v1.0.0
-              </span>
-            </div>
+            <span className="text-[16px] font-bold leading-tight text-[#2A3791]">
+              Techware
+            </span>
 
             <span className="text-[10px] font-semibold leading-tight text-[#2A3791]">
               Management{" "}

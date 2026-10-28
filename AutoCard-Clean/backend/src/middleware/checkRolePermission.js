@@ -75,25 +75,6 @@ export function checkRolePermission(moduleKey) {
       }
       const keys = Array.from(keySet);
 
-      // Default base employee modules that are always accessible to all authenticated employees
-      const defaultEmployeeModules = [
-        "mark-attendance",
-        "attendance",
-        "requests",
-        "requests-apply-leave",
-        "requests-forgot-punch",
-        "requests-tools-inventory",
-        "requests-track",
-        "overview",
-        "academic-calendar",
-        "academic-holidays",
-      ];
-
-      // If user is Employee and the requested module is a base default module, grant access
-      if (dbUser.role === "EMPLOYEE" && keys.some((k) => defaultEmployeeModules.includes(k))) {
-        return next();
-      }
-
       // 1. Resolve roleId (from live DB lookup)
       const roleId = dbUser.roleId || req.user.roleId;
 

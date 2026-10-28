@@ -71,6 +71,7 @@ const EmployeeLayout = () => {
     const authUser = getAuthUser();
 
     if (!authUser || authUser.role !== "EMPLOYEE") {
+      clearAuth();
       navigate("/login", { replace: true });
       return;
     }

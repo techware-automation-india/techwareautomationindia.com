@@ -15,9 +15,6 @@ import {
   MapPin,
   X,
   ArrowLeft,
-  PartyPopper,
-  Flag,
-  Sparkles,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -111,7 +108,6 @@ const Roster = () => {
 
   // data
   const [entries, setEntries] = useState([]);
-  const [holidays, setHolidays] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -155,21 +151,14 @@ const Roster = () => {
   const [deleting, setDeleting] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
-  // ── load roster entries & holidays ───────────────────────────────────────
+  // ── load roster entries ──────────────────────────────────────────────────
   const loadRoster = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ year, month });
       if (filterEmp) params.set("employeeId", filterEmp);
-      const [rosterRes, holidaysRes] = await Promise.all([
-        apiGet(`/roster?${params}`),
-        apiGet(`/holidays?year=${year}`).catch((err) => {
-          console.warn("Failed to load holidays for roster calendar:", err);
-          return { holidays: [] };
-        }),
-      ]);
-      setEntries(rosterRes.entries ?? []);
-      setHolidays(holidaysRes.holidays ?? []);
+      const d = await apiGet(`/roster?${params}`);
+      setEntries(d.entries ?? []);
     } catch (err) {
       toast.error(err.message || "Failed to load roster.");
     } finally {
@@ -227,12 +216,13 @@ const Roster = () => {
   // ── save entry ───────────────────────────────────────────────────────────
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!form.employeeIds?.length || !form.fromDate) {
-      toast.error("Please select at least one employee and a from date.");
+    if (saving) return;
+
+    if (!form.employeeIds?.length || !form.fromDate || !form.shiftId) {
+      toast.error("Please select at least one employee, from date and shift.");
       return;
     }
 
-    // If neither shiftId nor locationId is selected, the server will assign the default shift and default location
     const from = new Date(`${form.fromDate}T00:00:00`);
     const to = new Date(`${form.toDate || form.fromDate}T00:00:00`);
 
@@ -356,18 +346,6 @@ const Roster = () => {
     if (!byDay[key]) byDay[key] = [];
     byDay[key].push(e);
   }
-
-  // group holidays by "YYYY-MM-DD"
-  const byHoliday = useMemo(() => {
-    const map = {};
-    for (const h of holidays) {
-      if (!h.date) continue;
-      const key = toDateStr(h.date);
-      if (!map[key]) map[key] = [];
-      map[key].push(h);
-    }
-    return map;
-  }, [holidays]);
 
   const uniqueEmployees = [
     ...new Map(
@@ -761,10 +739,7 @@ const Roster = () => {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">
-                  Shift{" "}
-                  <span className="text-muted-foreground font-normal text-xs">
-                    (Optional — defaults if empty)
-                  </span>
+                  Shift <span className="text-destructive">*</span>
                 </label>
                 <select
                   className={inputClass}
@@ -772,8 +747,9 @@ const Roster = () => {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, shiftId: e.target.value }))
                   }
+                  required
                 >
-                  <option value="">Default Shift</option>
+                  <option value="">Select shift…</option>
                   {shifts.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({formatTimeRange(s.startTime, s.endTime, "–")})
@@ -783,10 +759,7 @@ const Roster = () => {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">
-                  Location{" "}
-                  <span className="text-muted-foreground font-normal text-xs">
-                    (Optional — defaults if empty)
-                  </span>
+                  Location
                 </label>
                 <select
                   className={inputClass}
@@ -795,7 +768,7 @@ const Roster = () => {
                     setForm((p) => ({ ...p, locationId: e.target.value }))
                   }
                 >
-                  <option value="">Default Location</option>
+                  <option value="">No specific location</option>
                   {locations
                     .filter((l) => l.name.toLowerCase() !== "head office duty")
                     .map((l) => (
@@ -879,90 +852,21 @@ const Roster = () => {
             {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
               const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const dayEntries = byDay[dateStr] ?? [];
-              const dayHolidays = byHoliday[dateStr] ?? [];
               const isToday =
                 year === today.getFullYear() &&
                 month === today.getMonth() + 1 &&
                 day === today.getDate();
 
-              const hasNational = dayHolidays.some((h) => h.holidayType === "NATIONAL");
-              const hasFestival = dayHolidays.some((h) => h.holidayType === "FESTIVAL");
-              const hasHoliday = dayHolidays.length > 0;
-
               return (
                 <div
                   key={day}
-                  className={`min-h-[105px] border-r border-b border-border/40 p-1.5 flex flex-col gap-1 transition-colors ${
-                    isToday
-                      ? "bg-primary/5 ring-2 ring-inset ring-primary"
-                      : hasNational
-                      ? "bg-amber-500/[0.04] hover:bg-amber-500/[0.08]"
-                      : hasFestival
-                      ? "bg-purple-500/[0.04] hover:bg-purple-500/[0.08]"
-                      : hasHoliday
-                      ? "bg-rose-500/[0.03] hover:bg-rose-500/[0.06]"
-                      : "hover:bg-secondary/10"
-                  }`}
+                  className={`min-h-[100px] border-r border-b border-border/40 p-1.5 flex flex-col gap-1 ${isToday ? "bg-primary/5 ring-2 ring-inset ring-primary" : "hover:bg-secondary/10"}`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-xs font-bold ${
-                        isToday
-                          ? "text-primary"
-                          : hasNational
-                          ? "text-amber-600 dark:text-amber-400 font-extrabold"
-                          : hasFestival
-                          ? "text-purple-600 dark:text-purple-400 font-extrabold"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {day}
-                    </span>
-
-                    {/* Holiday Indicator Icon */}
-                    {hasNational ? (
-                      <span title="National Festival / Holiday" className="flex items-center">
-                        <Flag className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                      </span>
-                    ) : hasFestival ? (
-                      <span title="Festival Holiday" className="flex items-center">
-                        <PartyPopper className="h-3 w-3 text-purple-600 dark:text-purple-400" />
-                      </span>
-                    ) : hasHoliday ? (
-                      <span title="Holiday" className="flex items-center">
-                        <Sparkles className="h-3 w-3 text-rose-500 dark:text-rose-400" />
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {/* Holiday / Festival Badges */}
-                  {dayHolidays.map((h) => {
-                    const isNat = h.holidayType === "NATIONAL";
-                    const isFest = h.holidayType === "FESTIVAL";
-
-                    return (
-                      <div
-                        key={h.id || h.name}
-                        title={`${h.name} (${isNat ? "National Festival" : isFest ? "Festival" : "Holiday"})`}
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold truncate flex items-center gap-1 border ${
-                          isNat
-                            ? "bg-amber-100/90 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800"
-                            : isFest
-                            ? "bg-purple-100/90 text-purple-900 border-purple-300 dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-800"
-                            : "bg-rose-100/80 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900"
-                        }`}
-                      >
-                        {isNat ? (
-                          <Flag className="h-2.5 w-2.5 shrink-0 text-amber-700 dark:text-amber-300" />
-                        ) : isFest ? (
-                          <PartyPopper className="h-2.5 w-2.5 shrink-0 text-purple-700 dark:text-purple-300" />
-                        ) : (
-                          <Sparkles className="h-2.5 w-2.5 shrink-0 text-rose-600 dark:text-rose-400" />
-                        )}
-                        <span className="truncate">{h.name}</span>
-                      </div>
-                    );
-                  })}
+                  <span
+                    className={`text-xs font-bold ${isToday ? "text-primary" : "text-muted-foreground"}`}
+                  >
+                    {day}
+                  </span>
                   {dayEntries.map((e) => (
                     <div
                       key={e.id}

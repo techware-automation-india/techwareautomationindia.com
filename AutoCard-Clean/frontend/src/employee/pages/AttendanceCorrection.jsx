@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, CalendarDays, Send, AlertCircle, ShieldAlert, Clock, Moon } from "lucide-react";
+import { ArrowLeft, CalendarDays, Send, AlertCircle, ShieldAlert, Clock } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
@@ -52,118 +52,6 @@ const formatTime12h = (time24) => {
   return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
 };
 
-// Convert 24-hour "HH:mm" to 12-hour object { hour12: "10", minute: "00", ampm: "AM" }
-const parse24to12 = (time24) => {
-  if (!time24) return { hour12: "10", minute: "00", ampm: "AM" };
-  const [hStr, mStr] = String(time24).split(":");
-  let h = Number(hStr) || 0;
-  const m = String(Number(mStr) || 0).padStart(2, "0");
-  const ampm = h >= 12 ? "PM" : "AM";
-  const hour12 = String(h % 12 || 12);
-  return { hour12, minute: m, ampm };
-};
-
-// Convert 12-hour values back to 24-hour "HH:mm"
-const to24hString = (hour12, minute, ampm) => {
-  let h = Number(hour12) || 12;
-  const m = String(Number(minute) || 0).padStart(2, "0");
-  if (ampm === "AM") {
-    if (h === 12) h = 0;
-  } else {
-    if (h !== 12) h += 12;
-  }
-  return `${String(h).padStart(2, "0")}:${m}`;
-};
-
-// 12-Hour Time Picker Component (Hour, Minute, AM/PM dropdowns + badge)
-const TimePicker12h = ({ value, onChange, disabled = false, idPrefix = "tp" }) => {
-  const { hour12, minute, ampm } = parse24to12(value);
-
-  const handleHourChange = (newH) => {
-    onChange(to24hString(newH, minute, ampm));
-  };
-
-  const handleMinuteChange = (newM) => {
-    onChange(to24hString(hour12, newM, ampm));
-  };
-
-  const handleAmPmChange = (newAmPm) => {
-    onChange(to24hString(hour12, minute, newAmPm));
-  };
-
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-background p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
-        {/* Hour (1 - 12) */}
-        <select
-          value={hour12}
-          disabled={disabled}
-          onChange={(e) => handleHourChange(e.target.value)}
-          aria-label="Hour (1-12)"
-          className="bg-transparent text-sm font-semibold text-foreground focus:outline-none cursor-pointer py-1 px-1.5 rounded"
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-            <option key={h} value={String(h)}>
-              {String(h).padStart(2, "0")}
-            </option>
-          ))}
-        </select>
-
-        <span className="text-muted-foreground font-bold">:</span>
-
-        {/* Minute (00 - 59) */}
-        <select
-          value={minute}
-          disabled={disabled}
-          onChange={(e) => handleMinuteChange(e.target.value)}
-          aria-label="Minute"
-          className="bg-transparent text-sm font-semibold text-foreground focus:outline-none cursor-pointer py-1 px-1.5 rounded"
-        >
-          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-
-        {/* AM / PM Toggle buttons */}
-        <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/40 ml-1">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => handleAmPmChange("AM")}
-            className={`px-2 py-0.5 text-xs font-bold rounded transition-colors ${
-              ampm === "AM"
-                ? "bg-primary text-white shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            AM
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => handleAmPmChange("PM")}
-            className={`px-2 py-0.5 text-xs font-bold rounded transition-colors ${
-              ampm === "PM"
-                ? "bg-primary text-white shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            PM
-          </button>
-        </div>
-      </div>
-
-      {/* 12-Hour formatted badge */}
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-xs font-bold tracking-wide">
-        <Clock className="h-3 w-3" />
-        {formatTime12h(value)}
-      </span>
-    </div>
-  );
-};
-
 const AttendanceCorrection = ({ correctionType }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -186,7 +74,6 @@ const AttendanceCorrection = ({ correctionType }) => {
         ? "Check Out"
         : "Check In and Check Out";
   const [date, setDate] = useState(initialDate || indiaNow.date);
-  const [checkOutDate, setCheckOutDate] = useState(initialDate || indiaNow.date);
   const [time, setTime] = useState(indiaNow.time);
   const [checkOutTime, setCheckOutTime] = useState(indiaNow.time);
   const [reason, setReason] = useState("");
@@ -197,23 +84,6 @@ const AttendanceCorrection = ({ correctionType }) => {
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [approvedLeaves, setApprovedLeaves] = useState([]);
   const [unclosedPrevious, setUnclosedPrevious] = useState(null);
-  const [overnightModal, setOvernightModal] = useState({
-    isOpen: false,
-    checkInTime: "",
-    checkOutTime: "",
-    checkInDate: "",
-    checkOutDate: "",
-  });
-
-  const getNextDayDateStr = (dateStr) => {
-    if (!dateStr) return "";
-    const d = new Date(`${dateStr}T12:00:00+05:30`);
-    d.setDate(d.getDate() + 1);
-    const yr = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, "0");
-    const da = String(d.getDate()).padStart(2, "0");
-    return `${yr}-${mo}-${da}`;
-  };
 
   // Fetch existing attendance record and times for selected date
   useEffect(() => {
@@ -356,124 +226,6 @@ const AttendanceCorrection = ({ correctionType }) => {
     return () => window.clearInterval(intervalId);
   }, [date]);
 
-  const executeSubmit = async (isOvernight = false) => {
-    const actualCheckOutDate = checkOutDate || date;
-    const effectiveCheckOutDate = isOvernight ? (actualCheckOutDate > date ? actualCheckOutDate : getNextDayDateStr(date)) : actualCheckOutDate;
-    const isCrossDay = effectiveCheckOutDate > date;
-
-    // Strict future check: Check-in cannot be in future date/time
-    if (date > indiaNow.date) {
-      toast.error("Future check-in requests cannot be submitted. Please select today or a past date.");
-      return;
-    }
-    if (date === indiaNow.date && time && time > indiaNow.time) {
-      toast.error(`Check-in time cannot be in the future (current time: ${formatTime12h(indiaNow.time)}).`);
-      return;
-    }
-
-    // Strict future check: Check-out cannot be in future date/time
-    if (effectiveCheckOutDate > indiaNow.date) {
-      toast.error("Future check-out requests cannot be submitted. Check-out date cannot be in the future.");
-      return;
-    }
-    if (effectiveCheckOutDate === indiaNow.date) {
-      const outTimeToCheck = punchType === "both" || requestMode === "time-edit" ? checkOutTime : time;
-      if (outTimeToCheck && outTimeToCheck > indiaNow.time) {
-        toast.error(`Check-out time cannot be in the future (current time: ${formatTime12h(indiaNow.time)}).`);
-        return;
-      }
-    }
-
-    setSubmitting(true);
-    try {
-
-      if (requestMode === "time-edit") {
-        const correctionData = {
-          date,
-          checkOutDate: effectiveCheckOutDate,
-          punchType: "time-edit",
-          checkInTime: time || null,
-          checkOutTime: checkOutTime || null,
-          isOvernight: isOvernight || isCrossDay,
-        };
-
-        const timeParts = [];
-        if (time) timeParts.push(`check-in ${formatTime12h(time)} (${date})`);
-        if (checkOutTime) {
-          timeParts.push(
-            `check-out ${formatTime12h(checkOutTime)} (${effectiveCheckOutDate})`
-          );
-        }
-
-        await apiPost("/requests/my", {
-          type: "CORRECTION",
-          subject: `Time Edit Request - ${date}${isCrossDay ? " (Overnight)" : ""}`,
-          description: `Time Edit request for ${date} at ${timeParts.join(" and ")}.${isCrossDay ? `\nNote: Overnight shift check-out on ${effectiveCheckOutDate}.` : ""}${reason.trim() ? `\n\n${reason.trim()}` : ""}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
-        });
-        toast.success("Time Edit request submitted.");
-      } else {
-        const correctionData = {
-          date,
-          checkOutDate: effectiveCheckOutDate,
-          punchType,
-          checkInTime: punchType === "check-out" ? null : time,
-          checkOutTime:
-            punchType === "check-in"
-              ? null
-              : punchType === "both"
-                ? checkOutTime
-                : time,
-          isOvernight: isOvernight || isCrossDay,
-        };
-
-        // Build location text based on punch type
-        let locationText = "";
-        if (punchType === "check-in" && checkInLocation.trim()) {
-          locationText = `\n\nCheck-In Location: ${checkInLocation.trim()}`;
-        } else if (punchType === "check-out" && checkOutLocation.trim()) {
-          locationText = `\n\nCheck-Out Location: ${checkOutLocation.trim()}`;
-        } else if (punchType === "both") {
-          if (checkInLocation.trim() || checkOutLocation.trim()) {
-            locationText = "\n\n";
-            if (checkInLocation.trim()) {
-              locationText += `Check-In Location: ${checkInLocation.trim()}`;
-            }
-            if (checkOutLocation.trim()) {
-              if (checkInLocation.trim()) locationText += "\n";
-              locationText += `Check-Out Location: ${checkOutLocation.trim()}`;
-            }
-          }
-        }
-
-        const timeDescription =
-          punchType === "both"
-            ? `check-in ${formatTime12h(time)} (${date}) and check-out ${formatTime12h(checkOutTime)} (${effectiveCheckOutDate})`
-            : `${punchLabel.toLowerCase()} ${formatTime12h(time)} (${punchType === "check-out" ? effectiveCheckOutDate : date})`;
-
-        await apiPost("/requests/my", {
-          type: "CORRECTION",
-          subject: `${label} - ${punchLabel}${isCrossDay ? " (Overnight)" : ""}`,
-          description: `${label} request for ${punchLabel} on ${date} at ${timeDescription}.${isCrossDay ? `\nNote: Check-out date is ${effectiveCheckOutDate}.` : ""}\n\n${reason.trim()}${locationText}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
-        });
-        toast.success(`${label} request submitted.`);
-      }
-      setReason("");
-      setCheckInLocation("");
-      setCheckOutLocation("");
-      setOvernightModal({
-        isOpen: false,
-        checkInTime: "",
-        checkOutTime: "",
-        checkInDate: "",
-        checkOutDate: "",
-      });
-    } catch (err) {
-      toast.error(err.message || "Failed to submit request.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -499,76 +251,9 @@ const AttendanceCorrection = ({ correctionType }) => {
       return;
     }
 
-    // Block future dates for check-in
-    if (date > indiaNow.date) {
-      toast.error("Future check-in requests cannot be submitted. Please select today or a past date.");
+    if (requestMode === "forgot-punch" && punchType === "check-out" && !hasExistingCheckIn) {
+      toast.error("Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.");
       return;
-    }
-
-    // If check-in is today, block future check-in time
-    if (date === indiaNow.date && time && time > indiaNow.time) {
-      toast.error(`Check-in time cannot be in the future (current time: ${formatTime12h(indiaNow.time)}).`);
-      return;
-    }
-
-    // Check if checkOutDate is set and is earlier than check-in date
-    if (checkOutDate && checkOutDate < date) {
-      toast.error("Check-out date cannot be earlier than check-in date.");
-      return;
-    }
-
-    // Block future date or future time for check-out
-    const effectiveOutDate = checkOutDate || date;
-    if (effectiveOutDate > indiaNow.date) {
-      toast.error("Future check-out requests cannot be submitted. Check-out date cannot be in the future.");
-      return;
-    }
-    if (effectiveOutDate === indiaNow.date) {
-      const outTimeToCheck = punchType === "both" || requestMode === "time-edit" ? checkOutTime : time;
-      if (outTimeToCheck && outTimeToCheck > indiaNow.time) {
-        toast.error(`Check-out time cannot be in the future (current time: ${formatTime12h(indiaNow.time)}).`);
-        return;
-      }
-    }
-
-    const isDifferentDay = Boolean(checkOutDate && checkOutDate > date);
-
-    if (requestMode === "forgot-punch") {
-      if (punchType === "check-out" && !hasExistingCheckIn) {
-        toast.error("Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.");
-        return;
-      }
-
-      if (punchType === "both") {
-        if (!time || !checkOutTime) {
-          toast.error("Please provide both Check In and Check Out times.");
-          return;
-        }
-        if (!isDifferentDay && checkOutTime <= time) {
-          setOvernightModal({
-            isOpen: true,
-            checkInTime: time,
-            checkOutTime: checkOutTime,
-            checkInDate: date,
-            checkOutDate: getNextDayDateStr(date),
-          });
-          return;
-        }
-      }
-
-      if (punchType === "check-out" && hasExistingCheckIn) {
-        const existingIn = existingAttendance?.record?.checkInTime;
-        if (!isDifferentDay && existingIn && time <= existingIn) {
-          setOvernightModal({
-            isOpen: true,
-            checkInTime: existingIn,
-            checkOutTime: time,
-            checkInDate: date,
-            checkOutDate: getNextDayDateStr(date),
-          });
-          return;
-        }
-      }
     }
 
     if (requestMode === "time-edit") {
@@ -580,21 +265,79 @@ const AttendanceCorrection = ({ correctionType }) => {
         toast.error("Cannot set Check Out time without a Check In record. Please provide both Check In and Check Out times.");
         return;
       }
-      const effectiveIn = time || existingAttendance?.record?.checkInTime;
-      const effectiveOut = checkOutTime || existingAttendance?.record?.checkOutTime;
-      if (!isDifferentDay && effectiveIn && effectiveOut && effectiveOut <= effectiveIn) {
-        setOvernightModal({
-          isOpen: true,
-          checkInTime: effectiveIn,
-          checkOutTime: effectiveOut,
-          checkInDate: date,
-          checkOutDate: getNextDayDateStr(date),
-        });
+      if (time && checkOutTime && checkOutTime <= time) {
+        toast.error("Check-out time must be greater than check-in time.");
         return;
       }
     }
 
-    await executeSubmit(isDifferentDay);
+    setSubmitting(true);
+    try {
+      if (requestMode === "time-edit") {
+        const correctionData = {
+          date,
+          punchType: "time-edit",
+          checkInTime: time || null,
+          checkOutTime: checkOutTime || null,
+        };
+
+        const timeParts = [];
+        if (time) timeParts.push(`check-in ${time}`);
+        if (checkOutTime) timeParts.push(`check-out ${checkOutTime}`);
+
+        await apiPost("/requests/my", {
+          type: "CORRECTION",
+          subject: `Time Edit Request - ${date}`,
+          description: `Time Edit request for ${date} at ${timeParts.join(" and ")}.${reason.trim() ? `\n\n${reason.trim()}` : ""}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
+        });
+        toast.success("Time Edit request submitted.");
+      } else {
+        const correctionData = {
+          date,
+          punchType,
+          checkInTime: punchType === "check-out" ? null : time,
+          checkOutTime:
+            punchType === "check-in"
+              ? null
+              : punchType === "both"
+                ? checkOutTime
+                : time,
+        };
+
+        // Build location text based on punch type
+        let locationText = "";
+        if (punchType === "check-in" && checkInLocation.trim()) {
+          locationText = `\n\nCheck-In Location: ${checkInLocation.trim()}`;
+        } else if (punchType === "check-out" && checkOutLocation.trim()) {
+          locationText = `\n\nCheck-Out Location: ${checkOutLocation.trim()}`;
+        } else if (punchType === "both") {
+          if (checkInLocation.trim() || checkOutLocation.trim()) {
+            locationText = "\n\n";
+            if (checkInLocation.trim()) {
+              locationText += `Check-In Location: ${checkInLocation.trim()}`;
+            }
+            if (checkOutLocation.trim()) {
+              if (checkInLocation.trim()) locationText += "\n";
+              locationText += `Check-Out Location: ${checkOutLocation.trim()}`;
+            }
+          }
+        }
+
+        await apiPost("/requests/my", {
+          type: "CORRECTION",
+          subject: `${label} - ${punchLabel}`,
+          description: `${label} request for ${punchLabel} on ${date} at ${punchType === "both" ? `check-in ${time} and check-out ${checkOutTime}` : `${punchLabel.toLowerCase()} ${time}`}.\n\n${reason.trim()}${locationText}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
+        });
+        toast.success(`${label} request submitted.`);
+      }
+      setReason("");
+      setCheckInLocation("");
+      setCheckOutLocation("");
+    } catch (err) {
+      toast.error(err.message || "Failed to submit request.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!hasModuleAccess("requests-forgot-punch")) {
@@ -681,7 +424,6 @@ const AttendanceCorrection = ({ correctionType }) => {
             onChange={(event) => {
               const nextDate = event.target.value;
               setDate(nextDate);
-              setCheckOutDate(nextDate);
 
               if (nextDate === indiaNow.date) {
                 if (time > indiaNow.time) setTime(indiaNow.time);
@@ -696,7 +438,6 @@ const AttendanceCorrection = ({ correctionType }) => {
                 : "border-border bg-background"
             }`}
           />
-        </label>
           {onLeaveForDate && (
             <div className="mt-2 rounded-xl border border-purple-200 bg-purple-50 dark:border-purple-900/40 dark:bg-purple-950/30 p-3.5 text-xs text-purple-900 dark:text-purple-200">
               <div className="font-bold flex items-center gap-1.5 text-purple-800 dark:text-purple-300">
@@ -708,6 +449,7 @@ const AttendanceCorrection = ({ correctionType }) => {
               </div>
             </div>
           )}
+        </label>
 
         {/* Saved Attendance on Selected Date (Before Edit) Card */}
         <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
@@ -827,19 +569,25 @@ const AttendanceCorrection = ({ correctionType }) => {
 
             <label className="block text-sm font-medium">
               {punchType === "check-out" ? "Check Out Time" : "Check In Time"}
-              <TimePicker12h
+              <input
+                type="time"
+                required
                 value={time}
-                onChange={(newTime) => setTime(newTime)}
-                idPrefix="fp-in"
+                max={date === indiaNow.date ? getIndiaMaxTime() : undefined}
+                onChange={(event) => setTime(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
               />
             </label>
             {punchType === "both" && (
               <label className="block text-sm font-medium">
                 Check Out Time
-                <TimePicker12h
+                <input
+                  type="time"
+                  required
                   value={checkOutTime}
-                  onChange={(newTime) => setCheckOutTime(newTime)}
-                  idPrefix="fp-out"
+                  max={date === indiaNow.date ? getIndiaMaxTime() : undefined}
+                  onChange={(event) => setCheckOutTime(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
                 />
               </label>
             )}
@@ -916,19 +664,23 @@ const AttendanceCorrection = ({ correctionType }) => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block text-sm font-medium">
                 Check In Time <span className="text-xs font-normal text-muted-foreground">(Pre-filled from saved {date})</span>
-                <TimePicker12h
+                <input
+                  type="time"
                   value={time}
-                  onChange={(newTime) => setTime(newTime)}
-                  idPrefix="te-in"
+                  max={date === indiaNow.date ? getIndiaMaxTime() : undefined}
+                  onChange={(event) => setTime(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block text-sm font-medium">
                 Check Out Time <span className="text-xs font-normal text-muted-foreground">(Pre-filled from saved {date})</span>
-                <TimePicker12h
+                <input
+                  type="time"
                   value={checkOutTime}
-                  onChange={(newTime) => setCheckOutTime(newTime)}
-                  idPrefix="te-out"
+                  max={date === indiaNow.date ? getIndiaMaxTime() : undefined}
+                  onChange={(event) => setCheckOutTime(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
                 />
               </label>
             </div>
@@ -960,70 +712,6 @@ const AttendanceCorrection = ({ correctionType }) => {
                   : "Submit Request"}
         </button>
       </form>
-
-      {/* Overnight Shift Confirmation Popup Modal */}
-      {overnightModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-500 shrink-0">
-                <Moon className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-foreground">
-                  Overnight Shift Punch?
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Check-out time is earlier than Check-in time.
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-indigo-200/50 bg-indigo-50/60 dark:border-indigo-900/50 dark:bg-indigo-950/30 p-3.5 space-y-2 text-xs">
-              <div className="grid grid-cols-2 gap-2 text-foreground">
-                <div className="p-2 rounded-lg bg-background/80 border border-border/60">
-                  <span className="text-[11px] text-muted-foreground block">Check-In ({overnightModal.checkInDate})</span>
-                  <span className="font-bold text-sm text-foreground">{formatTime12h(overnightModal.checkInTime)}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-background/80 border border-border/60">
-                  <span className="text-[11px] text-muted-foreground block">Check-Out (Next Day {overnightModal.checkOutDate})</span>
-                  <span className="font-bold text-sm text-indigo-600 dark:text-indigo-400">{formatTime12h(overnightModal.checkOutTime)}</span>
-                </div>
-              </div>
-              <p className="text-indigo-900 dark:text-indigo-200 leading-relaxed">
-                Did your shift cross midnight and end on the next calendar day (<strong>{overnightModal.checkOutDate}</strong>)?
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() =>
-                  setOvernightModal({
-                    isOpen: false,
-                    checkInTime: "",
-                    checkOutTime: "",
-                    checkInDate: "",
-                    checkOutDate: "",
-                  })
-                }
-                className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:bg-secondary transition-colors"
-              >
-                No, Edit Time
-              </button>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => executeSubmit(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
-              >
-                <Moon className="h-3.5 w-3.5" />
-                {submitting ? "Submitting..." : "Yes, Next Day Punch"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

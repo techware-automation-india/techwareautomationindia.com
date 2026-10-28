@@ -251,13 +251,11 @@ model Shift {
   endTime     String // "HH:mm" 24-hour format
   description String?
   isActive    Boolean  @default(true)
-  isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   employees     EmployeeProfile[]
   rosterEntries RosterEntry[]
-  attendances   Attendance[]
 
   @@map("shifts")
 }
@@ -319,8 +317,6 @@ model Attendance {
   status      AttendanceStatus @default(PRESENT)
   workedHours Float?
   overtimeHours Float?         // Overtime hours (hours worked beyond 8)
-  shiftId     String?
-  shift       Shift?           @relation(fields: [shiftId], references: [id])
   note        String?          @db.Text
   checkInLatitude   Float?  // GPS latitude where employee checked in
   checkInLongitude  Float?  // GPS longitude where employee checked in
@@ -783,45 +779,18 @@ model InventoryItem {
   warehouse      String?
   description    String?            @db.Text
   costPrice      Float?
-  sellingPrice   Float?
   purchaseDate   DateTime?
   date           DateTime?
   companyName    String?
   vendorName     String?
   createdById    String?
   createdByName  String?
-  updatedById    String?
-  updatedByName  String?
   issues         InventoryIssue[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @default(now()) @updatedAt
 
   @@index([categoryId])
   @@map("inventory_items")
-}
-
-model DeletedInventoryItem {
-  id             String    @id @default(uuid())
-  originalItemId String?
-  name           String
-  code           String?
-  sku            String?
-  categoryName   String?
-  companyName    String?
-  vendorName     String?
-  quantity       Float     @default(0)
-  unit           String    @default("Nos")
-  costPrice      Float?
-  sellingPrice   Float?
-  createdByName  String?
-  updatedByName  String?
-  deletedById    String?
-  deletedByName  String?
-  deletedAt      DateTime  @default(now())
-
-  @@index([code])
-  @@index([deletedAt])
-  @@map("deleted_inventory_items")
 }
 
 model InventoryIssue {

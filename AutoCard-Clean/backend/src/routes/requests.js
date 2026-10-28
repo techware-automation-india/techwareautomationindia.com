@@ -82,19 +82,13 @@ function parseCorrectionRequest(description) {
   /*
    * Extract reason.
    */
-  const reasonMatches = [...readableDescription.matchAll(/Reason:\s*(.*?)(?=\s*(?:\.\s*Pending admin approval|\.\s*Admin approved|\.\s*Admin rejected|Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi)];
-  let extractedReason = "";
-  if (reasonMatches.length > 0) {
-    extractedReason = reasonMatches.map(m => m[1].trim()).filter(Boolean).join(" | ");
-  }
-
   const separatedReason = readableDescription
     .split("\n\n")
     .slice(1)
     .join("\n\n")
     .trim();
 
-  let fallbackReason =
+  const reason =
     separatedReason ||
     readableDescription
       .replace(
@@ -102,17 +96,6 @@ function parseCorrectionRequest(description) {
         "",
       )
       .trim();
-
-  // Strip system messages and location tags if present
-  fallbackReason = fallbackReason
-    .replace(/^Checkin:?[^|]*\|?/i, "")
-    .replace(/Checkout [^.]*\./i, "")
-    .replace(/Pending admin approval\.?/gi, "")
-    .replace(/Reason:\s*/gi, "")
-    .replace(/\|/g, "")
-    .trim();
-
-  const reason = extractedReason || fallbackReason;
 
   /*
    * Parse correction JSON safely.
@@ -137,14 +120,11 @@ function parseCorrectionRequest(description) {
 
       data = {
         date: readString("date"),
-        checkOutDate: readString("checkOutDate"),
         punchType: readString("punchType"),
         checkInTime: readString("checkInTime"),
         checkOutTime: readString("checkOutTime"),
         checkInLocation: readString("checkInLocation"),
         checkOutLocation: readString("checkOutLocation"),
-        reason: readString("reason"),
-        isOvernight: /"isOvernight"\s*:\s*true/.test(jsonText),
       };
     }
 
@@ -167,8 +147,6 @@ function parseCorrectionRequest(description) {
     return {
       date: data.date,
 
-      checkOutDate: data.checkOutDate || null,
-
       punchType: data.punchType,
 
       checkInTime:
@@ -183,11 +161,7 @@ function parseCorrectionRequest(description) {
       checkOutLocation:
         data.checkOutLocation || null,
 
-      isOvernight: Boolean(data.isOvernight),
-
-      reason: (typeof data.reason === "string" && data.reason.trim())
-        ? data.reason.trim()
-        : reason,
+      reason,
     };
   } catch (error) {
     console.warn(
@@ -215,26 +189,6 @@ function buildCorrectionDescription(correction) {
   });
 
   return `${readableText}\n\n${CORRECTION_MARKER}${metadata}`;
-}
-
-function formatTime12h(time) {
-  if (!time) return "—";
-  if (time instanceof Date) {
-    return time.toLocaleTimeString("en-US", {
-      timeZone: "Asia/Kolkata",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  }
-  const parts = String(time).split(":");
-  if (parts.length < 2) return String(time);
-  const h = Number(parts[0]);
-  const m = Number(parts[1]);
-  if (Number.isNaN(h) || Number.isNaN(m)) return String(time);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const hour12 = h % 12 || 12;
-  return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
 /*
@@ -476,69 +430,12 @@ async function getEmployeeProfile(userId) {
 |--------------------------------------------------------------------------
 */
 
-async function formatCorrectionNotification(description, employeeId = null) {
+function formatCorrectionNotification(description) {
   const correction =
     parseCorrectionRequest(description);
 
   if (!correction) {
     return null;
-  }
-
-  let effectiveCheckIn = correction.checkInTime;
-  let effectiveCheckOut = correction.checkOutTime;
-  let existingCoords = null;
-
-  // Look up existing attendance record for that date to fill missing times and GPS coordinates
-  if (employeeId && correction.date) {
-    try {
-      const attendanceRange = getAttendanceDayRange(correction.date);
-      if (attendanceRange) {
-        const existingAttendance = await prisma.attendance.findFirst({
-          where: {
-            employeeId,
-            date: {
-              gte: attendanceRange.start,
-              lt: new Date(attendanceRange.end.getTime() + 1),
-            },
-          },
-          select: {
-            checkIn: true,
-            checkOut: true,
-            checkInLatitude: true,
-            checkInLongitude: true,
-            checkOutLatitude: true,
-            checkOutLongitude: true,
-          },
-        });
-
-        if (!effectiveCheckIn && existingAttendance?.checkIn) {
-          effectiveCheckIn = new Intl.DateTimeFormat("en-GB", {
-            timeZone: "Asia/Kolkata",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }).format(new Date(existingAttendance.checkIn));
-        }
-        if (!effectiveCheckOut && existingAttendance?.checkOut) {
-          effectiveCheckOut = new Intl.DateTimeFormat("en-GB", {
-            timeZone: "Asia/Kolkata",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }).format(new Date(existingAttendance.checkOut));
-        }
-        if (existingAttendance) {
-          existingCoords = {
-            checkInLatitude: existingAttendance.checkInLatitude,
-            checkInLongitude: existingAttendance.checkInLongitude,
-            checkOutLatitude: existingAttendance.checkOutLatitude,
-            checkOutLongitude: existingAttendance.checkOutLongitude,
-          };
-        }
-      }
-    } catch (e) {
-      console.warn("Could not fetch existing attendance for correction notification:", e.message);
-    }
   }
 
   return {
@@ -550,14 +447,9 @@ async function formatCorrectionNotification(description, employeeId = null) {
 
     date: correction.date,
 
-    checkInTime: effectiveCheckIn || null,
+    checkInTime: correction.checkInTime,
 
-    checkOutTime: effectiveCheckOut || null,
-
-    checkInLatitude: existingCoords?.checkInLatitude ?? null,
-    checkInLongitude: existingCoords?.checkInLongitude ?? null,
-    checkOutLatitude: existingCoords?.checkOutLatitude ?? null,
-    checkOutLongitude: existingCoords?.checkOutLongitude ?? null,
+    checkOutTime: correction.checkOutTime,
 
     reason: correction.reason || "",
   };
@@ -617,25 +509,8 @@ router.get("/my", async (req, res) => {
         },
       });
 
-    const result = await Promise.all(
-      requests.map(async (request) => {
-        const notification =
-          request.type === "CORRECTION"
-            ? await formatCorrectionNotification(
-                request.description,
-                request.employeeId || employee.id,
-              )
-            : null;
-
-        return {
-          ...request,
-          notification,
-        };
-      }),
-    );
-
     return res.json({
-      requests: result,
+      requests,
     });
   } catch (error) {
     console.error(
@@ -833,55 +708,6 @@ router.post(["/my", "/"], async (req, res) => {
 
       /*
       |--------------------------------------------------------------------------
-      | VALIDATE NO FUTURE DATES OR TIMES (FOR EMPLOYEE)
-      |--------------------------------------------------------------------------
-      */
-
-      const nowKolkata = new Date();
-      const partsNow = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kolkata",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).formatToParts(nowKolkata);
-      const getPart = (type) => partsNow.find((p) => p.type === type)?.value;
-      const todayKolkataDate = `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
-      const nowKolkataTime = `${getPart("hour")}:${getPart("minute")}`;
-
-      // Check-in date cannot be in the future
-      if (correction.date > todayKolkataDate) {
-        return res.status(400).json({
-          message: "Check-in requests for future dates cannot be created.",
-        });
-      }
-
-      // Check-in time cannot be in the future if date is today
-      if (correction.date === todayKolkataDate && correction.checkInTime && correction.checkInTime > nowKolkataTime) {
-        return res.status(400).json({
-          message: `Check-in time cannot be in the future (current time: ${nowKolkataTime}).`,
-        });
-      }
-
-      // Check-out date cannot be in the future
-      const outDateCheck = correction.checkOutDate || correction.date;
-      if (outDateCheck > todayKolkataDate) {
-        return res.status(400).json({
-          message: "Check-out requests for future dates cannot be created.",
-        });
-      }
-
-      // Check-out time cannot be in the future if check-out date is today
-      if (outDateCheck === todayKolkataDate && correction.checkOutTime && correction.checkOutTime > nowKolkataTime) {
-        return res.status(400).json({
-          message: `Check-out time cannot be in the future (current time: ${nowKolkataTime}).`,
-        });
-      }
-
-      /*
-      |--------------------------------------------------------------------------
       | CHECK IN TIME FORMAT
       |--------------------------------------------------------------------------
       */
@@ -908,7 +734,7 @@ router.post(["/my", "/"], async (req, res) => {
 
       if (correction.checkOutTime) {
         const checkOut = timeToDate(
-          correction.checkOutDate || correction.date,
+          correction.date,
           correction.checkOutTime,
         );
 
@@ -930,29 +756,13 @@ router.post(["/my", "/"], async (req, res) => {
         correction.checkInTime &&
         correction.checkOutTime
       ) {
-        const isOvernight = Boolean(
-          correction.isOvernight ||
-          (correction.checkOutDate && correction.date && correction.checkOutDate > correction.date)
-        );
-
-        let outDateStr = correction.date;
-        if (isOvernight) {
-          if (correction.checkOutDate && correction.checkOutDate > correction.date) {
-            outDateStr = correction.checkOutDate;
-          } else {
-            const nextDay = new Date(`${correction.date}T12:00:00+05:30`);
-            nextDay.setDate(nextDay.getDate() + 1);
-            outDateStr = nextDay.toISOString().slice(0, 10);
-          }
-        }
-
         const checkIn = timeToDate(
           correction.date,
           correction.checkInTime,
         );
 
         const checkOut = timeToDate(
-          outDateStr,
+          correction.date,
           correction.checkOutTime,
         );
 
@@ -979,8 +789,6 @@ router.post(["/my", "/"], async (req, res) => {
     |
     */
 
-    let attendance = null;
-
     if (correction) {
       const requestedDate =
         getDateKey(correction.date);
@@ -990,7 +798,7 @@ router.post(["/my", "/"], async (req, res) => {
           requestedDate,
         );
 
-      attendance =
+      const attendance =
         attendanceRange
           ? await prisma.attendance.findFirst({
               where: {
@@ -1091,64 +899,17 @@ router.post(["/my", "/"], async (req, res) => {
           });
         }
 
-        const isOvernightShift = Boolean(
-          correction.isOvernight ||
-          (correction.checkOutDate && correction.date && correction.checkOutDate > correction.date)
-        );
-
         // If requesting only check-out, user MUST already have an existing Check In record
-        if (correction.punchType === "check-out") {
-          if (!attendance || !attendance.checkIn) {
-            return res.status(400).json({
-              message: "Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.",
-            });
-          }
-          const existingCheckInTime = new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
-            timeZone: "Asia/Kolkata",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
+        if (correction.punchType === "check-out" && (!attendance || !attendance.checkIn)) {
+          return res.status(400).json({
+            message: "Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.",
           });
-          if (!isOvernightShift && correction.checkOutTime && correction.checkOutTime <= existingCheckInTime) {
-            return res.status(400).json({
-              message: `Check-out time (${formatTime12h(correction.checkOutTime)}) cannot be earlier than or equal to Check-in time (${formatTime12h(existingCheckInTime)}) on the same date. For overnight shifts ending the next day, please confirm overnight shift.`,
-            });
-          }
-        }
-
-        if (correction.punchType === "both") {
-          if (!isOvernightShift && correction.checkInTime && correction.checkOutTime && correction.checkOutTime <= correction.checkInTime) {
-            return res.status(400).json({
-              message: `Check-out time (${formatTime12h(correction.checkOutTime)}) must be greater than check-in time (${formatTime12h(correction.checkInTime)}) on the same date. For overnight shifts ending the next day, please confirm overnight shift.`,
-            });
-          }
         }
       } else {
         // In time-edit mode: if providing only check-out time without check-in time, existing record must have checkIn
         if (!correction.checkInTime && correction.checkOutTime && (!attendance || !attendance.checkIn)) {
           return res.status(400).json({
             message: "Cannot set Check Out time without a Check In record. Please provide both Check In and Check Out times.",
-          });
-        }
-        const effectiveIn = correction.checkInTime || (attendance?.checkIn ? new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }) : null);
-        const effectiveOut = correction.checkOutTime || (attendance?.checkOut ? new Date(attendance.checkOut).toLocaleTimeString("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }) : null);
-        const isOvernightShift = Boolean(
-          correction.isOvernight ||
-          (correction.checkOutDate && correction.date && correction.checkOutDate > correction.date)
-        );
-        if (!isOvernightShift && effectiveIn && effectiveOut && effectiveOut <= effectiveIn) {
-          return res.status(400).json({
-            message: `Check-out time (${formatTime12h(effectiveOut)}) must be greater than check-in time (${formatTime12h(effectiveIn)}) on the same date. For overnight shifts ending the next day, please confirm overnight shift.`,
           });
         }
       }
@@ -1252,25 +1013,6 @@ router.post(["/my", "/"], async (req, res) => {
     | Attendance is changed only after ADMIN approval.
     |
     */
-
-    if (correction && parsed.data.type === "CORRECTION" && attendance) {
-      if (!correction.checkInTime && attendance.checkIn) {
-        correction.checkInTime = new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        });
-      }
-      if (!correction.checkOutTime && attendance.checkOut) {
-        correction.checkOutTime = new Date(attendance.checkOut).toLocaleTimeString("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        });
-      }
-    }
 
     const finalDescription =
       correction && parsed.data.type === "CORRECTION"
@@ -1477,13 +1219,12 @@ router.get(
           },
         });
 
-      const result = await Promise.all(
-        requests.map(async (request) => {
+      const result = requests.map(
+        (request) => {
           const notification =
             request.type === "CORRECTION"
-              ? await formatCorrectionNotification(
+              ? formatCorrectionNotification(
                   request.description,
-                  request.employee?.id || request.employeeId,
                 )
               : null;
 
@@ -1499,11 +1240,6 @@ router.get(
             description: request.description,
 
             notification,
-
-            checkInLatitude: notification?.checkInLatitude ?? null,
-            checkInLongitude: notification?.checkInLongitude ?? null,
-            checkOutLatitude: notification?.checkOutLatitude ?? null,
-            checkOutLongitude: notification?.checkOutLongitude ?? null,
 
             status: request.status,
 
@@ -1540,7 +1276,7 @@ router.get(
                   .onboardingStatus,
             },
           };
-        }),
+        },
       );
 
       return res.json({
@@ -2527,17 +2263,10 @@ async function validateInventoryStockAvailability(request) {
           )
         : null;
 
-    let checkOutDateKey = correction.checkOutDate || dateKey;
-    if (!correction.checkOutDate && correction.isOvernight) {
-      const nextDate = new Date(`${dateKey}T12:00:00+05:30`);
-      nextDate.setDate(nextDate.getDate() + 1);
-      checkOutDateKey = nextDate.toISOString().slice(0, 10);
-    }
-
     const requestedCheckOut =
       correction.checkOutTime
         ? timeToDate(
-            checkOutDateKey,
+            dateKey,
             correction.checkOutTime,
           )
         : null;

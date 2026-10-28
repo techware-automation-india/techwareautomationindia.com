@@ -204,29 +204,14 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
         }
       }
 
-      // Base employee modules: ensure default permissions are always granted for employees
-      const baseEmployeeModules = [
-        "mark-attendance",
-        "attendance",
-        "requests",
-        "requests-apply-leave",
-        "requests-forgot-punch",
-        "requests-tools-inventory",
-        "requests-track",
-        "overview",
-        "academic-calendar",
-        "academic-holidays",
-      ];
-
-      for (const baseKey of baseEmployeeModules) {
-        if (!permissionMap[baseKey] || !permissionMap[baseKey].canView) {
-          permissionMap[baseKey] = {
-            canView: true,
-            canCreate: true,
-            canEdit: true,
-            canDelete: true,
-          };
-        }
+      // Requests is a default employee module: ensure canView is always true for employees
+      if (!permissionMap["requests"] || !permissionMap["requests"].canView) {
+        permissionMap["requests"] = {
+          canView: true,
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+        };
       }
 
       if (req.user?.role === "ADMIN") {

@@ -19,6 +19,7 @@ const CustomerLayout = () => {
     const authUser = getAuthUser();
 
     if (!authUser || (authUser.role !== "CUSTOMER" && authUser.role !== "ADMIN")) {
+      clearAuth();
       navigate("/login", { replace: true });
       return;
     }

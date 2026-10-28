@@ -463,17 +463,12 @@ const CategoryProductsModal = ({
                         </div>
                       )}
 
-                      {/* Created By & Edited By Print Name */}
-                      <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
-                        <span className="font-semibold text-foreground/80">By:</span>
-                        <span className="inline-flex items-center gap-1 font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]" title="Created by">
+                      {/* Created By Print Name */}
+                      <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span className="font-semibold text-foreground/80">Created by:</span>
+                        <span className="inline-flex items-center gap-1 font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]">
                           {item.createdByName || "Admin"}
                         </span>
-                        {item.updatedByName && (
-                          <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 text-[10px]" title="Edited by">
-                            ✏️ {item.updatedByName}
-                          </span>
-                        )}
                       </div>
 
                       {/* Specifications Preview (No Limit) */}
@@ -600,18 +595,11 @@ const CategoryProductsModal = ({
                             )}
                           </td>
 
-                          {/* Created By & Edited By Print Name */}
+                          {/* Created By Print Name */}
                           <td className="py-2.5 px-4 text-xs">
-                            <div className="flex flex-col gap-1 items-start">
-                              <span className="inline-flex items-center gap-1 font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20 text-[11px]">
-                                {item.createdByName || "Admin"}
-                              </span>
-                              {item.updatedByName && (
-                                <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 text-[10px]">
-                                  ✏️ {item.updatedByName}
-                                </span>
-                              )}
-                            </div>
+                            <span className="inline-flex items-center gap-1 font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20 text-[11px]">
+                              {item.createdByName || "Admin"}
+                            </span>
                           </td>
 
                           {/* Stock Quantity */}

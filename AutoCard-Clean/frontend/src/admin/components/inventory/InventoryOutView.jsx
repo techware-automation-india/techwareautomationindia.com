@@ -190,28 +190,28 @@ export default function InventoryOutView({ onBackToHub, assignedUsers: propAssig
 
   return (
     <div className="space-y-6">
-      {/* ─── Assigned Access Personnel & Active Operator Bar (Admin Only) ─── */}
-      {internalCurrentUser?.role === "ADMIN" && (
-        <div className="flex items-center justify-between flex-wrap gap-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/40 rounded-2xl p-3 px-4 text-xs card-shadow">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 font-bold text-foreground">
-              <ShieldCheck className="h-4 w-4 text-amber-600" />
-              <span>Assigned Module Access (Inventory Out):</span>
-            </div>
-            {internalAssignedUsers.length > 0 ? (
-              internalAssignedUsers.map((u) => (
-                <span
-                  key={u.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 font-semibold text-xs border border-amber-300 dark:border-amber-800"
-                >
-                  <User className="h-3 w-3" />
-                  {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
-                </span>
-              ))
-            ) : (
-              <span className="text-muted-foreground italic">Admin Only</span>
-            )}
+      {/* ─── Assigned Access Personnel & Active Operator Bar ─── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/40 rounded-2xl p-3 px-4 text-xs card-shadow">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 font-bold text-foreground">
+            <ShieldCheck className="h-4 w-4 text-amber-600" />
+            <span>Assigned Module Access (Inventory Out):</span>
           </div>
+          {internalAssignedUsers.length > 0 ? (
+            internalAssignedUsers.map((u) => (
+              <span
+                key={u.id}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 font-semibold text-xs border border-amber-300 dark:border-amber-800"
+              >
+                <User className="h-3 w-3" />
+                {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
+              </span>
+            ))
+          ) : (
+            <span className="text-muted-foreground italic">Admin Only</span>
+          )}
+        </div>
+        {internalCurrentUser && (
           <div className="text-xs text-muted-foreground flex items-center gap-1.5">
             <span>Operator:</span>
             <strong className="text-foreground">{internalCurrentUser.fullName}</strong>
@@ -219,8 +219,8 @@ export default function InventoryOutView({ onBackToHub, assignedUsers: propAssig
               {internalCurrentUser.role}
             </span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Top Breadcrumb & Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
@@ -388,10 +388,8 @@ export default function InventoryOutView({ onBackToHub, assignedUsers: propAssig
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-300 font-bold text-xs border border-violet-500/20 shadow-2xs">
-                            <User className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
-                            <span className="capitalize">{personName}</span>
-                          </span>
+                          <User className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{personName}</span>
                         </div>
                       </td>
                       <td className="p-4">

@@ -112,6 +112,7 @@ This will create default users for testing (Admin, Employee, Customer).
 
 ### 4. Open Prisma Studio (Optional)
 
+
 To view and manage your database with a GUI:
 
 ```bash

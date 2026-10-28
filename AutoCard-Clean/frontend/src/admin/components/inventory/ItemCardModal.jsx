@@ -26,9 +26,8 @@ const formatTimestamp = (d) => {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, "0");
-  const mins = String(date.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year} ${hours}:${mins}`;
+  const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return `${day}/${month}/${year} ${timeStr}`;
 };
 
 const SPEC_PRESETS = ["Size", "Material", "Color", "Length", "Rating", "Voltage", "Type"];
@@ -52,6 +51,7 @@ const ItemCardModal = ({
   const [minStock, setMinStock] = useState(5);
   const [maxStock, setMaxStock] = useState(100);
   const [costPrice, setCostPrice] = useState(0);
+  const [sellingPrice, setSellingPrice] = useState("");
   const [unit, setUnit] = useState("Nos");
   const [warehouse, setWarehouse] = useState("Main Warehouse");
   const [location, setLocation] = useState("");
@@ -119,6 +119,7 @@ const ItemCardModal = ({
       setMinStock(item.minStock ?? 5);
       setMaxStock(item.maxStock ?? 100);
       setCostPrice(item.costPrice ?? 0);
+      setSellingPrice(item.sellingPrice ?? "");
       setUnit(item.unit || "Nos");
       setWarehouse(item.warehouse || "Main Warehouse");
       setLocation(item.location || "");
@@ -165,6 +166,7 @@ const ItemCardModal = ({
         setMinStock(draftData.minStock ?? 5);
         setMaxStock(draftData.maxStock ?? 100);
         setCostPrice(draftData.costPrice ?? 0);
+        setSellingPrice(draftData.sellingPrice ?? "");
         setUnit(draftData.unit || "Nos");
         setWarehouse(draftData.warehouse || "Main Warehouse");
         setLocation(draftData.location || "");
@@ -184,6 +186,7 @@ const ItemCardModal = ({
         setMinStock(5);
         setMaxStock(100);
         setCostPrice(0);
+        setSellingPrice("");
         setUnit("Nos");
         setWarehouse("Main Warehouse");
         setLocation("");
@@ -228,6 +231,7 @@ const ItemCardModal = ({
       minStock,
       maxStock,
       costPrice,
+      sellingPrice,
       unit,
       warehouse,
       location,
@@ -240,7 +244,7 @@ const ItemCardModal = ({
     try {
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
     } catch {}
-  }, [isOpen, item, name, code, photoUrl, quantity, minStock, maxStock, costPrice, unit, warehouse, location, companyName, vendorName, specs, DRAFT_STORAGE_KEY]);
+  }, [isOpen, item, name, code, photoUrl, quantity, minStock, maxStock, costPrice, sellingPrice, unit, warehouse, location, companyName, vendorName, specs, DRAFT_STORAGE_KEY]);
 
   // Close on Escape key press
   useEffect(() => {
@@ -447,6 +451,7 @@ const ItemCardModal = ({
       minStock: Number(minStock) >= 0 ? Number(minStock) : 5,
       maxStock: Number(maxStock) >= 0 ? Number(maxStock) : 100,
       costPrice: Number(costPrice) >= 0 ? Number(costPrice) : 0,
+      sellingPrice: sellingPrice !== "" && Number(sellingPrice) >= 0 ? Number(sellingPrice) : null,
       unit: unit || "Nos",
       warehouse: warehouse ? warehouse.trim() : null,
       location: location ? location.trim() : null,
@@ -459,16 +464,18 @@ const ItemCardModal = ({
     setSubmitting(true);
     try {
       if (item?.id) {
-        await apiPut(`/inventory/items/${item.id}`, payload);
+        const updateRes = await apiPut(`/inventory/items/${item.id}`, payload);
         toast.success("Item updated successfully!");
+        if (onSuccess) {
+          onSuccess(updateRes?.item);
+        }
       } else {
-        await apiPost("/inventory/items", payload);
+        const createRes = await apiPost("/inventory/items", payload);
         toast.success("Item added successfully!");
         clearDraft();
-      }
-
-      if (onSuccess) {
-        onSuccess();
+        if (onSuccess) {
+          onSuccess(createRes?.item);
+        }
       }
       onClose();
     } catch (err) {
@@ -574,6 +581,7 @@ const ItemCardModal = ({
                         setMinStock(5);
                         setMaxStock(100);
                         setCostPrice(0);
+                        setSellingPrice("");
                         setUnit("Nos");
                         setWarehouse("Main Warehouse");
                         setLocation("");
@@ -609,6 +617,11 @@ const ItemCardModal = ({
                   <span className="font-bold text-foreground bg-primary/15 text-primary px-2.5 py-0.5 rounded-full border border-primary/25">
                     {item?.createdByName || getAuthUser()?.fullName || getAuthUser()?.email || "Admin"}
                   </span>
+                  {item?.updatedByName && (
+                    <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/25 ml-1">
+                      ✏️ Edited by: {item.updatedByName}
+                    </span>
+                  )}
                   {!item?.createdByName && item && (
                     <span className="text-[10px] text-muted-foreground italic">(Saved originally without author)</span>
                   )}
@@ -692,33 +705,33 @@ const ItemCardModal = ({
                       className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-mono font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
                       value={code}
                       onKeyDown={(e) => {
-                        if (e.key.length === 1 && /[^a-zA-Z0-9]/.test(e.key)) {
+                        if (e.key.length === 1 && /[^a-zA-Z0-9.,]/.test(e.key)) {
                           e.preventDefault();
-                          toast.error(`Special character "${e.key}" is not allowed in Item Code.`);
+                          toast.error(`Special character "${e.key}" is not allowed in Item Code (only dot and comma are allowed).`);
                         }
                       }}
                       onChange={(e) => {
                         const raw = e.target.value;
-                        if (/[^a-zA-Z0-9]/.test(raw)) {
-                          toast.error("Special characters (.-,@# etc.) are not allowed in Item Code.");
+                        if (/[^a-zA-Z0-9.,]/.test(raw)) {
+                          toast.error("Special characters are not allowed in Item Code (only dot and comma are allowed).");
                         }
-                        setCode(raw.replace(/[^a-zA-Z0-9]/g, ""));
+                        setCode(raw.replace(/[^a-zA-Z0-9.,]/g, ""));
                       }}
                       required
                     />
                   </div>
-                  {/[^a-zA-Z0-9]/.test(code) && (
+                  {/[^a-zA-Z0-9.,]/.test(code) && (
                     <p className="text-[11px] text-rose-500 font-medium">
-                      Item Code cannot contain special characters.
+                      Item Code can only contain letters, numbers, dots (.) and commas (,).
                     </p>
                   )}
                 </div>
 
-              {/* Company Name */}
+              {/* Company Name / Brand Name */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-bold text-foreground">
-                    Company Name
+                    Company Name / Brand Name
                   </label>
                   <span className="text-[10px] text-muted-foreground/70 font-medium">
                     (Optional)
@@ -730,7 +743,7 @@ const ItemCardModal = ({
                   </div>
                   <input
                     type="text"
-                    placeholder="e.g. Techware Automation India (Optional)"
+                    placeholder="e.g. Bosch / Siemens / Techware Automation (Optional)"
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-2xs"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
@@ -1111,7 +1124,7 @@ const ItemCardModal = ({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 lg:grid-cols-12 gap-3.5 sm:gap-4 items-end">
               {/* 1. Quantity & Unit Selection */}
               <div className="sm:col-span-2 md:col-span-3 lg:col-span-3 space-y-1.5">
                 <label className="block text-xs font-bold text-foreground flex items-center gap-1.5">
@@ -1208,12 +1221,17 @@ const ItemCardModal = ({
                 </div>
               </div>
 
-              {/* 3. Unit Price Input */}
+              {/* 3. Cost Price Input */}
               <div className="sm:col-span-1 md:col-span-3 lg:col-span-2 space-y-1.5">
-                <label className="block text-xs font-bold text-foreground flex items-center gap-1.5 truncate">
-                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                  Price (₹)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-foreground flex items-center gap-1 truncate">
+                    <IndianRupee className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    Price (₹)
+                  </label>
+                  <span className="text-[10px] text-muted-foreground/70 font-medium">
+                    (Cost)
+                  </span>
+                </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 dark:text-emerald-400 font-bold text-xs pointer-events-none">
                     ₹
@@ -1230,26 +1248,60 @@ const ItemCardModal = ({
                 </div>
               </div>
 
-              {/* 4. Live Calculated Total Price Card */}
-              <div className="sm:col-span-1 md:col-span-6 lg:col-span-3 space-y-1.5">
-                <label className="block text-xs font-bold text-foreground flex items-center gap-1.5 truncate">
-                  <Calculator className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                  Total Valuation
-                </label>
-                <div className="px-3 py-1.5 sm:py-2 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 via-emerald-500/10 to-teal-500/15 flex items-center justify-between text-emerald-800 dark:text-emerald-300 shadow-2xs min-h-[38px] sm:min-h-[42px]">
-                  <div className="min-w-0">
-                    <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 block leading-tight font-display truncate">
-                      ₹{totalValuation.toLocaleString("en-IN")}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-medium block truncate">
-                      ₹{Number(costPrice || 0).toLocaleString("en-IN")} / {unit} • {quantity || 0} {unit}
-                    </span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[9px] font-bold uppercase tracking-wider shrink-0">
-                    Total
+              {/* 4. Selling Price Input (Optional) */}
+              <div className="sm:col-span-1 md:col-span-3 lg:col-span-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-foreground flex items-center gap-1 truncate">
+                    <IndianRupee className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                    Selling Price (₹)
+                  </label>
+                  <span className="text-[10px] text-muted-foreground/70 font-medium">
+                    (Optional)
                   </span>
                 </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-600 dark:text-teal-400 font-bold text-xs pointer-events-none">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="0.00 (Optional)"
+                    className="w-full pl-7 pr-3 py-2 sm:py-2.5 rounded-xl border border-teal-500/30 bg-background text-foreground font-bold text-sm text-teal-700 dark:text-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 shadow-2xs"
+                    value={sellingPrice}
+                    onChange={(e) => setSellingPrice(e.target.value)}
+                  />
+                </div>
               </div>
+            </div>
+
+            {/* Total Valuation Card Banner */}
+            <div className="mt-4 p-3 sm:p-3.5 rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <Calculator className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <span>Total Stock Valuation:</span>
+                    <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 font-display">
+                      ₹{totalValuation.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Based on ₹{Number(costPrice || 0).toLocaleString("en-IN")} per {unit} × {quantity || 0} {unit}
+                    {sellingPrice !== "" && Number(sellingPrice) > 0 && (
+                      <span className="ml-2 text-teal-600 dark:text-teal-400 font-medium">
+                        • Selling Value: ₹{(Number(quantity || 0) * Number(sellingPrice)).toLocaleString("en-IN")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+                Live Calculation
+              </span>
             </div>
           </div>
         </div>

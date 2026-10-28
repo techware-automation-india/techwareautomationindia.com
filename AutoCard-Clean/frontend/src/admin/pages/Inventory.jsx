@@ -378,15 +378,6 @@ const Inventory = ({ defaultSubmodule = null }) => {
               <span className="text-xs sm:text-sm font-semibold">Access Settings</span>
             </button>
           )}
-
-          {hasModuleAccess(firstAccessibleSub.key) && (
-            <button
-              onClick={() => handleSelectSubmodule(firstAccessibleSub.id)}
-              className="cta-gradient text-white text-xs sm:text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm cursor-pointer flex-1 sm:flex-initial"
-            >
-              <PackagePlus className="h-4 w-4" /> <span>Go to {firstAccessibleSub.title.replace(/^\d+\.\s*/, "")}</span>
-            </button>
-          )}
         </div>
       </div>
 

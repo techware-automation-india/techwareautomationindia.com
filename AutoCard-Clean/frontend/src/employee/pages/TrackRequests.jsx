@@ -132,13 +132,28 @@ const formatDate = (value) => {
 
 const formatTime = (value) => {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const str = String(value).trim();
+  if (str.includes("T") || str.includes("-")) {
+    const date = new Date(str);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+  }
+  const match = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const period = hours >= 12 ? "PM" : "AM";
+    if (hours === 0) hours = 12;
+    else if (hours > 12) hours = hours - 12;
+    return `${hours}:${minutes} ${period}`;
+  }
+  return str;
 };
 
 const formatDistance = (value) => {
@@ -224,15 +239,20 @@ const getRequestReason = (request) => {
   return text || "No reason provided.";
 };
 const getForgotPunchData = (request) => {
-  if (request?.type !== "CORRECTION" || !request?.description) {
+  if (request?.type !== "CORRECTION") {
     return null;
+  }
+
+  const notificationData = request.notification || null;
+  if (!request?.description) {
+    return notificationData;
   }
 
   const marker = "[ATTENDANCE_CORRECTION]";
   const markerIndex = request.description.lastIndexOf(marker);
 
   if (markerIndex === -1) {
-    return null;
+    return notificationData;
   }
 
   const jsonText = request.description
@@ -244,13 +264,23 @@ const getForgotPunchData = (request) => {
   }
 
   try {
-    return JSON.parse(jsonText);
+    const parsed = JSON.parse(jsonText);
+    return {
+      ...parsed,
+      checkInTime: parsed.checkInTime || notificationData?.checkInTime || null,
+      checkOutTime: parsed.checkOutTime || notificationData?.checkOutTime || null,
+    };
   } catch (error) {
     // Attempt to extract the first JSON object block if trailing notes/text exist
     try {
       const jsonMatch = jsonText.match(/\{[\s\S]*?\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          ...parsed,
+          checkInTime: parsed.checkInTime || notificationData?.checkInTime || null,
+          checkOutTime: parsed.checkOutTime || notificationData?.checkOutTime || null,
+        };
       }
     } catch {}
 
@@ -727,6 +757,39 @@ const TrackRequests = ({ isAdmin = false }) => {
     }
   }, [pollTick]);
 
+  // Fetch existing attendance record as fallback if reasonModal is opened for a correction with missing times
+  useEffect(() => {
+    if (!reasonModal || reasonModal.type !== "CORRECTION") return;
+    const forgotPunch = getForgotPunchData(reasonModal);
+    if (!forgotPunch?.date) return;
+    if (!forgotPunch.checkInTime || !forgotPunch.checkOutTime) {
+      apiGet(`/attendance/by-date?date=${forgotPunch.date}`)
+        .then((res) => {
+          if (res?.record) {
+            setReasonModal((prev) => {
+              if (!prev || prev.id !== reasonModal.id) return prev;
+              const prevForgotPunch = getForgotPunchData(prev) || {};
+              const updatedForgotPunch = {
+                ...prevForgotPunch,
+                checkInTime: prevForgotPunch.checkInTime || res.record.checkInTime || null,
+                checkOutTime: prevForgotPunch.checkOutTime || res.record.checkOutTime || null,
+              };
+              return {
+                ...prev,
+                notification: {
+                  ...(prev.notification || {}),
+                  checkInTime: updatedForgotPunch.checkInTime,
+                  checkOutTime: updatedForgotPunch.checkOutTime,
+                },
+                forgotPunch: updatedForgotPunch,
+              };
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [reasonModal?.id]);
+
   // Get unique years and months from requests
   const years = Array.from(
     new Set(
@@ -1042,6 +1105,23 @@ const TrackRequests = ({ isAdmin = false }) => {
                     </>
                   )}
                 </div>
+
+                {/* Approved / Reviewed Time */}
+                {(request.reviewedAt || (request.updatedAt && request.status !== "PENDING")) && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+                    {isApprovedOrCompletedStatus(request.status, request.reviewNote) ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>Approved: {formatDate(request.reviewedAt || request.updatedAt)} {formatTime(request.reviewedAt || request.updatedAt)}</span>
+                      </span>
+                    ) : request.status === "REJECTED" ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">
+                        <X className="h-3.5 w-3.5 text-rose-600" />
+                        <span>Rejected: {formatDate(request.reviewedAt || request.updatedAt)} {formatTime(request.reviewedAt || request.updatedAt)}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               {/* ─── Phase Line Timeline Bar for EQUIPMENT / Inventory Requests ─── */}
@@ -1514,7 +1594,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                               Check In Time
                             </p>
                             <p className="text-sm font-medium text-foreground">
-                              {forgotPunch.checkInTime}
+                              {formatTime(forgotPunch.checkInTime)}
                             </p>
                           </div>
                         )}
@@ -1538,7 +1618,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                               Check Out Time
                             </p>
                             <p className="text-sm font-medium text-foreground">
-                              {forgotPunch.checkOutTime}
+                              {formatTime(forgotPunch.checkOutTime)}
                             </p>
                           </div>
                         )}
@@ -1731,7 +1811,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                     {formatDate(reasonModal.createdAt)} {formatTime(reasonModal.createdAt)}
                   </span>
                 </div>
-                {reasonModal.reviewedAt && reasonModal.status !== "PENDING" && (
+                {(reasonModal.reviewedAt || (reasonModal.updatedAt && reasonModal.status !== "PENDING")) && (
                   <div className="flex items-center justify-between border-t border-border pt-2">
                     <div className="flex items-center gap-2 text-xs">
                       <Clock3 className={`h-3.5 w-3.5 ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-600" : "text-rose-600"}`} />
@@ -1740,7 +1820,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                       </span>
                     </div>
                     <span className={`text-xs font-bold ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-700" : "text-rose-700"}`}>
-                      {formatDate(reasonModal.reviewedAt)} {formatTime(reasonModal.reviewedAt)}
+                      {formatDate(reasonModal.reviewedAt || reasonModal.updatedAt)} {formatTime(reasonModal.reviewedAt || reasonModal.updatedAt)}
                     </span>
                   </div>
                 )}

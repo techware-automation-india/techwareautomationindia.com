@@ -87,7 +87,10 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
         }),
       ]);
       setEmployees(empData.employees || []);
-      const loadedRoles = rolesData?.roles || [];
+      const loadedRoles = (rolesData?.roles || []).filter((r) => {
+        const name = (r?.name || "").toLowerCase().trim();
+        return name === "admin" || name === "employee" || name === "customer";
+      });
       setRoles(loadedRoles);
       
       // Auto-select default role

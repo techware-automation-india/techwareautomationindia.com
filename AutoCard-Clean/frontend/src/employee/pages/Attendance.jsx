@@ -23,6 +23,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
 import { printSingleEmployeeAttendancePdf } from "../../utils/attendancePdfExport.js";
+import { formatTimeRange } from "../../lib/timeFormat.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,51 @@ const getOvertimeHours = (workedHours, isHolidayOrSunday = false) => {
   return roundedOtMinutes / 60;
 };
 
+const getNumericWorkedMinutes = (record) => {
+  if (!record) return 0;
+  let hours = Number(record.workedHours);
+  if (Number.isNaN(hours) || hours <= 0) {
+    if (record.checkIn && record.checkOut) {
+      const diffMs = new Date(record.checkOut) - new Date(record.checkIn);
+      if (diffMs > 0) hours = diffMs / 3600000;
+    }
+  }
+  if (Number.isNaN(hours) || hours <= 0) return 0;
+  return Math.round(hours * 60);
+};
+
+const getNumericOvertimeMinutes = (record, isHolidayOrSunday = false) => {
+  if (!record) return 0;
+  const workedMinutes = getNumericWorkedMinutes(record);
+  if (workedMinutes <= 0) return 0;
+  const workedHours = workedMinutes / 60;
+
+  // On holidays or Sundays, all worked hours count as overtime (rounded to 15m intervals)
+  if (isHolidayOrSunday) {
+    const roundedOtMinutes = Math.floor(workedMinutes / 15) * 15;
+    return roundedOtMinutes > 0 ? roundedOtMinutes : 0;
+  }
+
+  if (workedHours <= 8) return 0;
+  const overtimeHours = workedHours - 8;
+  const otMinutes = Math.round(overtimeHours * 60);
+  const roundedOtMinutes = Math.floor(otMinutes / 15) * 15;
+  return roundedOtMinutes > 0 ? roundedOtMinutes : 0;
+};
+
+const fmtMinutesToHM = (totalMinutes) => {
+  if (!totalMinutes || totalMinutes <= 0) return "0h 0m";
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}h ${m}m`;
+};
+
+const formatShiftBadge = (shift) => {
+  if (!shift || !shift.name) return null;
+  const name = String(shift.name).trim();
+  if (!name) return null;
+  return name.charAt(0).toUpperCase();
+};
 
 const isComplexNote = (note) => {
   if (!note || typeof note !== "string") return false;
@@ -229,6 +275,18 @@ const parseNoteSegment = (segment, record) => {
     rawText: text,
     cleanSummary,
   };
+};
+
+const formatDateKey = (date) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
 };
 
 const getIndiaDayNumber = (val) => {
@@ -456,6 +514,50 @@ const Attendance = () => {
     return dayOfWeek === 0 || Boolean(holidayByDay[d]) || r.status === "HOLIDAY";
   };
 
+  const isShortDayRecord = (r) => {
+    if (!r) return false;
+    if (r.isShortDay != null) return Boolean(r.isShortDay);
+    if (isHolidayOrSundayRecord(r)) return false;
+    if (r.status === "ON_LEAVE" || r.status === "ABSENT" || r.status === "HOLIDAY") return false;
+    const worked = Number(r.workedHours);
+    return !Number.isNaN(worked) && worked > 0 && worked < REGULAR_HOURS;
+  };
+
+  // Admin-aligned Totals
+  const individualTotals = records.reduce(
+    (acc, rec) => {
+      const isHol = isHolidayOrSundayRecord(rec);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
+
+  const presentTotals = records
+    .filter((rec) => rec.status === "PRESENT")
+    .reduce(
+      (acc, rec) => {
+        const isHol = isHolidayOrSundayRecord(rec);
+        acc.workedMinutes += getNumericWorkedMinutes(rec);
+        acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+        return acc;
+      },
+      { workedMinutes: 0, otMinutes: 0 },
+    );
+
+  const shortDayTotals = records
+    .filter(isShortDayRecord)
+    .reduce(
+      (acc, rec) => {
+        const isHol = isHolidayOrSundayRecord(rec);
+        acc.workedMinutes += getNumericWorkedMinutes(rec);
+        acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+        return acc;
+      },
+      { workedMinutes: 0, otMinutes: 0 },
+    );
+
   const totalWorked = records.reduce(
     (acc, r) => acc + getRegularHours(r.workedHours, isHolidayOrSundayRecord(r)),
     0,
@@ -472,31 +574,33 @@ const Attendance = () => {
     return ot > 0;
   }).length;
 
-  const totalShortDayWorked = records.filter(
-    (r) =>
-      r.isShortDay ||
-      (Number(r.workedHours) > 0 &&
-        Number(r.workedHours) < REGULAR_HOURS &&
-        !isHolidayOrSundayRecord(r) &&
-        r.status !== "ON_LEAVE" &&
-        r.status !== "ABSENT")
-  ).reduce((acc, r) => acc + Number(r.workedHours || 0), 0);
+  const totalShortDayWorked = records.filter(isShortDayRecord)
+    .reduce((acc, r) => acc + Number(r.workedHours || 0), 0);
+
+  const todayKey = formatDateKey(today);
 
   const filteredRecords = selectedStatus
     ? records.filter((r) => {
         if (selectedStatus === "SHORT_DAY") {
-          return (
-            r.isShortDay ||
-            (Number(r.workedHours) > 0 &&
-              Number(r.workedHours) < REGULAR_HOURS &&
-              !isHolidayOrSundayRecord(r) &&
-              r.status !== "ON_LEAVE" &&
-              r.status !== "ABSENT")
-          );
+          return isShortDayRecord(r);
+        }
+        if (selectedStatus === "ABSENT") {
+          const recKey = formatDateKey(r.date);
+          if (recKey >= todayKey) return false;
         }
         return r.status === selectedStatus;
       })
     : records;
+
+  const filteredTotals = filteredRecords.reduce(
+    (acc, rec) => {
+      const isHol = isHolidayOrSundayRecord(rec);
+      acc.workedMinutes += getNumericWorkedMinutes(rec);
+      acc.otMinutes += getNumericOvertimeMinutes(rec, isHol);
+      return acc;
+    },
+    { workedMinutes: 0, otMinutes: 0 },
+  );
 
   const handleStatusClick = (key) => {
     setSelectedStatus((prev) => (prev === key ? null : key));
@@ -544,8 +648,8 @@ const Attendance = () => {
         ON_LEAVE: leaveCount,
         PRESENT: summary.PRESENT ?? records.filter((r) => r.status === "PRESENT").length,
         OT_DAYS: totalOvertimeDays,
-        OT_HOURS_TEXT: totalOvertime > 0 ? fmtWorkedHours(totalOvertime) : "0h 0m",
-        TOTAL_WORKED_TEXT: fmtWorkedHours(totalWorked),
+        OT_HOURS_TEXT: fmtMinutesToHM(individualTotals.otMinutes),
+        TOTAL_WORKED_TEXT: fmtMinutesToHM(individualTotals.workedMinutes),
       },
       isShortDayFn,
       isHolidayDateFn: (d) => {
@@ -556,6 +660,163 @@ const Attendance = () => {
       fmtTimeFn: fmtTime,
       fmtWorkedHoursFn: fmtWorkedHours,
     });
+  };
+
+  const renderNoteModal = () => {
+    if (!selectedRecordForNote) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+        <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl card-shadow">
+          <button
+            onClick={() => setSelectedRecordForNote(null)}
+            className="absolute right-4 top-4 rounded-lg p-1.5 hover:bg-secondary transition-colors text-muted-foreground"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+              <MessageSquare className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="font-display text-lg font-bold">Attendance Request Details</h3>
+              <p className="text-xs text-muted-foreground">
+                {fmtDate(selectedRecordForNote.date)}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+            {selectedRecordForNote.note?.split("|").map((segment, idx) => {
+              const parsed = parseNoteSegment(segment, selectedRecordForNote);
+
+              return (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3"
+                >
+                  {/* Header Row: Type & Status */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-2.5 border-b border-border/60">
+                    <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                      {parsed.isCheckIn ? (
+                        <LogIn className="h-4 w-4 text-emerald-600" />
+                      ) : parsed.isCheckOut ? (
+                        <LogOut className="h-4 w-4 text-rose-600" />
+                      ) : (
+                        <Clock3 className="h-4 w-4 text-amber-600" />
+                      )}
+                      {parsed.type}
+                    </span>
+
+                    {parsed.statusLabel && (
+                      <span
+                        className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                          parsed.status === "PENDING"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                            : parsed.status === "APPROVED"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                            : parsed.status === "REJECTED"
+                            ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300"
+                            : "bg-secondary text-muted-foreground"
+                        }`}
+                      >
+                        {parsed.status === "PENDING" && <Clock className="h-3 w-3" />}
+                        {parsed.status === "APPROVED" && <CheckCircle2 className="h-3 w-3" />}
+                        {parsed.status === "REJECTED" && <XCircle className="h-3 w-3" />}
+                        {parsed.statusLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Details Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {/* Punch Time */}
+                    {parsed.timeStr && (
+                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                          Punch Time
+                        </div>
+                        <div className="font-bold text-foreground mt-0.5">
+                          {parsed.timeStr}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Location Info */}
+                    {parsed.locationInfo && (
+                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-primary" /> Location / Dist
+                        </div>
+                        <div className="font-bold text-foreground mt-0.5 truncate">
+                          {parsed.locationInfo}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Request Submitted Time */}
+                    <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                      <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        Request Submitted Time
+                      </div>
+                      <div className="font-bold text-foreground mt-0.5">
+                        {selectedRecordForNote.createdAt
+                          ? `${fmtDate(selectedRecordForNote.createdAt)} ${fmtTime(selectedRecordForNote.createdAt)}`
+                          : parsed.timeStr
+                          ? `${fmtDate(selectedRecordForNote.date)} ${parsed.timeStr}`
+                          : `${fmtDate(selectedRecordForNote.date)} —`}
+                      </div>
+                    </div>
+
+                    {/* Request Approved / Reviewed Time */}
+                    <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                      <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        {parsed.status === "APPROVED"
+                          ? "Approved Time"
+                          : parsed.status === "REJECTED"
+                          ? "Rejected Time"
+                          : "Approved / Status Date"}
+                      </div>
+                      <div className="font-bold text-foreground mt-0.5">
+                        {parsed.status === "APPROVED" || parsed.status === "REJECTED"
+                          ? selectedRecordForNote.updatedAt
+                            ? `${fmtDate(selectedRecordForNote.updatedAt)} ${fmtTime(selectedRecordForNote.updatedAt)}`
+                            : "—"
+                          : "Awaiting Approval"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reason / Note Details */}
+                  <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
+                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                      {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
+                    </div>
+                    <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
+                      {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
+                    </div>
+                    {parsed.distance && (
+                      <div className="text-[11px] font-semibold text-primary pt-0.5">
+                        Distance from office: {parsed.distance} away
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <button
+              onClick={() => setSelectedRecordForNote(null)}
+              className="rounded-lg bg-primary text-primary-foreground px-5 py-2 text-xs font-bold hover:opacity-90 transition-opacity"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // ── filtered status page ──
@@ -623,23 +884,24 @@ const Attendance = () => {
                 <thead>
                   <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
                     <th className="px-5 py-3 font-medium">Date</th>
+                    <th className="px-5 py-3 font-medium">Shift</th>
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Check In</th>
                     <th className="px-5 py-3 font-medium">Check Out</th>
                     <th className="px-5 py-3 font-medium">
                       <div className="flex flex-col">
-                        <span>Worked</span>
+                        <span>Total Worked</span>
                         <span className="text-[11px] font-bold text-primary normal-case tracking-normal">
-                          Total: {fmtWorkedHours(totalWorked)}
+                          Total: {fmtMinutesToHM(filteredTotals.workedMinutes)}
                         </span>
                       </div>
                     </th>
                     <th className="px-5 py-3 font-medium">
                       <div className="flex flex-col">
                         <span>Overtime</span>
-                        {totalOvertime > 0 && (
+                        {filteredTotals.otMinutes > 0 && (
                           <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 normal-case tracking-normal">
-                            Total: {fmtWorkedHours(totalOvertime)}
+                            Total: {fmtMinutesToHM(filteredTotals.otMinutes)}
                           </span>
                         )}
                       </div>
@@ -657,6 +919,9 @@ const Attendance = () => {
                     const meta = isShort ? STATUS_META.SHORT_DAY : (STATUS_META[r.status] ?? STATUS_META.PRESENT);
 
                     const overtime = r.overtimeHours ?? getOvertimeHours(r.workedHours, isHolOrSun);
+                    const totalDailyWorkedHours = Number(
+                      r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0)
+                    );
 
                     return (
                       <tr
@@ -665,6 +930,20 @@ const Attendance = () => {
                       >
                         <td className="px-5 py-3 font-medium whitespace-nowrap">
                           {fmtDate(r.date)}
+                        </td>
+
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          {r?.checkIn && r?.shift ? (
+                            <span
+                              title={`Shift: ${r.shift.name} (${formatTimeRange(r.shift.startTime, r.shift.endTime) || "—"})${r.shift.isDefault ? " [Default]" : ""}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300"
+                            >
+                              <Clock className="h-3 w-3 shrink-0" />
+                              <span>{r.shift.name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground font-semibold">—</span>
+                          )}
                         </td>
 
                         <td className="px-5 py-3">
@@ -690,7 +969,11 @@ const Attendance = () => {
                         </td>
 
                         <td className="px-5 py-3 font-medium">
-                          {fmtWorkedHours(isHolidayOrSundayRecord(r) ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0)) : getRegularHours(r.workedHours))}
+                          {totalDailyWorkedHours > 0
+                            ? fmtWorkedHours(totalDailyWorkedHours)
+                            : r.status === "ABSENT" || (!r.checkIn && !r.checkOut)
+                            ? <span className="text-muted-foreground">—</span>
+                            : "0h 0m"}
                         </td>
 
                         <td className="px-5 py-3 font-medium text-orange-600">
@@ -704,14 +987,22 @@ const Attendance = () => {
                             </span>
                           ) : r.note ? (
                             isComplexNote(r.note) ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedRecordForNote(r)}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
-                              >
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                View Reason
-                              </button>
+                              <div className="flex flex-col items-start gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRecordForNote(r)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                  View Reason
+                                </button>
+                                {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance") || r.note.toLowerCase().includes("forgot punch")) && (
+                                  <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
+                                    <Clock className="h-3 w-3" />
+                                    <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
                                 {r.note.split("|").map((n, i) => (
@@ -719,10 +1010,16 @@ const Attendance = () => {
                                     {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
                                   </div>
                                 ))}
+                                {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance")) && (
+                                  <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
+                                    <Clock className="h-3 w-3" />
+                                    <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
+                                  </div>
+                                )}
                               </div>
                             )
                           ) : (
-                            <span className="text-base text-muted-foreground">�</span>
+                            <span className="text-base text-muted-foreground">—</span>
                           )}
                         </td>
                       </tr>
@@ -733,6 +1030,8 @@ const Attendance = () => {
             )}
           </div>
         </div>
+
+        {renderNoteModal()}
       </div>
     );
   }
@@ -1029,7 +1328,7 @@ const Attendance = () => {
           {
             key: "PRESENT",
             label: "Present",
-            description: `${fmtWorkedHours(totalWorked)} worked`,
+            description: `${fmtMinutesToHM(presentTotals.workedMinutes)} worked`,
             subColor: "text-emerald-600 dark:text-emerald-400 font-semibold",
             Icon: CheckCircle2,
             bg: "bg-emerald-100 dark:bg-emerald-950/40",
@@ -1039,7 +1338,7 @@ const Attendance = () => {
           {
             key: "SHORT_DAY",
             label: "Short Day",
-            description: `${fmtWorkedHours(totalShortDayWorked)} worked`,
+            description: `${fmtMinutesToHM(shortDayTotals.workedMinutes)} worked`,
             subColor: "text-amber-600 dark:text-amber-400 font-semibold",
             Icon: AlertCircle,
             bg: "bg-amber-100 dark:bg-amber-950/40",
@@ -1073,16 +1372,7 @@ const Attendance = () => {
           const isActive = selectedStatus === key;
           const count =
             key === "SHORT_DAY"
-              ? (summary.SHORT_DAY ??
-                records.filter(
-                  (r) =>
-                    r.isShortDay ||
-                    (Number(r.workedHours) > 0 &&
-                      Number(r.workedHours) < REGULAR_HOURS &&
-                      !isHolidayOrSundayRecord(r) &&
-                      r.status !== "ON_LEAVE" &&
-                      r.status !== "ABSENT"),
-                ).length)
+              ? (summary.SHORT_DAY ?? shortDayTotals.workedMinutes > 0 ? records.filter(isShortDayRecord).length : 0)
               : summary[key] ?? 0;
 
           return (
@@ -1121,7 +1411,7 @@ const Attendance = () => {
             value={totalOvertimeDays}
             bg="bg-orange-100 dark:bg-orange-900/40"
             text="text-orange-700 dark:text-orange-400"
-            description={totalOvertime > 0 ? `${fmtWorkedHours(totalOvertime)} OT` : ""}
+            description={individualTotals.otMinutes > 0 ? `${fmtMinutesToHM(individualTotals.otMinutes)} OT` : ""}
             subColor="text-orange-700 dark:text-orange-300 font-semibold"
           />
         </button>
@@ -1137,7 +1427,7 @@ const Attendance = () => {
 
           <div>
             <div className="font-display text-xl font-bold">
-              {totalWorked.toFixed(1)} hrs
+              {fmtMinutesToHM(individualTotals.workedMinutes)}
             </div>
 
             <div className="text-xs text-muted-foreground">
@@ -1153,7 +1443,7 @@ const Attendance = () => {
 
           <div>
             <div className="font-display text-xl font-bold">
-              {fmtWorkedHours(totalOvertime)}
+              {fmtMinutesToHM(individualTotals.otMinutes)}
             </div>
 
             <div className="text-xs text-muted-foreground">
@@ -1288,15 +1578,18 @@ const Attendance = () => {
 
               {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
                 (day) => {
-                  const r = recordByDay[day];
+                  let r = recordByDay[day];
+                  const cellDate = new Date(year, month - 1, day);
+                  const dateKey = formatDateKey(cellDate);
+                  if (r && r.status === "ABSENT" && dateKey >= todayKey) {
+                    r = null;
+                  }
+
                   const hol = holidayByDay[day];
-                  const dayOfWeek = new Date(year, month - 1, day).getDay();
+                  const dayOfWeek = cellDate.getDay();
                   const isSunday = dayOfWeek === 0;
 
-                  const isToday =
-                    year === today.getFullYear() &&
-                    month === today.getMonth() + 1 &&
-                    day === today.getDate();
+                  const isToday = dateKey === todayKey;
 
                   const isSunOrHolCell = isSunday || Boolean(hol) || r?.status === "HOLIDAY";
                   const isHolidayCell = isSunOrHolCell;
@@ -1366,6 +1659,16 @@ const Attendance = () => {
                             >
                               {(r?.status === "HOLIDAY" || !r) ? (hol || r?.note || (isSunday ? "Sunday (Weekly Off)" : "Holiday")) : meta.label}
                             </span>
+
+                            {r?.shift && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md bg-indigo-500/10 border border-indigo-500/25 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 ml-auto shrink-0"
+                                title={`Shift: ${r.shift.name} (${formatTimeRange(r.shift.startTime, r.shift.endTime) || "—"})${r.shift.isDefault ? " [Default]" : ""}`}
+                              >
+                                <Clock className="h-2.5 w-2.5 shrink-0" />
+                                <span>{formatShiftBadge(r.shift)}</span>
+                              </span>
+                            )}
                           </div>
 
                           {hasPunchData && (
@@ -1469,9 +1772,9 @@ const Attendance = () => {
                   {MONTH_NAMES[month - 1]}
                 </span>
                 <span className="font-semibold text-foreground">
-                  Total Worked: {totalWorked.toFixed(1)} hrs
-                  {totalOvertime > 0
-                    ? ` • Total OT: ${fmtWorkedHours(totalOvertime)}`
+                  Total Worked: {fmtMinutesToHM(individualTotals.workedMinutes)}
+                  {individualTotals.otMinutes > 0
+                    ? ` • Total OT: ${fmtMinutesToHM(individualTotals.otMinutes)}`
                     : ""}
                 </span>
               </div>
@@ -1506,6 +1809,7 @@ const Attendance = () => {
                   <tr className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
                     <th className="px-4 py-3 font-medium">Date</th>
                     <th className="px-4 py-3 font-medium">Day</th>
+                    <th className="px-4 py-3 font-medium">Shift</th>
                     <th className="px-4 py-3 font-medium">Check In</th>
                     <th className="px-4 py-3 font-medium">Check Out</th>
                     <th className="px-4 py-3 font-medium">Total Working Hours</th>
@@ -1556,6 +1860,20 @@ const Attendance = () => {
                           <span className={isSunday ? "text-rose-600 dark:text-rose-400 font-bold" : "text-muted-foreground"}>
                             {dayName}
                           </span>
+                        </td>
+
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {r?.shift ? (
+                            <span
+                              title={`Shift: ${r.shift.name} (${formatTimeRange(r.shift.startTime, r.shift.endTime) || "—"})${r.shift.isDefault ? " [Default]" : ""}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300"
+                            >
+                              <Clock className="h-3 w-3 shrink-0" />
+                              <span>{r.shift.name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground font-semibold">—</span>
+                          )}
                         </td>
 
                         {r.status === "ON_LEAVE" ? (
@@ -1634,14 +1952,22 @@ const Attendance = () => {
                                 </span>
                               ) : r.note ? (
                                 isComplexNote(r.note) ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedRecordForNote(r)}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
-                                  >
-                                    <MessageSquare className="h-3.5 w-3.5" />
-                                    View Reason
-                                  </button>
+                                  <div className="flex flex-col items-start gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedRecordForNote(r)}
+                                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                                    >
+                                      <MessageSquare className="h-3.5 w-3.5" />
+                                      View Reason
+                                    </button>
+                                    {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance") || r.note.toLowerCase().includes("forgot punch")) && (
+                                      <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
+                                        <Clock className="h-3 w-3" />
+                                        <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
+                                      </div>
+                                    )}
+                                  </div>
                                 ) : (
                                   <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
                                     {r.note.split("|").map((n, i) => (
@@ -1649,6 +1975,12 @@ const Attendance = () => {
                                         {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
                                       </div>
                                     ))}
+                                    {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance")) && (
+                                      <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
+                                        <Clock className="h-3 w-3" />
+                                        <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 )
                               ) : (
@@ -1673,9 +2005,9 @@ const Attendance = () => {
                 {MONTH_NAMES[month - 1]}
               </span>
               <span className="font-semibold text-foreground">
-                Total Worked: {totalWorked.toFixed(1)} hrs
-                {totalOvertime > 0
-                  ? ` • Total OT: ${fmtWorkedHours(totalOvertime)}`
+                Total Worked: {fmtMinutesToHM(individualTotals.workedMinutes)}
+                {individualTotals.otMinutes > 0
+                  ? ` • Total OT: ${fmtMinutesToHM(individualTotals.otMinutes)}`
                   : ""}
               </span>
             </div>
@@ -1683,159 +2015,7 @@ const Attendance = () => {
         </div>
       )}
       {/* Note Details Modal */}
-      {selectedRecordForNote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl card-shadow">
-            <button
-              onClick={() => setSelectedRecordForNote(null)}
-              className="absolute right-4 top-4 rounded-lg p-1.5 hover:bg-secondary transition-colors text-muted-foreground"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <MessageSquare className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-display text-lg font-bold">Attendance Request Details</h3>
-                <p className="text-xs text-muted-foreground">
-                  {fmtDate(selectedRecordForNote.date)}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-              {selectedRecordForNote.note?.split("|").map((segment, idx) => {
-                const parsed = parseNoteSegment(segment, selectedRecordForNote);
-
-                return (
-                  <div
-                    key={idx}
-                    className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3"
-                  >
-                    {/* Header Row: Type & Status */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap pb-2.5 border-b border-border/60">
-                      <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                        {parsed.isCheckIn ? (
-                          <LogIn className="h-4 w-4 text-emerald-600" />
-                        ) : parsed.isCheckOut ? (
-                          <LogOut className="h-4 w-4 text-rose-600" />
-                        ) : (
-                          <Clock3 className="h-4 w-4 text-amber-600" />
-                        )}
-                        {parsed.type}
-                      </span>
-
-                      {parsed.statusLabel && (
-                        <span
-                          className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                            parsed.status === "PENDING"
-                              ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
-                              : parsed.status === "APPROVED"
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
-                              : parsed.status === "REJECTED"
-                              ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300"
-                              : "bg-secondary text-muted-foreground"
-                          }`}
-                        >
-                          {parsed.status === "PENDING" && <Clock className="h-3 w-3" />}
-                          {parsed.status === "APPROVED" && <CheckCircle2 className="h-3 w-3" />}
-                          {parsed.status === "REJECTED" && <XCircle className="h-3 w-3" />}
-                          {parsed.statusLabel}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Details Grid */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {/* Punch Time */}
-                      {parsed.timeStr && (
-                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                            Punch Time
-                          </div>
-                          <div className="font-bold text-foreground mt-0.5">
-                            {parsed.timeStr}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Location Info */}
-                      {parsed.locationInfo && (
-                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                          <div className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
-                            <MapPin className="h-3 w-3 text-primary" /> Location / Dist
-                          </div>
-                          <div className="font-bold text-foreground mt-0.5 truncate">
-                            {parsed.locationInfo}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Request Submitted Time */}
-                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                          Request Submitted Time
-                        </div>
-                        <div className="font-bold text-foreground mt-0.5">
-                          {selectedRecordForNote.createdAt
-                            ? `${fmtDate(selectedRecordForNote.createdAt)} ${fmtTime(selectedRecordForNote.createdAt)}`
-                            : parsed.timeStr
-                            ? `${fmtDate(selectedRecordForNote.date)} ${parsed.timeStr}`
-                            : `${fmtDate(selectedRecordForNote.date)} —`}
-                        </div>
-                      </div>
-
-                      {/* Request Approved / Reviewed Time */}
-                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                          {parsed.status === "APPROVED"
-                            ? "Approved Time"
-                            : parsed.status === "REJECTED"
-                            ? "Rejected Time"
-                            : "Approved / Status Date"}
-                        </div>
-                        <div className="font-bold text-foreground mt-0.5">
-                          {parsed.status === "APPROVED" || parsed.status === "REJECTED"
-                            ? selectedRecordForNote.updatedAt
-                              ? `${fmtDate(selectedRecordForNote.updatedAt)} ${fmtTime(selectedRecordForNote.updatedAt)}`
-                              : "—"
-                            : "Awaiting Approval"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Reason / Note Details */}
-                    <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
-                      <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                        {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
-                      </div>
-                      <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
-                        {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
-                      </div>
-                      {parsed.distance && (
-                        <div className="text-[11px] font-semibold text-primary pt-0.5">
-                          Distance from office: {parsed.distance} away
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <button
-                onClick={() => setSelectedRecordForNote(null)}
-                className="rounded-lg bg-primary text-primary-foreground px-5 py-2 text-xs font-bold hover:opacity-90 transition-opacity"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderNoteModal()}
     </div>
   );
 };

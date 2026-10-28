@@ -61,13 +61,6 @@ export const adminModules = [
     description: "Mark your own attendance as admin.",
   },
   {
-    key: "attendance",
-    label: "My Attendance",
-    path: "/admin/my-attendance",
-    icon: Calendar,
-    description: "View your personal attendance history.",
-  },
-  {
     key: "attendance-management",
     label: "Team Attendance",
     path: "/admin/attendance",

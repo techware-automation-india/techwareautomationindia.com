@@ -664,6 +664,7 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       warehouse,
       description,
       costPrice,
+      sellingPrice,
       companyName,
       vendorName,
       date,
@@ -687,9 +688,9 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       return res.status(400).json({ message: "Item code is required." });
     }
 
-    if (/[^a-zA-Z0-9\s]/.test(itemCode)) {
+    if (/[^a-zA-Z0-9\s.,]/.test(itemCode)) {
       return res.status(400).json({
-        message: "Item Code / SKU cannot contain special characters (.-,@# etc.).",
+        message: "Item Code / SKU can only contain letters, numbers, spaces, dots (.) and commas (,).",
       });
     }
 
@@ -747,6 +748,7 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
         warehouse: warehouse ? warehouse.trim() : null,
         description: description ? description.trim() : null,
         costPrice: costPrice !== undefined && costPrice !== "" ? Number(costPrice) : null,
+        sellingPrice: sellingPrice !== undefined && sellingPrice !== "" ? Number(sellingPrice) : null,
         companyName: companyName ? companyName.trim() : null,
         vendorName: vendorName ? vendorName.trim() : null,
         date: date ? new Date(date) : null,
@@ -789,6 +791,7 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       warehouse,
       description,
       costPrice,
+      sellingPrice,
       companyName,
       vendorName,
       date,
@@ -817,9 +820,9 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       return res.status(400).json({ message: "Item code cannot be empty." });
     }
 
-    if (itemCode && /[^a-zA-Z0-9\s]/.test(itemCode)) {
+    if (itemCode && /[^a-zA-Z0-9\s.,]/.test(itemCode)) {
       return res.status(400).json({
-        message: "Item Code / SKU cannot contain special characters (.-,@# etc.).",
+        message: "Item Code / SKU can only contain letters, numbers, spaces, dots (.) and commas (,).",
       });
     }
 
@@ -840,6 +843,22 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       parsedSpecs = specifications.filter((s) => s && s.key && s.key.trim());
     }
 
+    // Resolve editor ID and Name from authenticated user
+    const editorId = req.user?.id || null;
+    let editorName = (createdByName || "").trim();
+    if (editorId) {
+      const u = await prisma.user.findUnique({
+        where: { id: editorId },
+        select: { fullName: true, email: true },
+      });
+      if (u?.fullName || u?.email) {
+        editorName = u.fullName || u.email;
+      }
+    }
+    if (!editorName) {
+      editorName = "Admin";
+    }
+
     const item = await prisma.inventoryItem.update({
       where: { id: req.params.id },
       data: {
@@ -858,10 +877,13 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
         warehouse: warehouse !== undefined ? (warehouse ? warehouse.trim() : null) : existing.warehouse,
         description: description !== undefined ? (description ? description.trim() : null) : existing.description,
         costPrice: costPrice !== undefined ? (costPrice !== "" ? Number(costPrice) : null) : existing.costPrice,
+        sellingPrice: sellingPrice !== undefined ? (sellingPrice !== "" ? Number(sellingPrice) : null) : existing.sellingPrice,
         companyName: companyName !== undefined ? (companyName ? companyName.trim() : null) : existing.companyName,
         vendorName: vendorName !== undefined ? (vendorName ? vendorName.trim() : null) : existing.vendorName,
         date: date !== undefined ? (date ? new Date(date) : null) : existing.date,
-        createdByName: createdByName !== undefined ? (createdByName ? createdByName.trim() : null) : existing.createdByName,
+        createdByName: existing.createdByName || editorName,
+        updatedById: editorId,
+        updatedByName: editorName,
       },
       include: { categoryRef: true },
     });
@@ -878,19 +900,72 @@ router.delete("/items/:id", requireAuth, checkRoleActionPermission("inventory-in
   try {
     const existing = await prisma.inventoryItem.findUnique({
       where: { id: req.params.id },
+      include: { categoryRef: true },
     });
     if (!existing) {
       return res.status(404).json({ message: "Item not found." });
     }
 
+    // Resolve deleter ID and Name from authenticated user
+    const deleterId = req.user?.id || null;
+    let deleterName = "Admin";
+    if (deleterId) {
+      const u = await prisma.user.findUnique({
+        where: { id: deleterId },
+        select: { fullName: true, email: true },
+      });
+      if (u?.fullName || u?.email) {
+        deleterName = u.fullName || u.email;
+      }
+    }
+
+    // Record audit trail in DeletedInventoryItem
+    await prisma.deletedInventoryItem.create({
+      data: {
+        originalItemId: existing.id,
+        name: existing.name,
+        code: existing.code,
+        sku: existing.sku,
+        categoryName: existing.categoryRef?.name || null,
+        companyName: existing.companyName,
+        vendorName: existing.vendorName,
+        quantity: existing.quantity,
+        unit: existing.unit,
+        costPrice: existing.costPrice,
+        sellingPrice: existing.sellingPrice,
+        createdByName: existing.createdByName,
+        updatedByName: existing.updatedByName,
+        deletedById: deleterId,
+        deletedByName: deleterName,
+        deletedAt: new Date(),
+      },
+    }).catch((e) => console.warn("Failed to create deleted item log:", e));
+
     await prisma.inventoryItem.delete({
       where: { id: req.params.id },
     });
 
-    res.json({ message: "Item deleted successfully." });
+    res.json({
+      message: `Item deleted successfully by ${deleterName}.`,
+      deletedByName: deleterName,
+    });
   } catch (err) {
     console.error("Failed to delete item:", err);
     res.status(500).json({ message: "Failed to delete item." });
+  }
+});
+
+// GET /inventory/deleted-items — Query audit trail of deleted items
+router.get("/deleted-items", requireAuth, async (req, res) => {
+  try {
+    const deletedItems = await prisma.deletedInventoryItem.findMany({
+      orderBy: { deletedAt: "desc" },
+      take: 100,
+    });
+    res.json({ deletedItems });
+  } catch (err) {
+    console.error("Failed to load deleted items:", err);
+    res.status(500).json({ message: "Failed to load deleted items log." });
   }
 });
 

@@ -20,7 +20,6 @@ const AdminLayout = () => {
   // Redirect to login if not authenticated as admin — must be inside useEffect
   useEffect(() => {
     if (!user || user.role !== "ADMIN") {
-      clearAuth();
       navigate("/login", { replace: true });
     }
   }, [navigate, user]);

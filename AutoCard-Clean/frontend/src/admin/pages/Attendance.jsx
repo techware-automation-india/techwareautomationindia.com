@@ -33,6 +33,7 @@ import {
   printSingleEmployeeAttendancePdf,
   printTeamAttendancePdf,
 } from "../../utils/attendancePdfExport.js";
+import { formatTimeRange } from "../../lib/timeFormat.js";
 
 // Visual styling per attendance status.
 const statusMeta = {
@@ -87,7 +88,7 @@ const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const fmtTime = (v) =>
   v
-    ? new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? new Date(v).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
     : null;
 
 const fmtWorkedHours = (value) => {
@@ -144,6 +145,13 @@ const fmtMinutesToHM = (totalMinutes) => {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}h ${m}m`;
+};
+
+const formatShiftBadge = (shift) => {
+  if (!shift || !shift.name) return null;
+  const name = String(shift.name).trim();
+  if (!name) return null;
+  return name.charAt(0).toUpperCase();
 };
 
 const cleanAttendanceNote = (note) => {
@@ -1347,6 +1355,276 @@ const Attendance = () => {
     }
   };
 
+  const renderAttendanceReasonModal = () => {
+    if (!attendanceReasonModal) return null;
+    return (
+      <div
+        className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setAttendanceReasonModal(null);
+        }}
+      >
+        <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+          {/* Header */}
+          <div className="relative border-b border-border bg-card px-6 py-5">
+            <div className="flex items-start gap-3 pr-10">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${attendanceReasonModal.status === "PRESENT" ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"}`}>
+                {attendanceReasonModal.status === "PRESENT" ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div
+                  className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-foreground"
+                  title={attendanceReasonModal.employeeName}
+                >
+                  {attendanceReasonModal.employeeName}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAttendanceReasonModal(null)}
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground"
+              aria-label="Close attendance reason"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Details */}
+          <div className="max-h-[75vh] overflow-y-auto px-6 py-5 space-y-4">
+            {/* Basic Overview Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="rounded-xl border border-border bg-secondary/30 p-2.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Date
+                </div>
+                <div className="mt-1 text-sm font-bold text-foreground">
+                  {fmtDateDMY(attendanceReasonModal.date)}
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-2.5 ${attendanceReasonModal.status === "PRESENT" ? "border-emerald-200 bg-emerald-500/10 text-emerald-800 dark:border-emerald-800/40 dark:text-emerald-300" : "border-amber-200 bg-amber-500/10 text-amber-800 dark:border-amber-800/40 dark:text-amber-300"}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">
+                  Status
+                </div>
+                <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-bold">
+                  <span className={`h-2 w-2 rounded-full ${attendanceReasonModal.status === "PRESENT" ? "bg-emerald-500" : "bg-amber-500"}`} />
+                  {attendanceReasonModal.statusLabel || attendanceReasonModal.status || "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card p-2.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Check In
+                </div>
+                <div className="mt-1 text-sm font-bold text-foreground">
+                  {fmtTime(attendanceReasonModal.checkIn) || "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card p-2.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Check Out
+                </div>
+                <div className="mt-1 text-sm font-bold text-foreground">
+                  {fmtTime(attendanceReasonModal.checkOut) || "—"}
+                </div>
+              </div>
+            </div>
+
+            {/* Note / Request Segments (matches Employee Panel) */}
+            {attendanceReasonModal.note ? (
+              <div className="space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Attendance Request Details
+                </div>
+                {attendanceReasonModal.note.split("|").map((segment, idx) => {
+                  const parsed = parseAttendanceNoteSegment(segment, attendanceReasonModal);
+
+                  return (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-border bg-secondary/20 p-3.5 space-y-3"
+                    >
+                      {/* Header Row: Type & Status */}
+                      <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border/60">
+                        <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                          {parsed.isCheckIn ? (
+                            <LogIn className="h-4 w-4 text-emerald-600" />
+                          ) : parsed.isCheckOut ? (
+                            <LogOut className="h-4 w-4 text-rose-600" />
+                          ) : (
+                            <Clock3 className="h-4 w-4 text-amber-600" />
+                          )}
+                          {parsed.type}
+                        </span>
+
+                        {parsed.statusLabel && (
+                          <span
+                            className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                              parsed.status === "PENDING"
+                                ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                                : parsed.status === "APPROVED"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                                : parsed.status === "REJECTED"
+                                ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300"
+                                : "bg-secondary text-muted-foreground"
+                            }`}
+                          >
+                            {parsed.status === "PENDING" && <Clock className="h-3 w-3" />}
+                            {parsed.status === "APPROVED" && <CheckCircle2 className="h-3 w-3" />}
+                            {parsed.status === "REJECTED" && <XCircle className="h-3 w-3" />}
+                            {parsed.statusLabel}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Details Grid */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {/* Punch Time */}
+                        {parsed.timeStr && (
+                          <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                            <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                              Punch Time
+                            </div>
+                            <div className="font-bold text-foreground mt-0.5">
+                              {parsed.timeStr}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Location Info */}
+                        {parsed.locationInfo && (
+                          <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                            <div className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
+                              <MapPin className="h-3 w-3 text-primary" /> Location / Dist
+                            </div>
+                            <div className="font-bold text-foreground mt-0.5 truncate">
+                              {parsed.locationInfo}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Request Submitted Time */}
+                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                            Request Submitted Time
+                          </div>
+                          <div className="font-bold text-foreground mt-0.5">
+                            {attendanceReasonModal.createdAt
+                              ? `${fmtDateDMY(attendanceReasonModal.createdAt)} ${fmtTime(attendanceReasonModal.createdAt)}`
+                              : parsed.timeStr
+                              ? `${fmtDateDMY(attendanceReasonModal.date)} ${parsed.timeStr}`
+                              : `${fmtDateDMY(attendanceReasonModal.date)} —`}
+                          </div>
+                        </div>
+
+                        {/* Request Approved / Reviewed Time */}
+                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                            {parsed.status === "APPROVED"
+                              ? (parsed.statusLabel === "Verified" ? "Verification Status" : "Approved Time")
+                              : parsed.status === "REJECTED"
+                              ? "Rejected Time"
+                              : "Approved / Status Date"}
+                          </div>
+                          <div className="font-bold text-foreground mt-0.5">
+                            {parsed.status === "APPROVED" || parsed.status === "REJECTED"
+                              ? (parsed.statusLabel === "Verified"
+                                  ? "Standard Punch (Within Location)"
+                                  : attendanceReasonModal.updatedAt
+                                  ? `${fmtDateDMY(attendanceReasonModal.updatedAt)} ${fmtTime(attendanceReasonModal.updatedAt)}`
+                                  : "—")
+                              : "Awaiting Approval"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Reason / Note Details */}
+                      <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                          {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
+                        </div>
+                        <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
+                          {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
+                        </div>
+                        {parsed.distance && (
+                          <div className="text-[11px] font-semibold text-primary pt-0.5">
+                            Distance from office: {parsed.distance} away
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Fallback submitted reason */
+              <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-4 dark:border-amber-800/40 dark:bg-amber-500/20">
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1">
+                  Submitted Reason
+                </div>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {attendanceReasonModal.reason || "No reason provided."}
+                </p>
+              </div>
+            )}
+
+            {/* Map Coordinates / Attendance Location if available */}
+            {(Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) ||
+              Number.isFinite(Number(attendanceReasonModal.checkOutLatitude))) && (
+              <div className="pt-1">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Map Location
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) &&
+                  Number.isFinite(Number(attendanceReasonModal.checkInLongitude)) ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-500/10 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-500/20 dark:border-blue-800/40 dark:text-blue-400"
+                    >
+                      <MapPin className="h-3.5 w-3.5 transition group-hover:scale-110" />
+                      Check-in Map Pin
+                    </a>
+                  ) : null}
+
+                  {Number.isFinite(Number(attendanceReasonModal.checkOutLatitude)) &&
+                  Number.isFinite(Number(attendanceReasonModal.checkOutLongitude)) ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-500/20 dark:border-rose-800/40 dark:text-rose-400"
+                    >
+                      <MapPin className="h-3.5 w-3.5 transition group-hover:scale-110" />
+                      Check-out Map Pin
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end border-t border-border bg-card px-6 py-3">
+            <button
+              type="button"
+              onClick={() => setAttendanceReasonModal(null)}
+              className="rounded-xl bg-secondary px-6 py-2 text-[15px] font-bold text-secondary-foreground transition hover:bg-secondary/80 focus:outline-none focus:ring-2"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (selectedStatus) {
     return (
       <div className="space-y-6">
@@ -1502,6 +1780,7 @@ const Attendance = () => {
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                       <th className="py-2 pr-4">Date</th>
+                      <th className="py-2 pr-4">Shift</th>
                       <th className="py-2 pr-4">Status</th>
                       <th className="py-2 pr-4">Check In</th>
                       <th className="py-2 pr-4">Check Out</th>
@@ -1522,6 +1801,19 @@ const Attendance = () => {
                         >
                           <td className="py-3 pr-4 font-medium">{fmtDateDMY(rec.date)}</td>
                           <td className="py-3 pr-4">
+                            {rec?.checkIn && rec?.shift ? (
+                              <span
+                                title={`Shift: ${rec.shift.name} (${formatTimeRange(rec.shift.startTime, rec.shift.endTime) || "—"})${rec.shift.isDefault ? " [Default]" : ""}`}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300 whitespace-nowrap"
+                              >
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span>{rec.shift.name}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground font-semibold">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 pr-4">
                             <span
                               title={isShortDayRecord(rec) ? statusMeta.SHORT_DAY.description : undefined}
                               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -1539,7 +1831,7 @@ const Attendance = () => {
                             </span>
                           </td>
                           {rec.status === "ON_LEAVE" ? (
-                            <td colSpan={5} className="py-3 pr-4">
+                            <td colSpan={6} className="py-3 pr-4">
                               <div className="w-full rounded-xl bg-violet-500/10 dark:bg-violet-500/20 border border-violet-200 dark:border-violet-800/40 px-3.5 py-2 text-xs font-semibold text-violet-700 dark:text-violet-300 flex items-center justify-between">
                                 <span className="font-bold">On Leave</span>
                                 <span className="text-violet-600 dark:text-violet-400 font-medium">{rec.note || "Approved Leave"}</span>
@@ -1565,8 +1857,31 @@ const Attendance = () => {
                                   "—"
                                 )}
                               </td>
-                              <td className="py-3 pr-4 max-w-xl truncate">
-                                {rec.note || "—"}
+                              <td className="py-3 pr-4 min-w-[200px] max-w-xl">
+                                {hasSubmittedReason(rec.note) ? (
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openAttendanceReason(
+                                          rec,
+                                          data?.employee?.fullName ||
+                                            employees.find((emp) => emp.id === selectedId)?.fullName ||
+                                            "Employee",
+                                          data?.employee?.id || selectedId
+                                        )
+                                      }
+                                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-500/25 px-2.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors cursor-pointer"
+                                    >
+                                      <MessageSquare className="h-3.5 w-3.5" />
+                                      View Reason
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground truncate block" title={rec.note || "—"}>
+                                    {rec.note ? rec.note.replace(/(Checkin:|Checkout:)/g, "").trim() : "—"}
+                                  </span>
+                                )}
                               </td>
                             </>
                           )}
@@ -1597,6 +1912,8 @@ const Attendance = () => {
             </div>
           ))}
         </div>
+
+        {renderAttendanceReasonModal()}
       </div>
     );
   }
@@ -2414,6 +2731,7 @@ const Attendance = () => {
                           <thead>
                             <tr className="border-b border-border bg-muted/40 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                               <th className="px-5 py-3.5 w-[280px]">Employee</th>
+                              <th className="px-4 py-3.5 w-[140px] text-center">Shift</th>
                               <th className="px-4 py-3.5 w-[160px] text-center">Status</th>
                               <th className="px-4 py-3.5 w-[160px]">Punch In</th>
                               <th className="px-4 py-3.5 w-[160px]">Punch Out</th>
@@ -2479,6 +2797,21 @@ const Attendance = () => {
                                           </div>
                                         </div>
                                       </div>
+                                    </td>
+
+                                     {/* Shift Badge */}
+                                    <td className="px-4 py-3.5 align-middle text-center">
+                                      {rec?.shift ? (
+                                        <span
+                                          title={`Shift: ${rec.shift.name} (${formatTimeRange(rec.shift.startTime, rec.shift.endTime) || "—"})${rec.shift.isDefault ? " [Default]" : ""}`}
+                                          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300"
+                                        >
+                                          <Clock className="h-3 w-3 shrink-0" />
+                                          <span>{rec.shift.name}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground font-semibold">—</span>
+                                      )}
                                     </td>
 
                                     {/* Status Badge */}
@@ -2881,17 +3214,26 @@ const Attendance = () => {
                                   ) : rec ? (
                                     /* Active Attendance Card */
                                     <div className="flex flex-col justify-between rounded-xl border border-border/90 bg-card text-left shadow-2xs hover:border-primary/40 hover:shadow-sm transition-all duration-150 p-2 min-h-[110px]">
-                                      {/* Card Header: Status Pill & Location tags */}
+                                      {/* Card Header: Status Pill & Right-aligned Shift Badge + Location tags */}
                                       <div className="flex items-center justify-between gap-1 mb-2">
                                         <span
                                           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-bold leading-none text-[11px] ${meta?.cell || "bg-secondary text-foreground"}`}
                                           title={meta?.description || meta?.label}
                                         >
                                           <span className={`h-2 w-2 rounded-full ${meta?.dot || "bg-current"}`} />
-                                          <span className="truncate max-w-[120px]">{meta?.label || rec.status}</span>
+                                          <span className="truncate max-w-[100px]">{meta?.label || rec.status}</span>
                                         </span>
 
-                                        <div className="flex items-center gap-1 shrink-0">
+                                        <div className="flex items-center gap-1 shrink-0 ml-auto">
+                                          {rec.shift && (
+                                            <span
+                                              title={`Shift: ${rec.shift.name} (${formatTimeRange(rec.shift.startTime, rec.shift.endTime) || "—"})${rec.shift.isDefault ? " [Default]" : ""}`}
+                                              className="inline-flex items-center gap-1 rounded-md bg-indigo-500/10 border border-indigo-500/25 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300"
+                                            >
+                                              <Clock className="h-2.5 w-2.5 shrink-0" />
+                                              <span>{formatShiftBadge(rec.shift)}</span>
+                                            </span>
+                                          )}
                                           {checkInLocationCode && (
                                             <span
                                               title={`Check In Location: ${checkInLocationCode === "UL" ? "Unassigned" : checkInLocationCode === "A" ? "Assigned" : "Office"}`}
@@ -3708,272 +4050,7 @@ const Attendance = () => {
       )}
 
       {/* Submitted Attendance Reason Modal */}
-      {attendanceReasonModal && (
-        <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setAttendanceReasonModal(null);
-          }}
-        >
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-            {/* Header */}
-            <div className="relative border-b border-border bg-card px-6 py-5">
-              <div className="flex items-start gap-3 pr-10">
-                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${attendanceReasonModal.status === "PRESENT" ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"}`}>
-                  {attendanceReasonModal.status === "PRESENT" ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="line-clamp-2 break-words font-display text-[22px] leading-7 font-bold text-foreground"
-                    title={attendanceReasonModal.employeeName}
-                  >
-                    {attendanceReasonModal.employeeName}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setAttendanceReasonModal(null)}
-                className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground"
-                aria-label="Close attendance reason"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Details */}
-            <div className="max-h-[75vh] overflow-y-auto px-6 py-5 space-y-4">
-              {/* Basic Overview Strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="rounded-xl border border-border bg-secondary/30 p-2.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Date
-                  </div>
-                  <div className="mt-1 text-sm font-bold text-foreground">
-                    {fmtDateDMY(attendanceReasonModal.date)}
-                  </div>
-                </div>
-
-                <div className={`rounded-xl border p-2.5 ${attendanceReasonModal.status === "PRESENT" ? "border-emerald-200 bg-emerald-500/10 text-emerald-800 dark:border-emerald-800/40 dark:text-emerald-300" : "border-amber-200 bg-amber-500/10 text-amber-800 dark:border-amber-800/40 dark:text-amber-300"}`}>
-                  <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">
-                    Status
-                  </div>
-                  <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-bold">
-                    <span className={`h-2 w-2 rounded-full ${attendanceReasonModal.status === "PRESENT" ? "bg-emerald-500" : "bg-amber-500"}`} />
-                    {attendanceReasonModal.statusLabel || attendanceReasonModal.status || "—"}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border bg-card p-2.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Check In
-                  </div>
-                  <div className="mt-1 text-sm font-bold text-foreground">
-                    {fmtTime(attendanceReasonModal.checkIn) || "—"}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border bg-card p-2.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Check Out
-                  </div>
-                  <div className="mt-1 text-sm font-bold text-foreground">
-                    {fmtTime(attendanceReasonModal.checkOut) || "—"}
-                  </div>
-                </div>
-              </div>
-
-              {/* Note / Request Segments (matches Employee Panel) */}
-              {attendanceReasonModal.note ? (
-                <div className="space-y-3">
-                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Attendance Request Details
-                  </div>
-                  {attendanceReasonModal.note.split("|").map((segment, idx) => {
-                    const parsed = parseAttendanceNoteSegment(segment, attendanceReasonModal);
-
-                    return (
-                      <div
-                        key={idx}
-                        className="rounded-xl border border-border bg-secondary/20 p-3.5 space-y-3"
-                      >
-                        {/* Header Row: Type & Status */}
-                        <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border/60">
-                          <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                            {parsed.isCheckIn ? (
-                              <LogIn className="h-4 w-4 text-emerald-600" />
-                            ) : parsed.isCheckOut ? (
-                              <LogOut className="h-4 w-4 text-rose-600" />
-                            ) : (
-                              <Clock3 className="h-4 w-4 text-amber-600" />
-                            )}
-                            {parsed.type}
-                          </span>
-
-                          {parsed.statusLabel && (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                                parsed.status === "PENDING"
-                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
-                                  : parsed.status === "APPROVED"
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
-                                  : parsed.status === "REJECTED"
-                                  ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300"
-                                  : "bg-secondary text-muted-foreground"
-                              }`}
-                            >
-                              {parsed.status === "PENDING" && <Clock className="h-3 w-3" />}
-                              {parsed.status === "APPROVED" && <CheckCircle2 className="h-3 w-3" />}
-                              {parsed.status === "REJECTED" && <XCircle className="h-3 w-3" />}
-                              {parsed.statusLabel}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Details Grid */}
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          {/* Punch Time */}
-                          {parsed.timeStr && (
-                            <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                              <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                                Punch Time
-                              </div>
-                              <div className="font-bold text-foreground mt-0.5">
-                                {parsed.timeStr}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Location Info */}
-                          {parsed.locationInfo && (
-                            <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                              <div className="text-[10px] uppercase font-semibold text-muted-foreground flex items-center gap-1">
-                                <MapPin className="h-3 w-3 text-primary" /> Location / Dist
-                              </div>
-                              <div className="font-bold text-foreground mt-0.5 truncate">
-                                {parsed.locationInfo}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Request Submitted Time */}
-                          <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                            <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                              Request Submitted Time
-                            </div>
-                            <div className="font-bold text-foreground mt-0.5">
-                              {attendanceReasonModal.createdAt
-                                ? `${fmtDateDMY(attendanceReasonModal.createdAt)} ${fmtTime(attendanceReasonModal.createdAt)}`
-                                : parsed.timeStr
-                                ? `${fmtDateDMY(attendanceReasonModal.date)} ${parsed.timeStr}`
-                                : `${fmtDateDMY(attendanceReasonModal.date)} —`}
-                            </div>
-                          </div>
-
-                          {/* Request Approved / Reviewed Time */}
-                          <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                            <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                              {parsed.status === "APPROVED"
-                                ? (parsed.statusLabel === "Verified" ? "Verification Status" : "Approved Time")
-                                : parsed.status === "REJECTED"
-                                ? "Rejected Time"
-                                : "Approved / Status Date"}
-                            </div>
-                            <div className="font-bold text-foreground mt-0.5">
-                              {parsed.status === "APPROVED" || parsed.status === "REJECTED"
-                                ? (parsed.statusLabel === "Verified"
-                                    ? "Standard Punch (Within Location)"
-                                    : attendanceReasonModal.updatedAt
-                                    ? `${fmtDateDMY(attendanceReasonModal.updatedAt)} ${fmtTime(attendanceReasonModal.updatedAt)}`
-                                    : "—")
-                                : "Awaiting Approval"}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Reason / Note Details */}
-                        <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
-                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                            {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
-                          </div>
-                          <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
-                            {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
-                          </div>
-                          {parsed.distance && (
-                            <div className="text-[11px] font-semibold text-primary pt-0.5">
-                              Distance from office: {parsed.distance} away
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Fallback submitted reason */
-                <div className="rounded-xl border border-amber-200 bg-amber-500/10 p-4 dark:border-amber-800/40 dark:bg-amber-500/20">
-                  <div className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1">
-                    Submitted Reason
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {attendanceReasonModal.reason || "No reason provided."}
-                  </p>
-                </div>
-              )}
-
-              {/* Map Coordinates / Attendance Location if available */}
-              {(Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) ||
-                Number.isFinite(Number(attendanceReasonModal.checkOutLatitude))) && (
-                <div className="pt-1">
-                  <div className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Map Location
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {Number.isFinite(Number(attendanceReasonModal.checkInLatitude)) &&
-                    Number.isFinite(Number(attendanceReasonModal.checkInLongitude)) ? (
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkInLatitude},${attendanceReasonModal.checkInLongitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-500/10 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-500/20 dark:border-blue-800/40 dark:text-blue-400"
-                      >
-                        <MapPin className="h-3.5 w-3.5 transition group-hover:scale-110" />
-                        Check-in Map Pin
-                      </a>
-                    ) : null}
-
-                    {Number.isFinite(Number(attendanceReasonModal.checkOutLatitude)) &&
-                    Number.isFinite(Number(attendanceReasonModal.checkOutLongitude)) ? (
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${attendanceReasonModal.checkOutLatitude},${attendanceReasonModal.checkOutLongitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-500/20 dark:border-rose-800/40 dark:text-rose-400"
-                      >
-                        <MapPin className="h-3.5 w-3.5 transition group-hover:scale-110" />
-                        Check-out Map Pin
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end border-t border-border bg-card px-6 py-3">
-              <button
-                type="button"
-                onClick={() => setAttendanceReasonModal(null)}
-                className="rounded-xl bg-secondary px-6 py-2 text-[15px] font-bold text-secondary-foreground transition hover:bg-secondary/80 focus:outline-none focus:ring-2"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderAttendanceReasonModal()}
 
       {/* Reject Reason Modal */}
       {rejectModal && (

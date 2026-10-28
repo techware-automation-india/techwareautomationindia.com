@@ -251,18 +251,42 @@ export default function ProductQuickViewModal({
                 )}
               </div>
 
-              {/* Created By Banner (Prominent Print Name) */}
-              <div className="p-3 rounded-2xl bg-primary/5 border border-primary/20 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                  <User className="h-4 w-4" />
+              {/* Created By & Edited By Banner (Prominent Print Name) */}
+              <div className="p-3 rounded-2xl bg-primary/5 border border-primary/20 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                {/* Created By Box */}
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">
+                      Created By
+                    </span>
+                    <span className="text-sm font-bold text-primary truncate block">
+                      {item.createdByName || "Admin"}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[11px] text-muted-foreground font-medium block">
-                    Created By
-                  </span>
-                  <span className="text-sm font-bold text-primary">
-                    {item.createdByName || "Admin"}
-                  </span>
+
+                {/* Edited By Box */}
+                <div className="flex items-center gap-3 sm:border-l sm:border-border/60 sm:pl-3">
+                  <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-xs shrink-0">
+                    <Edit3 className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-amber-700/80 dark:text-amber-300/80 uppercase font-bold tracking-wider block">
+                      Edited By
+                    </span>
+                    {item.updatedByName ? (
+                      <span className="text-sm font-bold text-amber-700 dark:text-amber-300 truncate block">
+                        {item.updatedByName}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic block">
+                        Not edited yet
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

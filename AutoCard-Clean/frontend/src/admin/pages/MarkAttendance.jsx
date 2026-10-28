@@ -12,12 +12,130 @@ import {
   ScanLine,
   AlertCircle,
   Ban,
+  Moon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getAuthUser } from "../../lib/auth.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+const formatTime12h = (time24) => {
+  if (!time24) return "—";
+  const parts = String(time24).split(":");
+  if (parts.length < 2) return time24;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (Number.isNaN(h) || Number.isNaN(m)) return time24;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
+};
+
+const parse24to12 = (time24) => {
+  if (!time24) return { hour12: "10", minute: "00", ampm: "AM" };
+  const [hStr, mStr] = String(time24).split(":");
+  let h = Number(hStr) || 0;
+  const m = String(Number(mStr) || 0).padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour12 = String(h % 12 || 12);
+  return { hour12, minute: m, ampm };
+};
+
+const to24hString = (hour12, minute, ampm) => {
+  let h = Number(hour12) || 12;
+  const m = String(Number(minute) || 0).padStart(2, "0");
+  if (ampm === "AM") {
+    if (h === 12) h = 0;
+  } else {
+    if (h !== 12) h += 12;
+  }
+  return `${String(h).padStart(2, "0")}:${m}`;
+};
+
+const TimePicker12h = ({ value, onChange, disabled = false }) => {
+  const { hour12, minute, ampm } = parse24to12(value);
+
+  const handleHourChange = (newH) => {
+    onChange(to24hString(newH, minute, ampm));
+  };
+
+  const handleMinuteChange = (newM) => {
+    onChange(to24hString(hour12, newM, ampm));
+  };
+
+  const handleAmPmChange = (newAmPm) => {
+    onChange(to24hString(hour12, minute, newAmPm));
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-background p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+        <select
+          value={hour12}
+          disabled={disabled}
+          onChange={(e) => handleHourChange(e.target.value)}
+          aria-label="Hour (1-12)"
+          className="bg-transparent text-sm font-semibold text-foreground focus:outline-none cursor-pointer py-1 px-1.5 rounded"
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+            <option key={h} value={String(h)}>
+              {String(h).padStart(2, "0")}
+            </option>
+          ))}
+        </select>
+
+        <span className="text-muted-foreground font-bold">:</span>
+
+        <select
+          value={minute}
+          disabled={disabled}
+          onChange={(e) => handleMinuteChange(e.target.value)}
+          aria-label="Minute"
+          className="bg-transparent text-sm font-semibold text-foreground focus:outline-none cursor-pointer py-1 px-1.5 rounded"
+        >
+          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+
+        <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/40 ml-1">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => handleAmPmChange("AM")}
+            className={`px-2 py-0.5 text-xs font-bold rounded transition-colors ${
+              ampm === "AM"
+                ? "bg-primary text-white shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            AM
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => handleAmPmChange("PM")}
+            className={`px-2 py-0.5 text-xs font-bold rounded transition-colors ${
+              ampm === "PM"
+                ? "bg-primary text-white shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            PM
+          </button>
+        </div>
+      </div>
+
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/10 text-primary text-xs font-bold tracking-wide">
+        <Clock className="h-3 w-3" />
+        {formatTime12h(value)}
+      </span>
+    </div>
+  );
+};
 
 const fmtTime = (v) =>
   v
@@ -36,6 +154,17 @@ const fmtDate = (v) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
+};
+
+const getIndiaDateKey = (date = new Date()) => {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
 };
 
 const STATUS_META = {
@@ -171,6 +300,18 @@ const AdminMarkAttendance = () => {
   const [unclosedPrevious, setUnclosedPrevious] = useState(null);
   const [reasonModal, setReasonModal] = useState(null);
   const [reasonText, setReasonText] = useState("");
+  const [overnightModal, setOvernightModal] = useState({
+    isOpen: false,
+    checkInTime: "",
+    checkOutTime: "",
+    checkInDate: "",
+    checkOutDate: "",
+    location: null,
+    reason: "",
+    submitting: false,
+  });
+
+  const [todayShift, setTodayShift] = useState(null);
 
   // Live clock — tick every second
   useEffect(() => {
@@ -184,6 +325,7 @@ const AdminMarkAttendance = () => {
     try {
       const data = await apiGet("/attendance/me/today");
       setRecord(data.record);
+      setTodayShift(data.shift || data.record?.shift || null);
       setApprovedLeave(data.approvedLeave);
       setUnclosedPrevious(data.unclosedPrevious);
     } catch (err) {
@@ -223,12 +365,81 @@ const AdminMarkAttendance = () => {
     setReasonText("");
   };
 
+  const executeCheckOut = async (location, reason = "", customCheckOutTime = null, customCheckOutDate = null) => {
+    const payload = {
+      location,
+      ...(reason ? { reason } : {}),
+      ...(customCheckOutTime ? { checkOutTime: customCheckOutTime } : {}),
+      ...(customCheckOutDate ? { checkOutDate: customCheckOutDate } : {}),
+    };
+
+    const data = await apiPost("/attendance/checkout", payload);
+    setRecord(data.record ?? null);
+    await loadToday();
+    toast.success(data.message || "Admin checked out successfully!");
+  };
+
   const submitReasonedAttendance = async () => {
     if (!reasonModal) return;
     const trimmedReason = reasonText.trim();
     if (!trimmedReason) {
       toast.error("Please enter a reason before submitting.");
       return;
+    }
+
+    if (reasonModal.type === "checkout") {
+      // Check for overnight shift condition
+      const checkInDateObj = record?.checkIn ? new Date(record.checkIn) : null;
+      const todayDateKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+
+      const checkInDateKey = checkInDateObj
+        ? new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kolkata",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(checkInDateObj)
+        : todayDateKey;
+
+      const checkInTimeStr = checkInDateObj
+        ? checkInDateObj.toLocaleTimeString("en-GB", {
+            timeZone: "Asia/Kolkata",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+        : "10:00";
+
+      const currentTimeStr = new Date().toLocaleTimeString("en-GB", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+
+      const isCrossDay = checkInDateKey < todayDateKey;
+      const isEarlierTime = currentTimeStr < checkInTimeStr;
+
+      if (isCrossDay || isEarlierTime) {
+        setOvernightModal({
+          isOpen: true,
+          checkInTime: checkInTimeStr,
+          checkOutTime: currentTimeStr,
+          checkInDate: checkInDateKey,
+          checkOutDate: todayDateKey,
+          location: reasonModal.location,
+          reason: trimmedReason,
+          submitting: false,
+        });
+        setReasonModal(null);
+        setReasonText("");
+        return;
+      }
     }
 
     const payload = {
@@ -249,9 +460,7 @@ const AdminMarkAttendance = () => {
         setRecord(data.record);
         toast.success(data.message || "Checked in successfully!");
       } else {
-        const data = await apiPost("/attendance/checkout", payload);
-        setRecord(data.record);
-        toast.success(data.message || "Checked out successfully!");
+        await executeCheckOut(reasonModal.location, trimmedReason);
       }
     } catch (err) {
       toast.error(err.message || "Request failed.");
@@ -286,26 +495,10 @@ const AdminMarkAttendance = () => {
     }
 
     setCheckingIn(true);
-    setCapturingLocation(true);
 
     try {
-      // Get current GPS location
-      const location = await getGPSLocation();
-
-      const coordinates = parseLocationCoordinates(location);
-
-      if (!coordinates) {
-        throw new Error(
-          "Unable to read your location coordinates. Please try again.",
-        );
-      }
-
-      // IMPORTANT:
-      // Admin does NOT need assigned/default location.
-      // Admin GPS is only saved in attendance.
-      const data = await apiPost("/attendance/checkin", {
-        location,
-      });
+      // Admin location bypass: directly check in without requesting or taking GPS coordinates
+      const data = await apiPost("/attendance/checkin", {});
 
       const authUser = getAuthUser();
 
@@ -314,49 +507,82 @@ const AdminMarkAttendance = () => {
       }
 
       setRecord(data.record);
+      if (data.shift || data.record?.shift) {
+        setTodayShift(data.shift || data.record?.shift);
+      }
 
       toast.success(data.message || "Admin checked in successfully!");
     } catch (err) {
       toast.error(err.message || "Admin check-in failed.");
     } finally {
       setCheckingIn(false);
-      setCapturingLocation(false);
     }
   };
 
   const handleCheckOut = async () => {
-    if (checkingOut || capturingLocation) return;
+    if (checkingOut) return;
 
     setCheckingOut(true);
-    setCapturingLocation(true);
 
     try {
-      // Get current GPS location
-      const location = await getGPSLocation();
+      // =====================================================
+      // OVERNIGHT SHIFT CHECK (E.g. checked in yesterday, checkout today)
+      // =====================================================
+      const checkInDateObj = record?.checkIn ? new Date(record.checkIn) : null;
+      const todayDateKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
 
-      const coordinates = parseLocationCoordinates(location);
+      const checkInDateKey = checkInDateObj
+        ? new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kolkata",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(checkInDateObj)
+        : todayDateKey;
 
-      if (!coordinates) {
-        throw new Error(
-          "Unable to read your location coordinates. Please try again.",
-        );
-      }
+      const checkInTimeStr = checkInDateObj
+        ? checkInDateObj.toLocaleTimeString("en-GB", {
+            timeZone: "Asia/Kolkata",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+        : "10:00";
 
-      // IMPORTANT:
-      // Admin does NOT need assigned/default location.
-      // Admin GPS is only saved in attendance.
-      const data = await apiPost("/attendance/checkout", {
-        location,
+      const currentTimeStr = new Date().toLocaleTimeString("en-GB", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
       });
 
-      setRecord(data.record);
+      const isCrossDay = checkInDateKey < todayDateKey;
+      const isEarlierTime = currentTimeStr < checkInTimeStr;
 
-      toast.success(data.message || "Admin checked out successfully!");
+      if (isCrossDay || isEarlierTime) {
+        setOvernightModal({
+          isOpen: true,
+          checkInTime: checkInTimeStr,
+          checkOutTime: currentTimeStr,
+          checkInDate: checkInDateKey,
+          checkOutDate: todayDateKey,
+          location: undefined,
+          reason: "",
+          submitting: false,
+        });
+        return;
+      }
+
+      await executeCheckOut(undefined, "");
     } catch (err) {
       toast.error(err.message || "Admin check-out failed.");
     } finally {
       setCheckingOut(false);
-      setCapturingLocation(false);
     }
   };
   // Derived
@@ -444,7 +670,7 @@ const AdminMarkAttendance = () => {
       ) : (
         <div className="rounded-2xl bg-background border border-border card-shadow p-6 space-y-5">
           {/* Status badge */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="font-display text-base font-semibold">
               Today's Attendance
             </h2>
@@ -478,6 +704,26 @@ const AdminMarkAttendance = () => {
               >
                 {hasCheckedIn ? fmtTime(record.checkIn) : "—"}
               </div>
+              {hasCheckedIn && (() => {
+                const checkInDateObj = record?.checkIn ? new Date(record.checkIn) : null;
+                const checkInDateKey = checkInDateObj ? getIndiaDateKey(checkInDateObj) : null;
+                const checkOutDateObj = record?.checkOut ? new Date(record.checkOut) : null;
+                const checkOutDateKey = checkOutDateObj ? getIndiaDateKey(checkOutDateObj) : null;
+                const todayKey = getIndiaDateKey(now);
+                const isOvernight =
+                  (checkInDateKey && checkInDateKey !== todayKey) ||
+                  (checkInDateKey && checkOutDateKey && checkInDateKey !== checkOutDateKey);
+
+                if (isOvernight && checkInDateKey) {
+                  return (
+                    <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                      <Calendar className="h-3 w-3" />
+                      <span>{fmtDate(checkInDateKey)}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
             <div
               className={`rounded-xl p-4 border ${hasCheckedOut ? "border-rose-200 bg-rose-50" : "border-dashed border-border bg-secondary/20"}`}
@@ -495,6 +741,23 @@ const AdminMarkAttendance = () => {
               >
                 {hasCheckedOut ? fmtTime(record.checkOut) : "—"}
               </div>
+              {hasCheckedOut && (() => {
+                const checkOutDateObj = record?.checkOut ? new Date(record.checkOut) : null;
+                const checkOutDateKey = checkOutDateObj ? getIndiaDateKey(checkOutDateObj) : null;
+                const checkInDateObj = record?.checkIn ? new Date(record.checkIn) : null;
+                const checkInDateKey = checkInDateObj ? getIndiaDateKey(checkInDateObj) : null;
+                const isOvernight = checkInDateKey && checkOutDateKey && checkInDateKey !== checkOutDateKey;
+
+                if (isOvernight && checkOutDateKey) {
+                  return (
+                    <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-rose-700">
+                      <Calendar className="h-3 w-3" />
+                      <span>{fmtDate(checkOutDateKey)}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
 
@@ -703,6 +966,149 @@ const AdminMarkAttendance = () => {
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
               >
                 Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================
+          OVERNIGHT SHIFT CONFIRMATION & TIME CHANGE MODAL
+      ===================================================== */}
+      {overnightModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-500 shrink-0">
+                <Moon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">
+                  Overnight Shift Punch
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Check-out is on the next day / crossing midnight.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-indigo-200/50 bg-indigo-50/60 dark:border-indigo-900/50 dark:bg-indigo-950/30 p-3.5 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-foreground">
+                <div className="p-2.5 rounded-lg bg-background/80 border border-border/60">
+                  <span className="text-[11px] text-muted-foreground block font-medium">Check-In ({overnightModal.checkInDate})</span>
+                  <span className="font-bold text-sm text-foreground mt-0.5 block">{formatTime12h(overnightModal.checkInTime)}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-background/80 border border-border/60">
+                  <label htmlFor="overnight-checkout-date" className="text-[11px] text-muted-foreground block font-medium cursor-pointer">
+                    Check-Out Date
+                  </label>
+                  <input
+                    id="overnight-checkout-date"
+                    type="date"
+                    value={overnightModal.checkOutDate}
+                    min={overnightModal.checkInDate || undefined}
+                    disabled={overnightModal.submitting}
+                    onChange={(e) =>
+                      setOvernightModal((prev) => ({
+                        ...prev,
+                        checkOutDate: e.target.value,
+                      }))
+                    }
+                    className="w-full mt-0.5 font-bold text-sm text-indigo-600 dark:text-indigo-400 bg-transparent border-0 p-0 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Time Change Selector in Modal */}
+              <div className="p-3 rounded-lg bg-background border border-border/70 space-y-2">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>Adjust Check-out Time</span>
+                </label>
+                <TimePicker12h
+                  value={overnightModal.checkOutTime}
+                  disabled={overnightModal.submitting}
+                  onChange={(newTime) =>
+                    setOvernightModal((prev) => ({
+                      ...prev,
+                      checkOutTime: newTime,
+                    }))
+                  }
+                />
+              </div>
+
+              <p className="text-indigo-900 dark:text-indigo-200 leading-relaxed">
+                Confirm your check-out time for this overnight shift ending on <strong>{overnightModal.checkOutDate}</strong>.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={overnightModal.submitting}
+                onClick={() =>
+                  setOvernightModal({
+                    isOpen: false,
+                    checkInTime: "",
+                    checkOutTime: "",
+                    checkInDate: "",
+                    checkOutDate: "",
+                    location: null,
+                    reason: "",
+                    submitting: false,
+                  })
+                }
+                className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:bg-secondary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={overnightModal.submitting}
+                onClick={async () => {
+                  if (overnightModal.checkInDate && overnightModal.checkInTime && overnightModal.checkOutDate && overnightModal.checkOutTime) {
+                    const startMs = new Date(`${overnightModal.checkInDate}T${overnightModal.checkInTime}:00+05:30`).getTime();
+                    const endMs = new Date(`${overnightModal.checkOutDate}T${overnightModal.checkOutTime}:00+05:30`).getTime();
+                    const diffHours = (endMs - startMs) / 3600000;
+
+                    if (diffHours <= 0) {
+                      toast.error("Check-out time must be after check-in time.");
+                      return;
+                    }
+
+                    if (diffHours > 24) {
+                      toast.error(`Check-out cannot exceed 24 hours from check-in (${diffHours.toFixed(1)}h selected).`);
+                      return;
+                    }
+                  }
+
+                  setOvernightModal((prev) => ({ ...prev, submitting: true }));
+                  try {
+                    await executeCheckOut(
+                      overnightModal.location,
+                      overnightModal.reason,
+                      overnightModal.checkOutTime,
+                      overnightModal.checkOutDate,
+                    );
+                    setOvernightModal({
+                      isOpen: false,
+                      checkInTime: "",
+                      checkOutTime: "",
+                      checkInDate: "",
+                      checkOutDate: "",
+                      location: null,
+                      reason: "",
+                      submitting: false,
+                    });
+                  } catch (err) {
+                    toast.error(err.message || "Failed to submit check-out.");
+                    setOvernightModal((prev) => ({ ...prev, submitting: false }));
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+              >
+                <Moon className="h-3.5 w-3.5" />
+                {overnightModal.submitting ? "Submitting..." : "Confirm & Check Out"}
               </button>
             </div>
           </div>

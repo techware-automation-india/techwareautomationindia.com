@@ -5,7 +5,7 @@ const USER_KEY = "authUser";
 // Returns the stored authenticated user, or null.
 export function getAuthUser() {
   try {
-    const raw = localStorage.getItem(USER_KEY);
+    const raw = sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -15,6 +15,7 @@ export function getAuthUser() {
 // Persist token + user after a successful login.
 export function saveAuth(token, user) {
   setToken(token);
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
@@ -22,6 +23,7 @@ export function saveAuth(token, user) {
 export function updateAuthUser(partial) {
   const current = getAuthUser() || {};
   const next = { ...current, ...partial };
+  sessionStorage.setItem(USER_KEY, JSON.stringify(next));
   localStorage.setItem(USER_KEY, JSON.stringify(next));
   return next;
 }
@@ -29,5 +31,6 @@ export function updateAuthUser(partial) {
 // Clear everything on logout.
 export function clearAuth() {
   clearToken();
+  sessionStorage.removeItem(USER_KEY);
   localStorage.removeItem(USER_KEY);
 }

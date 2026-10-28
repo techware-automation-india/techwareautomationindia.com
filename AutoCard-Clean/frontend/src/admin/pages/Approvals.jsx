@@ -147,6 +147,50 @@ const isApprovedOrCompletedStatus = (status, note = "") => {
   );
 };
 
+const cleanPureReason = (rawReason, rawDescription) => {
+  // 1. If rawReason is a non-empty string and not the placeholder, inspect it
+  let candidate = (typeof rawReason === "string" ? rawReason : "").trim();
+
+  // If candidate is a generic fallback, ignore it
+  if (/^unassigned location (check-in|check-out)$/i.test(candidate)) {
+    candidate = "";
+  }
+
+  // 2. If candidate still has compound strings like "Checkin: ... | Checkout: ... Reason: fsfefe."
+  const desc = (typeof rawDescription === "string" ? rawDescription : candidate).split("[ATTENDANCE_CORRECTION]")[0].trim();
+  const targetText = candidate || desc;
+
+  // Extract from "Reason: <actual_reason>" within the text
+  const reasonMatches = [...targetText.matchAll(/Reason:\s*(.*?)(?=\s*(?:\.\s*Pending admin approval|\.\s*Admin approved|\.\s*Admin rejected|Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi)];
+  if (reasonMatches.length > 0) {
+    const joined = reasonMatches.map(m => m[1].trim()).filter(Boolean).join(" | ");
+    if (joined && !/^unassigned location (check-in|check-out)$/i.test(joined)) {
+      return joined.replace(/\.$/, "").trim();
+    }
+  }
+
+  // 3. Fallback: clean out checkin/checkout/approval tags
+  let cleaned = targetText
+    .replace(/^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2}.*?(?:\.\s*|$)/i, "")
+    .replace(/^Checkin:?[^|]*\|?/i, "")
+    .replace(/Checkout [^.]*\./i, "")
+    .replace(/Check-?[io]ut from unassigned location[^.]*\./gi, "")
+    .replace(/Check-?[io]ut outside assigned location[^.]*\./gi, "")
+    .replace(/Check-?[io]ut to unassigned location[^.]*\./gi, "")
+    .replace(/Check-?[io]ut:?[^|]*\|?/i, "")
+    .replace(/Check-In Location:.*$/i, "")
+    .replace(/Check-Out Location:.*$/i, "")
+    .replace(/\|?\s*Pending admin approval\.?/gi, "")
+    .replace(/\|?\s*Approved by admin\.?/gi, "")
+    .replace(/\|?\s*Rejected by admin\.?/gi, "")
+    .replace(/Reason:\s*/gi, "")
+    .replace(/\|/g, "")
+    .trim();
+
+  cleaned = cleaned.replace(/\.$/, "").trim();
+  return cleaned || "No reason provided.";
+};
+
 const formatDistance = (value) => {
   if (value == null || value === "") return "";
   const str = String(value).trim();
@@ -203,22 +247,45 @@ const parseCorrectionFromDescription = (description) => {
 
     const isTimeEdit = data.punchType === "time-edit" || readableText.toLowerCase().includes("time edit");
 
-    let reason = readableText
-      .replace(
-        /^(?:Forgot Punch|Time Edit) request for (?:both|check-in|check-out|Check In|Check Out|time-edit|Time Edit) on \d{4}-\d{2}-\d{2}\.?\s*/i,
-        "",
-      )
-      .replace(
-        /^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
-        "",
-      )
-      .replace(/Check-In Location:.*$/i, "")
-      .replace(/Check-Out Location:.*$/i, "")
-      .replace(/\|?\s*Pending admin approval\.?/gi, "")
-      .replace(/\|?\s*Approved by admin\.?/gi, "")
-      .replace(/\|?\s*Rejected by admin\.?/gi, "")
-      .replace(/\|/g, "")
-      .trim();
+    // 1. If data has an explicit reason (not the default unassigned location string), prefer it
+    let explicitReason = "";
+    if (typeof data.reason === "string" && data.reason.trim()) {
+      const trimmed = data.reason.trim();
+      if (!/^unassigned location (check-in|check-out)$/i.test(trimmed)) {
+        explicitReason = trimmed;
+      }
+    }
+
+    // 2. Extract from "Reason: <actual_reason>" within the text
+    const reasonMatches = [...readableText.matchAll(/Reason:\s*(.*?)(?=\s*(?:\.\s*Pending admin approval|\.\s*Admin approved|\.\s*Admin rejected|Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi)];
+    let extractedReason = "";
+    if (reasonMatches.length > 0) {
+      extractedReason = reasonMatches.map(m => m[1].trim()).filter(Boolean).join(" | ");
+    }
+
+    let reason = explicitReason || extractedReason;
+
+    if (!reason) {
+      reason = readableText
+        .replace(
+          /^(?:Forgot Punch|Time Edit) request for (?:both|check-in|check-out|Check In|Check Out|time-edit|Time Edit) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+          "",
+        )
+        .replace(
+          /^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+          "",
+        )
+        .replace(/^Checkin:?[^|]*\|?/i, "")
+        .replace(/Checkout [^.]*\./i, "")
+        .replace(/Check-In Location:.*$/i, "")
+        .replace(/Check-Out Location:.*$/i, "")
+        .replace(/\|?\s*Pending admin approval\.?/gi, "")
+        .replace(/\|?\s*Approved by admin\.?/gi, "")
+        .replace(/\|?\s*Rejected by admin\.?/gi, "")
+        .replace(/Reason:\s*/gi, "")
+        .replace(/\|/g, "")
+        .trim();
+    }
 
     return {
       date: data.date,
@@ -256,13 +323,24 @@ const normalizeRequests = (items) =>
     punchType: item.type === "CORRECTION" ? getPunchTypeLabel(item) : null,
     correctionDetails:
       item.type === "CORRECTION"
-        ? item.notification || parseCorrectionFromDescription(item.description)
+        ? (() => {
+            const parsed = parseCorrectionFromDescription(item.description);
+            if (item.notification && parsed) {
+              return {
+                ...item.notification,
+                ...parsed,
+                reason: parsed.reason || item.notification.reason || "",
+              };
+            }
+            return parsed || item.notification || null;
+          })()
         : null,
     description:
       item.description || item.notification?.reason || "No details provided.",
     employee:
       item.employee?.fullName || item.employee?.user?.fullName || "Employee",
     employeeCode: item.employee?.employeeCode || "",
+    employeeId: item.employee?.id || item.employeeId || "",
     reviewNote: item.reviewNote || null,
     reviewedAt: item.reviewedAt || null,
     reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
@@ -500,7 +578,13 @@ const getReadableReason = (approval) => {
     .trim();
 
   const reasonMatch = text.match(/Reason:\s*(.*?)(?:\s*\||$)/i);
-  let reason = reasonMatch?.[1]?.trim() || text;
+  let reason = reasonMatch?.[1]?.trim();
+
+  if (!reason && (approval?.source === "ATTENDANCE" || approval?.type === "CORRECTION" || text.includes("Checkin:") || text.includes("Checkout:"))) {
+    reason = cleanPureReason(approval?.correctionDetails?.reason || approval?.notification?.reason, text);
+  } else if (!reason) {
+    reason = text;
+  }
 
   return {
     reason: reason || "No reason provided.",
@@ -1018,6 +1102,36 @@ const Approvals = () => {
     }
   }, [pollTick]);
 
+  // Fetch existing attendance record as fallback if reasonModal is opened for a correction with missing times
+  useEffect(() => {
+    if (!reasonModal || reasonModal.source !== "REQUEST" || !reasonModal.correctionDetails) return;
+    const { date, checkInTime, checkOutTime } = reasonModal.correctionDetails;
+    const employeeId = reasonModal.employeeId;
+    if ((!checkInTime || !checkOutTime || reasonModal.checkInLatitude == null || reasonModal.checkOutLatitude == null) && date && employeeId) {
+      apiGet(`/attendance/by-date?date=${date}&employeeId=${employeeId}`)
+        .then((res) => {
+          if (res?.record) {
+            setReasonModal((prev) => {
+              if (!prev || prev.id !== reasonModal.id) return prev;
+              return {
+                ...prev,
+                checkInLatitude: prev.checkInLatitude ?? res.record.checkInLatitude ?? null,
+                checkInLongitude: prev.checkInLongitude ?? res.record.checkInLongitude ?? null,
+                checkOutLatitude: prev.checkOutLatitude ?? res.record.checkOutLatitude ?? null,
+                checkOutLongitude: prev.checkOutLongitude ?? res.record.checkOutLongitude ?? null,
+                correctionDetails: {
+                  ...prev.correctionDetails,
+                  checkInTime: prev.correctionDetails?.checkInTime || res.record.checkInTime || null,
+                  checkOutTime: prev.correctionDetails?.checkOutTime || res.record.checkOutTime || null,
+                },
+              };
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [reasonModal?.id]);
+
   const years = [
     ...new Set(
       approvals
@@ -1494,7 +1608,37 @@ const Approvals = () => {
                                       <span>View Reason</span>
                                     </button>
 
-                                    {/* View Location Button */}
+                                    {/* Attendance Check-in GPS Location Button */}
+                                    {approval.checkInLatitude != null && approval.checkInLongitude != null && (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          openCheckInMap(approval);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 px-3.5 py-2 text-xs font-semibold transition hover:bg-emerald-500/20 w-fit cursor-pointer"
+                                      >
+                                        <MapPin className="h-3.5 w-3.5" />
+                                        <span>Check-In Location</span>
+                                      </button>
+                                    )}
+
+                                    {/* Attendance Check-out GPS Location Button */}
+                                    {approval.checkOutLatitude != null && approval.checkOutLongitude != null && (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          openCheckOutMap(approval);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 px-3.5 py-2 text-xs font-semibold transition hover:bg-rose-500/20 w-fit cursor-pointer"
+                                      >
+                                        <MapPin className="h-3.5 w-3.5" />
+                                        <span>Check-Out Location</span>
+                                      </button>
+                                    )}
+
+                                    {/* View Location Button (Inventory item) */}
                                     {matchedInvItem && (
                                       <button
                                         type="button"
@@ -1867,8 +2011,10 @@ const Approvals = () => {
                         Employee Reason
                       </p>
                       <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                        {reasonModal.correctionDetails.reason ||
-                          "No reason provided."}
+                        {cleanPureReason(
+                          reasonModal.correctionDetails.reason,
+                          reasonModal.description,
+                        )}
                       </p>
                     </div>
                   </div>
@@ -2008,21 +2154,21 @@ const Approvals = () => {
 
               {/* ================= ATTENDANCE LOCATION ================= */}
               {(
-                (attendanceDetails?.isCheckInUnassigned && reasonModal.checkInLatitude != null) ||
-                (attendanceDetails?.isCheckOutUnassigned && reasonModal.checkOutLatitude != null)
+                (reasonModal.checkInLatitude != null && reasonModal.checkInLongitude != null) ||
+                (reasonModal.checkOutLatitude != null && reasonModal.checkOutLongitude != null)
               ) && (
                 <section>
                   <div className="mb-2 flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" />
 
                     <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      Attendance Location
+                      Attendance GPS Location
                     </p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     {/* CHECK-IN */}
-                    {attendanceDetails?.isCheckInUnassigned && reasonModal.checkInLatitude != null &&
+                    {reasonModal.checkInLatitude != null &&
                       reasonModal.checkInLongitude != null && (
                         <button
                           type="button"
@@ -2058,7 +2204,7 @@ const Approvals = () => {
                       )}
 
                     {/* CHECK-OUT */}
-                    {attendanceDetails?.isCheckOutUnassigned && reasonModal.checkOutLatitude != null &&
+                    {reasonModal.checkOutLatitude != null &&
                       reasonModal.checkOutLongitude != null && (
                         <button
                           type="button"

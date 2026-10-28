@@ -62,19 +62,15 @@ router.post("/", requireAuth, checkRolePermission("shift-location"), async (req,
     const exists = await prisma.shift.findFirst({ where: { name: data.name } });
     if (exists) return res.status(400).json({ success: false, message: "A shift with this name already exists." });
 
-    const existingDefault = await prisma.shift.findFirst({ where: { isDefault: true } });
-    if (data.isDefault && existingDefault) {
-      return res.status(400).json({
-        success: false,
-        message: `Only one default shift is allowed. "${existingDefault.name}" is already set as default.`,
-      });
+    if (data.isDefault) {
+      await prisma.shift.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
 
     const shift = await prisma.shift.create({
       data: {
         ...data,
         description: data.description || null,
-        isDefault: Boolean(data.isDefault),
+        isDefault: data.isDefault ?? false,
       },
     });
     res.status(201).json({ success: true, message: "Shift created.", data: shift });

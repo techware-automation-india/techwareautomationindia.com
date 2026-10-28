@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { X, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost } from "../../../lib/api.js";
@@ -42,17 +41,16 @@ const UnitModal = ({ isOpen, onClose, onUnitCreated }) => {
 
   if (!isOpen) return null;
 
-  return createPortal(
+  return (
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[1000001] flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-      style={{ isolation: "isolate" }}
+      className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-2xl bg-card border border-border p-5 space-y-4 shadow-2xl relative z-[1000002] animate-in zoom-in-95 duration-150"
+        className="w-full max-w-sm rounded-2xl bg-background border border-border p-5 space-y-4 shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-border pb-3">
           <h3 className="font-display text-base font-bold text-foreground">Add Custom Unit</h3>
@@ -107,8 +105,7 @@ const UnitModal = ({ isOpen, onClose, onUnitCreated }) => {
           </div>
         </form>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 };
 

@@ -17,26 +17,6 @@ const fitAttendanceNote = (note) => {
 
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
-const formatTime12h = (time) => {
-  if (!time) return "—";
-  if (time instanceof Date) {
-    return time.toLocaleTimeString("en-US", {
-      timeZone: INDIA_TIME_ZONE,
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  }
-  const parts = String(time).split(":");
-  if (parts.length < 2) return String(time);
-  const h = Number(parts[0]);
-  const m = Number(parts[1]);
-  if (Number.isNaN(h) || Number.isNaN(m)) return String(time);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const hour12 = h % 12 || 12;
-  return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
-};
-
 const getIndiaDateKey = (date = new Date()) => {
   if (!date) return "";
   const d = new Date(date);
@@ -251,145 +231,9 @@ const getTargetLocation = async (profile) => {
   });
   if (defaultLoc) return defaultLoc;
 
-  return null;
-};
-
-const getRosterShift = async (profileId, date = new Date()) => {
-  const dateKey = getIndiaDateKey(date);
-  const { start, end } = getIndiaDayRange(date);
-
-  const rosterEntry = await prisma.rosterEntry.findFirst({
-    where: {
-      employeeId: profileId,
-      OR: [
-        { date: { gte: start, lte: end } },
-        ...(dateKey
-          ? [
-              { date: new Date(`${dateKey}T00:00:00.000Z`) },
-              { date: new Date(`${dateKey}T00:00:00+05:30`) },
-            ]
-          : []),
-      ],
-    },
-    include: { shift: true },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  return rosterEntry?.shift ?? null;
-};
-
-const getShiftMatchingTime = async (date = new Date()) => {
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return null;
-
-  // Convert to Indian Standard Time (IST) HH:mm minutes
-  const timeStr = d.toLocaleTimeString("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const [h, m] = timeStr.split(":").map(Number);
-  const currentMinutes = h * 60 + m;
-
-  const allActiveShifts = await prisma.shift.findMany({
+  return prisma.location.findFirst({
     where: { isActive: true },
   });
-
-  if (!allActiveShifts || allActiveShifts.length === 0) return null;
-
-  // Prepare shifts with startMins and endMins
-  const processedShifts = allActiveShifts
-    .filter((s) => Boolean(s.startTime))
-    .map((s) => {
-      const [sh, sm] = s.startTime.split(":").map(Number);
-      const startMins = sh * 60 + sm;
-
-      let endMins = startMins + 480;
-      if (s.endTime) {
-        const [eh, em] = s.endTime.split(":").map(Number);
-        endMins = eh * 60 + em;
-      }
-      const isOvernight = endMins <= startMins;
-
-      return {
-        shift: s,
-        startMins,
-        endMins,
-        isOvernight,
-      };
-    });
-
-  if (processedShifts.length === 0) return null;
-
-  // Find shifts that current time is currently inside [startMins, endMins)
-  const insideShifts = processedShifts.filter(({ startMins, endMins, isOvernight }) => {
-    if (isOvernight) {
-      return currentMinutes >= startMins || currentMinutes < endMins;
-    }
-    return currentMinutes >= startMins && currentMinutes < endMins;
-  });
-
-  if (insideShifts.length > 0) {
-    // If multiple shifts are active at this moment, pick the one that started MOST RECENTLY
-    // (i.e. highest start time that is <= currentMinutes, accounting for midnight wrap)
-    insideShifts.sort((a, b) => {
-      const elapsedA = (currentMinutes - a.startMins + 1440) % 1440;
-      const elapsedB = (currentMinutes - b.startMins + 1440) % 1440;
-      return elapsedA - elapsedB; // smallest elapsed time since start is the freshest start
-    });
-    return insideShifts[0].shift;
-  }
-
-  // If outside all shift windows, find the shift with start time closest to current time
-  let bestShift = null;
-  let minDiff = Infinity;
-
-  for (const item of processedShifts) {
-    let diff = Math.abs(currentMinutes - item.startMins);
-    if (diff > 720) diff = 1440 - diff;
-    if (diff < minDiff) {
-      minDiff = diff;
-      bestShift = item.shift;
-    }
-  }
-
-  return bestShift;
-};
-
-const getTargetShift = async (profile, date = new Date()) => {
-  // 1. Roster shift priority
-  const rosterShift = await getRosterShift(profile.id, date);
-  if (rosterShift) {
-    return rosterShift;
-  }
-
-  // 2. Employee profile assigned shift
-  if (profile?.shift) {
-    return profile.shift;
-  }
-  if (profile?.shiftId) {
-    const assignedShift = await prisma.shift.findUnique({
-      where: { id: profile.shiftId },
-    });
-    if (assignedShift) return assignedShift;
-  }
-
-  // 3. Match shift dynamically according to check-in / current time
-  const timeMatchedShift = await getShiftMatchingTime(date);
-  if (timeMatchedShift) return timeMatchedShift;
-
-  // 4. System Default shift
-  const defaultShift = await prisma.shift.findFirst({
-    where: { isDefault: true, isActive: true },
-  });
-  if (defaultShift) return defaultShift;
-
-  // 5. Any active shift fallback
-  const fallbackShift = await prisma.shift.findFirst({
-    where: { isActive: true },
-  });
-  return fallbackShift ?? null;
 };
 
 const getCheckInStatus = (date) => {
@@ -535,13 +379,6 @@ const getUnclosedPreviousAttendance = async (profileId) => {
     return null;
   }
 
-  // If the previous check-in is within the last 24 hours (e.g. overnight night shift),
-  // it is STILL ACTIVE for checkout in Mark Attendance, NOT a missing forgotten checkout!
-  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  if (new Date(lastRecord.checkIn).getTime() >= twentyFourHoursAgo.getTime()) {
-    return null;
-  }
-
   const previousRecord = lastRecord;
 
   const prevDateKey = getIndiaDateKey(previousRecord.date);
@@ -645,10 +482,9 @@ router.get("/me", requireAuth, async (req, res) => {
     const start = new Date(`${year}-${monthStr}-01T00:00:00+05:30`);
     const end = new Date(`${endYear}-${endMonthStr}-01T00:00:00+05:30`);
 
-    const [records, holidays, leaveRequests, rosterEntries, defaultShift, profileWithShift] = await Promise.all([
+    const [records, holidays, leaveRequests] = await Promise.all([
       prisma.attendance.findMany({
         where: { employeeId: profile.id, date: { gte: start, lt: end } },
-        include: { shift: true },
         orderBy: { date: "asc" },
       }),
       prisma.holiday.findMany({
@@ -663,39 +499,7 @@ router.get("/me", requireAuth, async (req, res) => {
         },
         include: { leaveType: { select: { name: true, code: true } } },
       }),
-      prisma.rosterEntry.findMany({
-        where: {
-          employeeId: profile.id,
-          date: { gte: start, lt: end },
-        },
-        include: { shift: true },
-      }),
-      prisma.shift.findFirst({
-        where: { isDefault: true, isActive: true },
-      }),
-      prisma.employeeProfile.findUnique({
-        where: { id: profile.id },
-        include: { shift: true },
-      }),
     ]);
-
-    const isAdminUser = req.user.role === "ADMIN";
-
-    const rosterShiftByDate = new Map(
-      rosterEntries.map((re) => [formatDateKey(re.date), re.shift]),
-    );
-
-    const getAssignedShiftForDate = (dateKey, attendanceRecord = null) => {
-      if (attendanceRecord?.shift) return attendanceRecord.shift;
-      if (rosterShiftByDate.has(dateKey)) return rosterShiftByDate.get(dateKey);
-      // Only show profile or default shift if employee has actually checked in on that day
-      if (attendanceRecord?.checkIn) {
-        if (profileWithShift?.shift) return profileWithShift.shift;
-        return defaultShift ?? null;
-      }
-      // If employee did not check in and has no roster assignment, do not print a shift
-      return null;
-    };
 
     const attendanceByDate = new Map(
       records.map((r) => [formatDateKey(r.date), r]),
@@ -756,23 +560,12 @@ router.get("/me", requireAuth, async (req, res) => {
           summary.SHORT_DAY += 1;
         }
 
-        const dayShift = getAssignedShiftForDate(key, attendance);
-
         populatedRecords.push({
           id: attendance.id,
           date: attendance.date,
           checkIn: attendance.checkIn,
           checkOut: attendance.checkOut,
           status,
-          shift: dayShift
-            ? {
-                id: dayShift.id,
-                name: dayShift.name,
-                startTime: dayShift.startTime,
-                endTime: dayShift.endTime,
-                isDefault: dayShift.isDefault,
-              }
-            : null,
           workedHours,
           overtimeHours,
           isShortDay,
@@ -784,17 +577,6 @@ router.get("/me", requireAuth, async (req, res) => {
         continue;
       }
 
-      const dayShift = getAssignedShiftForDate(key, null);
-      const shiftPayload = dayShift
-        ? {
-            id: dayShift.id,
-            name: dayShift.name,
-            startTime: dayShift.startTime,
-            endTime: dayShift.endTime,
-            isDefault: dayShift.isDefault,
-          }
-        : null;
-
       if (leaveByDate.has(key)) {
         const leave = leaveByDate.get(key);
         summary.ON_LEAVE += 1;
@@ -804,7 +586,6 @@ router.get("/me", requireAuth, async (req, res) => {
           checkIn: null,
           checkOut: null,
           status: "ON_LEAVE",
-          shift: shiftPayload,
           workedHours: null,
           note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
         });
@@ -819,7 +600,6 @@ router.get("/me", requireAuth, async (req, res) => {
           checkIn: null,
           checkOut: null,
           status: "HOLIDAY",
-          shift: shiftPayload,
           workedHours: null,
           note: holidayByDate.get(key),
         });
@@ -834,7 +614,6 @@ router.get("/me", requireAuth, async (req, res) => {
           checkIn: null,
           checkOut: null,
           status: "HOLIDAY",
-          shift: shiftPayload,
           workedHours: null,
           note: "Weekly Off (Sunday)",
         });
@@ -850,7 +629,6 @@ router.get("/me", requireAuth, async (req, res) => {
           checkIn: null,
           checkOut: null,
           status: "ABSENT",
-          shift: shiftPayload,
           workedHours: null,
           note: "No attendance record.",
         });
@@ -936,31 +714,15 @@ router.get("/me/today", requireAuth, async (req, res) => {
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
-    const todayDateKey = getIndiaDateKey(now);
     const [todayRecord, approvedLeave, unclosedPrevious] = await Promise.all([
       prisma.attendance.findFirst({
         where: {
           employeeId: profile.id,
-          OR: [
-            {
-              date: {
-                gte: today,
-                lte: tomorrow,
-              },
-            },
-            ...(todayDateKey
-              ? [
-                  { date: new Date(`${todayDateKey}T00:00:00.000Z`) },
-                  { date: new Date(`${todayDateKey}T00:00:00+05:30`) },
-                ]
-              : []),
-          ],
+          date: {
+            gte: today,
+            lte: tomorrow,
+          },
         },
-        include: { shift: true },
-        orderBy: [
-          { updatedAt: "desc" },
-          { date: "desc" },
-        ],
       }),
       prisma.leaveRequest.findFirst({
         where: {
@@ -978,129 +740,26 @@ router.get("/me/today", requireAuth, async (req, res) => {
     let activeRecord = todayRecord;
     let effectiveUnclosedPrevious = unclosedPrevious;
 
-    // If previous unclosed record has a PENDING or APPROVED check-out correction request,
-    // do NOT adopt it as activeRecord for today; let the user start their new shift today!
-    const isPreviousCheckoutHandled =
-      effectiveUnclosedPrevious?.correctionRequest &&
-      (effectiveUnclosedPrevious.correctionRequest.status === "PENDING" ||
-        effectiveUnclosedPrevious.correctionRequest.status === "APPROVED");
-
-    if ((!activeRecord || !activeRecord.checkIn) && !isPreviousCheckoutHandled) {
+    if (!activeRecord) {
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const recentShift = await prisma.attendance.findFirst({
+      const recentUnclosed = await prisma.attendance.findFirst({
         where: {
           employeeId: profile.id,
           date: { lt: today },
           checkIn: { gte: twentyFourHoursAgo, not: null },
-          checkOut: null, // Only adopt if overnight shift is still open (unclosed)
+          checkOut: null,
         },
         orderBy: { date: "desc" },
       });
 
-      if (recentShift) {
-        // Less than 24 hours have passed since check-in and checkout is still pending: adopt as activeRecord!
-        activeRecord = recentShift;
+      if (recentUnclosed) {
+        // Less than 24 hours have passed since check-in: keep check-out button open!
+        activeRecord = recentUnclosed;
         effectiveUnclosedPrevious = null;
       }
     }
 
     let finalRecord = activeRecord;
-
-    // Check if there is a pending or approved Forgot Punch Check In request from within the last 24 hours
-    let pendingCheckInRequest = null;
-    if (!finalRecord || !finalRecord.checkIn) {
-      const recentCorrectionRequests = await prisma.employeeRequest.findMany({
-        where: {
-          employeeId: profile.id,
-          type: "CORRECTION",
-          status: { in: ["PENDING", "APPROVED"] },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      for (const req of recentCorrectionRequests) {
-        if (!req.description) continue;
-        const match = req.description.match(
-          /\[ATTENDANCE_CORRECTION\]\s*(\{[\s\S]*\})\s*$/,
-        );
-        if (!match) continue;
-
-        try {
-          const correction = JSON.parse(match[1]);
-          const todayKey = getIndiaDateKey(now);
-          const isTodayCorrection =
-            correction.date === todayKey &&
-            (correction.punchType === "check-in" ||
-              correction.punchType === "both" ||
-              correction.punchType === "time-edit") &&
-            correction.checkInTime;
-
-          let isWithin24HoursCorrection = false;
-          if (
-            !isTodayCorrection &&
-            correction.date &&
-            correction.checkInTime &&
-            (correction.punchType === "check-in" ||
-              correction.punchType === "both" ||
-              correction.punchType === "time-edit")
-          ) {
-            const [h, m] = String(correction.checkInTime).split(":").map(Number);
-            if (Number.isFinite(h) && Number.isFinite(m)) {
-              const checkInDateTime = new Date(`${correction.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
-              const twentyFourHoursMs = 24 * 60 * 60 * 1000;
-              if (now.getTime() - checkInDateTime.getTime() <= twentyFourHoursMs && now.getTime() >= checkInDateTime.getTime()) {
-                isWithin24HoursCorrection = true;
-              }
-            }
-          }
-
-          if (isTodayCorrection || isWithin24HoursCorrection) {
-            pendingCheckInRequest = { req, correction };
-            break;
-          }
-        } catch (e) {}
-      }
-
-      if (pendingCheckInRequest) {
-        const { req, correction } = pendingCheckInRequest;
-        const recordDate = new Date(`${correction.date}T00:00:00+05:30`);
-        const [h, m] = String(correction.checkInTime).split(":").map(Number);
-        const checkInDate = new Date(`${correction.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
-
-        // Check if an actual attendance record already exists in the database for this date
-        const existingForDate = await prisma.attendance.findFirst({
-          where: {
-            employeeId: profile.id,
-            OR: [
-              { date: recordDate },
-              { date: new Date(`${correction.date}T00:00:00.000Z`) }
-            ],
-          },
-          orderBy: { updatedAt: "desc" },
-        });
-
-        if (existingForDate) {
-          finalRecord = {
-            ...existingForDate,
-            checkIn: existingForDate.checkIn || checkInDate,
-            isPendingCheckIn: req.status === "PENDING",
-          };
-        } else {
-          finalRecord = {
-            id: null,
-            employeeId: profile.id,
-            date: recordDate,
-            checkIn: checkInDate,
-            checkOut: null,
-            status: "PRESENT",
-            note: req.status === "APPROVED" ? "Approved Forgot Punch Check In" : "Pending Forgot Punch Check In",
-            isPendingCheckIn: req.status === "PENDING",
-          };
-        }
-        effectiveUnclosedPrevious = null;
-      }
-    }
-
     if (!finalRecord && approvedLeave) {
       finalRecord = {
         id: null,
@@ -1117,41 +776,8 @@ router.get("/me/today", requireAuth, async (req, res) => {
       };
     }
 
-    const targetShift = await getTargetShift(profile, now);
-    const assignedLoc = (await getRosterLocation(profile.id)) || profile?.location || (profile?.locationId ? await prisma.location.findUnique({ where: { id: profile.locationId } }) : null);
-    const shiftPayload = finalRecord?.shift || (targetShift
-      ? {
-          id: targetShift.id,
-          name: targetShift.name,
-          startTime: targetShift.startTime,
-          endTime: targetShift.endTime,
-          isDefault: targetShift.isDefault,
-        }
-      : null);
-
-    const locationPayload = assignedLoc
-      ? {
-          id: assignedLoc.id,
-          name: assignedLoc.name,
-          address: assignedLoc.address,
-          city: assignedLoc.city,
-          latitude: assignedLoc.latitude,
-          longitude: assignedLoc.longitude,
-          radiusMeters: assignedLoc.radiusMeters,
-        }
-      : null;
-
-    if (finalRecord) {
-      finalRecord = {
-        ...finalRecord,
-        shift: shiftPayload,
-      };
-    }
-
     res.json({
       record: finalRecord ?? null,
-      shift: shiftPayload,
-      location: locationPayload,
       approvedLeave: approvedLeave ?? null,
       unclosedPrevious: effectiveUnclosedPrevious ?? null,
     });
@@ -1262,10 +888,6 @@ router.get("/by-date", requireAuth, async (req, res) => {
             workedHours: record.workedHours,
             overtimeHours: record.overtimeHours,
             note: record.note,
-            checkInLatitude: record.checkInLatitude,
-            checkInLongitude: record.checkInLongitude,
-            checkOutLatitude: record.checkOutLatitude,
-            checkOutLongitude: record.checkOutLongitude,
           }
         : null,
       approvedLeave: approvedLeave
@@ -1291,7 +913,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
   }
 
   try {
-    const { date, punchType, checkInTime, checkOutTime, reason, employeeId, isOvernight } =
+    const { date, punchType, checkInTime, checkOutTime, reason, employeeId } =
       req.body || {};
 
     const isTimeEdit = punchType === "time-edit";
@@ -1507,7 +1129,6 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     if (!record) {
-      const targetShift = await getTargetShift(profile, selectedDate);
       record = await prisma.attendance.create({
         data: {
           employeeId: profile.id,
@@ -1515,7 +1136,6 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
           status: "PRESENT",
           checkIn: null,
           checkOut: null,
-          shiftId: targetShift?.id ?? null,
           note: `Manual attendance: ${manualReason}`,
         },
       });
@@ -1527,13 +1147,6 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     let checkInDateTime = null;
     let checkOutDateTime = null;
-
-    let checkOutDateStr = req.body?.checkOutDate || date;
-    if (!req.body?.checkOutDate && isOvernight) {
-      const nextDay = new Date(`${date}T12:00:00+05:30`);
-      nextDay.setDate(nextDay.getDate() + 1);
-      checkOutDateStr = nextDay.toISOString().slice(0, 10);
-    }
 
     if (isTimeEdit) {
       if (!checkInTime && !checkOutTime) {
@@ -1552,7 +1165,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
       }
 
       if (checkOutTime) {
-        checkOutDateTime = parseManualPunchDateTime(checkOutDateStr, checkOutTime);
+        checkOutDateTime = parseManualPunchDateTime(date, checkOutTime);
         if (!checkOutDateTime) {
           return res.status(400).json({
             message: "Invalid check-out time.",
@@ -1583,7 +1196,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
           });
         }
 
-        checkOutDateTime = parseManualPunchDateTime(checkOutDateStr, checkOutTime);
+        checkOutDateTime = parseManualPunchDateTime(date, checkOutTime);
 
         if (!checkOutDateTime) {
           return res.status(400).json({
@@ -1599,7 +1212,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     if (checkInDateTime && checkOutDateTime && checkOutDateTime <= checkInDateTime) {
       return res.status(400).json({
-        message: `Check-out time (${formatTime12h(checkOutDateTime)}) must be greater than check-in time (${formatTime12h(checkInDateTime)}).`,
+        message: "Check-out time must be greater than check-in time.",
       });
     }
 
@@ -1632,10 +1245,10 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     // --------------------------------------------------
 
     const finalCheckIn =
-      updates.checkIn !== undefined ? updates.checkIn : record?.checkIn;
+      updates.checkIn !== undefined ? updates.checkIn : record.checkIn;
 
     const finalCheckOut =
-      updates.checkOut !== undefined ? updates.checkOut : record?.checkOut;
+      updates.checkOut !== undefined ? updates.checkOut : record.checkOut;
 
     // --------------------------------------------------
     // VALIDATE EXISTING CHECK-IN / CHECK-OUT
@@ -1647,7 +1260,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
       new Date(finalCheckOut) <= new Date(finalCheckIn)
     ) {
       return res.status(400).json({
-        message: `Check-out time (${formatTime12h(finalCheckOut)}) must be greater than check-in time (${formatTime12h(finalCheckIn)}).`,
+        message: "Check-out time must be greater than check-in time.",
       });
     }
 
@@ -1680,25 +1293,15 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     );
 
     // --------------------------------------------------
-    // UPDATE ATTENDANCE IN DATABASE
-    // --------------------------------------------------
-    const updated = await prisma.attendance.update({
-      where: { id: record.id },
-      data: updates,
-    });
-
-    // --------------------------------------------------
     // RECORD EMPLOYEE REQUEST FOR TRACKING
     // --------------------------------------------------
     try {
       const CORRECTION_MARKER = "[ATTENDANCE_CORRECTION]";
       const metadata = JSON.stringify({
         date,
-        checkOutDate: checkOutDateStr,
         punchType: normalizedType,
         checkInTime: updates.checkIn ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updates.checkIn)) : null,
         checkOutTime: updates.checkOut ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updates.checkOut)) : null,
-        isOvernight: Boolean(isOvernight || checkOutDateStr > date),
       });
       const readableText = `Forgot Punch request for ${normalizedType} on ${date}.\n\n${manualReason}`;
       const finalDescription = `${readableText}\n\n${CORRECTION_MARKER}${metadata}`;
@@ -1849,15 +1452,8 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
       const { record: unclosedRec, correctionRequest: unclosedReq } = unclosedPrevious;
       // If employee already submitted a check-out request and status is PENDING or APPROVED, open check-in!
       const isAllowed = unclosedReq && (unclosedReq.status === "APPROVED" || unclosedReq.status === "PENDING");
-      
-      // If check-in was within 24 hours (e.g. overnight shift), prompt to check out first
-      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const isWithin24h = unclosedRec.checkIn && new Date(unclosedRec.checkIn).getTime() >= twentyFourHoursAgo.getTime();
-
       if (!isAllowed) {
-        const detail = isWithin24h
-          ? `You have an active shift from ${unclosedRec.dateKey} (checked in within last 24 hours). Please Check Out first or complete your check-out.`
-          : `You checked in on ${unclosedRec.dateKey} but forgot to check out. Please complete that day's check-out first.`;
+        const detail = `You checked in on ${unclosedRec.dateKey} but forgot to check out. Please complete that day's check-out first.`;
         return res.status(400).json({
           message: `Check-in disabled. ${detail}`,
           unclosedPrevious,
@@ -1865,7 +1461,11 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
       }
     }
 
-    const { location, reason, shiftId } = req.body || {};
+    // ----------------------------------------------------------
+    // REQUEST BODY
+    // ----------------------------------------------------------
+
+    const { location, reason } = req.body || {};
 
     const normalizedReason = typeof reason === "string" ? reason.trim() : "";
 
@@ -1890,70 +1490,7 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     }
 
     // ==========================================================
-    // ADMIN CHECK-IN (LOCATION BYPASS)
-    //
-    // IMPORTANT:
-    // - No GPS requirement / location check bypassed for admin
-    // - Admin can check in to any created shift (by shiftId or matched by current time)
-    // - No target location
-    // - No default location
-    // - No distance calculation
-    // - No approval
-    // - Always PRESENT
-    // ==========================================================
-
-    if (req.user.role === "ADMIN") {
-      let chosenShift = null;
-      if (shiftId) {
-        chosenShift = await prisma.shift.findUnique({ where: { id: shiftId } });
-      }
-      if (!chosenShift) {
-        chosenShift = await getTargetShift(profile, now);
-      }
-      const record = await prisma.attendance.create({
-        data: {
-          employeeId: profile.id,
-
-          date: today,
-
-          checkIn: now,
-
-          checkOut: null,
-
-          status: "PRESENT",
-
-          shiftId: chosenShift?.id ?? null,
-
-          note: "Admin check-in.",
-
-          checkInLatitude: null,
-
-          checkInLongitude: null,
-
-          checkOutLatitude: null,
-
-          checkOutLongitude: null,
-        },
-        include: {
-          shift: true,
-        },
-      });
-
-      const shiftLabel = record.shift?.name
-        ? `${record.shift.name} (${record.shift.name.charAt(0).toUpperCase()})`
-        : "";
-
-      return res.json({
-        record,
-        shift: record.shift,
-        message: shiftLabel
-          ? `Admin checked in successfully [Shift: ${shiftLabel}].`
-          : "Admin checked in successfully.",
-      });
-    }
-
-    // ==========================================================
-    // EMPLOYEE GPS IS REQUIRED
+    // GPS IS REQUIRED FOR BOTH ADMIN AND EMPLOYEE
     // ==========================================================
 
     if (!location) {
@@ -1967,6 +1504,50 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     if (!coordinates) {
       return res.status(400).json({
         message: "Invalid GPS location format. Please try again.",
+      });
+    }
+
+    // ==========================================================
+    // ADMIN CHECK-IN
+    //
+    // IMPORTANT:
+    // - No target location
+    // - No default location
+    // - No distance calculation
+    // - No approval
+    // - Always PRESENT
+    // - Save GPS
+    // ==========================================================
+
+    if (req.user.role === "ADMIN") {
+      const record = await prisma.attendance.create({
+        data: {
+          employeeId: profile.id,
+
+          date: today,
+
+          checkIn: now,
+
+          checkOut: null,
+
+          status: "PRESENT",
+
+          note: "Admin check-in.",
+
+          checkInLatitude: coordinates.latitude,
+
+          checkInLongitude: coordinates.longitude,
+
+          checkOutLatitude: null,
+
+          checkOutLongitude: null,
+        },
+      });
+
+      return res.json({
+        record,
+
+        message: "Admin checked in successfully.",
       });
     }
 
@@ -2122,8 +1703,6 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     // CREATE EMPLOYEE ATTENDANCE
     // ----------------------------------------------------------
 
-    const targetShift = await getTargetShift(profile, now);
-
     const record = await prisma.attendance.create({
       data: {
         employeeId: profile.id,
@@ -2133,8 +1712,6 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
         checkIn: now,
 
         status,
-
-        shiftId: targetShift?.id ?? null,
 
         note: fitAttendanceNote(note),
 
@@ -2146,48 +1723,16 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
 
         checkOutLongitude: null,
       },
-      include: {
-        shift: true,
-      },
     });
-
-    if (requiresApproval) {
-      try {
-        const todayDateKey = getIndiaDateKey(now);
-        const jsonMetadata = JSON.stringify({
-          date: todayDateKey,
-          punchType: "check-in",
-          checkInTime: formatTime12h(now),
-          attendanceId: record.id,
-          reason: normalizedReason || "",
-        });
-        await prisma.employeeRequest.create({
-          data: {
-            employeeId: profile.id,
-            type: "CORRECTION",
-            subject: `Check-in Approval Request: ${profile.firstName || "Employee"} (${todayDateKey})`,
-            description: `${note}\n\n[ATTENDANCE_CORRECTION]${jsonMetadata}`,
-            status: "PENDING",
-          },
-        });
-      } catch (reqErr) {
-        console.warn("Could not create EmployeeRequest ticket for check-in approval:", reqErr.message);
-      }
-    }
-
-    const shiftBadge = record.shift?.name
-      ? ` [Shift: ${record.shift.name} (${record.shift.name.charAt(0).toUpperCase()})]`
-      : "";
 
     const message = requiresApproval
       ? `Checked in to ${
           checkinLocation?.name || "unassigned location"
-        }.${shiftBadge} Awaiting admin approval.`
-      : `Checked in successfully.${shiftBadge}`;
+        }. Awaiting admin approval.`
+      : "Checked in successfully.";
 
     return res.json({
       record,
-      shift: record.shift,
       message,
     });
   } catch (err) {
@@ -2397,7 +1942,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // REQUEST BODY
     // --------------------------------------------------------
 
-    const { location, reason, checkOutTime, checkOutDate } = req.body || {};
+    const { location, reason } = req.body || {};
 
     const normalizedReason = typeof reason === "string" ? reason.trim() : "";
 
@@ -2429,15 +1974,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       });
 
       if (activeUnclosed) {
-        // Only reject activeUnclosed if there is a pending or approved correction that already covers check-out
-        const prevUnclosed = await getUnclosedPreviousAttendance(profile.id);
-        const hasHandledCheckout =
-          prevUnclosed?.correctionRequest &&
-          (prevUnclosed.correctionRequest.status === "PENDING" ||
-            prevUnclosed.correctionRequest.status === "APPROVED");
-        if (!hasHandledCheckout) {
-          record = activeUnclosed;
-        }
+        record = activeUnclosed;
       }
     }
 
@@ -2447,24 +1984,117 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       });
     }
 
+    // ========================================================
+    // ADMIN CHECKOUT
+    //
+    // IMPORTANT:
+    // - Admin requires GPS
+    // - GPS is saved
+    // - No location comparison
+    // - No approval
+    // - No Forgot Punch request
+    // - Always PRESENT
+    // ========================================================
+
+    if (req.user.role === "ADMIN") {
+      if (!record) {
+        return res.status(400).json({
+          message: "No check-in found for today. Please check in first.",
+        });
+      }
+
+      if (record.checkOut) {
+        return res.status(400).json({
+          message: "You have already checked out.",
+        });
+      }
+
+      // ------------------------------------------------------
+      // ADMIN MUST SEND GPS
+      // ------------------------------------------------------
+
+      if (!location) {
+        return res.status(400).json({
+          message: "Please provide your GPS location to check out.",
+        });
+      }
+
+      const coordinates = parseLocationString(location);
+
+      if (!coordinates) {
+        return res.status(400).json({
+          message: "Invalid GPS location format. Please try again.",
+        });
+      }
+
+      // ------------------------------------------------------
+      // CALCULATE WORKED HOURS & OVERTIME
+      // ------------------------------------------------------
+
+      const workedHours = calculateWorkedHours(record.checkIn, now);
+      const isHolOrSun = await isHolidayOrSundayDate(today);
+      const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
+
+      // ------------------------------------------------------
+      // UPDATE ADMIN ATTENDANCE
+      // ------------------------------------------------------
+
+      const updated = await prisma.attendance.update({
+        where: {
+          id: record.id,
+        },
+
+        data: {
+          checkOut: now,
+
+          checkOutLatitude: coordinates.latitude,
+
+          checkOutLongitude: coordinates.longitude,
+
+          workedHours,
+
+          overtimeHours,
+
+          status: "PRESENT",
+
+          note: fitAttendanceNote(
+            `${record.note || ""}${record.note ? " | " : ""}Admin check-out.`,
+          ),
+        },
+      });
+
+      return res.json({
+        record: updated,
+
+        message: "Admin checked out successfully.",
+      });
+    }
+
+    // ========================================================
+    // EMPLOYEE CHECKOUT
+    // ========================================================
+
     // --------------------------------------------------------
-    // FIND PENDING OR APPROVED FORGOT PUNCH REQUEST (FOR BOTH ADMIN & EMPLOYEE)
+    // FIND PENDING FORGOT PUNCH REQUEST
     // --------------------------------------------------------
 
     let pendingForgotPunchCheckIn = null;
 
-    const correctionRequests = await prisma.employeeRequest.findMany({
+    const pendingRequests = await prisma.employeeRequest.findMany({
       where: {
         employeeId: profile.id,
+
         type: "CORRECTION",
-        status: { in: ["PENDING", "APPROVED"] },
+
+        status: "PENDING",
       },
+
       orderBy: {
         createdAt: "desc",
       },
     });
 
-    for (const request of correctionRequests) {
+    for (const request of pendingRequests) {
       if (typeof request.description !== "string") {
         continue;
       }
@@ -2507,178 +2137,62 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
         }
 
         if (isTodayCorrection || isWithin24HoursCorrection) {
-          // If this request already supplied checkOutTime and was approved, skip
-          if (request.status === "APPROVED" && correction.checkOutTime) {
-            continue;
-          }
           pendingForgotPunchCheckIn = {
             request,
             correction,
           };
+
           break;
         }
       } catch (error) {
-        console.error("Failed to parse Forgot Punch request:", error);
+        console.error("Failed to parse pending Forgot Punch request:", error);
       }
     }
 
     const hasPendingForgotPunchCheckIn = !!pendingForgotPunchCheckIn;
 
+    // --------------------------------------------------------
+    // NO ATTENDANCE + FORGOT PUNCH REQUEST
+    // --------------------------------------------------------
+
     if (!record && hasPendingForgotPunchCheckIn) {
       const correctionDate = pendingForgotPunchCheckIn.correction?.date;
       const recordDate = correctionDate ? new Date(`${correctionDate}T00:00:00.000+05:30`) : today;
 
-      // Look if record already exists for that correction date
-      const existingRecordForDate = await prisma.attendance.findFirst({
-        where: {
-          employeeId: profile.id,
-          date: recordDate,
-        },
-      });
-
-      if (existingRecordForDate) {
-        record = existingRecordForDate;
-      } else {
-        let effectiveCheckIn = null;
-        if (pendingForgotPunchCheckIn.correction?.checkInTime && correctionDate) {
-          effectiveCheckIn = parseManualPunchDateTime(
-            correctionDate,
-            pendingForgotPunchCheckIn.correction.checkInTime,
-          );
-        }
-
-        record = await prisma.attendance.create({
-          data: {
-            employeeId: profile.id,
-            date: recordDate,
-            checkIn: effectiveCheckIn,
-            checkOut: null,
-            workedHours: null,
-            status: "PRESENT",
-            note: fitAttendanceNote(
-              pendingForgotPunchCheckIn.request.status === "APPROVED"
-                ? "Forgot Punch check-in approved."
-                : "Checkout recorded while Forgot Punch Check In request is pending.",
-            ),
-          },
-        });
-      }
-    }
-
-    if (record && !record.checkIn && hasPendingForgotPunchCheckIn) {
-      const correctionDate = pendingForgotPunchCheckIn.correction?.date;
-      if (pendingForgotPunchCheckIn.correction?.checkInTime && correctionDate) {
-        const effectiveCheckIn = parseManualPunchDateTime(
-          correctionDate,
-          pendingForgotPunchCheckIn.correction.checkInTime,
-        );
-        if (effectiveCheckIn) {
-          record.checkIn = effectiveCheckIn;
-        }
-      }
-    }
-
-    // ========================================================
-    // ADMIN CHECKOUT
-    //
-    // IMPORTANT:
-    // - Admin requires GPS
-    // - GPS is saved
-    // - No location comparison
-    // - No approval
-    // - No Forgot Punch request
-    // - Always PRESENT
-    // ========================================================
-
-    if (req.user.role === "ADMIN") {
-      if (!record) {
-        return res.status(400).json({
-          message: "No check-in found for today. Please check in first.",
-        });
-      }
-
-      if (record.checkOut) {
-        return res.status(400).json({
-          message: "You have already checked out.",
-        });
-      }
-
-      // ------------------------------------------------------
-      // CALCULATE WORKED HOURS & OVERTIME (ADMIN)
-      // ------------------------------------------------------
-      let adminCheckOutDate = now;
-      if (checkOutTime && typeof checkOutTime === "string") {
-        const timeParts = checkOutTime.trim().match(/^(\d{1,2}):(\d{2})/);
-        if (timeParts) {
-          const h = String(timeParts[1]).padStart(2, "0");
-          const m = String(timeParts[2]).padStart(2, "0");
-          const targetDateKey = (checkOutDate && /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutDate).trim()))
-            ? String(checkOutDate).trim()
-            : getIndiaDateKey(now);
-          const customDate = new Date(`${targetDateKey}T${h}:${m}:00+05:30`);
-          if (!Number.isNaN(customDate.getTime())) {
-            adminCheckOutDate = customDate;
-          }
-        }
-      }
-
-      const diffMs = adminCheckOutDate.getTime() - new Date(record.checkIn).getTime();
-      const diffHours = diffMs / 3600000;
-
-      if (diffHours < 0) {
-        return res.status(400).json({
-          message: "Check-out time cannot be before check-in time.",
-        });
-      }
-
-      if (diffHours > 24) {
-        return res.status(400).json({
-          message: `Total shift duration cannot exceed 24 hours (${diffHours.toFixed(1)} hours calculated).`,
-        });
-      }
-
-      const workedHours = calculateWorkedHours(record.checkIn, adminCheckOutDate);
-      const isHolOrSun = await isHolidayOrSundayDate(today);
-      const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
-
-      // ------------------------------------------------------
-      // UPDATE ADMIN ATTENDANCE (NO GPS COORDINATES FOR ADMIN)
-      // ------------------------------------------------------
-
-      const updated = await prisma.attendance.update({
-        where: {
-          id: record.id,
-        },
-
+      record = await prisma.attendance.create({
         data: {
-          checkOut: adminCheckOutDate,
+          employeeId: profile.id,
 
-          checkOutLatitude: null,
+          date: recordDate,
 
-          checkOutLongitude: null,
+          checkIn: null,
 
-          workedHours,
+          checkOut: null,
 
-          overtimeHours,
+          workedHours: null,
 
           status: "PRESENT",
 
           note: fitAttendanceNote(
-            `${record.note || ""}${record.note ? " | " : ""}Admin check-out.`,
+            "Checkout recorded while Forgot Punch Check In request is pending.",
           ),
         },
       });
+    }
 
-      return res.json({
-        record: updated,
+    // --------------------------------------------------------
+    // NO ATTENDANCE
+    // --------------------------------------------------------
 
-        message: "Admin checked out successfully.",
+    if (!record) {
+      return res.status(400).json({
+        message: "No check-in found for today. Please check in first.",
       });
     }
 
-    // ========================================================
-    // EMPLOYEE CHECKOUT
-    // ========================================================
+    // --------------------------------------------------------
+    // PENDING LOCATION APPROVAL
+    // --------------------------------------------------------
 
     const isPendingForgotPunchOnly =
       hasPendingForgotPunchCheckIn && !record.checkIn;
@@ -2766,41 +2280,10 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       : Infinity;
 
     // --------------------------------------------------------
-    // --------------------------------------------------------
     // WORKED HOURS & OVERTIME
     // --------------------------------------------------------
-    let employeeCheckOutDate = now;
-    if (checkOutTime && typeof checkOutTime === "string") {
-      const timeParts = checkOutTime.trim().match(/^(\d{1,2}):(\d{2})/);
-      if (timeParts) {
-        const h = String(timeParts[1]).padStart(2, "0");
-        const m = String(timeParts[2]).padStart(2, "0");
-        const targetDateKey = (checkOutDate && /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutDate).trim()))
-          ? String(checkOutDate).trim()
-          : getIndiaDateKey(now);
-        const customDate = new Date(`${targetDateKey}T${h}:${m}:00+05:30`);
-        if (!Number.isNaN(customDate.getTime())) {
-          employeeCheckOutDate = customDate;
-        }
-      }
-    }
 
-    const diffMs = employeeCheckOutDate.getTime() - new Date(record.checkIn).getTime();
-    const diffHours = diffMs / 3600000;
-
-    if (diffHours < 0) {
-      return res.status(400).json({
-        message: "Check-out time cannot be before check-in time.",
-      });
-    }
-
-    if (diffHours > 24) {
-      return res.status(400).json({
-        message: `Total shift duration cannot exceed 24 hours (${diffHours.toFixed(1)} hours calculated).`,
-      });
-    }
-
-    const workedHours = calculateWorkedHours(record.checkIn, employeeCheckOutDate);
+    const workedHours = calculateWorkedHours(record.checkIn, now);
     const isHolOrSun = await isHolidayOrSundayDate(today);
     const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
 
@@ -2811,6 +2294,10 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // --------------------------------------------------------
 
     if (isOutside || (!comparisonLocation && normalizedReason)) {
+      const reasonText = normalizedReason
+        ? ` Reason: ${normalizedReason}.`
+        : "";
+
       const defaultLocRef = defaultLocation || comparisonLocation;
       const distanceToDefault = defaultLocRef?.latitude != null && defaultLocRef?.longitude != null
         ? await getRoadDistanceInMeters(
@@ -2827,12 +2314,11 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
         ? ` (${formatDistanceKm(distToUse)} away)`
         : "";
 
-      const locationLabel = comparisonLocation
-        ? `Checkout outside assigned location${distStr}`
-        : `Checkout from unassigned location${distStr}`;
-
-      const reasonSegment = normalizedReason ? `Reason: ${normalizedReason}. ` : "";
-      const checkoutNote = `${locationLabel}. ${reasonSegment}Pending admin approval.`;
+      const checkoutNote = comparisonLocation
+        ? `Checkout outside assigned location (${formatDistanceKm(
+            distToUse,
+          )} away). Pending admin approval.${reasonText}`
+        : `Checkout from unassigned location${distStr}. Pending admin approval.${reasonText || " No reason provided."}`;
 
       const updatedNote = record.note
         ? `${record.note} | ${checkoutNote}`
@@ -2844,7 +2330,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
         },
 
         data: {
-          checkOut: employeeCheckOutDate,
+          checkOut: now,
 
           checkOutLatitude: coordinates.latitude,
 
@@ -2860,28 +2346,6 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
         },
       });
 
-      try {
-        const todayDateKey = getIndiaDateKey(employeeCheckOutDate);
-        const jsonMetadata = JSON.stringify({
-          date: todayDateKey,
-          punchType: "check-out",
-          checkOutTime: formatTime12h(employeeCheckOutDate),
-          attendanceId: updated.id,
-          reason: normalizedReason || "",
-        });
-        await prisma.employeeRequest.create({
-          data: {
-            employeeId: profile.id,
-            type: "CORRECTION",
-            subject: `Check-out Approval Request: ${profile.firstName || "Employee"} (${todayDateKey})`,
-            description: `${updatedNote}\n\n[ATTENDANCE_CORRECTION]${jsonMetadata}`,
-            status: "PENDING",
-          },
-        });
-      } catch (reqErr) {
-        console.warn("Could not create EmployeeRequest ticket for check-out approval:", reqErr.message);
-      }
-
       return res.json({
         record: updated,
 
@@ -2895,7 +2359,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
 
     const status = isPendingForgotPunchOnly
       ? "PRESENT"
-      : getAttendanceStatusAfterCheckout(record.checkIn, employeeCheckOutDate, record.status);
+      : getAttendanceStatusAfterCheckout(record.checkIn, now, record.status);
 
     const checkoutNote = isPendingForgotPunchOnly
       ? "Checkout recorded while Forgot Punch Check In request is pending."
@@ -2911,7 +2375,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       },
 
       data: {
-        checkOut: employeeCheckOutDate,
+        checkOut: now,
 
         checkOutLatitude: coordinates.latitude,
 
@@ -3265,17 +2729,13 @@ router.get(
       const { start: today, end: indiaDayEnd } = getIndiaDayRange(now);
       const tomorrow = new Date(indiaDayEnd.getTime() + 1);
 
-      const [employees, attendanceRecords, leaveRequests, rosterEntries, defaultShift] = await Promise.all([
+      const [employees, attendanceRecords, leaveRequests] = await Promise.all([
         prisma.employeeProfile.findMany({
-          include: {
-            user: { select: { fullName: true, email: true } },
-            shift: true,
-          },
+          include: { user: { select: { fullName: true, email: true } } },
           orderBy: { employeeCode: "asc" },
         }),
         prisma.attendance.findMany({
           where: { date: { gte: today, lt: tomorrow } },
-          include: { shift: true },
         }),
         prisma.leaveRequest.findMany({
           where: {
@@ -3288,13 +2748,6 @@ router.get(
             leaveType: { select: { name: true, code: true } },
           },
         }),
-        prisma.rosterEntry.findMany({
-          where: { date: { gte: today, lt: tomorrow } },
-          include: { shift: true },
-        }),
-        prisma.shift.findFirst({
-          where: { isDefault: true, isActive: true },
-        }),
       ]);
 
       const attendanceByEmployeeId = new Map(
@@ -3302,9 +2755,6 @@ router.get(
       );
       const leaveByEmployeeId = new Map(
         leaveRequests.map((req) => [req.employeeId, req]),
-      );
-      const rosterByEmployeeId = new Map(
-        rosterEntries.map((re) => [re.employeeId, re.shift]),
       );
 
       const summary = {
@@ -3317,14 +2767,6 @@ router.get(
       const records = employees.map((employee) => {
         const attendance = attendanceByEmployeeId.get(employee.id);
         const leave = leaveByEmployeeId.get(employee.id);
-        const rosterShift = rosterByEmployeeId.get(employee.id);
-
-        const assignedShift =
-          attendance?.shift ||
-          rosterShift ||
-          employee.shift ||
-          defaultShift ||
-          null;
 
         let status = "ABSENT";
         let checkIn = null;
@@ -3355,15 +2797,6 @@ router.get(
           fullName: employee.user?.fullName || "Employee",
           email: employee.user?.email || "",
           status,
-          shift: assignedShift
-            ? {
-                id: assignedShift.id,
-                name: assignedShift.name,
-                startTime: assignedShift.startTime,
-                endTime: assignedShift.endTime,
-                isDefault: assignedShift.isDefault,
-              }
-            : null,
           checkIn,
           checkOut,
           workedHours,
@@ -3492,15 +2925,10 @@ router.get("/register/weekly", async (req, res) => {
       holidays,
       leaveRequests,
       pendingCorrectionRequests,
-      rosterEntries,
-      defaultShift,
     ] = await Promise.all([
       prisma.employeeProfile.findMany({
         where: employeeFilter,
-        include: {
-          user: { select: { fullName: true, email: true } },
-          shift: true,
-        },
+        include: { user: { select: { fullName: true, email: true } } },
         orderBy: { employeeCode: "asc" },
       }),
       prisma.attendance.findMany({
@@ -3508,7 +2936,6 @@ router.get("/register/weekly", async (req, res) => {
           date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
           ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
         },
-        include: { shift: true },
         orderBy: [{ date: "desc" }],
       }),
       prisma.holiday.findMany({
@@ -3531,16 +2958,6 @@ router.get("/register/weekly", async (req, res) => {
         },
         select: { employeeId: true, description: true },
       }),
-      prisma.rosterEntry.findMany({
-        where: {
-          date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
-          ...(isFullManager ? {} : { employeeId: { in: (await prisma.employeeProfile.findMany({ where: employeeFilter, select: { id: true } })).map((e) => e.id) } }),
-        },
-        include: { shift: true },
-      }),
-      prisma.shift.findFirst({
-        where: { isDefault: true, isActive: true },
-      }),
     ]);
 
     const dates = [];
@@ -3555,23 +2972,6 @@ router.get("/register/weekly", async (req, res) => {
         ),
       );
     }
-
-    const rosterShiftByEmpAndDate = new Map(
-      rosterEntries.map((re) => [
-        `${re.employeeId}:${formatDateKey(re.date)}`,
-        re.shift,
-      ]),
-    );
-
-    const getAssignedShiftForEmployeeDate = (emp, dateKey, attendanceRecord = null) => {
-      if (attendanceRecord?.shift) return attendanceRecord.shift;
-      const rosterKey = `${emp.id}:${dateKey}`;
-      if (rosterShiftByEmpAndDate.has(rosterKey)) {
-        return rosterShiftByEmpAndDate.get(rosterKey);
-      }
-      if (emp.shift) return emp.shift;
-      return defaultShift ?? null;
-    };
 
     const attendanceByEmployeeAndDate = new Map(
       attendanceRecords.map((record) => [
@@ -3678,8 +3078,6 @@ router.get("/register/weekly", async (req, res) => {
         if (summary[status] !== undefined) summary[status] += 1;
         if (isShortDay) summary.SHORT_DAY += 1;
 
-        const dayShift = getAssignedShiftForEmployeeDate(employee, dateKey, attendance);
-
         records.push({
           id: attendance?.id ?? `${employee.id}-${dateKey}`,
           employeeId: employee.id,
@@ -3688,15 +3086,6 @@ router.get("/register/weekly", async (req, res) => {
           email: employee.user?.email || "",
           date: new Date(date),
           status,
-          shift: dayShift
-            ? {
-                id: dayShift.id,
-                name: dayShift.name,
-                startTime: dayShift.startTime,
-                endTime: dayShift.endTime,
-                isDefault: dayShift.isDefault,
-              }
-            : null,
           checkIn,
           checkOut,
           checkInLatitude: attendance?.checkInLatitude ?? null,
@@ -3707,8 +3096,6 @@ router.get("/register/weekly", async (req, res) => {
           overtimeHours,
           isShortDay,
           note,
-          createdAt: attendance?.createdAt ?? null,
-          updatedAt: attendance?.updatedAt ?? null,
         });
       }
     }
@@ -3827,25 +3214,6 @@ router.post(
         },
       });
 
-      // Synchronize associated EmployeeRequest ticket if one was created
-      try {
-        await prisma.employeeRequest.updateMany({
-          where: {
-            employeeId: record.employeeId,
-            status: "PENDING",
-            description: { contains: `"attendanceId":"${id}"` },
-          },
-          data: {
-            status: "APPROVED",
-            reviewedById: req.user?.id || null,
-            reviewNote: approvalText,
-            reviewedAt: new Date(),
-          },
-        });
-      } catch (errSync) {
-        console.warn("Could not sync EmployeeRequest status on attendance approval:", errSync.message);
-      }
-
       return res.json({
         record: updated,
         message: "Check-in approved successfully.",
@@ -3917,25 +3285,6 @@ router.post(
         },
       });
 
-      // Synchronize associated EmployeeRequest ticket if one was created
-      try {
-        await prisma.employeeRequest.updateMany({
-          where: {
-            employeeId: record.employeeId,
-            status: "PENDING",
-            description: { contains: `"attendanceId":"${id}"` },
-          },
-          data: {
-            status: "REJECTED",
-            reviewedById: req.user?.id || null,
-            reviewNote: rejectionNote,
-            reviewedAt: new Date(),
-          },
-        });
-      } catch (errSync) {
-        console.warn("Could not sync EmployeeRequest status on attendance rejection:", errSync.message);
-      }
-
       return res.json({
         record: updated,
         message: "Check-in rejected successfully.",
@@ -3988,61 +3337,37 @@ router.get(
       const attendanceQueryEnd = new Date(end);
       attendanceQueryEnd.setUTCDate(attendanceQueryEnd.getUTCDate() + 1);
 
-      const [records, holidays, leaveRequests, pendingCorrectionRequests, rosterEntries, defaultShift] = await Promise.all([
-        prisma.attendance.findMany({
-          where: {
-            employeeId,
-            date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
-          },
-          include: { shift: true },
-          orderBy: { date: "asc" },
-        }),
-        prisma.holiday.findMany({
-          where: { date: { gte: start, lt: end } },
-        }),
-        prisma.leaveRequest.findMany({
-          where: {
-            employeeId,
-            status: "APPROVED",
-            startDate: { lt: end },
-            endDate: { gte: start },
-          },
-          include: { leaveType: { select: { name: true, code: true } } },
-        }),
-        prisma.employeeRequest.findMany({
-          where: {
-            employeeId,
-            type: "CORRECTION",
-            status: "PENDING",
-          },
-          select: { description: true },
-        }),
-        prisma.rosterEntry.findMany({
-          where: {
-            employeeId,
-            date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
-          },
-          include: { shift: true },
-        }),
-        prisma.shift.findFirst({
-          where: { isDefault: true, isActive: true },
-        }),
-      ]);
+      const records = await prisma.attendance.findMany({
+        where: {
+          employeeId,
+          date: { gte: attendanceQueryStart, lt: attendanceQueryEnd },
+        },
+        orderBy: { date: "asc" },
+      });
 
-      const rosterShiftByDate = new Map(
-        rosterEntries.map((re) => [formatDateKey(re.date), re.shift]),
-      );
+      // Holidays in the same window (so the calendar can mark them).
+      const holidays = await prisma.holiday.findMany({
+        where: { date: { gte: start, lt: end } },
+      });
 
-      const getAssignedShiftForDate = (dateKey, attendanceRecord = null) => {
-        if (attendanceRecord?.shift) return attendanceRecord.shift;
-        if (rosterShiftByDate.has(dateKey)) return rosterShiftByDate.get(dateKey);
-        // Only show shift if employee has actually checked in on that day
-        if (attendanceRecord?.checkIn) {
-          if (employee?.shift) return employee.shift;
-          return defaultShift ?? null;
-        }
-        return null;
-      };
+      const leaveRequests = await prisma.leaveRequest.findMany({
+        where: {
+          employeeId,
+          status: "APPROVED",
+          startDate: { lt: end },
+          endDate: { gte: start },
+        },
+        include: { leaveType: { select: { name: true, code: true } } },
+      });
+
+      const pendingCorrectionRequests = await prisma.employeeRequest.findMany({
+        where: {
+          employeeId,
+          type: "CORRECTION",
+          status: "PENDING",
+        },
+        select: { description: true },
+      });
 
       const attendanceByDate = new Map(
         records.map((r) => [getIndiaDateKey(r.date), r]),
@@ -4074,7 +3399,7 @@ router.get(
       }
 
       const summary = { PRESENT: 0, SHORT_DAY: 0, ABSENT: 0, ON_LEAVE: 0, HOLIDAY: 0, PENDING_APPROVAL: 0 };
-      const todayKey = getIndiaDateKey(new Date());
+      const todayUtc = normalizeUTCDate(new Date());
       const populatedRecords = [];
 
       for (
@@ -4116,8 +3441,6 @@ router.get(
           if (summary[status] !== undefined) summary[status] += 1;
           if (isShortDay) summary.SHORT_DAY += 1;
 
-          const dayShift = getAssignedShiftForDate(key, existing);
-
           populatedRecords.push({
             id: existing.id,
             date: existing.date,
@@ -4132,20 +3455,9 @@ router.get(
             checkOutLatitude: existing.checkOutLatitude,
             checkOutLongitude: existing.checkOutLongitude,
             status,
-            shift: dayShift
-              ? {
-                  id: dayShift.id,
-                  name: dayShift.name,
-                  startTime: dayShift.startTime,
-                  endTime: dayShift.endTime,
-                  isDefault: dayShift.isDefault,
-                }
-              : null,
             workedHours: calculatedWorkedHours,
             overtimeHours,
             isShortDay,
-            createdAt: existing.createdAt,
-            updatedAt: existing.updatedAt,
             note: pendingCorrection
               ? `${existing.note || ""}${existing.note ? " | " : ""}Forgot Punch Check In pending approval.`
               : (leaveByDate.has(key) && status === "ON_LEAVE"
@@ -4154,17 +3466,6 @@ router.get(
           });
           continue;
         }
-
-        const dayShift = getAssignedShiftForDate(key, null);
-        const shiftPayload = dayShift
-          ? {
-              id: dayShift.id,
-              name: dayShift.name,
-              startTime: dayShift.startTime,
-              endTime: dayShift.endTime,
-              isDefault: dayShift.isDefault,
-            }
-          : null;
 
         if (leaveByDate.has(key)) {
           const leave = leaveByDate.get(key);
@@ -4175,7 +3476,6 @@ router.get(
             checkIn: null,
             checkOut: null,
             status: "ON_LEAVE",
-            shift: shiftPayload,
             workedHours: null,
             note: `Approved leave: ${leave.leaveType?.name || leave.leaveType?.code || "Leave"}`,
           });
@@ -4190,7 +3490,6 @@ router.get(
             checkIn: null,
             checkOut: null,
             status: "HOLIDAY",
-            shift: shiftPayload,
             workedHours: null,
             note: holidayByDate.get(key)?.name || "Holiday",
           });
@@ -4205,7 +3504,6 @@ router.get(
             checkIn: null,
             checkOut: null,
             status: "HOLIDAY",
-            shift: shiftPayload,
             workedHours: null,
             note: "Weekly Off (Sunday)",
           });
@@ -4224,15 +3522,13 @@ router.get(
               ? new Date(`${key}T${pendingCorrection.checkOutTime}:00+05:30`)
               : null,
             status: "PENDING_APPROVAL",
-            shift: shiftPayload,
             workedHours: null,
             note: "Forgot Punch pending approval.",
           });
           continue;
         }
 
-        const isPastDay = key < todayKey;
-        if (isPastDay) {
+        if (current <= todayUtc) {
           summary.ABSENT += 1;
           populatedRecords.push({
             id: null,
@@ -4240,7 +3536,6 @@ router.get(
             checkIn: null,
             checkOut: null,
             status: "ABSENT",
-            shift: shiftPayload,
             workedHours: null,
             note: "No attendance record.",
           });

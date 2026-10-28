@@ -582,9 +582,8 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
     if (!deleteItemTarget || deleting) return;
     setDeleting(true);
     try {
-      const res = await apiDelete(`/inventory/items/${deleteItemTarget.id}`);
-      const deleterName = res?.deletedByName || "Admin";
-      toast.success(res?.message || `Item deleted by ${deleterName}.`);
+      await apiDelete(`/inventory/items/${deleteItemTarget.id}`);
+      toast.success("Item deleted.");
       setDeleteItemTarget(null);
       loadData();
     } catch (err) {
@@ -680,28 +679,28 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
 
   return (
     <div className="space-y-6">
-      {/* ─── Assigned Access Personnel & Active Operator Bar (Admin Only) ─── */}
-      {internalCurrentUser?.role === "ADMIN" && (
-        <div className="flex items-center justify-between flex-wrap gap-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-900/40 rounded-2xl p-3 px-4 text-xs card-shadow">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 font-bold text-foreground">
-              <ShieldCheck className="h-4 w-4 text-blue-600" />
-              <span>Assigned Module Access (Inventory In):</span>
-            </div>
-            {internalAssignedUsers.length > 0 ? (
-              internalAssignedUsers.map((u) => (
-                <span
-                  key={u.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200 font-semibold text-xs border border-blue-300 dark:border-blue-800"
-                >
-                  <User className="h-3 w-3" />
-                  {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
-                </span>
-              ))
-            ) : (
-              <span className="text-muted-foreground italic">Admin Only</span>
-            )}
+      {/* ─── Assigned Access Personnel & Active Operator Bar ─── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-900/40 rounded-2xl p-3 px-4 text-xs card-shadow">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 font-bold text-foreground">
+            <ShieldCheck className="h-4 w-4 text-blue-600" />
+            <span>Assigned Module Access (Inventory In):</span>
           </div>
+          {internalAssignedUsers.length > 0 ? (
+            internalAssignedUsers.map((u) => (
+              <span
+                key={u.id}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200 font-semibold text-xs border border-blue-300 dark:border-blue-800"
+              >
+                <User className="h-3 w-3" />
+                {u.fullName} {u.role === "ADMIN" ? "(Admin)" : ""}
+              </span>
+            ))
+          ) : (
+            <span className="text-muted-foreground italic">Admin Only</span>
+          )}
+        </div>
+        {internalCurrentUser && (
           <div className="text-xs text-muted-foreground flex items-center gap-1.5">
             <span>Operator:</span>
             <strong className="text-foreground">{internalCurrentUser.fullName}</strong>
@@ -709,8 +708,8 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               {internalCurrentUser.role}
             </span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ─── Breadcrumb Navigation & Action Buttons ────────────────── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 bg-background border border-border rounded-2xl p-3.5 sm:p-4 card-shadow">
@@ -1066,7 +1065,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                     <th className="p-4">Product Name & Photo</th>
                     <th className="p-4">Product Code / SKU</th>
                     <th className="p-4">Category</th>
-                    <th className="p-4">Created / Edited By</th>
+                    <th className="p-4">Created By</th>
                     <th className="p-4">Quantity In Stock</th>
                     <th className="p-4">Cost Price / Unit</th>
                     <th className="p-4">Location / Warehouse</th>
@@ -1106,7 +1105,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                               <div className="font-bold text-foreground">{item.name}</div>
                               {item.companyName && (
                                 <div className="text-xs font-normal text-muted-foreground">
-                                  Company / Brand: <span className="font-medium text-foreground/80">{item.companyName}</span>
+                                  Company: <span className="font-medium text-foreground/80">{item.companyName}</span>
                                 </div>
                               )}
                               {item.vendorName && (
@@ -1137,21 +1136,11 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             <span>Root Item</span>
                           )}
                         </td>
-                        <td className="p-4 text-xs">
-                          <div className="flex flex-col gap-1.5 items-start">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold" title="Item Creator">
-                              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                              <span className="text-[10px] text-muted-foreground uppercase font-bold">Created:</span>
-                              <span>{item.createdByName || "Admin"}</span>
-                            </span>
-                            {item.updatedByName && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold shadow-2xs" title="Item Editor">
-                                <span>✏️</span>
-                                <span className="text-[10px] text-amber-700/80 dark:text-amber-300/80 uppercase font-bold">Edited by:</span>
-                                <span>{item.updatedByName}</span>
-                              </span>
-                            )}
-                          </div>
+                        <td className="p-4 text-xs font-semibold">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                            {item.createdByName || "Admin"}
+                          </span>
                         </td>
                         <td className="p-4">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -1766,16 +1755,12 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                           )}
                         </div>
 
-                        {/* Created By & Edited By Badges */}
+                        {/* Created By Print Name */}
                         <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
-                          <span className="inline-flex items-center gap-1 font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]" title="Created by">
-                            👤 Created: {item.createdByName || "Admin"}
+                          <span className="font-semibold text-foreground/80">Created by:</span>
+                          <span className="inline-flex items-center gap-1 font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]">
+                            {item.createdByName || "Admin"}
                           </span>
-                          {item.updatedByName && (
-                            <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/30 text-[10px] shadow-2xs" title="Edited by">
-                              ✏️ Edited: {item.updatedByName}
-                            </span>
-                          )}
                           {item.companyName && (
                             <span className="inline-flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 text-[10px]">
                               🏢 {item.companyName}
@@ -1957,12 +1942,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             ? navPath.map((c) => c.name).join(" > ")
             : "Root Level"
         }
-        onSuccess={(savedItem) => {
-          loadData();
-          if (savedItem && viewingProductQuickView?.id === savedItem.id) {
-            setViewingProductQuickView(savedItem);
-          }
-        }}
+        onSuccess={loadData}
       />
 
       {/* Delete Category Modal */}
@@ -2079,26 +2059,20 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                 <p className="text-sm font-bold text-foreground">
                   {deleteItemTarget.name}
                 </p>
-                <div className="flex items-center gap-2 flex-wrap text-[11px] pt-1">
-                  <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-medium border border-primary/20">
-                    👤 Created by: {deleteItemTarget.createdByName || "Admin"}
-                  </span>
-                  {deleteItemTarget.updatedByName && (
-                    <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium border border-amber-500/20">
-                      ✏️ Edited by: {deleteItemTarget.updatedByName}
-                    </span>
-                  )}
-                  {deleteItemTarget.companyName && (
-                    <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium border border-indigo-500/20">
-                      🏢 {deleteItemTarget.companyName}
-                    </span>
-                  )}
-                  {deleteItemTarget.vendorName && (
-                    <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20">
-                      👤 {deleteItemTarget.vendorName}
-                    </span>
-                  )}
-                </div>
+                {(deleteItemTarget.companyName || deleteItemTarget.vendorName) && (
+                  <div className="flex items-center gap-2 flex-wrap text-[11px] pt-1">
+                    {deleteItemTarget.companyName && (
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium border border-indigo-500/20">
+                        🏢 {deleteItemTarget.companyName}
+                      </span>
+                    )}
+                    {deleteItemTarget.vendorName && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20">
+                        👤 {deleteItemTarget.vendorName}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Category Hierarchy (Level 1 to Level 4) */}

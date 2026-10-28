@@ -11,22 +11,12 @@ const fmtDate = (value) => {
 };
 
 const fmtTime = (value) => value
-  ? new Date(value).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
+  ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   : "—";
 
 const extractReason = (note) => {
-  if (!note) return "No reason provided.";
-  const clean = note.split("[ATTENDANCE_CORRECTION]")[0].trim();
-  
-  // Find all Reason: clauses (e.g. Checkin reason, Checkout reason)
-  const matches = [...clean.matchAll(/Reason:\s*(.*?)(?=\s*(?:\.\s*Pending admin approval|\.\s*Admin approved|\.\s*Admin rejected|Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi)];
-  if (matches.length > 0) {
-    return matches.map((m) => m[1].trim()).filter(Boolean).join(" | ");
-  }
-
-  // Fallback pattern
-  const match = clean.match(/Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.|$)/i);
-  return match?.[1]?.trim() || clean;
+  const match = note?.match(/Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.|$)/i);
+  return match?.[1]?.trim() || note || "No reason provided.";
 };
 
 const openGoogleMapCheckIn = (request) => {

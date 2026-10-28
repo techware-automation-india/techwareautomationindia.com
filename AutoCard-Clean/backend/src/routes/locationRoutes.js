@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import prisma from "../prismaClient.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -76,19 +76,16 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/locations — admin or with permission
+// POST /api/locations â€” admin or with permission
 router.post("/", requireAuth, checkRolePermission("shift-location"), async (req, res) => {
   try {
     const data = locationSchema.parse(req.body);
     const exists = await prisma.location.findFirst({ where: { name: data.name } });
     if (exists) return res.status(400).json({ success: false, message: "A location with this name already exists." });
 
-    const existingDefault = await prisma.location.findFirst({ where: { isDefault: true } });
-    if (data.isDefault && existingDefault) {
-      return res.status(400).json({
-        success: false,
-        message: `Only one default location is allowed. "${existingDefault.name}" is already set as default.`,
-      });
+    // If new location is marked default, unset any existing default locations first
+    if (data.isDefault) {
+      await prisma.location.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
 
     const loc = await prisma.location.create({

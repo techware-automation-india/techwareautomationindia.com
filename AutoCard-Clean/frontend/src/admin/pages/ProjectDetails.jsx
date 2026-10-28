@@ -1273,12 +1273,12 @@ const DocumentsTab = ({ project, setProject }) => {
 
                       {/* Request Create Time & Date */}
                       <td className="p-3.5 text-muted-foreground whitespace-nowrap">
-                        {info.createdAt ? `${new Date(info.createdAt).toLocaleDateString()} ${new Date(info.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : "—"}
+                        {info.createdAt ? `${new Date(info.createdAt).toLocaleDateString()} ${new Date(info.createdAt).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true })}` : "—"}
                       </td>
 
                       {/* Request Approve Time & Date */}
                       <td className="p-3.5 font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                        {info.approvedAt ? `${new Date(info.approvedAt).toLocaleDateString()} ${new Date(info.approvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : "—"}
+                        {info.approvedAt ? `${new Date(info.approvedAt).toLocaleDateString()} ${new Date(info.approvedAt).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true })}` : "—"}
                       </td>
 
                       {/* Approve By */}
@@ -1291,7 +1291,7 @@ const DocumentsTab = ({ project, setProject }) => {
                         {info.foundAt && !isNaN(new Date(info.foundAt).getTime()) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold">
                             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                            {new Date(info.foundAt).toLocaleDateString()} {new Date(info.foundAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(info.foundAt).toLocaleDateString()} {new Date(info.foundAt).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true })}
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded text-muted-foreground/60 bg-secondary/40 text-[11px] font-medium">

@@ -203,7 +203,7 @@ const Overview = () => {
      LOAD EMPLOYEE ROSTER
      
      Checks every 10 seconds so that when Admin assigns
-     a roster, employee dashboard updates automatically.
+     a shift or roster, employee dashboard updates automatically.
   ========================================================= */
 
   useEffect(() => {
@@ -411,7 +411,7 @@ const Overview = () => {
 
 
   /* =========================================================
-     ROSTER DATA
+     ROSTER & ASSIGNED SHIFT DATA
   ========================================================= */
 
   const upcomingAssignments = groupRosterEntries(assignedEntries).slice(0, 3);
@@ -728,14 +728,18 @@ const Overview = () => {
                       <div className="flex items-center gap-2 mb-2">
                         <CalendarDays className="h-4 w-4 text-primary shrink-0" />
                         <span className="text-sm font-semibold text-foreground">
-                          {formatRosterDate(entry.date)}
-                          {" • "}
-                          {entry.shift
-                            ? formatTimeRange(
+                          {entry.startDate === entry.endDate
+                            ? formatRosterDate(entry.startDate || entry.date)
+                            : `${formatRosterDate(entry.startDate)} – ${formatRosterDate(entry.endDate)}`}
+                          {entry.shift && (
+                            <>
+                              {" • "}
+                              {formatTimeRange(
                                 entry.shift.startTime,
                                 entry.shift.endTime,
-                              )
-                            : "No time assigned"}
+                              )}
+                            </>
+                          )}
                         </span>
                       </div>
 
@@ -744,46 +748,48 @@ const Overview = () => {
                       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                         {/* SHIFT */}
 
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            Shift
-                          </p>
+                        {entry.shift && (
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                              Shift
+                            </p>
 
-                          <p className="text-sm font-semibold text-foreground">
-                            {entry.shift?.name || "No shift assigned"}
-                          </p>
+                            <p className="text-sm font-semibold text-foreground">
+                              {entry.shift.name}
+                            </p>
 
-                          {entry.shift && (
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {formatTimeRange(
                                 entry.shift.startTime,
                                 entry.shift.endTime,
                               )}
                             </p>
-                          )}
-                        </div>
-
-                        {/* LOCATION */}
-
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            Location
-                          </p>
-
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="h-3.5 w-3.5 text-primary" />
-
-                            <p className="text-sm font-semibold text-foreground truncate max-w-[220px]">
-                              {entry.location?.name || "No specific location"}
-                            </p>
                           </div>
+                        )}
 
-                          {entry.location?.city && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {entry.location.city}
+                        {/* LOCATION - ONLY IF ASSIGNED */}
+
+                        {entry.location && (
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                              Location
                             </p>
-                          )}
-                        </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 text-primary" />
+
+                              <p className="text-sm font-semibold text-foreground truncate max-w-[220px]">
+                                {entry.location.name}
+                              </p>
+                            </div>
+
+                            {entry.location.city && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {entry.location.city}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -875,39 +881,41 @@ const Overview = () => {
                 </div>
               </div>
 
-              {/* LOCATION */}
+              {/* LOCATION - ONLY IF ASSIGNED */}
 
-              <div className="rounded-xl border border-border bg-secondary/5 p-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Location
-                </div>
-
-                <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
-                  <MapPin className="h-4 w-4 text-primary" />
-
-                  {selectedAssignment.location?.name || "No specific location"}
-                </div>
-
-                {selectedAssignment.location?.city && (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {selectedAssignment.location.city}
+              {selectedAssignment.location && (
+                <div className="rounded-xl border border-border bg-secondary/5 p-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Location
                   </div>
-                )}
 
-                {/* GOOGLE MAPS */}
+                  <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
+                    <MapPin className="h-4 w-4 text-primary" />
 
-                {getLocationMapsUrl(selectedAssignment.location) && (
-                  <a
-                    href={getLocationMapsUrl(selectedAssignment.location)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Open in Google Maps
-                  </a>
-                )}
-              </div>
+                    {selectedAssignment.location.name}
+                  </div>
+
+                  {selectedAssignment.location.city && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {selectedAssignment.location.city}
+                    </div>
+                  )}
+
+                  {/* GOOGLE MAPS */}
+
+                  {getLocationMapsUrl(selectedAssignment.location) && (
+                    <a
+                      href={getLocationMapsUrl(selectedAssignment.location)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open in Google Maps
+                    </a>
+                  )}
+                </div>
+              )}
 
               {/* ASSIGNED DAYS */}
 

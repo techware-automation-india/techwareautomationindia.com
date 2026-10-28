@@ -173,10 +173,12 @@ export function getModulesByPermissions(permissions = {}) {
   const allowedModules = [];
 
   allModules.forEach((module) => {
-    // Default base modules marked alwaysVisible (like Overview, Academic Calendar, Requests) are always visible to employees
+    // Default base modules marked alwaysVisible (like Mark Attendance, Attendance, Overview, Academic Calendar, Requests) are always visible to employees
     if (
       module.alwaysVisible ||
       module.key === "overview" ||
+      module.key === "mark-attendance" ||
+      module.key === "attendance" ||
       module.key === "academic-calendar" ||
       module.key === "requests" ||
       module.key === "my-tools"

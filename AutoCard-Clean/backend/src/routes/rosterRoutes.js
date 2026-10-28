@@ -19,7 +19,13 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 
   try {
-    const profile = await prisma.employeeProfile.findUnique({ where: { userId: req.user.id } });
+    const profile = await prisma.employeeProfile.findUnique({
+      where: { userId: req.user.id },
+      include: {
+        shift: true,
+        location: true,
+      },
+    });
     if (!profile) {
       return res.status(404).json({ message: "Employee profile not found." });
     }
@@ -27,13 +33,30 @@ router.get("/me", requireAuth, async (req, res) => {
     const start = new Date(Date.UTC(year, month - 1, 1));
     const end = new Date(Date.UTC(year, month, 1));
 
+    const [defaultShift, defaultLocation] = await Promise.all([
+      prisma.shift.findFirst({ where: { isDefault: true, isActive: true } }) || prisma.shift.findFirst({ where: { isActive: true } }),
+      prisma.location.findFirst({ where: { isDefault: true, isActive: true } }) || prisma.location.findFirst({ where: { isActive: true } }),
+    ]);
+
     const entries = await prisma.rosterEntry.findMany({
       where: { employeeId: profile.id, date: { gte: start, lt: end } },
       include: includeRelations,
       orderBy: [{ date: "asc" }],
     });
 
-    res.json({ entries, year, month });
+    const populatedEntries = entries.map((entry) => ({
+      ...entry,
+      shift: entry.shift || profile.shift || defaultShift || null,
+      location: entry.location || profile.location || defaultLocation || null,
+    }));
+
+    res.json({
+      entries: populatedEntries,
+      year,
+      month,
+      assignedShift: profile.shift || defaultShift || null,
+      assignedLocation: profile.location || defaultLocation || null,
+    });
   } catch (err) {
     console.error("Roster /me error:", err);
     res.status(500).json({ message: "Failed to load your roster." });
@@ -62,13 +85,14 @@ router.get("/my-notifications", requireAuth, async (req, res) => {
   }
 });
 
-const rosterEntrySchema = z.object({
-  employeeId: z.string().min(1, "Employee is required."),
-  date:       z.string().min(1, "Date is required."),
-  shiftId:    z.string().min(1, "Shift is required."),
-  locationId: z.string().optional().or(z.literal("")),
-  note:       z.string().trim().max(300).optional().or(z.literal("")),
-});
+const rosterEntrySchema = z
+  .object({
+    employeeId: z.string().min(1, "Employee is required."),
+    date:       z.string().min(1, "Date is required."),
+    shiftId:    z.string().optional().or(z.literal("")),
+    locationId: z.string().optional().or(z.literal("")),
+    note:       z.string().trim().max(300).optional().or(z.literal("")),
+  });
 
 const bulkSchema = z.object({
   entries: z.array(rosterEntrySchema).min(1, "At least one entry required."),
@@ -112,13 +136,24 @@ router.get("/", checkRolePermission("roster"), async (req, res) => {
       ...(employeeId ? { employeeId } : {}),
     };
 
+    const [defaultShift, defaultLocation] = await Promise.all([
+      prisma.shift.findFirst({ where: { isDefault: true, isActive: true } }) || prisma.shift.findFirst({ where: { isActive: true } }),
+      prisma.location.findFirst({ where: { isDefault: true, isActive: true } }) || prisma.location.findFirst({ where: { isActive: true } }),
+    ]);
+
     const entries = await prisma.rosterEntry.findMany({
       where,
       include: includeRelations,
       orderBy: [{ date: "asc" }, { employee: { user: { fullName: "asc" } } }],
     });
 
-    res.json({ entries, year, month });
+    const populatedEntries = entries.map((entry) => ({
+      ...entry,
+      shift: entry.shift || entry.employee?.shift || defaultShift || null,
+      location: entry.location || entry.employee?.location || defaultLocation || null,
+    }));
+
+    res.json({ entries: populatedEntries, year, month });
   } catch (err) {
     console.error("Roster GET error:", err);
     res.status(500).json({ message: "Failed to load roster." });
@@ -177,16 +212,26 @@ router.post("/", requireAuth, checkRolePermission("roster"), async (req, res) =>
   const { employeeId, date, shiftId, locationId, note } = parsed.data;
 
   try {
+    const defaultShift = (await prisma.shift.findFirst({ where: { isDefault: true, isActive: true } })) || (await prisma.shift.findFirst({ where: { isActive: true } }));
+    const defaultLocation = (await prisma.location.findFirst({ where: { isDefault: true, isActive: true } })) || (await prisma.location.findFirst({ where: { isActive: true } }));
+    const empProfile = await prisma.employeeProfile.findUnique({ where: { id: employeeId } });
+    const resolvedShiftId = shiftId?.trim() || empProfile?.shiftId || defaultShift?.id;
+    const resolvedLocationId = locationId?.trim() || empProfile?.locationId || defaultLocation?.id || null;
+
+    if (!resolvedShiftId) {
+      return res.status(400).json({ message: "No active shift found to assign." });
+    }
+
     const dateUTC = parseRosterDate(date);
 
     const entry = await prisma.rosterEntry.upsert({
       where: { employeeId_date: { employeeId, date: dateUTC } },
-      create: { employeeId, date: dateUTC, shiftId, locationId: toNull(locationId), note: toNull(note) },
-      update: { shiftId, locationId: toNull(locationId), note: toNull(note) },
+      create: { employeeId, date: dateUTC, shiftId: resolvedShiftId, locationId: toNull(resolvedLocationId), note: toNull(note) },
+      update: { shiftId: resolvedShiftId, locationId: toNull(resolvedLocationId), note: toNull(note) },
       include: includeRelations,
     });
 
-    // Send email notification to employee â€” non-fatal if it fails
+    // Send email notification to employee — non-fatal if it fails
     try {
       const empEmail = entry.employee?.user?.email;
       const empName  = entry.employee?.user?.fullName;
@@ -195,16 +240,16 @@ router.post("/", requireAuth, checkRolePermission("roster"), async (req, res) =>
           employeeEmail: empEmail,
           employeeName:  empName,
           date:          entry.date,
-          shiftName:     entry.shift?.name      ?? shiftId,
-          startTime:     entry.shift?.startTime ?? "â€”",
-          endTime:       entry.shift?.endTime   ?? "â€”",
+          shiftName:     entry.shift?.name      ?? resolvedShiftId,
+          startTime:     entry.shift?.startTime ?? "—",
+          endTime:       entry.shift?.endTime   ?? "—",
           locationName:  entry.location?.name   ?? null,
           locationCity:  entry.location?.city   ?? null,
           note:          entry.note ?? null,
         });
       }
     } catch (emailErr) {
-      console.warn("âš ï¸  Roster email notification failed:", emailErr.message);
+      console.warn("⚠️  Roster email notification failed:", emailErr.message);
     }
 
     res.status(201).json({ entry, message: "Roster entry saved." });
@@ -214,18 +259,27 @@ router.post("/", requireAuth, checkRolePermission("roster"), async (req, res) =>
   }
 });
 
-// POST /api/roster/bulk â€” upsert many entries at once
+// POST /api/roster/bulk — upsert many entries at once
 router.post("/bulk", requireAuth, checkRolePermission("roster"), async (req, res) => {
   const parsed = bulkSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
 
   try {
+    const defaultShift = (await prisma.shift.findFirst({ where: { isDefault: true, isActive: true } })) || (await prisma.shift.findFirst({ where: { isActive: true } }));
+    const defaultLocation = (await prisma.location.findFirst({ where: { isDefault: true, isActive: true } })) || (await prisma.location.findFirst({ where: { isActive: true } }));
+    const empIds = Array.from(new Set(parsed.data.entries.map((e) => e.employeeId)));
+    const profiles = await prisma.employeeProfile.findMany({ where: { id: { in: empIds } } });
+    const profileMap = new Map(profiles.map((p) => [p.id, p]));
+
     const ops = parsed.data.entries.map(({ employeeId, date, shiftId, locationId, note }) => {
       const dateUTC = parseRosterDate(date);
+      const prof = profileMap.get(employeeId);
+      const resolvedShiftId = shiftId?.trim() || prof?.shiftId || defaultShift?.id;
+      const resolvedLocationId = locationId?.trim() || prof?.locationId || defaultLocation?.id || null;
       return prisma.rosterEntry.upsert({
         where: { employeeId_date: { employeeId, date: dateUTC } },
-        create: { employeeId, date: dateUTC, shiftId, locationId: toNull(locationId), note: toNull(note) },
-        update: { shiftId, locationId: toNull(locationId), note: toNull(note) },
+        create: { employeeId, date: dateUTC, shiftId: resolvedShiftId, locationId: toNull(resolvedLocationId), note: toNull(note) },
+        update: { shiftId: resolvedShiftId, locationId: toNull(resolvedLocationId), note: toNull(note) },
       });
     });
 

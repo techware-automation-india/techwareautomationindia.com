@@ -147,7 +147,6 @@ const AppRoutes = () => {
           <Route path="leave-policy/types" element={<LeavePolicy />} />
           <Route path="leave-policy/holidays" element={<Holidays />} />
           <Route path="mark-attendance" element={<AdminMarkAttendance />} />
-          <Route path="my-attendance" element={<EmployeeAttendance />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="attendance-management" element={<Attendance />} />
           <Route path="attendance-requests" element={<AttendanceRequests />} />

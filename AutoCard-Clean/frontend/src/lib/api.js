@@ -9,16 +9,18 @@ const TOKEN_KEY = "authToken";
 */
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token) {
   if (token) {
+    sessionStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(TOKEN_KEY, token);
   }
 }
 
 export function clearToken() {
+  sessionStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(TOKEN_KEY);
 }
 

@@ -25,6 +25,120 @@ import { formatTime12Hour } from "../../lib/timeFormat.js";
 const inputClass =
   "w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
 
+// ── 12-hour AM/PM Time Picker Helpers ─────────────────────────────────────────
+const parse24to12 = (time24) => {
+  if (!time24) return { hour12: "10", minute: "00", ampm: "AM" };
+  const [hStr, mStr] = String(time24).split(":");
+  let h = Number(hStr) || 0;
+  const m = String(Number(mStr) || 0).padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour12 = String(h % 12 || 12);
+  return { hour12, minute: m, ampm };
+};
+
+const to24hString = (hour12, minute, ampm) => {
+  let h = Number(hour12) || 12;
+  const m = String(Number(minute) || 0).padStart(2, "0");
+  if (ampm === "AM") {
+    if (h === 12) h = 0;
+  } else {
+    if (h !== 12) h += 12;
+  }
+  return `${String(h).padStart(2, "0")}:${m}`;
+};
+
+const ShiftTimePicker = ({ value, onChange, label, required = false }) => {
+  const { hour12, minute, ampm } = parse24to12(value);
+
+  const handleHour = (newH) => {
+    onChange(to24hString(newH, minute, ampm));
+  };
+
+  const handleMinute = (newM) => {
+    onChange(to24hString(hour12, newM, ampm));
+  };
+
+  const handleAmPm = (newAmPm) => {
+    onChange(to24hString(hour12, minute, newAmPm));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-sm font-medium">
+          {label} {required && <span className="text-destructive">*</span>}
+        </label>
+        {value && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+            <Clock className="h-3 w-3" />
+            {formatTime12Hour(value)}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-2 focus-within:ring-2 focus-within:ring-primary/30 transition-shadow">
+        {/* Hours 1-12 */}
+        <select
+          value={hour12}
+          onChange={(e) => handleHour(e.target.value)}
+          className="bg-transparent text-sm font-semibold text-foreground focus:outline-none cursor-pointer py-1 px-2 rounded hover:bg-secondary"
+          aria-label={`${label} hour`}
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+            <option key={h} value={String(h)}>
+              {String(h).padStart(2, "0")}
+            </option>
+          ))}
+        </select>
+
+        <span className="text-muted-foreground font-bold">:</span>
+
+        {/* Minutes 00-59 */}
+        <select
+          value={minute}
+          onChange={(e) => handleMinute(e.target.value)}
+          className="bg-transparent text-sm font-semibold text-foreground focus:outline-none cursor-pointer py-1 px-2 rounded hover:bg-secondary"
+          aria-label={`${label} minute`}
+        >
+          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map(
+            (m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ),
+          )}
+        </select>
+
+        {/* AM / PM Segmented Watch Toggle */}
+        <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40 ml-auto">
+          <button
+            type="button"
+            onClick={() => handleAmPm("AM")}
+            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+              ampm === "AM"
+                ? "bg-primary text-white shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            AM
+          </button>
+          <button
+            type="button"
+            onClick={() => handleAmPm("PM")}
+            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+              ampm === "PM"
+                ? "bg-primary text-white shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            PM
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── StatCard ──────────────────────────────────────────────────────────────────
 const StatCard = ({ icon: Icon, label, value, tone }) => {
   const tones = {
@@ -98,8 +212,8 @@ const DeleteModal = ({ name, onConfirm, onCancel, deleting }) => (
 // ── Shifts section ────────────────────────────────────────────────────────────
 const emptyShift = {
   name: "",
-  startTime: "",
-  endTime: "",
+  startTime: "10:00",
+  endTime: "18:00",
   description: "",
   isDefault: false,
   isActive: true,
@@ -290,34 +404,22 @@ const ShiftsPanel = () => {
                 maxLength={80}
               />
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">
-                Start Time <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="time"
-                className={inputClass}
-                value={form.startTime}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, startTime: e.target.value }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">
-                End Time <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="time"
-                className={inputClass}
-                value={form.endTime}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, endTime: e.target.value }))
-                }
-                required
-              />
-            </div>
+            <ShiftTimePicker
+              label="Start Time"
+              value={form.startTime}
+              onChange={(newVal) =>
+                setForm((p) => ({ ...p, startTime: newVal }))
+              }
+              required
+            />
+            <ShiftTimePicker
+              label="End Time"
+              value={form.endTime}
+              onChange={(newVal) =>
+                setForm((p) => ({ ...p, endTime: newVal }))
+              }
+              required
+            />
             <div className="sm:col-span-2">
               <label className="text-sm font-medium mb-1.5 block">
                 Description
@@ -333,16 +435,34 @@ const ShiftsPanel = () => {
               />
             </div>
             <div className="sm:col-span-2 flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={form.isDefault}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, isDefault: e.target.checked }))
-                  }
-                />
-                <span> Set as default</span>
-              </label>
+              {(() => {
+                const defaultShift = shifts.find((s) => s.isDefault && s.id !== editingId);
+                return (
+                  <label
+                    className={`flex items-center gap-2 select-none text-sm font-medium ${
+                      defaultShift ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                    }`}
+                    title={defaultShift ? `Default shift is already assigned to "${defaultShift.name}"` : ""}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.isDefault}
+                      disabled={!!defaultShift}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, isDefault: e.target.checked }))
+                      }
+                    />
+                    <span>
+                      Set as default
+                      {defaultShift && (
+                        <span className="text-xs text-muted-foreground ml-1.5 font-normal">
+                          (Already set: {defaultShift.name})
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })()}
               <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
                 <div
                   onClick={() =>
@@ -818,16 +938,34 @@ const LocationsPanel = () => {
               />
             </div>
             <div className="flex items-end pb-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={form.isDefault}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, isDefault: e.target.checked }))
-                  }
-                />
-                <span> Set as default</span>
-              </label>
+              {(() => {
+                const defaultLoc = locations.find((l) => l.isDefault && l.id !== editingId);
+                return (
+                  <label
+                    className={`flex items-center gap-2 select-none text-sm font-medium ${
+                      defaultLoc ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                    }`}
+                    title={defaultLoc ? `Default location is already assigned to "${defaultLoc.name}"` : ""}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.isDefault}
+                      disabled={!!defaultLoc}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, isDefault: e.target.checked }))
+                      }
+                    />
+                    <span>
+                      Set as default
+                      {defaultLoc && (
+                        <span className="text-xs text-muted-foreground ml-1.5 font-normal">
+                          (Already: {defaultLoc.name})
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })()}
             </div>
             <div className="flex items-end pb-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium">

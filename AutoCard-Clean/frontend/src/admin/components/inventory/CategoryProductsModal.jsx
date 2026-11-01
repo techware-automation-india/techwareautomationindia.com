@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Package, X, Search, Plus, Edit3, Trash2, Loader2, Folder,
   ExternalLink, Layers, AlertCircle, LayoutGrid, List, MapPin,
-  Building, RefreshCw, Tag, ShieldAlert, ArrowRight, Boxes, Eye
+  Building, RefreshCw, Tag, ShieldAlert, ArrowRight, Boxes, Eye, ArrowRightLeft
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "../../../lib/api.js";
@@ -47,6 +47,7 @@ const CategoryProductsModal = ({
   onAddItem,
   onEditItem,
   onDeleteItem,
+  onMoveItem,
   refreshTrigger = 0,
 }) => {
   const [items, setItems] = useState([]);
@@ -510,6 +511,16 @@ const CategoryProductsModal = ({
                         >
                           <Eye className="h-4 w-4" />
                         </button>
+                        {onMoveItem && (
+                          <button
+                            type="button"
+                            onClick={() => onMoveItem(item)}
+                            className="p-1.5 rounded-lg border border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer"
+                            title="Swap / Relocate Item in Hierarchy"
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                          </button>
+                        )}
                         {onEditItem && (
                           <button
                             type="button"
@@ -686,6 +697,16 @@ const CategoryProductsModal = ({
                               >
                                 <Eye className="h-4 w-4" />
                               </button>
+                              {onMoveItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => onMoveItem(item)}
+                                  className="p-1.5 rounded-lg border border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer"
+                                  title="Swap / Relocate Item in Hierarchy"
+                                >
+                                  <ArrowRightLeft className="h-4 w-4" />
+                                </button>
+                              )}
                               {onEditItem && (
                                 <button
                                   type="button"
@@ -757,6 +778,7 @@ const CategoryProductsModal = ({
         onClose={() => setViewingItem(null)}
         item={viewingItem}
         onEdit={onEditItem ? (it) => onEditItem(it, category) : undefined}
+        onMove={onMoveItem ? (it) => onMoveItem(it) : undefined}
       />
     </div>
   );

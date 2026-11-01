@@ -584,6 +584,133 @@ router.delete("/categories/:id", requireAuth, checkRoleActionPermission("invento
   }
 });
 
+// PUT /inventory/categories/:id/move — Move / relocate category to another parent or to root
+router.put("/categories/:id/move", requireAuth, checkRoleActionPermission("inventory-in", "edit"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetParentId } = req.body;
+
+    const category = await prisma.inventoryCategory.findUnique({
+      where: { id },
+    });
+
+    if (!category) {
+      return res.status(404).json({ message: "Category not found." });
+    }
+
+    // 1. Cannot move into itself
+    if (targetParentId && targetParentId === id) {
+      return res.status(400).json({ message: "Cannot move category into itself." });
+    }
+
+    // 2. Fetch all categories to check tree hierarchy and descendants
+    const allCategories = await prisma.inventoryCategory.findMany();
+    const childrenMap = new Map();
+    allCategories.forEach((c) => {
+      if (c.parentId) {
+        if (!childrenMap.has(c.parentId)) childrenMap.set(c.parentId, []);
+        childrenMap.get(c.parentId).push(c.id);
+      }
+    });
+
+    // Helper: collect all descendants of category `id`
+    const getDescendants = (catId) => {
+      let result = [];
+      const children = childrenMap.get(catId) || [];
+      for (const childId of children) {
+        result.push(childId);
+        result = result.concat(getDescendants(childId));
+      }
+      return result;
+    };
+
+    const descendantIds = getDescendants(id);
+    if (targetParentId && descendantIds.includes(targetParentId)) {
+      return res.status(400).json({
+        message: "Cannot move a category into one of its own subcategories.",
+      });
+    }
+
+    // Helper: compute height of subtree rooted at `catId`
+    const getSubtreeHeight = (catId) => {
+      const children = childrenMap.get(catId) || [];
+      if (children.length === 0) return 1;
+      let maxChildHeight = 0;
+      for (const childId of children) {
+        maxChildHeight = Math.max(maxChildHeight, getSubtreeHeight(childId));
+      }
+      return 1 + maxChildHeight;
+    };
+
+    const subtreeHeight = getSubtreeHeight(id);
+
+    let newLevel = 1;
+    let targetParent = null;
+    if (targetParentId) {
+      targetParent = allCategories.find((c) => c.id === targetParentId);
+      if (!targetParent) {
+        return res.status(404).json({ message: "Destination parent category not found." });
+      }
+
+      newLevel = targetParent.level + 1;
+      if (newLevel + subtreeHeight - 1 > 4) {
+        return res.status(400).json({
+          message: `Cannot move category here: Maximum depth limit of 4 levels would be exceeded (depth of ${newLevel + subtreeHeight - 1}).`,
+        });
+      }
+    } else {
+      // Moving to root level (Level 1)
+      newLevel = 1;
+    }
+
+    const levelDelta = newLevel - category.level;
+
+    // Recursive helper to update descendant levels in DB
+    const updateDescendantLevels = async (parentId, currentParentLevel, tx) => {
+      const children = await tx.inventoryCategory.findMany({
+        where: { parentId },
+      });
+      for (const child of children) {
+        const childNewLevel = currentParentLevel + 1;
+        await tx.inventoryCategory.update({
+          where: { id: child.id },
+          data: { level: childNewLevel },
+        });
+        await updateDescendantLevels(child.id, childNewLevel, tx);
+      }
+    };
+
+    const updatedCategory = await prisma.$transaction(async (tx) => {
+      const updated = await tx.inventoryCategory.update({
+        where: { id },
+        data: {
+          parentId: targetParentId || null,
+          level: newLevel,
+        },
+        include: {
+          parent: { select: { id: true, name: true, code: true, level: true } },
+        },
+      });
+
+      if (levelDelta !== 0) {
+        await updateDescendantLevels(id, newLevel, tx);
+      }
+
+      return updated;
+    });
+
+    res.json({
+      category: updatedCategory,
+      message: targetParentId
+        ? `Category "${category.name}" moved under "${targetParent?.name || "Parent"}" as Level ${newLevel}.`
+        : `Category "${category.name}" moved to Root Level (Level 1).`,
+    });
+  } catch (err) {
+    console.error("Failed to move category:", err);
+    res.status(500).json({ message: "Failed to move category." });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // 4. ITEMS MANAGEMENT (Directly at Any Level, Photo, Code, 5 Specs)
 // ═══════════════════════════════════════════════════════════════════════
@@ -892,6 +1019,77 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
   } catch (err) {
     console.error("Failed to update item:", err);
     res.status(500).json({ message: "Failed to update item." });
+  }
+});
+
+// PUT /inventory/items/:id/move — Move / relocate item to another category or to root
+router.put("/items/:id/move", requireAuth, checkRoleActionPermission("inventory-in", "edit"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetCategoryId } = req.body;
+
+    const existing = await prisma.inventoryItem.findUnique({
+      where: { id },
+      include: { categoryRef: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: "Item not found." });
+    }
+
+    let targetCategory = null;
+    if (targetCategoryId) {
+      targetCategory = await prisma.inventoryCategory.findUnique({
+        where: { id: targetCategoryId },
+      });
+      if (!targetCategory) {
+        return res.status(404).json({ message: "Destination category not found." });
+      }
+    }
+
+    // Resolve editor ID and Name from authenticated user
+    const editorId = req.user?.id || null;
+    let editorName = "Admin";
+    if (editorId) {
+      const u = await prisma.user.findUnique({
+        where: { id: editorId },
+        select: { fullName: true, email: true },
+      });
+      if (u?.fullName || u?.email) {
+        editorName = u.fullName || u.email;
+      }
+    }
+
+    const updatedItem = await prisma.inventoryItem.update({
+      where: { id },
+      data: {
+        categoryId: targetCategoryId || null,
+        category: targetCategory?.name || null,
+        updatedById: editorId,
+        updatedByName: editorName,
+      },
+      include: {
+        categoryRef: {
+          include: {
+            parent: {
+              include: {
+                parent: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    res.json({
+      item: updatedItem,
+      message: targetCategory
+        ? `Item "${existing.name}" moved to "${targetCategory.name}".`
+        : `Item "${existing.name}" moved to Root Level.`,
+    });
+  } catch (err) {
+    console.error("Failed to move item:", err);
+    res.status(500).json({ message: "Failed to move item." });
   }
 });
 

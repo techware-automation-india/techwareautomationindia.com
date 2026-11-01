@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   X, Package, Tag, Layers, MapPin, IndianRupee, ShieldAlert,
   Calendar, Clock, ZoomIn, ZoomOut, RotateCw, User, ExternalLink,
-  Edit3, Boxes
+  Edit3, Boxes, ArrowRightLeft
 } from "lucide-react";
 
 export const resolveImageUrl = (url) => {
@@ -30,6 +30,7 @@ export default function ProductQuickViewModal({
   onClose,
   item,
   onEdit,
+  onMove,
 }) {
   const [imageError, setImageError] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
@@ -96,6 +97,20 @@ export default function ProductQuickViewModal({
           </div>
 
           <div className="flex items-center gap-2 relative z-10">
+            {onMove && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onMove(item);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/25 hover:bg-purple-500/40 text-white text-xs font-semibold transition-colors cursor-pointer border border-purple-400/30"
+                title="Swap / Relocate Item in Hierarchy"
+              >
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+                <span>Move Location</span>
+              </button>
+            )}
             {onEdit && (
               <button
                 type="button"

@@ -3,7 +3,7 @@ import {
   Folder, FolderPlus, FolderTree, Package, Plus, Search, ChevronRight,
   ChevronDown, ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
   FileText, LayoutGrid, List, RefreshCw, X, Box, Sparkles, PackagePlus, Clock, Tag, Boxes, Eye,
-  User, Users, ShieldCheck
+  User, Users, ShieldCheck, ArrowRightLeft
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiDelete } from "../../../lib/api.js";
@@ -13,6 +13,7 @@ import CategoryModal from "./CategoryModal.jsx";
 import ItemCardModal from "./ItemCardModal.jsx";
 import CategoryProductsModal from "./CategoryProductsModal.jsx";
 import ProductQuickViewModal from "./ProductQuickViewModal.jsx";
+import MoveHierarchyModal from "./MoveHierarchyModal.jsx";
 
 const resolveImageUrl = (url) => {
   if (!url) return "";
@@ -124,6 +125,7 @@ const CategoryTreeNode = ({
   onAddItem,
   onEdit,
   onDelete,
+  onMove,
   searchTerm,
   canCreate = true,
   canEdit = true,
@@ -277,6 +279,18 @@ const CategoryTreeNode = ({
               </button>
             )}
 
+            {/* Swap / Relocate Category */}
+            {canEdit && onMove && (
+              <button
+                type="button"
+                onClick={() => onMove(cat)}
+                className="p-1.5 rounded-lg border border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer shadow-xs"
+                title="Swap / Relocate Category in Hierarchy"
+              >
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+              </button>
+            )}
+
             {/* Edit */}
             {canEdit && (
               <button
@@ -320,6 +334,7 @@ const CategoryTreeNode = ({
               onAddItem={onAddItem}
               onEdit={onEdit}
               onDelete={onDelete}
+              onMove={onMove}
               searchTerm={searchTerm}
               canCreate={canCreate}
               canEdit={canEdit}
@@ -384,6 +399,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
 
   // Quick Product View Modal
   const [viewingProductQuickView, setViewingProductQuickView] = useState(null);
+
+  // Move / Swap Hierarchy Modal
+  const [moveModalTarget, setMoveModalTarget] = useState(null); // { type: 'item'|'category', data: obj }
 
   // Delete confirmations
   const [deleteCatTarget, setDeleteCatTarget] = useState(null);
@@ -1173,6 +1191,16 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             {canEdit && (
                               <button
                                 type="button"
+                                onClick={() => setMoveModalTarget({ type: "item", data: item })}
+                                className="p-1.5 rounded-lg hover:bg-purple-500/10 text-muted-foreground hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                title="Swap / Relocate Item in Hierarchy"
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setItemToEdit(item);
                                   setItemTargetCategory(item.categoryRef || null);
@@ -1259,6 +1287,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                     setIsCategoryModalOpen(true);
                   }}
                   onDelete={(cat) => setDeleteCatTarget(cat)}
+                  onMove={(cat) => setMoveModalTarget({ type: "category", data: cat })}
                   searchTerm={search}
                   canCreate={canCreate}
                   canEdit={canEdit}
@@ -1481,6 +1510,16 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             {canEdit && (
                               <button
                                 type="button"
+                                onClick={() => setMoveModalTarget({ type: "category", data: cat })}
+                                className="p-1.5 rounded-lg hover:bg-purple-500/10 text-muted-foreground hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                title="Swap / Relocate Category in Hierarchy"
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setCategoryToEdit(cat);
                                   setModalParentCategory(null);
@@ -1631,6 +1670,16 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             >
                               <Eye className="h-4 w-4" />
                             </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => setMoveModalTarget({ type: "category", data: cat })}
+                                className="p-1.5 rounded-lg hover:bg-purple-500/10 text-muted-foreground hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                title="Swap / Relocate Category in Hierarchy"
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                              </button>
+                            )}
                             {canEdit && (
                               <button
                                 type="button"
@@ -1873,6 +1922,16 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                           {canEdit && (
                             <button
                               type="button"
+                              onClick={() => setMoveModalTarget({ type: "item", data: item })}
+                              className="p-1.5 rounded-lg border border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer shadow-xs"
+                              title="Swap / Relocate Item in Hierarchy"
+                            >
+                              <ArrowRightLeft className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
                               onClick={() => {
                                 setItemToEdit(item);
                                 setItemTargetCategory(currentCategory);
@@ -1927,6 +1986,9 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         } : null}
         onDeleteItem={canDelete ? (item) => {
           setDeleteItemTarget(item);
+        } : null}
+        onMoveItem={canEdit ? (item) => {
+          setMoveModalTarget({ type: "item", data: item });
         } : null}
         refreshTrigger={categoryProductsRefresh}
       />
@@ -2235,7 +2297,26 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           setItemTargetCategory(item.categoryRef || currentCategory);
           setIsItemModalOpen(true);
         } : null}
+        onMove={canEdit ? (item) => {
+          setMoveModalTarget({ type: "item", data: item });
+        } : null}
       />
+
+      {/* Move / Swap Location Hierarchy Modal */}
+      {moveModalTarget && (
+        <MoveHierarchyModal
+          isOpen={Boolean(moveModalTarget)}
+          onClose={() => setMoveModalTarget(null)}
+          type={moveModalTarget.type}
+          target={moveModalTarget.data}
+          allCategories={allCategories}
+          onSuccess={() => {
+            setMoveModalTarget(null);
+            loadData();
+            setCategoryProductsRefresh((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 };

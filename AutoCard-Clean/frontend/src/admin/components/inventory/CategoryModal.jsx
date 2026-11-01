@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { FolderPlus, Edit3, X, Loader2, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost, apiPut } from "../../../lib/api.js";
@@ -91,12 +92,12 @@ const CategoryModal = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -212,7 +213,8 @@ const CategoryModal = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

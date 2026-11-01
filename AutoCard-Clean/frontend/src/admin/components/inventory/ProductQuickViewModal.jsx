@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   X, Package, Tag, Layers, MapPin, IndianRupee, ShieldAlert,
   Calendar, Clock, ZoomIn, ZoomOut, RotateCw, User, ExternalLink,
@@ -64,16 +65,16 @@ export default function ProductQuickViewModal({
     catDepth++;
   }
 
-  return (
+  return createPortal(
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-3 sm:p-6 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150"
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/75 p-3 sm:p-6 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl rounded-3xl bg-card border border-border/80 shadow-2xl overflow-hidden my-4 flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+        className="w-full max-w-3xl rounded-3xl bg-card border border-border/80 shadow-2xl overflow-hidden my-auto flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"
       >
         {/* Header Bar */}
         <div className="bg-gradient-to-r from-[#142848] via-[#1e3a5f] to-[#254673] px-6 py-4 text-white flex items-center justify-between shadow-sm relative overflow-hidden">
@@ -411,6 +412,7 @@ export default function ProductQuickViewModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

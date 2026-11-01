@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Folder, FolderPlus, FolderTree, Package, Plus, Search, ChevronRight,
   ChevronDown, ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
@@ -2028,12 +2029,12 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
       />
 
       {/* Delete Category Modal */}
-      {deleteCatTarget && (
+      {deleteCatTarget && createPortal(
         <div
           onClick={(e) => {
             if (e.target === e.currentTarget) setDeleteCatTarget(null);
           }}
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs"
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -2074,7 +2075,8 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Item Modal with Level 1 to Level 4 Category Hierarchy & Next Items */}
@@ -2094,12 +2096,12 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
           (i) => i.id !== deleteItemTarget.id && (i.categoryId || null) === (itemCatId || null)
         );
 
-        return (
+        return createPortal(
           <div
             onClick={(e) => {
               if (e.target === e.currentTarget) setDeleteItemTarget(null);
             }}
-            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-3 sm:p-4 backdrop-blur-xs overflow-y-auto"
+            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/65 p-3 sm:p-4 backdrop-blur-xs overflow-y-auto"
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -2283,7 +2285,8 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 

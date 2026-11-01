@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Package, X, Search, Plus, Edit3, Trash2, Loader2, Folder,
   ExternalLink, Layers, AlertCircle, LayoutGrid, List, MapPin,
@@ -145,16 +146,16 @@ const CategoryProductsModal = ({
     return nameMatch || codeMatch || locMatch || catMatch || specMatch;
   });
 
-  return (
+  return createPortal(
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-[90000] flex items-center justify-center bg-black/65 p-3 sm:p-6 backdrop-blur-xs overflow-y-auto"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-5xl rounded-3xl bg-card border border-border card-shadow flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="w-full max-w-5xl rounded-3xl bg-card border border-border card-shadow flex flex-col max-h-[90vh] overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200"
       >
         {/* ─── Modal Header ────────────────────────────────────────── */}
         <div className="p-5 sm:p-6 border-b border-border bg-secondary/20 flex flex-col gap-4">
@@ -780,7 +781,8 @@ const CategoryProductsModal = ({
         onEdit={onEditItem ? (it) => onEditItem(it, category) : undefined}
         onMove={onMoveItem ? (it) => onMoveItem(it) : undefined}
       />
-    </div>
+    </div>,
+    document.body
   );
 };
 

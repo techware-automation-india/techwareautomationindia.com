@@ -158,7 +158,7 @@ export default function ViewInventoryView({ onBackToHub }) {
 
   // Filters & Views
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState("grid"); // "grid" | "table"
+  const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (default table)
   const [viewingItem, setViewingItem] = useState(null);
 
   // Cascading Root Level Category & Item Filters (Level 1 -> Level 2 -> Level 3 -> Level 4 -> Item)
@@ -408,19 +408,6 @@ export default function ViewInventoryView({ onBackToHub }) {
             <div className="flex items-center bg-secondary/60 border border-border rounded-2xl p-1 shadow-inner">
               <button
                 type="button"
-                onClick={() => setViewMode("grid")}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                  viewMode === "grid"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title="Grid View with Product Cards"
-              >
-                <LayoutGrid className="h-4 w-4" />
-                <span className="hidden sm:inline">Grid</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => setViewMode("table")}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                   viewMode === "table"
@@ -431,6 +418,19 @@ export default function ViewInventoryView({ onBackToHub }) {
               >
                 <List className="h-4 w-4" />
                 <span className="hidden sm:inline">Table</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  viewMode === "grid"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Grid View with Product Cards"
+              >
+                <LayoutGrid className="h-4 w-4" />
+                <span className="hidden sm:inline">Grid</span>
               </button>
             </div>
 

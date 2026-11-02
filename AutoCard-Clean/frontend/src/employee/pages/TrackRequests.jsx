@@ -2818,14 +2818,16 @@ const TrackRequests = ({ isAdmin = false }) => {
                           )}
                         </div>
                         {usesMap ? (
-                          <button
-                            type="button"
-                            onClick={() => window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank", "noopener,noreferrer")}
-                            className={em ? "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"}
-                          >
-                            <MapPin className="h-3.5 w-3.5" /> View on Google Maps
-                          </button>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank", "noopener,noreferrer")}
+                              className={em ? "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"}
+                            >
+                              <MapPin className="h-3.5 w-3.5" /> View on Google Maps
+                            </button>
                             <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">GPS: {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}</p>
+                          </div>
                         ) : source === "default-location" ? (
                           <p className="mt-3 break-words rounded-lg bg-white/80 px-3 py-2 text-sm font-semibold text-foreground dark:bg-background/70">
                             Office <span className="text-xs font-normal text-muted-foreground">(Default)</span>

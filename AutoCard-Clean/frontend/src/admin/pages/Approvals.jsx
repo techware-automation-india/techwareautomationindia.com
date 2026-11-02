@@ -2907,11 +2907,13 @@ const Approvals = () => {
                         <div className={em ? "rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-white p-4 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-background" : "rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50/80 to-white p-4 dark:border-rose-900/40 dark:from-rose-950/30 dark:to-background"}>
                           <p className={em ? "text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-400" : "text-xs font-bold uppercase tracking-wide text-rose-800 dark:text-rose-400"}>{label}</p>
                           {usesMap ? (
-                            <button type="button" onClick={() => window.open("https://www.google.com/maps?q=" + lat + "," + lng, "_blank", "noopener,noreferrer")}
-                              className={em ? "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"}>
-                              <MapPin className="h-3.5 w-3.5" /> View on Google Maps
-                            </button>
-                            <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">GPS: {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}</p>
+                            <div>
+                              <button type="button" onClick={() => window.open("https://www.google.com/maps?q=" + lat + "," + lng, "_blank", "noopener,noreferrer")}
+                                className={em ? "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"}>
+                                <MapPin className="h-3.5 w-3.5" /> View on Google Maps
+                              </button>
+                              <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">GPS: {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}</p>
+                            </div>
                           ) : source === "default-location" ? (
                             <p className="mt-3 break-words rounded-lg bg-white/80 px-3 py-2 text-sm font-semibold text-foreground dark:bg-background/70">Office <span className="text-xs font-normal text-muted-foreground">(Default)</span></p>
                           ) : (

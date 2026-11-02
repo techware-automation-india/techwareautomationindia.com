@@ -2733,8 +2733,8 @@ const TrackRequests = ({ isAdmin = false }) => {
                     ? null
                     : (reasonModal.actualCheckOutLongitude ?? forgotPunch.checkOutLongitude ?? reasonModal.checkOutLongitude);
 
-                  const checkInUsesMap = checkInLat != null && Number.isFinite(Number(checkInLat)) && (checkInLocSrc === "unassigned-location" || reasonModal.type === "ATTENDANCE");
-                  const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && (checkOutLocSrc === "unassigned-location" || reasonModal.type === "ATTENDANCE");
+                  const checkInUsesMap = checkInLat != null && Number.isFinite(Number(checkInLat)) && (checkInLocSrc === "unassigned-location" || (!checkInLocation && checkInLocSrc !== "forgot-punch") || reasonModal.type === "ATTENDANCE");
+                  const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && (checkOutLocSrc === "unassigned-location" || (!checkOutLocation && checkOutLocSrc !== "forgot-punch") || reasonModal.type === "ATTENDANCE");
 
                   const isForgotPunchCheckOut = _isCheckOutOnly && checkOutLocSrc === "forgot-punch";
                   const effCheckInSrc = checkInLocSrc || (!isForgotPunchCheckOut && _isCheckOutOnly && actualCheckInTime && !checkInUsesMap ? "default-location" : null);
@@ -2825,6 +2825,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                           >
                             <MapPin className="h-3.5 w-3.5" /> View on Google Maps
                           </button>
+                            <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">GPS: {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}</p>
                         ) : source === "default-location" ? (
                           <p className="mt-3 break-words rounded-lg bg-white/80 px-3 py-2 text-sm font-semibold text-foreground dark:bg-background/70">
                             Office <span className="text-xs font-normal text-muted-foreground">(Default)</span>

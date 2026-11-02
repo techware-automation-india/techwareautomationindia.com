@@ -2379,7 +2379,7 @@ const Approvals = () => {
                                     </button>
 
                                     {/* Attendance Check-in GPS Location Button (UL/location approval only) */}
-                                    {cardIncludesCheckIn && canShowPunchLocation && !isCorrectionRequest && approval.correctionDetails?.checkInLocationSource !== "forgot-punch" && approval.checkInLatitude != null && approval.checkInLongitude != null && (
+                                    {cardIncludesCheckIn && canShowPunchLocation && (approval.source === "ATTENDANCE" || isLocationCorrection || approval.correctionDetails?.checkInLocationSource === "unassigned-location") && approval.correctionDetails?.checkInLocationSource !== "forgot-punch" && approval.checkInLatitude != null && approval.checkInLongitude != null && (
                                       <button
                                         type="button"
                                         onClick={(event) => {
@@ -2396,7 +2396,7 @@ const Approvals = () => {
                                     {/* Manual location text is shown inside the View Reason modal only */}
 
                                     {/* Attendance Check-out GPS Location Button (UL/location approval only) */}
-                                    {cardIncludesCheckOut && canShowPunchLocation && !isCorrectionRequest && approval.correctionDetails?.checkOutLocationSource !== "forgot-punch" && approval.checkOutLatitude != null && approval.checkOutLongitude != null && (
+                                    {cardIncludesCheckOut && canShowPunchLocation && (approval.source === "ATTENDANCE" || isLocationCorrection || approval.correctionDetails?.checkOutLocationSource === "unassigned-location") && approval.correctionDetails?.checkOutLocationSource !== "forgot-punch" && approval.checkOutLatitude != null && approval.checkOutLongitude != null && (
                                       <button
                                         type="button"
                                         onClick={(event) => {
@@ -2847,8 +2847,8 @@ const Approvals = () => {
                     const checkInLng  = checkInLocSrc  === "forgot-punch" ? null : (reasonModal.actualCheckInLongitude ?? forgotPunch.checkInLongitude ?? reasonModal.checkInLongitude);
                     const checkOutLat = checkOutLocSrc === "forgot-punch" ? null : (reasonModal.actualCheckOutLatitude  ?? forgotPunch.checkOutLatitude  ?? reasonModal.checkOutLatitude);
                     const checkOutLng = checkOutLocSrc === "forgot-punch" ? null : (reasonModal.actualCheckOutLongitude ?? forgotPunch.checkOutLongitude ?? reasonModal.checkOutLongitude);
-                    const checkInUsesMap  = checkInLat  != null && Number.isFinite(Number(checkInLat))  && checkInLocSrc  === "unassigned-location";
-                    const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && checkOutLocSrc === "unassigned-location";
+                    const checkInUsesMap  = checkInLat  != null && Number.isFinite(Number(checkInLat))  && (checkInLocSrc  === "unassigned-location" || isLocationCorrection || (!checkInLocation && checkInLocSrc !== "forgot-punch"));
+                    const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && (checkOutLocSrc === "unassigned-location" || isLocationCorrection || (!checkOutLocation && checkOutLocSrc !== "forgot-punch"));
                     // For checkout-only forgot-punch, don't fabricate a default check-in location card
                     const isForgotPunchCheckOut = _isCheckOutOnly && checkOutLocSrc === "forgot-punch";
                     const effCheckInSrc  = checkInLocSrc  || (!isForgotPunchCheckOut && _isCheckOutOnly && actualCheckInTime  && !checkInUsesMap  ? "default-location" : null);
@@ -2911,6 +2911,7 @@ const Approvals = () => {
                               className={em ? "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"}>
                               <MapPin className="h-3.5 w-3.5" /> View on Google Maps
                             </button>
+                            <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">GPS: {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}</p>
                           ) : source === "default-location" ? (
                             <p className="mt-3 break-words rounded-lg bg-white/80 px-3 py-2 text-sm font-semibold text-foreground dark:bg-background/70">Office <span className="text-xs font-normal text-muted-foreground">(Default)</span></p>
                           ) : (

@@ -3357,44 +3357,64 @@ router.get("/employees", async (req, res) => {
 });
 
 const enrichAttendanceRecordsWithDistance = async (records) => {
-  const defaultLocation =
-    (await prisma.location.findFirst({
-      where: { isDefault: true, isActive: true },
-    })) ||
-    (await prisma.location.findFirst({
-      where: { isDefault: true },
-    })) ||
-    (await prisma.location.findFirst({
-      where: { isActive: true },
-    })) ||
-    (await prisma.location.findFirst());
+  if (!records || records.length === 0) return [];
 
-  return Promise.all(
-    (records || []).map(async (record) => {
-      let empLocation = record.employee?.location;
-      if (!empLocation && record.employeeId) {
-        const emp = await prisma.employeeProfile.findUnique({
-          where: { id: record.employeeId },
-          include: { location: true },
-        });
-        empLocation = emp?.location;
-      }
-      const targetLoc =
-        (defaultLocation?.latitude != null && defaultLocation?.longitude != null)
-          ? defaultLocation
-          : ((empLocation?.latitude != null && empLocation?.longitude != null)
-              ? empLocation
-              : null);
+  // 1. Single query for default location
+  let defaultLocation = null;
+  try {
+    defaultLocation = await prisma.location.findFirst({
+      where: { OR: [{ isDefault: true }, { isActive: true }] },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+    });
+  } catch (locErr) {
+    console.warn("Could not fetch default location for distance enrichment:", locErr.message);
+  }
 
-      let checkInDistance = null;
-      let checkOutDistance = null;
+  // 2. Pre-fetch missing employee locations in a single batch query (prevents connection exhaustion)
+  const missingEmpIds = Array.from(
+    new Set(
+      records
+        .filter((r) => !r.employee?.location && r.employeeId)
+        .map((r) => r.employeeId),
+    ),
+  );
 
-      if (
-        record.checkInLatitude != null &&
-        record.checkInLongitude != null &&
-        targetLoc?.latitude != null &&
-        targetLoc?.longitude != null
-      ) {
+  const empLocationMap = new Map();
+  if (missingEmpIds.length > 0) {
+    try {
+      const emps = await prisma.employeeProfile.findMany({
+        where: { id: { in: missingEmpIds } },
+        select: { id: true, location: true },
+      });
+      emps.forEach((e) => {
+        if (e.location) empLocationMap.set(e.id, e.location);
+      });
+    } catch (batchErr) {
+      console.warn("Could not batch-fetch employee locations:", batchErr.message);
+    }
+  }
+
+  // 3. Enrich in memory without hitting the database per record
+  const enriched = [];
+  for (const record of records) {
+    const empLocation = record.employee?.location || empLocationMap.get(record.employeeId) || null;
+    const targetLoc =
+      (defaultLocation?.latitude != null && defaultLocation?.longitude != null)
+        ? defaultLocation
+        : ((empLocation?.latitude != null && empLocation?.longitude != null)
+            ? empLocation
+            : null);
+
+    let checkInDistance = null;
+    let checkOutDistance = null;
+
+    if (
+      record.checkInLatitude != null &&
+      record.checkInLongitude != null &&
+      targetLoc?.latitude != null &&
+      targetLoc?.longitude != null
+    ) {
+      try {
         const distMeters = await getRoadDistanceInMeters(
           targetLoc.latitude,
           targetLoc.longitude,
@@ -3402,14 +3422,16 @@ const enrichAttendanceRecordsWithDistance = async (records) => {
           record.checkInLongitude,
         );
         checkInDistance = formatDistanceKm(distMeters);
-      }
+      } catch {}
+    }
 
-      if (
-        record.checkOutLatitude != null &&
-        record.checkOutLongitude != null &&
-        targetLoc?.latitude != null &&
-        targetLoc?.longitude != null
-      ) {
+    if (
+      record.checkOutLatitude != null &&
+      record.checkOutLongitude != null &&
+      targetLoc?.latitude != null &&
+      targetLoc?.longitude != null
+    ) {
+      try {
         const distMeters = await getRoadDistanceInMeters(
           targetLoc.latitude,
           targetLoc.longitude,
@@ -3417,15 +3439,17 @@ const enrichAttendanceRecordsWithDistance = async (records) => {
           record.checkOutLongitude,
         );
         checkOutDistance = formatDistanceKm(distMeters);
-      }
+      } catch {}
+    }
 
-      return {
-        ...record,
-        checkInDistance: checkInDistance || record.checkInDistance || null,
-        checkOutDistance: checkOutDistance || record.checkOutDistance || null,
-      };
-    }),
-  );
+    enriched.push({
+      ...record,
+      checkInDistance: checkInDistance || record.checkInDistance || null,
+      checkOutDistance: checkOutDistance || record.checkOutDistance || null,
+    });
+  }
+
+  return enriched;
 };
 
 // GET /api/attendance/pending-approvals - Get all pending check-in approvals

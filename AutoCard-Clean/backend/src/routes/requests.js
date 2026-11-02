@@ -592,8 +592,11 @@ async function formatCorrectionNotification(
   let originalCheckOutTime = correction.originalCheckOutTime || null;
   let existingCoords = null;
 
-  // Look up existing attendance record for that date to fill missing times and GPS coordinates
-  if (employeeId && (correction.date || correction.attendanceId)) {
+  // Only look up attendance if effective check in / check out is missing
+  const needsCheckIn = !effectiveCheckIn && correction.punchType !== 'check-out' && correction.punchType !== 'checkout';
+  const needsCheckOut = !effectiveCheckOut && correction.punchType !== 'check-in' && correction.punchType !== 'checkin';
+
+  if (employeeId && (correction.attendanceId || (correction.date && (needsCheckIn || needsCheckOut)))) {
     try {
       let existingAttendance = null;
       if (correction.attendanceId) {
@@ -612,7 +615,7 @@ async function formatCorrectionNotification(
         });
       }
 
-      if (!existingAttendance && correction.date) {
+      if (!existingAttendance && correction.date && (needsCheckIn || needsCheckOut)) {
         const attendanceRange = getAttendanceDayRange(correction.date);
         if (attendanceRange) {
           existingAttendance = await prisma.attendance.findFirst({
@@ -637,51 +640,35 @@ async function formatCorrectionNotification(
         }
       }
 
-      let existingCheckInReason = null;
-      if (existingAttendance?.note) {
-        const match = existingAttendance.note.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
-        if (match && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(match)) {
-          existingCheckInReason = match;
-        }
-      }
-
       if (!effectiveCheckIn && existingAttendance?.checkIn) {
-        effectiveCheckIn = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
+        effectiveCheckIn = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
           hour12: false,
         }).format(new Date(existingAttendance.checkIn));
       }
-      if (
-        !originalCheckInTime &&
-        requestStatus === "PENDING" &&
-        existingAttendance?.checkIn
-      ) {
-        originalCheckInTime = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
+      if (!originalCheckInTime && requestStatus === 'PENDING' && existingAttendance?.checkIn) {
+        originalCheckInTime = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
           hour12: false,
         }).format(new Date(existingAttendance.checkIn));
       }
       if (!effectiveCheckOut && existingAttendance?.checkOut) {
-        effectiveCheckOut = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
+        effectiveCheckOut = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
           hour12: false,
         }).format(new Date(existingAttendance.checkOut));
       }
-      if (
-        !originalCheckOutTime &&
-        requestStatus === "PENDING" &&
-        existingAttendance?.checkOut
-      ) {
-        originalCheckOutTime = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
+      if (!originalCheckOutTime && requestStatus === 'PENDING' && existingAttendance?.checkOut) {
+        originalCheckOutTime = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
           hour12: false,
         }).format(new Date(existingAttendance.checkOut));
       }
@@ -693,8 +680,8 @@ async function formatCorrectionNotification(
           checkOutLongitude: existingAttendance.checkOutLongitude,
         };
       }
-    } catch (e) {
-      console.warn("Could not fetch existing attendance for correction notification:", e.message);
+    } catch {
+      // Non-fatal fallback
     }
   }
 

@@ -239,10 +239,14 @@ app.get(["/uploads/*", "/api/uploads/*"], (req, res, next) => {
   const relativePath = req.path.replace(/^\/(api\/)?uploads\//, "");
   const candidates = [
     path.join(hostingerSharedBase, relativePath),
+    path.join("/home/u553274077/shared_uploads/inventory", path.basename(relativePath)),
+    path.join("/home/u553274077/shared_uploads", relativePath),
     path.join(__dirname, "../uploads", relativePath),
+    path.join(__dirname, "../../uploads", relativePath),
+    path.join(__dirname, "../../../uploads", relativePath),
     path.join(process.cwd(), "uploads", relativePath),
     path.join(process.cwd(), "backend", "uploads", relativePath),
-    path.join(__dirname, "../../uploads", relativePath),
+    path.join(process.cwd(), "../uploads", relativePath),
   ];
 
   for (const candidate of candidates) {

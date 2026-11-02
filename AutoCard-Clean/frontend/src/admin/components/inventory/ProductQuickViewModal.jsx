@@ -1,17 +1,31 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   X, Package, Tag, Layers, MapPin, IndianRupee, ShieldAlert,
   Calendar, Clock, ZoomIn, ZoomOut, RotateCw, User, ExternalLink,
-  Edit3, Boxes, ArrowRightLeft
+  Edit3, Boxes, ArrowRightLeft, Eye, CheckCircle2, ChevronRight
 } from "lucide-react";
 
 export const resolveImageUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("data:") || url.startsWith("blob:")) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  const baseUrl = import.meta.env.VITE_API_URL || (window.location.hostname === "localhost" ? "http://localhost:4000" : "https://api.techwareautomation.in");
-  return `${baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
+  
+  // Use relative path directly when running on production web domain or when VITE_API_URL is empty
+  const envUrl = import.meta.env.VITE_API_URL;
+  let baseUrl = "";
+  if (envUrl) {
+    baseUrl = envUrl;
+  } else if (typeof window !== "undefined") {
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      baseUrl = "http://localhost:4000";
+    } else {
+      baseUrl = window.location.origin;
+    }
+  }
+  
+  const cleanPath = url.startsWith("/") ? url : `/${url}`;
+  return `${baseUrl}${cleanPath}`;
 };
 
 const fmtDate = (d) => {
@@ -35,21 +49,36 @@ export default function ProductQuickViewModal({
 }) {
   const [imageError, setImageError] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxRotation, setLightboxRotation] = useState(0);
 
   if (!isOpen || !item) return null;
 
-  const specsArr = Array.isArray(item.specifications)
-    ? item.specifications
-    : item.specifications && typeof item.specifications === "object"
-    ? Object.entries(item.specifications).map(([k, v]) => ({ key: k, value: v }))
-    : [];
+  // Safe parsing for specifications (handles array, object, JSON string)
+  let specsArr = [];
+  try {
+    let rawSpecs = item.specifications;
+    if (typeof rawSpecs === "string") {
+      try {
+        rawSpecs = JSON.parse(rawSpecs);
+      } catch (_) {}
+    }
+    if (Array.isArray(rawSpecs)) {
+      specsArr = rawSpecs.filter((s) => s && (s.key || s.value));
+    } else if (rawSpecs && typeof rawSpecs === "object") {
+      specsArr = Object.entries(rawSpecs).map(([k, v]) => ({ key: k, value: v }));
+    }
+  } catch (_) {
+    specsArr = [];
+  }
 
   const qty = Number(item.quantity || 0);
   const minStock = Number(item.minStock || 5);
   const cost = Number(item.costPrice || 0);
   const totalValuation = qty * cost;
   const isLowStock = qty <= minStock;
-  const photoSrc = resolveImageUrl(item.photoUrl || item.img);
+  const photoSrc = resolveImageUrl(item.photoUrl || item.img || item.url);
 
   // Resolve category hierarchy chain
   const categoryChain = [];
@@ -59,6 +88,7 @@ export default function ProductQuickViewModal({
     categoryChain.unshift({
       id: currCat.id,
       name: currCat.name,
+      code: currCat.code,
       level: currCat.level || 1,
     });
     currCat = currCat.parent;
@@ -143,10 +173,14 @@ export default function ProductQuickViewModal({
             {/* Photo Box (Col 5) */}
             <div className="md:col-span-5 flex flex-col items-center">
               <div
-                onClick={() => photoSrc && !imageError && setIsZoomed(!isZoomed)}
-                className={`w-full rounded-2xl bg-secondary/30 border border-border/80 overflow-hidden flex items-center justify-center relative group transition-all ${
-                  photoSrc && !imageError ? "cursor-zoom-in" : ""
-                } ${isZoomed ? "h-72" : "h-56"}`}
+                onClick={() => {
+                  if (photoSrc && !imageError) {
+                    setIsLightboxOpen(true);
+                  }
+                }}
+                className={`w-full rounded-2xl bg-secondary/30 border border-border/80 overflow-hidden flex items-center justify-center relative group transition-all cursor-pointer ${
+                  isZoomed ? "h-72" : "h-60"
+                }`}
               >
                 {photoSrc && !imageError ? (
                   <>
@@ -158,9 +192,9 @@ export default function ProductQuickViewModal({
                         isZoomed ? "scale-125" : "group-hover:scale-105"
                       }`}
                     />
-                    <div className="absolute bottom-2 right-2 px-2 py-1 rounded-lg bg-black/60 text-white text-[10px] font-medium flex items-center gap-1 backdrop-blur-xs opacity-80 group-hover:opacity-100 transition-opacity">
-                      <ZoomIn className="h-3 w-3" />
-                      <span>{isZoomed ? "Click to shrink" : "Click to zoom"}</span>
+                    <div className="absolute bottom-2 right-2 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[11px] font-medium flex items-center gap-1.5 backdrop-blur-xs opacity-80 group-hover:opacity-100 transition-opacity">
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>View Image</span>
                     </div>
                   </>
                 ) : (
@@ -175,15 +209,24 @@ export default function ProductQuickViewModal({
               </div>
 
               {photoSrc && !imageError && (
-                <a
-                  href={photoSrc}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 text-[11px] text-primary hover:underline flex items-center gap-1 font-semibold"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  <span>Open Original Full-Res Image</span>
-                </a>
+                <div className="mt-2.5 flex items-center gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setIsLightboxOpen(true)}
+                    className="flex-1 py-1.5 px-3 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>View Image</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsZoomed(!isZoomed)}
+                    className="py-1.5 px-2.5 rounded-xl bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground border border-border text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                    title={isZoomed ? "Shrink" : "Zoom in"}
+                  >
+                    {isZoomed ? <ZoomOut className="h-3.5 w-3.5" /> : <ZoomIn className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               )}
             </div>
 
@@ -202,6 +245,7 @@ export default function ProductQuickViewModal({
                   >
                     {qty === 0 ? "Out of Stock" : isLowStock ? "Low Stock Alert" : "In Stock"}
                   </span>
+                  
                   {/* Hierarchy Visual Diagram matching Level 1 -> Level 2 -> Level 3 -> Level 4 */}
                   {categoryChain.length > 0 ? (
                     <div className="w-full my-2 p-3 rounded-2xl bg-secondary/30 border border-primary/20">
@@ -249,7 +293,7 @@ export default function ProductQuickViewModal({
                   ) : (
                     <div className="w-full my-1.5 p-2 rounded-xl bg-secondary/20 border border-border text-[11px] text-muted-foreground italic flex items-center gap-1">
                       <Layers className="h-3 w-3" />
-                      <span>Direct Item (No Parent Category Assigned)</span>
+                      <span>Direct Root Level Item</span>
                     </div>
                   )}
                 </div>
@@ -412,6 +456,89 @@ export default function ProductQuickViewModal({
           </button>
         </div>
       </div>
+
+      {/* Full Screen Lightbox Modal when clicking "View Image" */}
+      {isLightboxOpen && (
+        <div
+          onClick={() => {
+            setIsLightboxOpen(false);
+            setLightboxZoom(1);
+            setLightboxRotation(0);
+          }}
+          className="fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          {/* Lightbox Controls Toolbar */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 right-4 flex items-center gap-2 bg-neutral-900/80 border border-neutral-700/80 rounded-2xl px-3 py-1.5 backdrop-blur-md shadow-xl z-20"
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxZoom((prev) => Math.min(prev + 0.25, 3))}
+              className="p-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              title="Zoom In"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightboxZoom((prev) => Math.max(prev - 0.25, 0.5))}
+              className="p-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              title="Zoom Out"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightboxRotation((prev) => (prev + 90) % 360)}
+              className="p-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              title="Rotate"
+            >
+              <RotateCw className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLightboxZoom(1);
+                setLightboxRotation(0);
+              }}
+              className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer font-mono"
+              title="Reset Zoom & Rotation"
+            >
+              Reset
+            </button>
+            <div className="w-px h-4 bg-neutral-700 my-auto" />
+            <button
+              type="button"
+              onClick={() => {
+                setIsLightboxOpen(false);
+                setLightboxZoom(1);
+                setLightboxRotation(0);
+              }}
+              className="p-1.5 rounded-lg text-neutral-300 hover:text-rose-400 hover:bg-neutral-800 transition-colors cursor-pointer"
+              title="Close Preview"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Lightbox Image Preview Container */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-[90vw] max-h-[85vh] flex items-center justify-center overflow-hidden"
+          >
+            <img
+              src={photoSrc}
+              alt={item.name}
+              style={{
+                transform: `scale(${lightboxZoom}) rotate(${lightboxRotation}deg)`,
+                transition: "transform 0.2s ease-out",
+              }}
+              className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl select-none"
+            />
+          </div>
+        </div>
+      )}
     </div>,
     document.body
   );

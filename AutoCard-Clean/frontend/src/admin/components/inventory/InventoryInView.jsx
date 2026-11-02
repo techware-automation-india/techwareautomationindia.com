@@ -20,8 +20,22 @@ const resolveImageUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("data:") || url.startsWith("blob:")) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  const baseUrl = import.meta.env.VITE_API_URL || (window.location.hostname === "localhost" ? "http://localhost:4000" : "https://api.techwareautomation.in");
-  return `${baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
+
+  const rawApiUrl = import.meta.env.VITE_API_URL || "";
+  let baseOrigin = "";
+  if (rawApiUrl) {
+    try {
+      baseOrigin = new URL(rawApiUrl).origin;
+    } catch {
+      baseOrigin = rawApiUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "");
+    }
+  } else if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    baseOrigin = "http://localhost:4000";
+  } else {
+    baseOrigin = "https://api.techwareautomation.in";
+  }
+  const cleanPath = url.startsWith("/") ? url : `/${url}`;
+  return `${baseOrigin}${cleanPath}`;
 };
 
 const fmtDate = (d) => {
@@ -632,8 +646,13 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   });
 
   // Filter items by search and Level (1, 2, 3, 4, or all)
-  // When at root level OR when searching/level filtering, search across all inward items across all categories & levels
-  const sourceItems = (!currentCategory || search.trim() || levelFilter !== "all") ? allInwardItems : items;
+  // When inside a category, use items. At root level without active search/filter, use items (which holds root-only items).
+  // When actively searching or filtering by level across the whole catalog, use allInwardItems.
+  const sourceItems = currentCategory
+    ? items
+    : (search.trim() || levelFilter !== "all")
+    ? allInwardItems
+    : items;
 
   const filteredItems = sourceItems.filter((i) => {
     // Level filtering for items (checks item's category level or direct root item level 1)
@@ -1752,10 +1771,18 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredItems.map((item, idx) => {
-                  const specsArr = Array.isArray(item.specifications)
-                    ? item.specifications
-                    : item.specifications && typeof item.specifications === "object"
-                    ? Object.entries(item.specifications).map(([k, v]) => ({ key: k, value: v }))
+                  let rawSpecs = item.specifications;
+                  if (typeof rawSpecs === "string") {
+                    try {
+                      rawSpecs = JSON.parse(rawSpecs);
+                    } catch {
+                      rawSpecs = [];
+                    }
+                  }
+                  const specsArr = Array.isArray(rawSpecs)
+                    ? rawSpecs.map((s, idx) => (typeof s === "object" && s !== null ? s : { key: `Spec ${idx + 1}`, value: String(s) }))
+                    : rawSpecs && typeof rawSpecs === "object"
+                    ? Object.entries(rawSpecs).map(([k, v]) => ({ key: k, value: typeof v === "object" ? JSON.stringify(v) : String(v) }))
                     : [];
 
                   return (

@@ -52,6 +52,26 @@ const formatTime12h = (time24) => {
   return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
 };
 
+const getForgotPunchData = (request) => {
+  if (request?.type !== "CORRECTION") return null;
+
+  const notification = request.notification || null;
+  const description = String(request.description || "");
+  const marker = "[ATTENDANCE_CORRECTION]";
+  const markerIndex = description.lastIndexOf(marker);
+  if (markerIndex === -1) return notification;
+
+  try {
+    return {
+      ...(notification || {}),
+      ...JSON.parse(description.slice(markerIndex + marker.length).trim()),
+    };
+  } catch (error) {
+    console.warn("Could not parse Forgot Punch request details:", error);
+    return notification;
+  }
+};
+
 // Convert 24-hour "HH:mm" to 12-hour object { hour12: "10", minute: "00", ampm: "AM" }
 const parse24to12 = (time24) => {
   if (!time24) return { hour12: "10", minute: "00", ampm: "AM" };
@@ -194,9 +214,12 @@ const AttendanceCorrection = ({ correctionType }) => {
   const [checkOutLocation, setCheckOutLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [existingAttendance, setExistingAttendance] = useState(null);
+  const [forgotPunchCheckIn, setForgotPunchCheckIn] = useState(null);
+  const [loadingForgotPunchCheckIn, setLoadingForgotPunchCheckIn] = useState(true);
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [approvedLeaves, setApprovedLeaves] = useState([]);
   const [unclosedPrevious, setUnclosedPrevious] = useState(null);
+  const [loadingUnclosedPrevious, setLoadingUnclosedPrevious] = useState(true);
   const [overnightModal, setOvernightModal] = useState({
     isOpen: false,
     checkInTime: "",
@@ -222,15 +245,178 @@ const AttendanceCorrection = ({ correctionType }) => {
       if (!date) return;
       try {
         setLoadingExisting(true);
-        const res = await apiGet(`/attendance/by-date?date=${encodeURIComponent(date)}`);
+        setLoadingForgotPunchCheckIn(true);
+        const [attendanceResult, requestsResult, todayAttendanceResult] = await Promise.allSettled([
+          apiGet(`/attendance/by-date?date=${encodeURIComponent(date)}`),
+          apiGet("/requests/my"),
+          date === indiaNow.date
+            ? apiGet("/attendance/me/today")
+            : Promise.resolve(null),
+        ]);
         if (!isMounted) return;
-        setExistingAttendance(res);
+        let attendanceRecord =
+          attendanceResult.status === "fulfilled"
+            ? attendanceResult.value
+            : null;
+        if (
+          !attendanceRecord?.record?.checkInTime &&
+          todayAttendanceResult.status === "fulfilled" &&
+          todayAttendanceResult.value?.record?.checkIn
+        ) {
+          const todayRecord = todayAttendanceResult.value.record;
+          const formatTimeInIndia = (value) =>
+            value
+              ? new Intl.DateTimeFormat("en-GB", {
+                  timeZone: "Asia/Kolkata",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).format(new Date(value))
+              : null;
+          const todayRecordCheckInDate = todayRecord.checkIn
+            ? new Intl.DateTimeFormat("en-CA", {
+                timeZone: "Asia/Kolkata",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).format(new Date(todayRecord.checkIn))
+            : null;
+          if (todayRecordCheckInDate && todayRecordCheckInDate !== date) {
+            setDate(todayRecordCheckInDate);
+            setCheckOutDate(indiaNow.date);
+            setPunchType("check-out");
+          }
+          attendanceRecord = {
+            ...(attendanceRecord || {}),
+            record: {
+              ...todayRecord,
+              checkInTime:
+                todayRecord.checkInTime ||
+                formatTimeInIndia(todayRecord.checkIn),
+              checkOutTime:
+                todayRecord.checkOutTime ||
+                formatTimeInIndia(todayRecord.checkOut),
+            },
+          };
+        }
+        if (attendanceRecord) {
+          setExistingAttendance(attendanceRecord);
+        } else {
+          setExistingAttendance(null);
+          if (attendanceResult.status === "rejected") {
+            console.warn(
+              "Failed to fetch saved attendance:",
+              attendanceResult.reason?.message || attendanceResult.reason,
+            );
+          }
+        }
 
-        // In time-edit mode, take the attendance time saved before the edit
+        if (requestsResult.status === "fulfilled") {
+          const correctionRequests = (requestsResult.value?.requests || [])
+            .filter((request) =>
+              ["PENDING", "APPROVED"].includes(
+                String(request.status || "").toUpperCase(),
+              ),
+            )
+            .map((request) => ({
+              request,
+              correction: getForgotPunchData(request),
+            }))
+            .filter(({ request, correction }) => {
+              const requestDetails = correction || request.notification || {};
+              const punchType = String(requestDetails.punchType || "").toLowerCase();
+              const subject = String(request.subject || "").toLowerCase();
+              const description = String(request.description || "").toLowerCase();
+              const isLocationApproval =
+                subject.includes("approval") ||
+                description.includes("unassigned location") ||
+                description.includes("outside assigned location");
+              const isCheckInApproval =
+                ["check-in", "both"].includes(punchType) &&
+                (subject.includes("check-in approval") ||
+                  subject.includes("location approval") ||
+                  description.includes("unassigned location") ||
+                  description.includes("outside assigned location"));
+
+              return (
+                request.type === "CORRECTION" &&
+                (!isLocationApproval || isCheckInApproval) &&
+                !punchType.includes("time-edit") &&
+                (requestDetails.date || correction?.date) === date &&
+                ["check-in", "both"].includes(punchType) &&
+                Boolean(
+                  requestDetails.checkInTime ||
+                    requestDetails.checkIn ||
+                    subject.includes("forgot punch"),
+                )
+              );
+            });
+          const matchingCheckIn = correctionRequests.find(
+            ({ correction }) => correction.date === date,
+          );
+          setForgotPunchCheckIn(matchingCheckIn || null);
+
+          if (
+            !initialDate &&
+            requestMode === "forgot-punch" &&
+            date === indiaNow.date &&
+            !attendanceRecord?.record?.checkInTime
+          ) {
+            const todayAtUtc = Date.parse(`${indiaNow.date}T00:00:00Z`);
+            const previousCheckIn = correctionRequests.find(({ request, correction }) => {
+              const requestDetails = correction || request.notification || {};
+              const correctionDate = requestDetails.date || correction?.date;
+              if (!correctionDate || correctionDate >= indiaNow.date) return false;
+              const daysAgo =
+                (todayAtUtc - Date.parse(`${correctionDate}T00:00:00Z`)) /
+                (24 * 60 * 60 * 1000);
+              const punchType = String(requestDetails.punchType || "").toLowerCase();
+              return (
+                daysAgo <= 2 &&
+                !requestDetails.checkOutTime &&
+                ["check-in", "both"].includes(punchType) &&
+                Boolean(
+                  requestDetails.checkInTime ||
+                    requestDetails.checkIn ||
+                    request.subject?.toLowerCase().includes("forgot punch"),
+                )
+              );
+            });
+
+            if (previousCheckIn) {
+              const requestDetails =
+                previousCheckIn.correction || previousCheckIn.request.notification || {};
+              const previousDate =
+                requestDetails.date || previousCheckIn.correction?.date;
+              const previousAttendance = await apiGet(
+                `/attendance/by-date?date=${encodeURIComponent(previousDate)}`,
+              );
+              if (!isMounted) return;
+              if (!previousAttendance?.record?.checkOutTime) {
+                setForgotPunchCheckIn(previousCheckIn);
+                setDate(previousDate);
+                setCheckOutDate(previousDate);
+                setPunchType("check-out");
+              }
+            }
+          }
+        } else {
+          console.warn(
+            "Failed to fetch Forgot Punch requests:",
+            requestsResult.reason?.message || requestsResult.reason,
+          );
+          setForgotPunchCheckIn(null);
+        }
+
+        // In time-edit mode, take the attendance time saved or pending before the edit
         if (requestMode === "time-edit") {
-          if (res?.record) {
-            setTime(res.record.checkInTime || "");
-            setCheckOutTime(res.record.checkOutTime || "");
+          const record = attendanceRecord?.record;
+          const pendingCheckIn = matchingCheckIn?.correction;
+          const initialIn = record?.checkInTime || pendingCheckIn?.checkInTime || "";
+          const initialOut = record?.checkOutTime || pendingCheckIn?.checkOutTime || "";
+          if (initialIn || initialOut) {
+            setTime(initialIn);
+            setCheckOutTime(initialOut);
           } else {
             setTime("");
             setCheckOutTime("");
@@ -238,17 +424,24 @@ const AttendanceCorrection = ({ correctionType }) => {
         }
       } catch (err) {
         console.warn("Failed to fetch existing attendance:", err.message);
-        if (isMounted) setExistingAttendance(null);
+        if (isMounted) {
+          setExistingAttendance(null);
+          setForgotPunchCheckIn(null);
+        }
       } finally {
-        if (isMounted) setLoadingExisting(false);
+        if (isMounted) {
+          setLoadingExisting(false);
+          setLoadingForgotPunchCheckIn(false);
+        }
       }
     };
 
+    setLoadingForgotPunchCheckIn(true);
     fetchExisting();
     return () => {
       isMounted = false;
     };
-  }, [date, requestMode]);
+  }, [date, indiaNow.date, requestMode]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -266,6 +459,8 @@ const AttendanceCorrection = ({ correctionType }) => {
         }
       } catch (err) {
         console.warn("Failed to fetch initial data:", err.message);
+      } finally {
+        setLoadingUnclosedPrevious(false);
       }
     };
     fetchData();
@@ -280,16 +475,73 @@ const AttendanceCorrection = ({ correctionType }) => {
   const isTodayUnclosedBlocked =
     date === indiaNow.date && hasUnclosedPreviousMissingCheckout;
 
-  const hasExistingCheckIn = !!existingAttendance?.record?.checkInTime;
+  const hasSavedAttendanceCheckIn =
+    Boolean(
+      existingAttendance?.record?.checkInTime ||
+        existingAttendance?.record?.checkIn,
+    );
+  const hasSavedAttendanceCheckOut =
+    Boolean(
+      existingAttendance?.record?.checkOutTime ||
+        existingAttendance?.record?.checkOut,
+    );
+  const hasExistingCheckIn =
+    hasSavedAttendanceCheckIn ||
+    Boolean(
+      forgotPunchCheckIn?.correction?.checkInTime ||
+        forgotPunchCheckIn?.request?.notification?.checkInTime ||
+        forgotPunchCheckIn?.correction?.checkIn ||
+        forgotPunchCheckIn?.request?.notification?.checkIn,
+    ) ||
+    Boolean(
+      unclosedPrevious?.record?.checkIn &&
+        unclosedPrevious.record.dateKey === date,
+    );
+  const hasPendingForgotPunchCheckIn =
+    forgotPunchCheckIn?.request?.status === "PENDING" &&
+    Boolean(
+      forgotPunchCheckIn?.correction?.checkInTime ||
+        forgotPunchCheckIn?.request?.notification?.checkInTime ||
+        forgotPunchCheckIn?.correction?.checkIn ||
+        forgotPunchCheckIn?.request?.notification?.checkIn,
+    );
 
   useEffect(() => {
-    if (isTodayUnclosedBlocked && (punchType === "check-in" || punchType === "both")) {
-      setPunchType("check-out");
-    } else if (!hasExistingCheckIn && punchType === "check-out" && !isTodayUnclosedBlocked) {
-      // If user has not checked in for this date, default punchType to check-in or both
-      setPunchType("check-in");
+    const unclosedDate = unclosedPrevious?.record?.dateKey;
+    if (
+        requestMode === "forgot-punch" &&
+        isTodayUnclosedBlocked &&
+        unclosedDate
+    ) {
+        setDate(unclosedDate);
+        setCheckOutDate(unclosedDate);
+        setPunchType("check-out");
     }
-  }, [isTodayUnclosedBlocked, hasExistingCheckIn, punchType]);
+  }, [
+    isTodayUnclosedBlocked,
+    requestMode,
+    unclosedPrevious?.record?.dateKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      (isTodayUnclosedBlocked ||
+        hasPendingForgotPunchCheckIn ||
+        (requestMode === "forgot-punch" &&
+          hasSavedAttendanceCheckIn &&
+          !hasSavedAttendanceCheckOut)) &&
+      (punchType === "check-in" || punchType === "both")
+    ) {
+      setPunchType("check-out");
+    }
+  }, [
+    isTodayUnclosedBlocked,
+    requestMode,
+    hasPendingForgotPunchCheckIn,
+    hasSavedAttendanceCheckIn,
+    hasSavedAttendanceCheckOut,
+    punchType,
+  ]);
 
   const getApprovedLeaveForDate = (selectedDateStr) => {
     if (!selectedDateStr || approvedLeaves.length === 0) return null;
@@ -319,9 +571,13 @@ const AttendanceCorrection = ({ correctionType }) => {
   const handleModeChange = (mode) => {
     setRequestMode(mode);
     if (mode === "time-edit") {
-      if (existingAttendance?.record) {
-        setTime(existingAttendance.record.checkInTime || "");
-        setCheckOutTime(existingAttendance.record.checkOutTime || "");
+      const record = existingAttendance?.record;
+      const pendingCheckIn = forgotPunchCheckIn?.correction;
+      const initialIn = record?.checkInTime || pendingCheckIn?.checkInTime || "";
+      const initialOut = record?.checkOutTime || pendingCheckIn?.checkOutTime || "";
+      if (initialIn || initialOut) {
+        setTime(initialIn);
+        setCheckOutTime(initialOut);
       } else {
         setTime("");
         setCheckOutTime("");
@@ -357,7 +613,7 @@ const AttendanceCorrection = ({ correctionType }) => {
   }, [date]);
 
   const executeSubmit = async (isOvernight = false) => {
-    const actualCheckOutDate = checkOutDate || date;
+    const actualCheckOutDate = (checkOutDate && checkOutDate > date) ? checkOutDate : date;
     const effectiveCheckOutDate = isOvernight ? (actualCheckOutDate > date ? actualCheckOutDate : getNextDayDateStr(date)) : actualCheckOutDate;
     const isCrossDay = effectiveCheckOutDate > date;
 
@@ -388,27 +644,79 @@ const AttendanceCorrection = ({ correctionType }) => {
     try {
 
       if (requestMode === "time-edit") {
+        const timeEditReason = reason.trim();
+        const originalCheckInTime =
+          existingAttendance?.record?.checkInTime ||
+          forgotPunchCheckIn?.correction?.checkInTime ||
+          null;
+        const originalCheckOutTime =
+          existingAttendance?.record?.checkOutTime ||
+          forgotPunchCheckIn?.correction?.checkOutTime ||
+          null;
+
+        const isCheckInOnly = punchType === "check-in";
+        const isCheckOutOnly = punchType === "check-out";
+        const isBoth = punchType === "both";
+
+        const requestedCheckInTime = (isCheckInOnly || isBoth) && time ? time : null;
+        const requestedCheckOutTime = (isCheckOutOnly || isBoth) && checkOutTime ? checkOutTime : null;
+
+        if (isCheckInOnly && !requestedCheckInTime) {
+          toast.error("Enter a valid check-in time to edit.");
+          return;
+        }
+        if (isCheckOutOnly && !requestedCheckOutTime) {
+          toast.error("Enter a valid check-out time to edit.");
+          return;
+        }
+        if (isBoth && !requestedCheckInTime && !requestedCheckOutTime) {
+          toast.error("Enter check-in time, check-out time, or both before submitting.");
+          return;
+        }
+
+        const existingRecord = existingAttendance?.record;
+        const existingCheckInReason = (() => {
+          if (existingRecord?.checkInReason) return existingRecord.checkInReason;
+          const m = String(existingRecord?.note || "").match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
+          return m && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(m) ? m : null;
+        })();
+        const isULCheckIn = Boolean(existingRecord?.checkInLatitude && existingRecord?.checkInLongitude && String(existingRecord?.note || "").toLowerCase().includes("unassigned"));
+
         const correctionData = {
           date,
+          attendanceId: existingRecord?.id || null,
           checkOutDate: effectiveCheckOutDate,
           punchType: "time-edit",
-          checkInTime: time || null,
-          checkOutTime: checkOutTime || null,
+          timeEditPunchType: isCheckInOnly ? "check-in" : isCheckOutOnly ? "check-out" : "both",
+          checkInTime: (isCheckInOnly || isBoth) ? requestedCheckInTime : null,
+          checkOutTime: (isCheckOutOnly || isBoth) ? requestedCheckOutTime : null,
+          originalCheckInTime: (isCheckInOnly || isBoth) ? originalCheckInTime : null,
+          originalCheckOutTime: (isCheckOutOnly || isBoth) ? originalCheckOutTime : null,
           isOvernight: isOvernight || isCrossDay,
+          reason: timeEditReason || existingCheckInReason || "",
+          checkInReason: existingCheckInReason || null,
+          checkInLatitude: existingRecord?.checkInLatitude ?? null,
+          checkInLongitude: existingRecord?.checkInLongitude ?? null,
+          checkOutLatitude: existingRecord?.checkOutLatitude ?? null,
+          checkOutLongitude: existingRecord?.checkOutLongitude ?? null,
         };
 
-        const timeParts = [];
-        if (time) timeParts.push(`check-in ${formatTime12h(time)} (${date})`);
-        if (checkOutTime) {
-          timeParts.push(
-            `check-out ${formatTime12h(checkOutTime)} (${effectiveCheckOutDate})`
-          );
-        }
+        const typeLabel = isCheckInOnly ? " (Check In)" : isCheckOutOnly ? " (Check Out)" : "";
+        const descParts = [];
+        if (timeEditReason) descParts.push(timeEditReason);
+        if (existingCheckInReason) descParts.push(`Reason: ${existingCheckInReason}`);
+        if (isCrossDay) descParts.push(`Note: Overnight shift check-out on ${effectiveCheckOutDate}.`);
+        const descText = descParts.length > 0 ? `${descParts.join("\n\n")}\n\n` : "";
+
+        const isUL = isULCheckIn || Boolean(existingCheckInReason);
+        const reqSubject = isUL
+          ? `UL Check In + Time Edit (${date})`
+          : `Time Edit Request - ${date}${typeLabel}${isCrossDay ? " (Overnight)" : ""}`;
 
         await apiPost("/requests/my", {
           type: "CORRECTION",
-          subject: `Time Edit Request - ${date}${isCrossDay ? " (Overnight)" : ""}`,
-          description: `Time Edit request for ${date} at ${timeParts.join(" and ")}.${isCrossDay ? `\nNote: Overnight shift check-out on ${effectiveCheckOutDate}.` : ""}${reason.trim() ? `\n\n${reason.trim()}` : ""}\n[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
+          subject: reqSubject,
+          description: `${descText}[ATTENDANCE_CORRECTION]${JSON.stringify(correctionData)}`,
         });
         toast.success("Time Edit request submitted.");
       } else {
@@ -423,6 +731,33 @@ const AttendanceCorrection = ({ correctionType }) => {
               : punchType === "both"
                 ? checkOutTime
                 : time,
+          reason: reason.trim(),
+          checkInReason:
+            punchType === "check-in" || punchType === "both"
+              ? reason.trim()
+              : null,
+          checkOutReason:
+            punchType === "check-out" || punchType === "both"
+              ? reason.trim()
+              : null,
+          checkInLocation:
+            punchType === "check-in" || punchType === "both"
+              ? checkInLocation.trim() || null
+              : null,
+          checkOutLocation:
+            punchType === "check-out" || punchType === "both"
+              ? checkOutLocation.trim() || null
+              : null,
+          checkInLocationSource:
+            (punchType === "check-in" || punchType === "both") &&
+            checkInLocation.trim()
+              ? "forgot-punch"
+              : null,
+          checkOutLocationSource:
+            (punchType === "check-out" || punchType === "both") &&
+            checkOutLocation.trim()
+              ? "forgot-punch"
+              : null,
           isOvernight: isOvernight || isCrossDay,
         };
 
@@ -517,8 +852,11 @@ const AttendanceCorrection = ({ correctionType }) => {
       return;
     }
 
+    // Determine effective checkout date:
+    // If not an overnight / multi-day request, checkout date is the same as check-in date
+    const effectiveOutDate = checkOutDate && checkOutDate > date ? checkOutDate : date;
+
     // Block future date or future time for check-out
-    const effectiveOutDate = checkOutDate || date;
     if (effectiveOutDate > indiaNow.date) {
       toast.error("Future check-out requests cannot be submitted. Check-out date cannot be in the future.");
       return;
@@ -534,11 +872,6 @@ const AttendanceCorrection = ({ correctionType }) => {
     const isDifferentDay = Boolean(checkOutDate && checkOutDate > date);
 
     if (requestMode === "forgot-punch") {
-      if (punchType === "check-out" && !hasExistingCheckIn) {
-        toast.error("Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.");
-        return;
-      }
-
       if (punchType === "both") {
         if (!time || !checkOutTime) {
           toast.error("Please provide both Check In and Check Out times.");
@@ -557,7 +890,9 @@ const AttendanceCorrection = ({ correctionType }) => {
       }
 
       if (punchType === "check-out" && hasExistingCheckIn) {
-        const existingIn = existingAttendance?.record?.checkInTime;
+        const existingIn =
+          existingAttendance?.record?.checkInTime ||
+          forgotPunchCheckIn?.correction?.checkInTime;
         if (!isDifferentDay && existingIn && time <= existingIn) {
           setOvernightModal({
             isOpen: true,
@@ -787,6 +1122,7 @@ const AttendanceCorrection = ({ correctionType }) => {
                   type="button"
                   onClick={() => {
                     setDate(unclosedPrevious.record.dateKey);
+                    setCheckOutDate(unclosedPrevious.record.dateKey);
                     setPunchType("check-out");
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
@@ -807,21 +1143,40 @@ const AttendanceCorrection = ({ correctionType }) => {
                 onChange={(event) => setPunchType(event.target.value)}
                 className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
               >
-                <option value="check-in" disabled={isTodayUnclosedBlocked}>
-                  {isTodayUnclosedBlocked
-                    ? "Check In (Closed — Complete Yesterday Check-Out First)"
-                    : "Check In"}
-                </option>
-                <option value="check-out" disabled={!hasExistingCheckIn}>
-                  {!hasExistingCheckIn
-                    ? "Check Out (Disabled — Check In required first)"
+                {!hasExistingCheckIn && (
+                  <option
+                    value="check-in"
+                    disabled={isTodayUnclosedBlocked || hasPendingForgotPunchCheckIn}
+                  >
+                    {hasPendingForgotPunchCheckIn
+                      ? "Check In (Already Requested — Pending Approval)"
+                      : isTodayUnclosedBlocked
+                        ? "Check In (Closed — Complete Yesterday Check-Out First)"
+                        : "Check In"}
+                  </option>
+                )}
+                <option
+                  value="check-out"
+                  disabled={hasSavedAttendanceCheckOut}
+                >
+                  {hasSavedAttendanceCheckOut
+                    ? "Check Out (Already Marked)"
+                    : !hasExistingCheckIn
+                    ? "Check Out (Check In required before submitting)"
                     : "Check Out"}
                 </option>
-                <option value="both" disabled={isTodayUnclosedBlocked}>
-                  {isTodayUnclosedBlocked
-                    ? "Check In + Check Out (Closed — Complete Yesterday Check-Out First)"
-                    : "Check In + Check Out (One Request)"}
-                </option>
+                {!hasExistingCheckIn && (
+                  <option
+                    value="both"
+                    disabled={isTodayUnclosedBlocked || hasPendingForgotPunchCheckIn}
+                  >
+                    {hasPendingForgotPunchCheckIn
+                      ? "Check In + Check Out (Check In Already Requested)"
+                      : isTodayUnclosedBlocked
+                        ? "Check In + Check Out (Closed — Complete Yesterday Check-Out First)"
+                        : "Check In + Check Out (One Request)"}
+                  </option>
+                )}
               </select>
             </label>
 
@@ -895,6 +1250,20 @@ const AttendanceCorrection = ({ correctionType }) => {
         ) : (
           /* ONLY date and time edit when in Time Edit Request mode */
           <>
+            {/* Punch to Edit Selection */}
+            <label className="block text-sm font-medium">
+              Punch to Edit
+              <select
+                value={punchType}
+                onChange={(event) => setPunchType(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+              >
+                <option value="check-in">Check In Time Only</option>
+                <option value="check-out">Check Out Time Only</option>
+                <option value="both">Both (Check In & Check Out Time)</option>
+              </select>
+            </label>
+
             {/* Live Update Preview */}
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs space-y-1.5">
               <div className="font-semibold text-primary flex items-center gap-1.5">
@@ -902,35 +1271,43 @@ const AttendanceCorrection = ({ correctionType }) => {
                 Time Update Preview for {date}:
               </div>
               <div className="flex flex-wrap items-center gap-6 text-foreground pt-0.5">
-                <div>
-                  <span className="text-muted-foreground">Updated Check-In:</span>{" "}
-                  <span className="font-bold">{formatTime12h(time)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Updated Check-Out:</span>{" "}
-                  <span className="font-bold">{formatTime12h(checkOutTime)}</span>
-                </div>
+                {(punchType === "check-in" || punchType === "both") && (
+                  <div>
+                    <span className="text-muted-foreground">Updated Check-In:</span>{" "}
+                    <span className="font-bold">{formatTime12h(time)}</span>
+                  </div>
+                )}
+                {(punchType === "check-out" || punchType === "both") && (
+                  <div>
+                    <span className="text-muted-foreground">Updated Check-Out:</span>{" "}
+                    <span className="font-bold">{formatTime12h(checkOutTime)}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <label className="block text-sm font-medium">
-                Check In Time <span className="text-xs font-normal text-muted-foreground">(Pre-filled from saved {date})</span>
-                <TimePicker12h
-                  value={time}
-                  onChange={(newTime) => setTime(newTime)}
-                  idPrefix="te-in"
-                />
-              </label>
+            <div className={punchType === "both" ? "grid grid-cols-1 sm:grid-cols-2 gap-4" : "grid grid-cols-1 gap-4"}>
+              {(punchType === "check-in" || punchType === "both") && (
+                <label className="block text-sm font-medium">
+                  Check In Time <span className="text-xs font-normal text-muted-foreground">(Pre-filled from saved {date})</span>
+                  <TimePicker12h
+                    value={time}
+                    onChange={(newTime) => setTime(newTime)}
+                    idPrefix="te-in"
+                  />
+                </label>
+              )}
 
-              <label className="block text-sm font-medium">
-                Check Out Time <span className="text-xs font-normal text-muted-foreground">(Pre-filled from saved {date})</span>
-                <TimePicker12h
-                  value={checkOutTime}
-                  onChange={(newTime) => setCheckOutTime(newTime)}
-                  idPrefix="te-out"
-                />
-              </label>
+              {(punchType === "check-out" || punchType === "both") && (
+                <label className="block text-sm font-medium">
+                  Check Out Time <span className="text-xs font-normal text-muted-foreground">(Pre-filled from saved {date})</span>
+                  <TimePicker12h
+                    value={checkOutTime}
+                    onChange={(newTime) => setCheckOutTime(newTime)}
+                    idPrefix="te-out"
+                  />
+                </label>
+              )}
             </div>
           </>
         )}
@@ -939,6 +1316,9 @@ const AttendanceCorrection = ({ correctionType }) => {
           type="submit"
           disabled={
             submitting ||
+            loadingExisting ||
+            loadingUnclosedPrevious ||
+            loadingForgotPunchCheckIn ||
             Boolean(onLeaveForDate) ||
             Boolean(
               isTodayUnclosedBlocked &&

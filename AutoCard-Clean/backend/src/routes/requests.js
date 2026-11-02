@@ -78,6 +78,10 @@ function parseCorrectionRequest(description) {
   const readableDescription = description
     .slice(0, markerIndex)
     .trim();
+  const checkInLocation =
+    readableDescription.match(/(?:^|\n)\s*Check-In Location:\s*([^\r\n]+)/i)?.[1]?.trim() || null;
+  const checkOutLocation =
+    readableDescription.match(/(?:^|\n)\s*Check-Out Location:\s*([^\r\n]+)/i)?.[1]?.trim() || null;
 
   /*
    * Extract reason.
@@ -107,12 +111,17 @@ function parseCorrectionRequest(description) {
   fallbackReason = fallbackReason
     .replace(/^Checkin:?[^|]*\|?/i, "")
     .replace(/Checkout [^.]*\./i, "")
+    .replace(/(?:^|\n)\s*Check-In Location:\s*[^\r\n]*/gi, "")
+    .replace(/(?:^|\n)\s*Check-Out Location:\s*[^\r\n]*/gi, "")
     .replace(/Pending admin approval\.?/gi, "")
     .replace(/Reason:\s*/gi, "")
     .replace(/\|/g, "")
     .trim();
 
-  const reason = extractedReason || fallbackReason;
+  const reason = (extractedReason || fallbackReason)
+    .replace(/(?:^|\n)\s*Check-In Location:\s*[^\r\n]*/gi, "")
+    .replace(/(?:^|\n)\s*Check-Out Location:\s*[^\r\n]*/gi, "")
+    .trim();
 
   /*
    * Parse correction JSON safely.
@@ -141,9 +150,22 @@ function parseCorrectionRequest(description) {
         punchType: readString("punchType"),
         checkInTime: readString("checkInTime"),
         checkOutTime: readString("checkOutTime"),
+        reason: readString("reason"),
+        checkInReason: readString("checkInReason"),
+        checkOutReason: readString("checkOutReason"),
+        checkInDistance: readString("checkInDistance"),
+        checkOutDistance: readString("checkOutDistance"),
+        attendanceId: readString("attendanceId"),
+        checkInLatitude: readString("checkInLatitude"),
+        checkInLongitude: readString("checkInLongitude"),
+        checkOutLatitude: readString("checkOutLatitude"),
+        checkOutLongitude: readString("checkOutLongitude"),
+        originalCheckInTime: readString("originalCheckInTime"),
+        originalCheckOutTime: readString("originalCheckOutTime"),
         checkInLocation: readString("checkInLocation"),
         checkOutLocation: readString("checkOutLocation"),
-        reason: readString("reason"),
+        checkInLocationSource: readString("checkInLocationSource"),
+        checkOutLocationSource: readString("checkOutLocationSource"),
         isOvernight: /"isOvernight"\s*:\s*true/.test(jsonText),
       };
     }
@@ -164,6 +186,11 @@ function parseCorrectionRequest(description) {
       return null;
     }
 
+    const parseCoord = (val) => {
+      const n = Number(val);
+      return Number.isFinite(n) ? n : null;
+    };
+
     return {
       date: data.date,
 
@@ -177,11 +204,42 @@ function parseCorrectionRequest(description) {
       checkOutTime:
         data.checkOutTime || null,
 
+      checkInReason:
+        data.checkInReason || null,
+
+      checkOutReason:
+        data.checkOutReason || null,
+
+      checkInDistance:
+        data.checkInDistance || null,
+
+      checkOutDistance:
+        data.checkOutDistance || null,
+
+      originalCheckInTime:
+        data.originalCheckInTime || null,
+
+      originalCheckOutTime:
+        data.originalCheckOutTime || null,
+
       checkInLocation:
-        data.checkInLocation || null,
+        data.checkInLocation || checkInLocation,
 
       checkOutLocation:
-        data.checkOutLocation || null,
+        data.checkOutLocation || checkOutLocation,
+
+      checkInLocationSource:
+        data.checkInLocationSource || null,
+
+      checkOutLocationSource:
+        data.checkOutLocationSource || null,
+
+      attendanceId: data.attendanceId || null,
+
+      checkInLatitude: parseCoord(data.checkInLatitude),
+      checkInLongitude: parseCoord(data.checkInLongitude),
+      checkOutLatitude: parseCoord(data.checkOutLatitude),
+      checkOutLongitude: parseCoord(data.checkOutLongitude),
 
       isOvernight: Boolean(data.isOvernight),
 
@@ -199,19 +257,37 @@ function parseCorrectionRequest(description) {
 }
 
 function buildCorrectionDescription(correction) {
-  const reason = correction.reason?.trim() || "Forgot Punch request.";
+  const reason = correction.reason?.trim() || "";
+  const readableReason = correction.checkInReason ? `Reason: ${correction.checkInReason}` : reason;
 
   const readableText =
-    `Forgot Punch request for ${correction.punchType} on ${correction.date}.` +
-    `\n\n${reason}`;
+    correction.punchType === "time-edit"
+      ? (readableReason ? readableReason : "Time edit request.")
+      : (`Forgot Punch request for ${correction.punchType} on ${correction.date}.` + (readableReason ? `\n\n${readableReason}` : ""));
 
   const metadata = JSON.stringify({
     date: correction.date,
+    checkOutDate: correction.checkOutDate || null,
     punchType: correction.punchType,
     checkInTime: correction.checkInTime || null,
     checkOutTime: correction.checkOutTime || null,
+    checkInReason: correction.checkInReason || null,
+    checkOutReason: correction.checkOutReason || null,
+    checkInDistance: correction.checkInDistance || null,
+    checkOutDistance: correction.checkOutDistance || null,
+    attendanceId: correction.attendanceId || null,
+    checkInLatitude: correction.checkInLatitude ?? null,
+    checkInLongitude: correction.checkInLongitude ?? null,
+    checkOutLatitude: correction.checkOutLatitude ?? null,
+    checkOutLongitude: correction.checkOutLongitude ?? null,
+    isOvernight: Boolean(correction.isOvernight),
+    originalCheckInTime: correction.originalCheckInTime || null,
+    originalCheckOutTime: correction.originalCheckOutTime || null,
     checkInLocation: correction.checkInLocation || null,
     checkOutLocation: correction.checkOutLocation || null,
+    checkInLocationSource: correction.checkInLocationSource || null,
+    checkOutLocationSource: correction.checkOutLocationSource || null,
+    reason: correction.reason || correction.checkInReason || "",
   });
 
   return `${readableText}\n\n${CORRECTION_MARKER}${metadata}`;
@@ -262,6 +338,24 @@ function getDateKey(value) {
   }
 
   return date.toISOString().slice(0, 10);
+}
+
+function getIndiaDateKey(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 /*
@@ -326,11 +420,15 @@ function timeToDate(dateText, timeText) {
   if (cleanTime.includes("T")) {
     cleanTime = cleanTime.split("T")[1];
   }
-  const match = cleanTime.match(/^(\d{1,2}):(\d{1,2})/);
-  if (!match) return null;
+  const ampmMatch = cleanTime.match(/(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(AM|PM)?/i);
+  if (!ampmMatch) return null;
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
+  let hours = parseInt(ampmMatch[1], 10);
+  const minutes = Number(ampmMatch[2]);
+  const modifier = ampmMatch[3]?.toUpperCase();
+
+  if (modifier === "PM" && hours < 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
 
   if (
     Number.isNaN(hours) ||
@@ -476,7 +574,11 @@ async function getEmployeeProfile(userId) {
 |--------------------------------------------------------------------------
 */
 
-async function formatCorrectionNotification(description, employeeId = null) {
+async function formatCorrectionNotification(
+  description,
+  employeeId = null,
+  requestStatus = null,
+) {
   const correction =
     parseCorrectionRequest(description);
 
@@ -486,60 +588,135 @@ async function formatCorrectionNotification(description, employeeId = null) {
 
   let effectiveCheckIn = correction.checkInTime;
   let effectiveCheckOut = correction.checkOutTime;
+  let originalCheckInTime = correction.originalCheckInTime || null;
+  let originalCheckOutTime = correction.originalCheckOutTime || null;
   let existingCoords = null;
 
   // Look up existing attendance record for that date to fill missing times and GPS coordinates
-  if (employeeId && correction.date) {
+  if (employeeId && (correction.date || correction.attendanceId)) {
     try {
-      const attendanceRange = getAttendanceDayRange(correction.date);
-      if (attendanceRange) {
-        const existingAttendance = await prisma.attendance.findFirst({
-          where: {
-            employeeId,
-            date: {
-              gte: attendanceRange.start,
-              lt: new Date(attendanceRange.end.getTime() + 1),
-            },
-          },
+      let existingAttendance = null;
+      if (correction.attendanceId) {
+        existingAttendance = await prisma.attendance.findUnique({
+          where: { id: correction.attendanceId },
           select: {
+            id: true,
             checkIn: true,
             checkOut: true,
             checkInLatitude: true,
             checkInLongitude: true,
             checkOutLatitude: true,
             checkOutLongitude: true,
+            note: true,
           },
         });
+      }
 
-        if (!effectiveCheckIn && existingAttendance?.checkIn) {
-          effectiveCheckIn = new Intl.DateTimeFormat("en-GB", {
-            timeZone: "Asia/Kolkata",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }).format(new Date(existingAttendance.checkIn));
+      if (!existingAttendance && correction.date) {
+        const attendanceRange = getAttendanceDayRange(correction.date);
+        if (attendanceRange) {
+          existingAttendance = await prisma.attendance.findFirst({
+            where: {
+              employeeId,
+              date: {
+                gte: attendanceRange.start,
+                lt: new Date(attendanceRange.end.getTime() + 1),
+              },
+            },
+            select: {
+              id: true,
+              checkIn: true,
+              checkOut: true,
+              checkInLatitude: true,
+              checkInLongitude: true,
+              checkOutLatitude: true,
+              checkOutLongitude: true,
+              note: true,
+            },
+          });
         }
-        if (!effectiveCheckOut && existingAttendance?.checkOut) {
-          effectiveCheckOut = new Intl.DateTimeFormat("en-GB", {
-            timeZone: "Asia/Kolkata",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }).format(new Date(existingAttendance.checkOut));
+      }
+
+      let existingCheckInReason = null;
+      if (existingAttendance?.note) {
+        const match = existingAttendance.note.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
+        if (match && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(match)) {
+          existingCheckInReason = match;
         }
-        if (existingAttendance) {
-          existingCoords = {
-            checkInLatitude: existingAttendance.checkInLatitude,
-            checkInLongitude: existingAttendance.checkInLongitude,
-            checkOutLatitude: existingAttendance.checkOutLatitude,
-            checkOutLongitude: existingAttendance.checkOutLongitude,
-          };
-        }
+      }
+
+      if (!effectiveCheckIn && existingAttendance?.checkIn) {
+        effectiveCheckIn = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Kolkata",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date(existingAttendance.checkIn));
+      }
+      if (
+        !originalCheckInTime &&
+        requestStatus === "PENDING" &&
+        existingAttendance?.checkIn
+      ) {
+        originalCheckInTime = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Kolkata",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date(existingAttendance.checkIn));
+      }
+      if (!effectiveCheckOut && existingAttendance?.checkOut) {
+        effectiveCheckOut = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Kolkata",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date(existingAttendance.checkOut));
+      }
+      if (
+        !originalCheckOutTime &&
+        requestStatus === "PENDING" &&
+        existingAttendance?.checkOut
+      ) {
+        originalCheckOutTime = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Kolkata",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date(existingAttendance.checkOut));
+      }
+      if (existingAttendance) {
+        existingCoords = {
+          checkInLatitude: existingAttendance.checkInLatitude,
+          checkInLongitude: existingAttendance.checkInLongitude,
+          checkOutLatitude: existingAttendance.checkOutLatitude,
+          checkOutLongitude: existingAttendance.checkOutLongitude,
+        };
       }
     } catch (e) {
       console.warn("Could not fetch existing attendance for correction notification:", e.message);
     }
   }
+
+  const isCheckOutOnly = correction.punchType === "check-out" || correction.punchType === "checkout";
+  const isCheckInOnly = correction.punchType === "check-in" || correction.punchType === "checkin";
+
+  const finalCheckInLat =
+    isCheckOutOnly || correction.checkInLocationSource === "forgot-punch"
+      ? null
+      : correction.checkInLatitude ?? existingCoords?.checkInLatitude ?? null;
+  const finalCheckInLng =
+    isCheckOutOnly || correction.checkInLocationSource === "forgot-punch"
+      ? null
+      : correction.checkInLongitude ?? existingCoords?.checkInLongitude ?? null;
+  const finalCheckOutLat =
+    isCheckInOnly || correction.checkOutLocationSource === "forgot-punch"
+      ? null
+      : correction.checkOutLatitude ?? existingCoords?.checkOutLatitude ?? null;
+  const finalCheckOutLng =
+    isCheckInOnly || correction.checkOutLocationSource === "forgot-punch"
+      ? null
+      : correction.checkOutLongitude ?? existingCoords?.checkOutLongitude ?? null;
 
   return {
     subject: correction.punchType === "time-edit" ? "Time Edit Request" : "Forgot Punch Request",
@@ -554,10 +731,22 @@ async function formatCorrectionNotification(description, employeeId = null) {
 
     checkOutTime: effectiveCheckOut || null,
 
-    checkInLatitude: existingCoords?.checkInLatitude ?? null,
-    checkInLongitude: existingCoords?.checkInLongitude ?? null,
-    checkOutLatitude: existingCoords?.checkOutLatitude ?? null,
-    checkOutLongitude: existingCoords?.checkOutLongitude ?? null,
+    checkInReason: correction.checkInReason || null,
+    checkOutReason: correction.checkOutReason || null,
+    checkInDistance: correction.checkInDistance || null,
+    checkOutDistance: correction.checkOutDistance || null,
+
+    originalCheckInTime,
+    originalCheckOutTime,
+
+    checkInLatitude: finalCheckInLat,
+    checkInLongitude: finalCheckInLng,
+    checkOutLatitude: finalCheckOutLat,
+    checkOutLongitude: finalCheckOutLng,
+    checkInLocation: correction.checkInLocation || null,
+    checkOutLocation: correction.checkOutLocation || null,
+    checkInLocationSource: correction.checkInLocationSource || null,
+    checkOutLocationSource: correction.checkOutLocationSource || null,
 
     reason: correction.reason || "",
   };
@@ -601,6 +790,11 @@ router.get("/my", async (req, res) => {
           employeeId: employee.id,
         },
         include: {
+          reviewedBy: {
+            select: {
+              fullName: true,
+            },
+          },
           employee: {
             include: {
               user: {
@@ -624,12 +818,17 @@ router.get("/my", async (req, res) => {
             ? await formatCorrectionNotification(
                 request.description,
                 request.employeeId || employee.id,
+                request.status,
               )
             : null;
 
         return {
           ...request,
           notification,
+          checkInLatitude: notification?.checkInLatitude ?? null,
+          checkInLongitude: notification?.checkInLongitude ?? null,
+          checkOutLatitude: notification?.checkOutLatitude ?? null,
+          checkOutLongitude: notification?.checkOutLongitude ?? null,
         };
       }),
     );
@@ -866,7 +1065,12 @@ router.post(["/my", "/"], async (req, res) => {
       }
 
       // Check-out date cannot be in the future
-      const outDateCheck = correction.checkOutDate || correction.date;
+      const outDateCheck =
+        correction.isOvernight && correction.checkOutDate
+          ? correction.checkOutDate
+          : (correction.checkOutDate && correction.checkOutDate > correction.date
+              ? correction.checkOutDate
+              : correction.date);
       if (outDateCheck > todayKolkataDate) {
         return res.status(400).json({
           message: "Check-out requests for future dates cannot be created.",
@@ -980,9 +1184,12 @@ router.post(["/my", "/"], async (req, res) => {
     */
 
     let attendance = null;
+    let forgotPunchCheckIn = null;
+    let forgotPunchCheckOut = null;
+    let pendingForgotPunchCheckIn = null;
 
     if (correction) {
-      const requestedDate =
+      let requestedDate =
         getDateKey(correction.date);
 
       const attendanceRange =
@@ -1007,11 +1214,145 @@ router.post(["/my", "/"], async (req, res) => {
               },
 
               select: {
+                id: true,
                 checkIn: true,
                 checkOut: true,
+                checkInLatitude: true,
+                checkInLongitude: true,
+                checkOutLatitude: true,
+                checkOutLongitude: true,
+                note: true,
               },
             })
           : null;
+
+      if (
+        attendanceRange &&
+        !attendance?.checkIn &&
+        correction.punchType === "check-out"
+      ) {
+        attendance = await prisma.attendance.findFirst({
+          where: {
+            employeeId: employee.id,
+            checkIn: {
+              gte: attendanceRange.start,
+              lte: attendanceRange.end,
+            },
+          },
+          orderBy: { checkIn: "desc" },
+          select: {
+            checkIn: true,
+            checkOut: true,
+          },
+        });
+      }
+
+      if (
+        !attendance?.checkIn &&
+        correction.punchType === "check-out"
+      ) {
+        const recentOpenAttendance = await prisma.attendance.findFirst({
+          where: {
+            employeeId: employee.id,
+            checkIn: {
+              gte: new Date(Date.now() - 48 * 60 * 60 * 1000),
+              not: null,
+            },
+            checkOut: null,
+          },
+          orderBy: { checkIn: "desc" },
+          select: {
+            checkIn: true,
+            checkOut: true,
+          },
+        });
+
+        const checkInDate = getIndiaDateKey(recentOpenAttendance?.checkIn);
+        if (checkInDate && checkInDate <= requestedDate) {
+          const checkoutDate =
+            correction.checkOutDate && correction.checkOutDate > checkInDate
+              ? correction.checkOutDate
+              : requestedDate;
+          correction = {
+            ...correction,
+            date: checkInDate,
+            checkOutDate: checkoutDate,
+            isOvernight: checkoutDate > checkInDate,
+          };
+          requestedDate = checkInDate;
+          attendance = recentOpenAttendance;
+        }
+      }
+
+      if (
+        correction.punchType === "check-out" ||
+        correction.punchType === "check-in"
+      ) {
+        const existingCorrections = await prisma.employeeRequest.findMany({
+          where: {
+            employeeId: employee.id,
+            type: "CORRECTION",
+            status: { in: ["PENDING", "APPROVED"] },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            subject: true,
+            description: true,
+            status: true,
+          },
+        });
+
+        const parsedExistingCorrections = existingCorrections.map((request) => ({
+          request,
+          correction: parseCorrectionRequest(request.description),
+        }));
+        const isLocationApprovalRequest = (request, existingCorrection) => {
+          const subject = String(request.subject || "").toLowerCase();
+          const description = String(request.description || "").toLowerCase();
+          return (
+            subject.includes("approval") ||
+            subject.includes("check in (ul)") ||
+            description.includes("unassigned location") ||
+            description.includes("outside assigned location") ||
+            existingCorrection?.checkInLocationSource === "unassigned-location" ||
+            existingCorrection?.checkOutLocationSource === "unassigned-location"
+          );
+        };
+
+        if (correction.punchType === "check-out") {
+          forgotPunchCheckIn = parsedExistingCorrections.find(({ request, correction: existingCorrection }) => {
+            const isLocationApproval = isLocationApprovalRequest(request, existingCorrection);
+            const subject = String(request.subject || "").toLowerCase();
+            const description = String(request.description || "").toLowerCase();
+            const isCheckInLocationApproval =
+              isLocationApproval &&
+              (subject.includes("check-in approval") ||
+                subject.includes("check in (ul)") ||
+                description.includes("unassigned location") ||
+                description.includes("outside assigned location")) &&
+              punchIncludes(existingCorrection || {}, "check-in");
+
+            return (
+              (!isLocationApproval || isCheckInLocationApproval) &&
+              existingCorrection?.date === requestedDate &&
+              existingCorrection.punchType !== "time-edit" &&
+              punchIncludes(existingCorrection, "check-in") &&
+              Boolean(existingCorrection.checkInTime)
+            );
+          }) || null;
+          if (forgotPunchCheckIn?.request.status === "PENDING") {
+            pendingForgotPunchCheckIn = forgotPunchCheckIn;
+          }
+        } else {
+          forgotPunchCheckOut = parsedExistingCorrections.find(({ request, correction: existingCorrection }) =>
+            isLocationApprovalRequest(request, existingCorrection) &&
+            existingCorrection?.date === requestedDate &&
+            existingCorrection.punchType === "check-out" &&
+            Boolean(existingCorrection.checkOutTime)
+          ) || null;
+        }
+      }
 
       const requestsCheckIn =
         punchIncludes(
@@ -1098,17 +1439,19 @@ router.post(["/my", "/"], async (req, res) => {
 
         // If requesting only check-out, user MUST already have an existing Check In record
         if (correction.punchType === "check-out") {
-          if (!attendance || !attendance.checkIn) {
+          if ((!attendance || !attendance.checkIn) && !forgotPunchCheckIn) {
             return res.status(400).json({
               message: "Cannot request Check Out without an existing Check In. Please select 'Check In' or 'Check In + Check Out'.",
             });
           }
-          const existingCheckInTime = new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
-            timeZone: "Asia/Kolkata",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          });
+          const existingCheckInTime = attendance?.checkIn
+            ? new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
+                timeZone: "Asia/Kolkata",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              })
+            : forgotPunchCheckIn.correction.checkInTime;
           if (!isOvernightShift && correction.checkOutTime && correction.checkOutTime <= existingCheckInTime) {
             return res.status(400).json({
               message: `Check-out time (${formatTime12h(correction.checkOutTime)}) cannot be earlier than or equal to Check-in time (${formatTime12h(existingCheckInTime)}) on the same date. For overnight shifts ending the next day, please confirm overnight shift.`,
@@ -1229,15 +1572,168 @@ router.post(["/my", "/"], async (req, res) => {
         );
 
       if (duplicate) {
-        return res.status(409).json({
-          message:
-            "A Forgot Punch request already exists for this date and punch type.",
+        if (correction.punchType === "time-edit" && duplicate.status === "PENDING") {
+          const existingCorrection = parseCorrectionRequest(duplicate.description) || {};
+          const timeEditPunchType = correction.timeEditPunchType || (correction.checkInTime && !correction.checkOutTime ? "check-in" : correction.checkOutTime && !correction.checkInTime ? "check-out" : "both");
+          const isCheckInOnly = timeEditPunchType === "check-in";
+          const isCheckOutOnly = timeEditPunchType === "check-out";
+          const isBoth = !isCheckInOnly && !isCheckOutOnly;
 
-          requestId: duplicate.id,
+          const updatedCorrection = {
+            ...existingCorrection,
+            ...correction,
+            checkInLatitude: correction.checkInLatitude ?? existingCorrection.checkInLatitude ?? null,
+            checkInLongitude: correction.checkInLongitude ?? existingCorrection.checkInLongitude ?? null,
+            checkInLocationSource: existingCorrection.checkInLocationSource || correction.checkInLocationSource || null,
+            checkOutLatitude: correction.checkOutLatitude ?? existingCorrection.checkOutLatitude ?? null,
+            checkOutLongitude: correction.checkOutLongitude ?? existingCorrection.checkOutLongitude ?? null,
+            checkOutLocationSource: existingCorrection.checkOutLocationSource || correction.checkOutLocationSource || null,
+            checkInDistance: existingCorrection.checkInDistance || correction.checkInDistance || null,
+            checkOutDistance: existingCorrection.checkOutDistance || correction.checkOutDistance || null,
+            checkInLocation: existingCorrection.checkInLocation || correction.checkInLocation || null,
+            checkOutLocation: existingCorrection.checkOutLocation || correction.checkOutLocation || null,
+            isTimeEdit: true,
+            timeEditPunchType,
+            checkInTime: (isCheckInOnly || isBoth) ? (correction.checkInTime || existingCorrection.checkInTime) : (existingCorrection.checkInTime || null),
+            checkOutTime: (isCheckOutOnly || isBoth) ? (correction.checkOutTime || existingCorrection.checkOutTime) : (existingCorrection.checkOutTime || null),
+            originalCheckInTime: (isCheckInOnly || isBoth) ? (existingCorrection.originalCheckInTime || existingCorrection.checkInTime || correction.originalCheckInTime || null) : null,
+            originalCheckOutTime: (isCheckOutOnly || isBoth) ? (existingCorrection.originalCheckOutTime || existingCorrection.checkOutTime || correction.originalCheckOutTime || null) : null,
+          };
 
-          status: duplicate.status,
-        });
+          const isExistingULCheckIn =
+            existingCorrection.checkInLocationSource === "unassigned-location" ||
+            duplicate.subject?.toLowerCase().includes("ul check in") ||
+            (existingCorrection.checkInLatitude != null && existingCorrection.checkInLocationSource !== "forgot-punch");
+
+          const isExistingULCheckOut =
+            existingCorrection.checkOutLocationSource === "unassigned-location" ||
+            duplicate.subject?.toLowerCase().includes("ul check out") ||
+            (existingCorrection.checkOutLatitude != null && existingCorrection.checkOutLocationSource !== "forgot-punch");
+
+          // Preserve original UL check-in / check-out reason
+          const prevDescReadable = String(duplicate.description || "").split("[ATTENDANCE_CORRECTION]")[0].trim();
+          const prevMatchReason = prevDescReadable.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^\r\n|]+)/i)?.[1]?.trim() || "";
+          let originalCheckInReason =
+            existingCorrection.checkInReason ||
+            (existingCorrection.punchType === "check-in" || isExistingULCheckIn ? existingCorrection.reason : "") ||
+            prevMatchReason ||
+            "";
+
+          if (!originalCheckInReason && existingCorrection.attendanceId) {
+            try {
+              const attRecord = await prisma.attendance.findUnique({
+                where: { id: existingCorrection.attendanceId },
+                select: { note: true },
+              });
+              if (attRecord?.note) {
+                const attMatch = attRecord.note.match(/(?:Check-In Reason|Reason)\s*:\s*([^\r\n|]+)/i)?.[1]?.trim();
+                if (attMatch && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(attMatch)) {
+                  originalCheckInReason = attMatch;
+                }
+              }
+            } catch {}
+          }
+
+          const originalCheckOutReason =
+            existingCorrection.checkOutReason ||
+            (existingCorrection.punchType === "check-out" || isExistingULCheckOut ? existingCorrection.reason : "") ||
+            "";
+
+          const timeEditReason = correction.reason || correction.timeEditReason || "";
+
+          updatedCorrection.checkInReason = originalCheckInReason || existingCorrection.checkInReason || null;
+          updatedCorrection.checkOutReason = originalCheckOutReason || existingCorrection.checkOutReason || null;
+          updatedCorrection.timeEditReason = timeEditReason || null;
+          updatedCorrection.reason = originalCheckInReason || timeEditReason || existingCorrection.reason || "";
+
+          let updatedSubject = "";
+          if (isExistingULCheckIn && isCheckInOnly) {
+            updatedSubject = `UL Check In + Time Edit (${requestedDate})`;
+          } else if (isExistingULCheckOut && isCheckOutOnly) {
+            updatedSubject = `UL Check Out + Time Edit (${requestedDate})`;
+          } else if (isExistingULCheckIn && isBoth) {
+            updatedSubject = `UL Check In + Time Edit (${requestedDate})`;
+          } else {
+            const typeLabel = isCheckInOnly ? " (Check In)" : isCheckOutOnly ? " (Check Out)" : "";
+            updatedSubject = `Time Edit Request - ${requestedDate}${typeLabel}`;
+          }
+
+          updatedCorrection.isULCheckIn = isExistingULCheckIn;
+          updatedCorrection.isULCheckOut = isExistingULCheckOut;
+          if (isExistingULCheckIn) {
+            updatedCorrection.checkInLocationSource = "unassigned-location";
+          }
+          if (isExistingULCheckOut) {
+            updatedCorrection.checkOutLocationSource = "unassigned-location";
+          }
+
+          const timeNote = [
+            (isCheckInOnly || isBoth) && updatedCorrection.checkInTime ? `check-in ${updatedCorrection.checkInTime}` : null,
+            (isCheckOutOnly || isBoth) && updatedCorrection.checkOutTime ? `check-out ${updatedCorrection.checkOutTime}` : null,
+          ].filter(Boolean).join(" and ");
+
+          const noteSections = [];
+          if (originalCheckInReason) {
+            noteSections.push(`Check-In Reason: ${originalCheckInReason}`);
+          }
+          if (originalCheckOutReason) {
+            noteSections.push(`Check-Out Reason: ${originalCheckOutReason}`);
+          }
+          if (timeEditReason) {
+            noteSections.push(`Time Edit Reason: ${timeEditReason}`);
+          }
+          const notesJoined = noteSections.length > 0 ? noteSections.join("\n\n") : "";
+
+          const updatedDescription = notesJoined ? `${notesJoined}\n\n[ATTENDANCE_CORRECTION]${JSON.stringify(updatedCorrection)}` : `[ATTENDANCE_CORRECTION]${JSON.stringify(updatedCorrection)}`;
+
+          const updatedReq = await prisma.employeeRequest.update({
+            where: { id: duplicate.id },
+            data: {
+              subject: updatedSubject,
+              description: updatedDescription,
+            },
+          });
+
+          return res.json({
+            message: "Pending request updated with your Time Edit changes.",
+            request: updatedReq,
+            autoApproved: false,
+          });
+        }
+
+        if (correction.punchType === "time-edit" && duplicate.status === "APPROVED") {
+          const existingCorrection = parseCorrectionRequest(duplicate.description) || {};
+          const isExistingTimeEdit = existingCorrection.isTimeEdit || existingCorrection.punchType === "time-edit";
+          if (!isExistingTimeEdit) {
+            // Allow proceeding to create the time-edit request
+          } else {
+            return res.status(409).json({
+              message: "A Time Edit request has already been submitted for this date.",
+              requestId: duplicate.id,
+              status: duplicate.status,
+            });
+          }
+        } else {
+          return res.status(409).json({
+            message:
+              "A Forgot Punch request already exists for this date and punch type.",
+            requestId: duplicate.id,
+            status: duplicate.status,
+          });
+        }
       }
+    }
+
+    if (
+      correction?.punchType === "check-out" &&
+      !attendance?.checkIn &&
+      forgotPunchCheckIn?.request.status === "APPROVED"
+    ) {
+      correction = {
+        ...correction,
+        punchType: "both",
+        checkInTime: forgotPunchCheckIn.correction.checkInTime,
+      };
     }
 
     /*
@@ -1254,6 +1750,46 @@ router.post(["/my", "/"], async (req, res) => {
     */
 
     if (correction && parsed.data.type === "CORRECTION" && attendance) {
+      if (!correction.attendanceId && attendance.id) {
+        correction.attendanceId = attendance.id;
+      }
+      if (correction.checkInLatitude == null && attendance.checkInLatitude != null) {
+        correction.checkInLatitude = attendance.checkInLatitude;
+      }
+      if (correction.checkInLongitude == null && attendance.checkInLongitude != null) {
+        correction.checkInLongitude = attendance.checkInLongitude;
+      }
+      if (correction.checkOutLatitude == null && attendance.checkOutLatitude != null) {
+        correction.checkOutLatitude = attendance.checkOutLatitude;
+      }
+      if (correction.checkOutLongitude == null && attendance.checkOutLongitude != null) {
+        correction.checkOutLongitude = attendance.checkOutLongitude;
+      }
+      if (!correction.checkInReason && attendance.note) {
+        const match = attendance.note.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
+        if (match && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(match)) {
+          correction.checkInReason = match;
+        }
+      }
+      
+      if (correction.punchType === "time-edit") {
+        correction.originalCheckInTime = attendance.checkIn
+          ? new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
+              timeZone: "Asia/Kolkata",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })
+          : null;
+        correction.originalCheckOutTime = attendance.checkOut
+          ? new Date(attendance.checkOut).toLocaleTimeString("en-GB", {
+              timeZone: "Asia/Kolkata",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })
+          : null;
+      }
       if (!correction.checkInTime && attendance.checkIn) {
         correction.checkInTime = new Date(attendance.checkIn).toLocaleTimeString("en-GB", {
           timeZone: "Asia/Kolkata",
@@ -1278,6 +1814,124 @@ router.post(["/my", "/"], async (req, res) => {
         : parsed.data.description || "";
 
     const isAdminUser = req.user && req.user.role === "ADMIN";
+
+    if (
+      !isAdminUser &&
+      correction?.punchType === "check-in" &&
+      forgotPunchCheckOut
+    ) {
+      const previousCorrection = forgotPunchCheckOut.correction;
+      const combinedCorrection = {
+        ...previousCorrection,
+        punchType: "both",
+        checkInTime: correction.checkInTime,
+        checkOutTime: previousCorrection.checkOutTime,
+        checkInReason: correction.checkInReason || correction.reason || null,
+        checkOutReason:
+          previousCorrection.checkOutReason || previousCorrection.reason || null,
+        checkInLocation: correction.checkInLocation || null,
+        checkOutLocation: previousCorrection.checkOutLocation || null,
+        checkInLocationSource: "forgot-punch",
+        checkOutLocationSource: "unassigned-location",
+        checkInLatitude: correction.checkInLatitude ?? null,
+        checkInLongitude: correction.checkInLongitude ?? null,
+        checkOutLatitude: previousCorrection.checkOutLatitude ?? null,
+        checkOutLongitude: previousCorrection.checkOutLongitude ?? null,
+        reason: correction.reason || previousCorrection.reason || "",
+        attendanceId: previousCorrection.attendanceId || correction.attendanceId,
+      };
+      const updatedRequest = await prisma.employeeRequest.update({
+        where: { id: forgotPunchCheckOut.request.id },
+        data: {
+          ...(forgotPunchCheckOut.request.status === "APPROVED" && {
+            status: "PENDING",
+            reviewNote: null,
+            reviewedById: null,
+            reviewedAt: null,
+          }),
+          subject: `Forgot Check In + UL Check Out (${combinedCorrection.date})`,
+          description: buildCorrectionDescription(combinedCorrection),
+        },
+      });
+
+      return res.json({
+        message:
+          "Check-In added to your location approval request. Both punches will be reviewed together.",
+        request: updatedRequest,
+        autoApproved: false,
+      });
+    }
+
+    if (
+      !isAdminUser &&
+      correction?.punchType === "check-out" &&
+      forgotPunchCheckIn
+    ) {
+      const previousCorrection = forgotPunchCheckIn.correction;
+      const isLocationApprovalRequest =
+        String(forgotPunchCheckIn.request.subject || "")
+          .toLowerCase()
+          .includes("approval") ||
+        String(forgotPunchCheckIn.request.subject || "")
+          .toLowerCase()
+          .includes("check in (ul)") ||
+        String(forgotPunchCheckIn.request.description || "")
+          .toLowerCase()
+          .includes("unassigned location") ||
+        String(forgotPunchCheckIn.request.description || "")
+          .toLowerCase()
+          .includes("outside assigned location");
+      const combinedCorrection = {
+        ...previousCorrection,
+        punchType: "both",
+        checkOutDate: correction.checkOutDate || correction.date,
+        checkOutTime: correction.checkOutTime,
+        checkOutLocation: correction.checkOutLocation || null,
+        checkOutLatitude:
+          correction.checkOutLatitude ?? previousCorrection.checkOutLatitude ?? null,
+        checkOutLongitude:
+          correction.checkOutLongitude ??
+          previousCorrection.checkOutLongitude ??
+          null,
+        checkOutDistance:
+          correction.checkOutDistance || previousCorrection.checkOutDistance || null,
+        isOvernight: Boolean(correction.isOvernight),
+        checkInReason:
+          previousCorrection.checkInReason || previousCorrection.reason || null,
+        checkOutReason:
+          correction.checkOutReason || correction.reason || null,
+        checkInLocationSource:
+          previousCorrection.checkInLocationSource ||
+          (previousCorrection.checkInLatitude != null
+            ? "unassigned-location"
+            : "forgot-punch"),
+        checkOutLocationSource: "forgot-punch",
+        reason: correction.reason || previousCorrection.reason || "",
+      };
+      const updatedRequest = await prisma.employeeRequest.update({
+        where: { id: forgotPunchCheckIn.request.id },
+        data: {
+          ...(forgotPunchCheckIn.request.status === "APPROVED" && {
+            status: "PENDING",
+            reviewNote: null,
+            reviewedById: null,
+            reviewedAt: null,
+          }),
+          subject: isLocationApprovalRequest
+            ? `UL Check In + Forgot Check Out (${combinedCorrection.date})`
+            : `Check In + Check Out by Forgot Punch (${combinedCorrection.date})`,
+          description: buildCorrectionDescription(combinedCorrection),
+        },
+      });
+
+      return res.json({
+        message: isLocationApprovalRequest
+          ? "Check-Out added to your location approval request. Both punches will be reviewed together."
+          : "Check-Out added to your pending Forgot Punch request.",
+        request: updatedRequest,
+        autoApproved: false,
+      });
+    }
 
     let createdRequest = await prisma.employeeRequest.create({
       data: {
@@ -1434,9 +2088,13 @@ router.get(
 
   async (req, res) => {
     try {
-      const { status } = req.query;
+      const { status, employeeId, type, date } = req.query;
 
       const where = {};
+
+      if (employeeId) {
+        where.employeeId = String(employeeId);
+      }
 
       if (
         status &&
@@ -1447,6 +2105,38 @@ router.get(
         ].includes(status)
       ) {
         where.status = status;
+      }
+
+      if (type) {
+        const requestType = String(type).toUpperCase();
+        if (
+          ![
+            "ONBOARDING",
+            "GENERAL",
+            "DOCUMENT",
+            "EQUIPMENT",
+            "CORRECTION",
+            "OTHER",
+          ].includes(requestType)
+        ) {
+          return res.status(400).json({ message: "Invalid request type." });
+        }
+        where.type = requestType;
+      }
+
+      if (date) {
+        const dateKey = String(date);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+          return res.status(400).json({ message: "Date must use YYYY-MM-DD format." });
+        }
+        where.AND = [
+          {
+            OR: [
+              { description: { contains: dateKey } },
+              { subject: { contains: dateKey } },
+            ],
+          },
+        ];
       }
 
       const requests =
@@ -1484,6 +2174,7 @@ router.get(
               ? await formatCorrectionNotification(
                   request.description,
                   request.employee?.id || request.employeeId,
+                  request.status,
                 )
               : null;
 
@@ -1493,8 +2184,8 @@ router.get(
             type: request.type,
 
             subject:
-              notification?.subject ||
-              request.subject,
+              request.subject ||
+              notification?.subject,
 
             description: request.description,
 
@@ -2720,7 +3411,9 @@ async function validateInventoryStockAvailability(request) {
                       "PRESENT",
 
                     note: [
-                      attendance.note || "",
+                      attendance.note
+                        ? attendance.note.replace(/\.?\s*Pending admin approval\.?/gi, ". Approved by admin.")
+                        : "",
                       `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}`,
                       note || "",
                     ]

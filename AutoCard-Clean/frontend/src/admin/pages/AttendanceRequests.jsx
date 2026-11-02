@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Check, Clock, Loader2, MapPin, Navigation, X } from "lucide-react";
+import { ArrowLeft, Check, Clock, Loader2, MapPin, Navigation, X, FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
+import { formatTimeWithPeriod } from "../../lib/timeFormat.js";
 
 const fmtDate = (value) => {
   if (!value) return "—";
@@ -11,7 +12,7 @@ const fmtDate = (value) => {
 };
 
 const fmtTime = (value) => value
-  ? new Date(value).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
+  ? formatTimeWithPeriod(new Date(value), "en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
   : "—";
 
 const extractReason = (note) => {
@@ -27,6 +28,15 @@ const extractReason = (note) => {
   // Fallback pattern
   const match = clean.match(/Reason:\s*(.*?)(?:\.\s*Pending admin approval|\.|$)/i);
   return match?.[1]?.trim() || clean;
+};
+
+// Extract manual location text typed in forgot-punch request
+const extractManualLocation = (note, type) => {
+  if (!note) return null;
+  const clean = note.split("[ATTENDANCE_CORRECTION]")[0];
+  const label = type === "checkIn" ? "Check-In Location" : "Check-Out Location";
+  const match = clean.match(new RegExp(`${label}:\\s*([^\\r\\n]+)`, "i"));
+  return match?.[1]?.trim() || null;
 };
 
 const openGoogleMapCheckIn = (request) => {
@@ -141,6 +151,10 @@ const AttendanceRequests = () => {
                 Number.isFinite(Number(request.checkOutLatitude)) && 
                 Number.isFinite(Number(request.checkOutLongitude));
 
+              // Extract manual location text from note field
+              const manualCheckInLocation = extractManualLocation(request.note, "checkIn");
+              const manualCheckOutLocation = extractManualLocation(request.note, "checkOut");
+
               return (
                 <div key={request.id} className="p-6">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -171,16 +185,22 @@ const AttendanceRequests = () => {
                               Check In
                             </div>
                             <div className="font-display text-base font-semibold">{fmtTime(request.checkIn)}</div>
-                            {hasCheckInLocation && (
+                            {/* GPS (UL) → Google Maps button; Manual (Forgot Punch) → typed text */}
+                            {hasCheckInLocation ? (
                               <button
                                 type="button"
                                 onClick={() => openGoogleMapCheckIn(request)}
                                 className="mt-1 inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-200"
                               >
                                 <MapPin className="h-3 w-3" />
-                                View Location
+                                View on Google Maps
                               </button>
-                            )}
+                            ) : manualCheckInLocation ? (
+                              <div className="mt-1.5 flex items-start gap-1 rounded-md bg-emerald-50 border border-emerald-200 px-2 py-1.5">
+                                <FileText className="h-3 w-3 mt-0.5 text-emerald-600 shrink-0" />
+                                <span className="text-xs text-emerald-800 font-medium break-words">{manualCheckInLocation}</span>
+                              </div>
+                            ) : null}
                           </div>
                           <div>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -188,16 +208,22 @@ const AttendanceRequests = () => {
                               Check Out
                             </div>
                             <div className="font-display text-base font-semibold">{fmtTime(request.checkOut)}</div>
-                            {hasCheckOutLocation && (
+                            {/* GPS (UL) → Google Maps button; Manual (Forgot Punch) → typed text */}
+                            {hasCheckOutLocation ? (
                               <button
                                 type="button"
                                 onClick={() => openGoogleMapCheckOut(request)}
                                 className="mt-1 inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-200"
                               >
                                 <MapPin className="h-3 w-3" />
-                                View Location
+                                View on Google Maps
                               </button>
-                            )}
+                            ) : manualCheckOutLocation ? (
+                              <div className="mt-1.5 flex items-start gap-1 rounded-md bg-rose-50 border border-rose-200 px-2 py-1.5">
+                                <FileText className="h-3 w-3 mt-0.5 text-rose-600 shrink-0" />
+                                <span className="text-xs text-rose-800 font-medium break-words">{manualCheckOutLocation}</span>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>

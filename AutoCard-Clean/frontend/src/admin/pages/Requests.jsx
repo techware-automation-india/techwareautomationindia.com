@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Inbox, Loader2, Check, X, RefreshCw, Eye, MapPin, CalendarDays, Search, SlidersHorizontal, MessageSquareText, UserRound, Clock3, FilterX, PackageCheck } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
+import { formatTimeWithPeriod } from "../../lib/timeFormat.js";
 import OnboardingPreview from "../components/OnboardingPreview.jsx";
 
 const fmt = (value) => {
@@ -18,7 +19,7 @@ const fmtTime = (value) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleTimeString("en-IN", {
+  return formatTimeWithPeriod(date, "en-IN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,

@@ -31,6 +31,11 @@ export const formatTime12Hour = (time24) => {
   return result;
 };
 
+export const formatTimeWithPeriod = (date, locale = "en-IN", options = {}) =>
+  date
+    .toLocaleTimeString(locale, options)
+    .replace(/\b(am|pm)\b/gi, (period) => period.toUpperCase());
+
 /**
  * Format a time range from 24-hour to 12-hour format
  * @param {string} startTime - Start time in 24-hour format

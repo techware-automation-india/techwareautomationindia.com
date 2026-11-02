@@ -189,7 +189,14 @@ export function getModulesByPermissions(permissions = {}) {
       return;
     }
 
-    // Check direct key, or adminKey, or aliases, or sub-approval fallback
+    const checkHasView = (val) => {
+      if (!val) return false;
+      if (val === true) return true;
+      if (typeof val === "object") return val.canView === true;
+      return false;
+    };
+
+    // Check direct key, adminKey, or aliases
     let perm = permissions[module.key];
 
     if (!perm && module.adminKey) {
@@ -205,83 +212,82 @@ export function getModulesByPermissions(permissions = {}) {
       }
     }
 
-    const checkHasView = (val) => {
-      if (!val) return false;
-      if (val === true) return true;
-      if (typeof val === "object") return val.canView === true;
-      return false;
-    };
+    // Requests parent key: check direct requests or any requests-* submodule
+    if (module.key === "requests") {
+      const hasRequestsSub =
+        checkHasView(permissions["requests"]) ||
+        checkHasView(permissions["requests-apply-leave"]) ||
+        checkHasView(permissions["requests-forgot-punch"]) ||
+        checkHasView(permissions["requests-tools-inventory"]) ||
+        checkHasView(permissions["requests-track"]);
+      if (hasRequestsSub) perm = true;
+    }
 
-    // Requests parent key fallback if any requests-* sub-module is assigned
-    const hasRequestsSubPerm = module.key === "requests" && (
-      checkHasView(permissions["requests"]) ||
-      checkHasView(permissions["requests-apply-leave"]) ||
-      checkHasView(permissions["requests-forgot-punch"]) ||
-      checkHasView(permissions["requests-tools-inventory"]) ||
-      checkHasView(permissions["requests-track"])
-    );
+    // Approvals parent key: check direct approvals or approvals-* submodule
+    if (module.key === "approvals") {
+      const hasApprovalsSub =
+        checkHasView(permissions["approvals"]) ||
+        checkHasView(permissions["approvals-leave"]) ||
+        checkHasView(permissions["approvals-attendance"]) ||
+        checkHasView(permissions["approvals-forgot-punch"]) ||
+        checkHasView(permissions["approvals-tools-inventory"]) ||
+        checkHasView(permissions["approvals-tools"]);
+      if (hasApprovalsSub) perm = true;
+    }
 
-    // Approvals parent key fallback if any approvals-* sub-module is assigned
-    const hasApprovalsSubPerm = module.key === "approvals" && (
-      checkHasView(permissions["approvals"]) ||
-      checkHasView(permissions["approvals-leave"]) || 
-      checkHasView(permissions["approvals-attendance"]) || 
-      checkHasView(permissions["approvals-forgot-punch"]) ||
-      checkHasView(permissions["approvals-tools-inventory"]) ||
-      checkHasView(permissions["approvals-tools"])
-    );
+    // Leave policy parent key: check direct or submodules
+    if (module.key === "leave-policy") {
+      const hasLeavePolicySub =
+        checkHasView(permissions["leave-policy"]) ||
+        checkHasView(permissions["leave-policy-types"]) ||
+        checkHasView(permissions["leave-policy-holidays"]);
+      if (hasLeavePolicySub) perm = true;
+    }
 
-    // Leave policy parent key fallback if any leave-policy-* sub-module is assigned
-    const hasLeavePolicySubPerm = module.key === "leave-policy" && (
-      checkHasView(permissions["leave-policy"]) ||
-      checkHasView(permissions["leave-policy-types"]) ||
-      checkHasView(permissions["leave-policy-holidays"])
-    );
+    // Inventory parent key: check direct inventory or submodules
+    if (module.key === "inventory") {
+      const hasInventorySub =
+        checkHasView(permissions["inventory"]) ||
+        checkHasView(permissions["inventory-in"]) ||
+        checkHasView(permissions["inventory-out"]) ||
+        checkHasView(permissions["view-inventory"]) ||
+        checkHasView(permissions["inventory-alert"]) ||
+        checkHasView(permissions["general-consumables"]);
+      if (hasInventorySub) perm = true;
+    }
 
-    // Special mapping for assigned-projects and projects
-    if (!perm && (module.key === "assigned-projects" || module.key === "projects")) {
+    // Roles & Access: STRICTLY require explicit permission on 'roles-access'
+    if (module.key === "roles-access") {
+      perm = permissions["roles-access"];
+    }
+
+    // Employee / Add Account: STRICTLY require explicit permission on 'employee'
+    if (module.key === "employee") {
+      perm = permissions["employee"];
+    }
+
+    // Shift & Location: STRICTLY require explicit permission on 'shift-location'
+    if (module.key === "shift-location") {
+      perm = permissions["shift-location"];
+    }
+
+    // Roster: STRICTLY require explicit permission on 'roster'
+    if (module.key === "roster") {
+      perm = permissions["roster"];
+    }
+
+    // Attendance Management (Team Attendance): STRICTLY require permission on 'attendance-management'
+    if (module.key === "attendance-management") {
+      perm = permissions["attendance-management"];
+    }
+
+    // Assigned Projects: require permission on 'assigned-projects' or 'projects'
+    if (module.key === "assigned-projects" || module.key === "projects") {
       perm = permissions["assigned-projects"] || permissions["projects"];
     }
 
-    if (!perm && module.key === "my-projects") {
+    if (module.key === "my-projects") {
       perm = permissions["my-projects"] || permissions["customer-projects"];
-    }
-
-    const hasAdminPower = checkHasView(permissions["employee"]) || checkHasView(permissions["roles-access"]) || checkHasView(permissions["approvals"]);
-    const attendanceMgmtFallback = module.key === "attendance-management" && checkHasView(permissions["attendance"]) && hasAdminPower;
-
-    if (attendanceMgmtFallback && !perm) {
-      perm = permissions["attendance"];
-    }
-
-    if (hasRequestsSubPerm && !perm) {
-      perm = hasRequestsSubPerm;
-    }
-
-    if (hasApprovalsSubPerm && !perm) {
-      perm = hasApprovalsSubPerm;
-    }
-
-    // Inventory parent key fallback ONLY if any inventory-* sub-module has explicit canView === true
-    const hasInventorySubPerm = module.key === "inventory" && (
-      checkHasView(permissions["inventory"]) ||
-      checkHasView(permissions["inventory-in"]) ||
-      checkHasView(permissions["inventory-out"]) ||
-      checkHasView(permissions["view-inventory"]) ||
-      checkHasView(permissions["inventory-alert"]) ||
-      checkHasView(permissions["general-consumables"]) ||
-      Object.keys(permissions).some((k) => 
-        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
-        checkHasView(permissions[k])
-      )
-    );
-
-    if (hasLeavePolicySubPerm && !perm) {
-      perm = hasLeavePolicySubPerm;
-    }
-
-    if (hasInventorySubPerm && !perm) {
-      perm = hasInventorySubPerm;
     }
 
     const isAllowed = checkHasView(perm);

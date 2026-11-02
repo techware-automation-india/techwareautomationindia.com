@@ -13,12 +13,16 @@ import {
   ShieldAlert,
   AlertTriangle,
   Moon,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getAuthUser } from "../../lib/auth.js";
 import { hasModuleAccess } from "../../lib/permissions.js";
-import { formatTimeRange } from "../../lib/timeFormat.js";
+import {
+  formatTimeRange,
+  formatTimeWithPeriod,
+} from "../../lib/timeFormat.js";
 
 // =========================================================
 // HELPERS
@@ -150,7 +154,7 @@ const fmtTime = (value) => {
     return "—";
   }
 
-  return date.toLocaleTimeString("en-IN", {
+  return formatTimeWithPeriod(date, "en-IN", {
     timeZone: "Asia/Kolkata",
     hour: "2-digit",
     minute: "2-digit",
@@ -499,7 +503,7 @@ const MarkAttendance = () => {
       // -----------------------------------------------
 
       const nowTime = new Date().getTime();
-      const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+      const fortyEightHoursMs = 48 * 60 * 60 * 1000;
 
       const activeCorrection =
         requests
@@ -513,19 +517,24 @@ const MarkAttendance = () => {
 
             try {
               const parsed = JSON.parse(match[1]);
-              if (parsed?.date === todayKey) return true;
+              if (parsed?.date === todayKey) {
+                // If it's a today correction, check if it's already checked out
+                return true;
+              }
 
-              // Check if it is a check-in request from within the last 24 hours (pending or approved without checkout)
+              // Check if it is a check-in request from within the last 48 hours (pending or approved without checkout)
+              // If it already has checkOutTime, it is a completed shift from a previous day and should NOT block today!
               if (
                 (request.status === "PENDING" || request.status === "APPROVED") &&
                 parsed?.date &&
                 parsed?.checkInTime &&
+                !parsed?.checkOutTime &&
                 (parsed.punchType === "check-in" || parsed.punchType === "both" || parsed.punchType === "time-edit")
               ) {
                 const [h, m] = String(parsed.checkInTime).split(":").map(Number);
                 if (Number.isFinite(h) && Number.isFinite(m)) {
                   const checkInDateTime = new Date(`${parsed.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
-                  if (nowTime - checkInDateTime.getTime() <= twentyFourHoursMs && nowTime >= checkInDateTime.getTime()) {
+                  if (nowTime - checkInDateTime.getTime() <= fortyEightHoursMs && nowTime >= checkInDateTime.getTime()) {
                     return true;
                   }
                 }
@@ -623,11 +632,27 @@ const MarkAttendance = () => {
   // =======================================================
 
   const openReasonModal = (type, location, coordinates, distanceMeters) => {
+    const hasLocationCoordinates =
+      targetLocation?.latitude != null &&
+      targetLocation?.longitude != null &&
+      coordinates?.latitude != null &&
+      coordinates?.longitude != null;
+    const measuredDistance =
+      distanceMeters ??
+      (hasLocationCoordinates
+        ? getStraightDistanceInMeters(
+            Number(targetLocation.latitude),
+            Number(targetLocation.longitude),
+            Number(coordinates.latitude),
+            Number(coordinates.longitude),
+          )
+        : null);
+
     setReasonModal({
       type,
       location,
       coordinates,
-      distanceMeters,
+      distanceMeters: measuredDistance,
 
       locationName: targetLocation?.name || "Unassigned location",
     });
@@ -747,17 +772,18 @@ const MarkAttendance = () => {
 
         toast.success(data.message || "Checked in successfully!");
 
+        setReasonModal(null);
+        setReasonText("");
         navigate("/employee", {
           replace: true,
         });
       } else {
         await executeCheckOut(reasonModal.location, trimmedReason);
+        setReasonModal(null);
+        setReasonText("");
       }
     } catch (err) {
       toast.error(err.message || "Request failed.");
-    } finally {
-      setReasonModal(null);
-      setReasonText("");
     }
   };
 
@@ -821,25 +847,40 @@ const MarkAttendance = () => {
         return;
       }
 
-      const data = await apiPost("/attendance/checkin", {
-        location,
-      });
+      try {
+        const data = await apiPost("/attendance/checkin", {
+          location,
+        });
 
-      const authUser = getAuthUser();
+        const authUser = getAuthUser();
 
-      if (data.record?.id && authUser?.id) {
-        localStorage.setItem(`employee-has-checked-in:${authUser.id}`, "true");
+        if (data.record?.id && authUser?.id) {
+          localStorage.setItem(`employee-has-checked-in:${authUser.id}`, "true");
+        }
+
+        setRecord(data.record);
+
+        await loadToday();
+
+        toast.success(data.message || "Checked in successfully!");
+
+        navigate("/employee", {
+          replace: true,
+        });
+      } catch (postErr) {
+        // If backend indicates unassigned location or reason required, prompt the employee with the reason modal!
+        const errMsg = (postErr.message || "").toLowerCase();
+        if (
+          errMsg.includes("reason") ||
+          errMsg.includes("assigned location") ||
+          errMsg.includes("unassigned") ||
+          errMsg.includes("away from")
+        ) {
+          openReasonModal("checkin", location, coordinates, null);
+          return;
+        }
+        throw postErr;
       }
-
-      setRecord(data.record);
-
-      await loadToday();
-
-      toast.success(data.message || "Checked in successfully!");
-
-      navigate("/employee", {
-        replace: true,
-      });
     } catch (err) {
       toast.error(err.message || "Check-in failed.");
     } finally {
@@ -858,6 +899,8 @@ const MarkAttendance = () => {
 
     setCheckingOut(true);
     setCapturingLocation(true);
+    let checkoutLocation = null;
+    let checkoutCoordinates = null;
 
     try {
       // =====================================================
@@ -866,8 +909,10 @@ const MarkAttendance = () => {
       // =====================================================
 
       const location = await getGPSLocation();
+      checkoutLocation = location;
 
       const coordinates = parseLocationCoordinates(location);
+      checkoutCoordinates = coordinates;
 
       if (!coordinates) {
         throw new Error(
@@ -979,7 +1024,20 @@ const MarkAttendance = () => {
 
       await executeCheckOut(location, "");
     } catch (err) {
-      toast.error(err.message || "Check-out failed.");
+      const message = err.message || "Check-out failed.";
+      const lowerMessage = message.toLowerCase();
+      if (
+        checkoutLocation &&
+        (lowerMessage.includes("reason") ||
+          lowerMessage.includes("unassigned") ||
+          lowerMessage.includes("no assigned") ||
+          lowerMessage.includes("default location") ||
+          lowerMessage.includes("away from"))
+      ) {
+        openReasonModal("checkout", checkoutLocation, checkoutCoordinates, null);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setCheckingOut(false);
       setCapturingLocation(false);
@@ -1018,34 +1076,51 @@ const MarkAttendance = () => {
   const formatManualPunchTime = (time, dateStr = null) => {
     if (!time) return null;
 
-    const [hours, minutes] = String(time).split(":").map(Number);
-
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
-      return null;
+    let timeStr = String(time).trim();
+    if (timeStr.includes("T")) {
+      timeStr = timeStr.split("T")[1];
     }
+    const ampmMatch = timeStr.match(/(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(AM|PM)?/i);
+    if (!ampmMatch) return null;
+
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = parseInt(ampmMatch[2], 10);
+    const modifier = ampmMatch[3]?.toUpperCase();
+
+    if (modifier === "PM" && hours < 12) hours += 12;
+    if (modifier === "AM" && hours === 12) hours = 0;
 
     let date;
     if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      date = new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`);
+      date = new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+05:30`);
     } else {
       date = new Date();
       date.setHours(hours, minutes, 0, 0);
     }
 
-    return date.toLocaleTimeString("en-IN", {
+    return formatTimeWithPeriod(date, "en-IN", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
     });
   };
+
   const getManualPunchDate = (time, dateStr = null) => {
     if (!time) return null;
 
-    const [hours, minutes] = String(time).split(":").map(Number);
-
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
-      return null;
+    let timeStr = String(time).trim();
+    if (timeStr.includes("T")) {
+      timeStr = timeStr.split("T")[1];
     }
+    const ampmMatch = timeStr.match(/(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(AM|PM)?/i);
+    if (!ampmMatch) return null;
+
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = parseInt(ampmMatch[2], 10);
+    const modifier = ampmMatch[3]?.toUpperCase();
+
+    if (modifier === "PM" && hours < 12) hours += 12;
+    if (modifier === "AM" && hours === 12) hours = 0;
 
     if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       return new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+05:30`);
@@ -1076,6 +1151,85 @@ const MarkAttendance = () => {
   const isCorrectionRejected = correctionStatus === "REJECTED";
 
   const isTimeEditMode = forgotPunchData?.punchType === "time-edit";
+  const isPunchTimeDifferent = (requestedTime, previousTime) => {
+    if (!requestedTime) return false;
+    if (!previousTime) return true;
+    return (
+      formatManualPunchTime(requestedTime, forgotPunchData?.date) !==
+      formatManualPunchTime(previousTime, forgotPunchData?.date)
+    );
+  };
+  const requestedTimeEditCheckIn =
+    isTimeEditMode &&
+    isCorrectionPending &&
+    isPunchTimeDifferent(
+      forgotPunchData?.checkInTime,
+      forgotPunchData?.originalCheckInTime || record?.checkIn,
+    )
+      ? forgotPunchCheckIn
+      : null;
+  const requestedTimeEditCheckOut =
+    isTimeEditMode &&
+    isCorrectionPending &&
+    isPunchTimeDifferent(
+      forgotPunchData?.checkOutTime,
+      forgotPunchData?.originalCheckOutTime || record?.checkOut,
+    )
+      ? forgotPunchCheckOut
+      : null;
+  const previousCheckInTime =
+    formatManualPunchTime(
+      forgotPunchData?.originalCheckInTime,
+      forgotPunchData?.date,
+    ) || (record?.checkIn ? fmtTime(record.checkIn) : null);
+  const previousCheckOutTime =
+    formatManualPunchTime(
+      forgotPunchData?.originalCheckOutTime,
+      forgotPunchData?.date,
+    ) || (record?.checkOut ? fmtTime(record.checkOut) : null);
+  const checkInTimeDisplay =
+    isTimeEditMode && isCorrectionPending
+      ? requestedTimeEditCheckIn ||
+        (record?.checkIn ? fmtTime(record.checkIn) : forgotPunchCheckIn)
+      : isTimeEditMode && isCorrectionRejected
+        ? previousCheckInTime
+        : record?.checkIn
+          ? fmtTime(record.checkIn)
+          : forgotPunchCheckIn;
+  const checkOutTimeDisplay =
+    isTimeEditMode && isCorrectionPending
+      ? requestedTimeEditCheckOut ||
+        (record?.checkOut ? fmtTime(record.checkOut) : forgotPunchCheckOut)
+      : isTimeEditMode && isCorrectionRejected
+        ? previousCheckOutTime
+        : record?.checkOut
+          ? fmtTime(record.checkOut)
+          : forgotPunchCheckOut;
+  const isLocationApprovalMode =
+    correctionRequest?.subject?.toLowerCase().includes("approval request") ||
+    correctionRequest?.description?.toLowerCase().includes("unassigned location") ||
+    correctionRequest?.description?.toLowerCase().includes("outside assigned location");
+
+  // Extract check-in distance if check-in was made from unassigned location (UL)
+  const checkInDistanceDisplay = (() => {
+    if (forgotPunchData?.checkInDistance) {
+      return forgotPunchData.checkInDistance;
+    }
+    const noteText = record?.note || correctionRequest?.description || "";
+    const m = noteText.match(/Checkin[^|]*?\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i) ||
+              noteText.match(/\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i);
+    return m ? m[1].trim() : null;
+  })();
+
+  // Extract check-out distance if check-out was made from unassigned location (UL)
+  const checkOutDistanceDisplay = (() => {
+    if (forgotPunchData?.checkOutDistance) {
+      return forgotPunchData.checkOutDistance;
+    }
+    const noteText = record?.note || correctionRequest?.description || "";
+    const m = noteText.match(/Checkout[^|]*?\(([0-9.]+\s*(?:km|m)?)\s*(?:away)?\)/i);
+    return m ? m[1].trim() : null;
+  })();
 
   const isOnLeaveToday = record?.status === "ON_LEAVE" || !!approvedLeave;
 
@@ -1089,7 +1243,19 @@ const MarkAttendance = () => {
     (isCorrectionPending && !!forgotPunchCheckIn);
 
   // Normal attendance checkout OR Pending Check-Out (Forgot Punch or Time-Edit with checkOutTime)
-  const hasCheckedOut = !!record?.checkOut || !!forgotPunchCheckOut;
+  const hasCheckedOut =
+    !!record?.checkOut ||
+    (!!forgotPunchCheckOut &&
+      (!isTimeEditMode || !isCorrectionRejected));
+
+  // Determine if today's own date shift was checked in
+  const recordCheckInDateKey = record?.checkIn ? getIndiaDateKey(new Date(record.checkIn)) : null;
+  const correctionDateKey = forgotPunchData?.date || null;
+  const activeCheckInDateKey = recordCheckInDateKey || correctionDateKey;
+  const isTodayShiftCheckedIn = activeCheckInDateKey === todayDateKey;
+
+  // If a user has checked out, or if previous day check-out is complete, allow opening Check In for today
+  const isPreviousShiftCheckedOut = hasCheckedOut && (!isTodayShiftCheckedIn || (recordCheckInDateKey && recordCheckInDateKey < todayDateKey));
 
   // =======================================================
   // BUTTON RULES
@@ -1097,6 +1263,9 @@ const MarkAttendance = () => {
 
   /*
    * CHECK IN
+   * Opens when:
+   * 1. Not checked in yet today, OR
+   * 2. User has checked out from previous/overnight shift, OR user checked out and is allowed a new check-in
    */
 
   const isUnclosedPreviousCorrectionPending =
@@ -1109,9 +1278,7 @@ const MarkAttendance = () => {
         unclosedPrevious.correctionRequest.status !== "PENDING"));
 
   const canCheckIn =
-    !hasCheckedIn &&
-    !isCorrectionPending &&
-    !isCorrectionApproved &&
+    ((!hasCheckedIn && !isCorrectionPending && !isCorrectionApproved) || (hasCheckedOut && !isTodayShiftCheckedIn)) &&
     !isOnLeaveToday &&
     !hasUnclosedPreviousMissingCheckout;
 
@@ -1155,16 +1322,15 @@ const MarkAttendance = () => {
 
   const effectiveCheckInDate = normalCheckInDate || forgotPunchCheckInDate;
 
-  const workedMs = effectiveCheckInDate
-    ? record?.checkOut
-      ? new Date(record.checkOut).getTime() - effectiveCheckInDate.getTime()
-      : now.getTime() - effectiveCheckInDate.getTime()
-    : 0;
+  const inTimeObj = effectiveCheckInDate ? new Date(effectiveCheckInDate) : null;
+  if (inTimeObj) inTimeObj.setSeconds(0, 0);
+
+  const outTimeObj = record?.checkOut ? new Date(record.checkOut) : new Date(now);
+  outTimeObj.setSeconds(0, 0);
+
+  const workedMs = inTimeObj ? Math.max(0, outTimeObj.getTime() - inTimeObj.getTime()) : 0;
   const workedH = Math.floor(workedMs / (1000 * 60 * 60));
-
   const workedM = Math.floor((workedMs % (1000 * 60 * 60)) / (1000 * 60));
-
-  const workedS = Math.floor((workedMs % (1000 * 60)) / 1000);
 
   if (!hasModuleAccess("mark-attendance")) {
     return (
@@ -1213,7 +1379,14 @@ const MarkAttendance = () => {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => navigate("/employee/requests/forgot-punch")}
+            onClick={() => {
+              const dateParam = todayDateKey ? `&date=${todayDateKey}` : "";
+              if (hasCheckedIn || isCorrectionPending || isCheckInLocationApprovalPending) {
+                navigate(`/employee/requests/forgot-punch?mode=time-edit${dateParam}`);
+              } else {
+                navigate("/employee/requests/forgot-punch");
+              }
+            }}
             className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-4 py-2 flex items-center gap-2 transition-all hover:shadow-md active:scale-[0.99] text-sm"
           >
             <Clock className="h-4 w-4" />
@@ -1254,10 +1427,9 @@ const MarkAttendance = () => {
         </div>
 
         <div className="font-display text-5xl font-bold tracking-tight text-primary">
-          {now.toLocaleTimeString("en-IN", {
+          {formatTimeWithPeriod(now, "en-IN", {
             hour: "2-digit",
             minute: "2-digit",
-            second: "2-digit",
             hour12: true,
           })}
         </div>
@@ -1379,13 +1551,35 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <div className="flex items-center gap-2 font-semibold">
                 <Clock className="h-4 w-4" />
-                {isTimeEditMode ? "Time Edit request is pending" : "Forgot Punch request is pending"}
+                {isTimeEditMode
+                  ? "Time Edit request is pending"
+                  : isLocationApprovalMode
+                  ? "Location Approval request is pending"
+                  : "Forgot Punch request is pending"}
               </div>
 
               <div className="mt-1">
-                Your requested Check In time ({forgotPunchCheckIn || "Pending"}{forgotPunchData?.date && forgotPunchData.date !== todayDateKey ? ` on ${forgotPunchData.date}` : ""}) is waiting for admin approval.
-                <br />
-                <strong>You can Check Out below while the request is pending.</strong>
+                {isTimeEditMode ? (
+                  <>
+                    Requested time edit
+                    {requestedTimeEditCheckIn && (
+                      <> — Check In: <strong>{requestedTimeEditCheckIn}</strong></>
+                    )}
+                    {requestedTimeEditCheckOut && (
+                      <> — Check Out: <strong>{requestedTimeEditCheckOut}</strong></>
+                    )}
+                    {" "}is waiting for admin approval.
+                  </>
+                ) : (
+                  <>
+                    Your requested Check In time ({forgotPunchCheckIn || "Pending"}
+                    {forgotPunchData?.date && forgotPunchData.date !== todayDateKey
+                      ? ` on ${forgotPunchData.date}`
+                      : ""}) is waiting for admin approval.
+                    <br />
+                    <strong>You can Check Out below while the request is pending.</strong>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1398,11 +1592,15 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               <div className="flex items-center gap-2 font-semibold">
                 <CheckCircle2 className="h-4 w-4" />
-                Forgot Punch request approved
+                {isTimeEditMode
+                  ? "Time Edit request approved"
+                  : isLocationApprovalMode
+                  ? "Location Approval request approved"
+                  : "Forgot Punch request approved"}
               </div>
 
               <div className="mt-1">
-                Your corrected attendance time is now active.
+                Your attendance has been confirmed by Admin.
                 <br />
                 You can check out normally.
               </div>
@@ -1417,11 +1615,15 @@ const MarkAttendance = () => {
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
               <div className="flex items-center gap-2 font-bold">
                 <LogOut className="h-4 w-4 text-rose-600" />
-                Forgot Punch request rejected
+                {isTimeEditMode
+                  ? "Time Edit request rejected"
+                  : isLocationApprovalMode
+                  ? "Location Approval request rejected"
+                  : "Forgot Punch request rejected"}
               </div>
 
               <div className="mt-1">
-                The corrected Check In was not approved by Admin.
+                The request was not approved by Admin.
                 <br />
                 Your original attendance remains unchanged.
               </div>
@@ -1466,12 +1668,17 @@ const MarkAttendance = () => {
                   hasCheckedIn ? "text-emerald-700" : "text-muted-foreground/40"
                 }`}
               >
-                {hasCheckedIn
-                  ? record?.checkIn
-                    ? fmtTime(record.checkIn)
-                    : forgotPunchCheckIn || "—"
-                  : "—"}
+                {hasCheckedIn ? checkInTimeDisplay || "—" : "—"}
               </div>
+              {isTimeEditMode &&
+                ((isCorrectionPending && requestedTimeEditCheckIn) ||
+                  (isCorrectionRejected && previousCheckInTime)) && (
+                  <div className="mt-1 text-[11px] font-medium text-muted-foreground">
+                    {isCorrectionPending
+                      ? "Requested time (pending approval)"
+                      : "Previous marked time"}
+                  </div>
+                )}
               {hasCheckedIn && (() => {
                 const checkInDateObj = record?.checkIn ? new Date(record.checkIn) : null;
                 const checkInDateKey = checkInDateObj ? getIndiaDateKey(checkInDateObj) : forgotPunchData?.date;
@@ -1481,15 +1688,16 @@ const MarkAttendance = () => {
                   (checkInDateKey && checkInDateKey !== todayDateKey) ||
                   (checkInDateKey && checkOutDateKey && checkInDateKey !== checkOutDateKey);
 
-                if (isOvernight && checkInDateKey) {
-                  return (
-                    <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                      <Calendar className="h-3 w-3" />
-                      <span>{fmtDate(checkInDateKey)}</span>
-                    </div>
-                  );
-                }
-                return null;
+                return (
+                  <div className="mt-1 space-y-0.5">
+                    {isOvernight && checkInDateKey && (
+                      <div className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                        <Calendar className="h-3 w-3" />
+                        <span>{fmtDate(checkInDateKey)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
               })()}
             </div>
 
@@ -1519,14 +1727,17 @@ const MarkAttendance = () => {
                   hasCheckedOut ? "text-rose-700" : "text-muted-foreground/40"
                 }`}
               >
-                {hasCheckedOut
-                  ? record?.checkOut
-                    ? fmtTime(record.checkOut)
-                    : forgotPunchCheckOut
-                      ? forgotPunchCheckOut
-                      : "—"
-                  : "—"}
+                {hasCheckedOut ? checkOutTimeDisplay || "—" : "—"}
               </div>
+              {isTimeEditMode &&
+                ((isCorrectionPending && requestedTimeEditCheckOut) ||
+                  (isCorrectionRejected && previousCheckOutTime)) && (
+                  <div className="mt-1 text-[11px] font-medium text-muted-foreground">
+                    {isCorrectionPending
+                      ? "Requested time (pending approval)"
+                      : "Previous marked time"}
+                  </div>
+                )}
               {hasCheckedOut && (() => {
                 const checkOutDateObj = record?.checkOut ? new Date(record.checkOut) : null;
                 const checkOutDateKey = checkOutDateObj ? getIndiaDateKey(checkOutDateObj) : forgotPunchData?.checkOutDate;
@@ -1534,15 +1745,16 @@ const MarkAttendance = () => {
                 const checkInDateKey = checkInDateObj ? getIndiaDateKey(checkInDateObj) : forgotPunchData?.date;
                 const isOvernight = checkInDateKey && checkOutDateKey && checkInDateKey !== checkOutDateKey;
 
-                if (isOvernight && checkOutDateKey) {
-                  return (
-                    <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-rose-700">
-                      <Calendar className="h-3 w-3" />
-                      <span>{fmtDate(checkOutDateKey)}</span>
-                    </div>
-                  );
-                }
-                return null;
+                return (
+                  <div className="mt-1 space-y-0.5">
+                    {isOvernight && checkOutDateKey && (
+                      <div className="flex items-center gap-1 text-xs font-semibold text-rose-700">
+                        <Calendar className="h-3 w-3" />
+                        <span>{fmtDate(checkOutDateKey)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
               })()}
             </div>
           </div>
@@ -1561,12 +1773,7 @@ const MarkAttendance = () => {
 
               <div className="font-display text-lg font-bold tabular-nums">
                 {String(workedH).padStart(2, "0")}h{" "}
-                {String(workedM).padStart(2, "0")}m{" "}
-                {!hasCheckedOut && (
-                  <span className="text-muted-foreground text-sm">
-                    {String(workedS).padStart(2, "0")}s
-                  </span>
-                )}
+                {String(workedM).padStart(2, "0")}m
               </div>
             </div>
           )}
@@ -1601,13 +1808,15 @@ const MarkAttendance = () => {
                     ? "bg-purple-100 text-purple-700 border border-purple-200 cursor-not-allowed"
                     : hasUnclosedPreviousMissingCheckout
                       ? "bg-amber-100 text-amber-800 border border-amber-300 cursor-not-allowed"
-                      : hasCheckedIn
-                        ? "bg-emerald-500 text-white cursor-not-allowed"
-                        : isCorrectionPending
-                          ? "bg-amber-100 text-amber-700 border border-amber-200 cursor-not-allowed"
-                          : isCorrectionApproved
-                            ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-not-allowed"
-                            : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
+                      : canCheckIn
+                        ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
+                        : hasCheckedIn
+                          ? "bg-emerald-500 text-white cursor-not-allowed"
+                          : isCorrectionPending
+                            ? "bg-amber-100 text-amber-700 border border-amber-200 cursor-not-allowed"
+                            : isCorrectionApproved
+                              ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-not-allowed"
+                              : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md active:scale-[0.99]"
                 }
 
                 disabled:opacity-70
@@ -1631,6 +1840,12 @@ const MarkAttendance = () => {
                   <AlertTriangle className="h-5 w-5 text-amber-600" />
 
                   <span>Previous Attendance Incomplete</span>
+                </>
+              ) : canCheckIn ? (
+                <>
+                  <LogIn className="h-5 w-5" />
+
+                  <span>Check In</span>
                 </>
               ) : hasCheckedIn ? (
                 <>
@@ -1747,7 +1962,7 @@ const MarkAttendance = () => {
               COMPLETE
           ================================================= */}
 
-          {hasCheckedIn && hasCheckedOut && (
+          {hasCheckedIn && hasCheckedOut && isTodayShiftCheckedIn && (
             <div className="w-full rounded-xl bg-emerald-50 border border-emerald-200 py-3 flex items-center justify-center gap-2 text-sm font-semibold text-emerald-700">
               <CheckCircle2 className="h-5 w-5" />
               Attendance marked for today
@@ -1799,11 +2014,7 @@ const MarkAttendance = () => {
 
                 {reasonModal.distanceMeters != null && (
                   <span className="ml-2">
-                    (
-                    {reasonModal.distanceMeters >= 1000
-                      ? `${(reasonModal.distanceMeters / 1000).toFixed(2)} km away`
-                      : `${Math.round(reasonModal.distanceMeters)} m away`}
-                    )
+                    ({(reasonModal.distanceMeters / 1000).toFixed(2)} km away)
                   </span>
                 )}
               </div>
@@ -1950,10 +2161,6 @@ const MarkAttendance = () => {
                       return;
                     }
 
-                    if (diffHours > 24) {
-                      toast.error(`Check-out cannot exceed 24 hours from check-in (${diffHours.toFixed(1)}h selected).`);
-                      return;
-                    }
                   }
 
                   setOvernightModal((prev) => ({ ...prev, submitting: true }));

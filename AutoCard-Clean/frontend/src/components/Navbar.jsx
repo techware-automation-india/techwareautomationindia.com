@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
-import logo from "../assets/techwareLogo.png";
 
 const navLinks = [
   { label: "Home", href: "#home" },
@@ -30,7 +29,7 @@ const Navbar = ({ staticPosition = false }) => {
           className="flex items-center gap-2 sm:gap-3 md:gap-4 group ml-0 sm:-ml-2 md:-ml-8 lg:-ml-16"
         >
           <img
-            src={logo}
+            src="/techwareLogo.svg"
             alt="Techware Automation India"
             className="h-11 sm:h-12 md:h-14 lg:h-16 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
           />

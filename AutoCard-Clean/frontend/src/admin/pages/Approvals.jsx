@@ -31,6 +31,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getAuthUser } from "../../lib/auth.js";
+const REASON_PLACEHOLDERS = ["No check-in reason provided.", "No check-out reason provided.", "No reason provided.", "No reason provided for check-out."];
+import { formatTimeWithPeriod } from "../../lib/timeFormat.js";
 
 const statusStyles = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -106,7 +108,7 @@ const formatTimeIST = (timeValue) => {
   if (str.includes("T") || str.includes("-")) {
     const d = new Date(str);
     if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleTimeString("en-IN", {
+      return formatTimeWithPeriod(d, "en-IN", {
         timeZone: "Asia/Kolkata",
         hour: "numeric",
         minute: "2-digit",
@@ -148,30 +150,37 @@ const isApprovedOrCompletedStatus = (status, note = "") => {
 };
 
 const cleanPureReason = (rawReason, rawDescription) => {
-  // 1. If rawReason is a non-empty string and not the placeholder, inspect it
   let candidate = (typeof rawReason === "string" ? rawReason : "").trim();
 
-  // If candidate is a generic fallback, ignore it
   if (/^unassigned location (check-in|check-out)$/i.test(candidate)) {
     candidate = "";
   }
 
-  // 2. If candidate still has compound strings like "Checkin: ... | Checkout: ... Reason: fsfefe."
-  const desc = (typeof rawDescription === "string" ? rawDescription : candidate).split("[ATTENDANCE_CORRECTION]")[0].trim();
+  // Discard automated sentences immediately
+  candidate = candidate
+    .replace(/(?:^|\r?\n)\s*(?:Time Edit|Forgot Punch) request for [^\r\n.]*(?:\.\s*|\r?\n|$)/gi, "")
+    .trim();
+
+  const desc = (typeof rawDescription === "string" ? rawDescription : candidate)
+    .split("[ATTENDANCE_CORRECTION]")[0]
+    .replace(/(?:^|\r?\n)\s*(?:Time Edit|Forgot Punch) request for [^\r\n.]*(?:\.\s*|\r?\n|$)/gi, "")
+    .trim();
+
   const targetText = candidate || desc;
 
   // Extract from "Reason: <actual_reason>" within the text
   const reasonMatches = [...targetText.matchAll(/Reason:\s*(.*?)(?=\s*(?:\.\s*Pending admin approval|\.\s*Admin approved|\.\s*Admin rejected|Pending admin approval|Admin approved|Admin rejected)\b|\s*\||$)/gi)];
   if (reasonMatches.length > 0) {
     const joined = reasonMatches.map(m => m[1].trim()).filter(Boolean).join(" | ");
-    if (joined && !/^unassigned location (check-in|check-out)$/i.test(joined)) {
+    if (joined && !/^unassigned location (check-in|check-out)$/i.test(joined) && !/^(?:Time Edit|Forgot Punch) request for/i.test(joined)) {
       return joined.replace(/\.$/, "").trim();
     }
   }
 
   // 3. Fallback: clean out checkin/checkout/approval tags
   let cleaned = targetText
-    .replace(/^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2}.*?(?:\.\s*|$)/i, "")
+    .replace(/^(?:Forgot Punch|Time Edit) request for .*?(?:\.\s*|\r?\n|$)/gi, "")
+    .replace(/^Forgot Punch (?:approved|pending approval|rejected)\.?\s*/gi, "")
     .replace(/^Checkin:?[^|]*\|?/i, "")
     .replace(/Checkout [^.]*\./i, "")
     .replace(/Check-?[io]ut from unassigned location[^.]*\./gi, "")
@@ -188,7 +197,10 @@ const cleanPureReason = (rawReason, rawDescription) => {
     .trim();
 
   cleaned = cleaned.replace(/\.$/, "").trim();
-  return cleaned || "No reason provided.";
+  if (/^(?:Time Edit|Forgot Punch) request for/i.test(cleaned)) {
+    return "";
+  }
+  return cleaned;
 };
 
 const formatDistance = (value) => {
@@ -206,31 +218,236 @@ const formatDistance = (value) => {
 };
 
 const getPunchTypeLabel = (request) => {
-  const punchType =
-    request.notification?.punchType ||
-    (() => {
-      if (typeof request.description !== "string") return null;
-      const match = request.description.match(
-        /\[ATTENDANCE_CORRECTION\]\s*(\{[\s\S]*\})\s*$/,
-      );
-      if (!match) return null;
-
+  let details = null;
+  if (typeof request.description === "string") {
+    const match = request.description.match(
+      /\[ATTENDANCE_CORRECTION\]\s*(\{[\s\S]*\})\s*$/,
+    );
+    if (match) {
       try {
-        return JSON.parse(match[1]).punchType;
+        details = JSON.parse(match[1]);
       } catch {
-        return null;
+        details = null;
       }
-    })();
+    }
+  }
+  const punchType =
+    details?.punchType || request.notification?.punchType || null;
+
+  if (punchType === "both") {
+    if (details?.checkOutLocationSource === "default-location") {
+      return "Check In";
+    }
+    if (details?.checkInLocationSource === "default-location") {
+      return "Check Out";
+    }
+    return "Check In + Check Out";
+  }
+
+  if (punchType === "time-edit") {
+    const teType = details?.timeEditPunchType || (details?.checkInTime && !details?.checkOutTime ? "check-in" : details?.checkOutTime && !details?.checkInTime ? "check-out" : null);
+    if (teType === "check-in") return "Check In";
+    if (teType === "check-out") return "Check Out";
+    return "Check In + Check Out";
+  }
 
   return punchType === "check-in"
     ? "Check In"
     : punchType === "check-out"
       ? "Check Out"
-      : punchType === "both"
-        ? "Check In + Check Out"
-        : punchType === "time-edit"
-          ? "Time Edit"
-          : null;
+      : null;
+};
+
+const getApprovalDisplayTitle = (approval) => {
+  if (!approval) return "Approval Details";
+
+  // Leave or Equipment requests
+  if (approval.source === "LEAVE" || approval.type === "LEAVE") {
+    return approval.title || approval.subject || "Leave Request";
+  }
+  if (approval.source === "EQUIPMENT" || approval.type === "EQUIPMENT") {
+    return approval.subject || approval.title || "Equipment Request";
+  }
+
+  let details = approval?.correctionDetails;
+  const description = String(approval?.description || "");
+  const lowerDesc = description.toLowerCase();
+  if (!details && description.includes("[ATTENDANCE_CORRECTION]")) {
+    try {
+      details = JSON.parse(description.split("[ATTENDANCE_CORRECTION]")[1].trim());
+    } catch {}
+  }
+
+  const rawSubject = String(approval?.subject || approval?.title || "").trim();
+  const lowerSubj = rawSubject.toLowerCase();
+
+  // Read the created request's punch type directly from metadata/correction:
+  const metaPunchType = String(details?.punchType || "").toLowerCase().trim();
+  const rawPunchType = String(approval?.punchType || "").toLowerCase().trim();
+  const punchType = metaPunchType || (rawPunchType === "check in" ? "check-in" : rawPunchType === "check out" ? "check-out" : rawPunchType === "time edit" ? "time-edit" : rawPunchType);
+
+  const date =
+    details?.date ||
+    details?.checkOutDate ||
+    (approval?.createdAt ? String(approval.createdAt).slice(0, 10) : "");
+  const dateStr = date ? ` (${date})` : "";
+
+  // 1. Time Edit Request
+  const isTimeEdit =
+    details?.isTimeEdit ||
+    punchType === "time-edit" ||
+    lowerSubj.includes("time edit") ||
+    lowerDesc.includes("time edit request");
+
+  if (isTimeEdit) {
+    const tePunchType =
+      details?.timeEditPunchType ||
+      (details?.checkInTime && !details?.checkOutTime
+        ? "check-in"
+        : details?.checkOutTime && !details?.checkInTime
+          ? "check-out"
+          : (lowerDesc.includes("at check-in") && !lowerDesc.includes("at check-out") && !lowerDesc.includes("and check-out")
+              ? "check-in"
+              : (lowerDesc.includes("at check-out") && !lowerDesc.includes("at check-in")
+                  ? "check-out"
+                  : "both")));
+
+    const isCheckInOnly = tePunchType === "check-in";
+    const isCheckOutOnly = tePunchType === "check-out";
+
+    const isULIn =
+      details?.isULCheckIn ||
+      details?.checkInLocationSource === "unassigned-location" ||
+      (details?.checkInLatitude != null && details?.checkInLocationSource !== "forgot-punch") ||
+      lowerSubj.includes("ul check in");
+
+    const isULOut =
+      !isCheckInOnly &&
+      (details?.isULCheckOut ||
+       details?.checkOutLocationSource === "unassigned-location" ||
+       (details?.checkOutLatitude != null && details?.checkOutLocationSource !== "forgot-punch"));
+
+    if (isCheckInOnly) {
+      return isULIn ? `UL Check In + Time Edit${dateStr}` : `Time Edit Request - Check In${dateStr}`;
+    }
+    if (isCheckOutOnly) {
+      return isULOut ? `UL Check Out + Time Edit${dateStr}` : `Time Edit Request - Check Out${dateStr}`;
+    }
+    if (isULIn && !isULOut) {
+      return `UL Check In + Time Edit${dateStr}`;
+    }
+    if (isULOut && !isULIn) {
+      return `UL Check Out + Time Edit${dateStr}`;
+    }
+    if (isULIn && isULOut) {
+      return `UL Check In + UL Check Out (Time Edit)${dateStr}`;
+    }
+
+    const cleanSubj = rawSubject
+      .replace(/Time Edit Request\s*-?\s*/i, "")
+      .replace(/\s*\(\d{4}-\d{2}-\d{2}\).*$/, "")
+      .trim();
+    return cleanSubj ? `Time Edit Request - ${cleanSubj}${dateStr}` : `Time Edit Request${dateStr}`;
+  }
+
+  // 2. Check location sources
+  const checkInLocSrc = details?.checkInLocationSource;
+  const checkOutLocSrc = details?.checkOutLocationSource;
+
+  const isCheckOutDefaultLoc =
+    checkOutLocSrc === "default-location" ||
+    lowerDesc.includes("checked out via mark attendance (default location)") ||
+    (lowerDesc.includes("default location") && !lowerDesc.includes("check-out location:"));
+
+  const isCheckInDefaultLoc =
+    checkInLocSrc === "default-location" ||
+    lowerDesc.includes("checked in via mark attendance (default location)");
+
+  const isCheckInFP = checkInLocSrc === "forgot-punch" || (lowerSubj.includes("forgot check in") && !lowerSubj.includes("ul check in"));
+  const isCheckOutFP = checkOutLocSrc === "forgot-punch" || (lowerSubj.includes("forgot check out") && !lowerSubj.includes("ul check out"));
+
+  // 3. PRIORITY: Check In only
+  if (punchType === "check-in" || (punchType === "both" && isCheckOutDefaultLoc && !isCheckInDefaultLoc)) {
+    return isCheckInFP ? `Forgot Check In${dateStr}` : `UL Check In${dateStr}`;
+  }
+
+  // 4. PRIORITY: Check Out only
+  if (punchType === "check-out" || (punchType === "both" && isCheckInDefaultLoc && !isCheckOutDefaultLoc)) {
+    return isCheckOutFP ? `Forgot Check Out${dateStr}` : `UL Check Out${dateStr}`;
+  }
+
+  // 5. PRIORITY: Both punches require approval
+  if (punchType === "both") {
+    const checkInIsUL = !isCheckInFP;
+    const checkOutIsUL = !isCheckOutFP;
+    if (checkInIsUL && checkOutIsUL) {
+      return `UL Check In + UL Check Out${dateStr}`;
+    }
+    if (checkInIsUL && isCheckOutFP) {
+      return `UL Check In + Forgot Check Out${dateStr}`;
+    }
+    if (isCheckInFP && checkOutIsUL) {
+      return `Forgot Check In + UL Check Out${dateStr}`;
+    }
+    if (isCheckInFP && isCheckOutFP) {
+      return `Check In + Check Out by Forgot Punch${dateStr}`;
+    }
+  }
+
+  // 6. Fallback based on subject and description
+  const hasSubjCheckIn = lowerSubj.includes("check in") || lowerSubj.includes("check-in");
+  const hasSubjCheckOut = lowerSubj.includes("check out") || lowerSubj.includes("check-out");
+  if (hasSubjCheckIn && !hasSubjCheckOut) {
+    return isCheckInFP ? `Forgot Check In${dateStr}` : `UL Check In${dateStr}`;
+  }
+  if (hasSubjCheckOut && !hasSubjCheckIn) {
+    return isCheckOutFP ? `Forgot Check Out${dateStr}` : `UL Check Out${dateStr}`;
+  }
+
+  return rawSubject || approval?.title || "Approval Details";
+};
+
+const getPunchLocationSource = (approval, details, punch) => {
+  const isCheckIn = punch === "checkIn";
+  const source = details?.[`${punch}LocationSource`];
+  if (source) return source;
+
+  const subject = String(approval?.subject || approval?.title || "").toLowerCase();
+  const description = String(approval?.description || "").toLowerCase();
+  const punchLabel = isCheckIn ? "check in" : "check out";
+
+  // New subject patterns
+  if (isCheckIn) {
+    if (subject.includes("forgot check in")) return "forgot-punch";
+    if (subject.includes("ul check in")) return "unassigned-location";
+  } else {
+    if (subject.includes("forgot check out")) return "forgot-punch";
+    if (subject.includes("ul check out")) return "unassigned-location";
+    if (subject.includes("default-location") || subject.includes("default check out")) return "default-location";
+  }
+
+  if (subject.includes(`${punchLabel} (ul)`)) return "unassigned-location";
+  if (subject.includes(`${punchLabel} (forgot punch)`)) return "forgot-punch";
+
+  // Only treat coordinates as UL if description explicitly says "unassigned location"
+  if (
+    (description.includes("unassigned location") || description.includes("outside assigned location")) &&
+    (details?.[`${punch}Latitude`] != null || details?.[`${punch}Longitude`] != null)
+  ) {
+    return "unassigned-location";
+  }
+
+  if (details?.[`${punch}Location`]) return "forgot-punch";
+
+  const punchType = String(details?.punchType || "").toLowerCase();
+  const includesPunch =
+    punchType === (isCheckIn ? "check-in" : "check-out") ||
+    punchType === "both";
+  if (includesPunch && subject.includes("forgot punch")) return "forgot-punch";
+  if (punchType === (isCheckIn ? "check-in" : "check-out")) {
+    return "forgot-punch";
+  }
+  return null;
 };
 
 const parseCorrectionFromDescription = (description) => {
@@ -244,6 +461,24 @@ const parseCorrectionFromDescription = (description) => {
       .trim();
     const data = JSON.parse(jsonText);
     const readableText = description.slice(0, markerIndex).trim();
+    const readableParts = readableText.split("|").map((part) => part.trim());
+    const extractPunchReason = (punchPattern) => {
+      const punchPart = readableParts.find((part) => punchPattern.test(part));
+      const match = punchPart?.match(
+        /Reason:\s*(.*?)(?=\s*(?:Pending admin approval|Admin approved|Admin rejected|Approved by admin|Rejected by admin)\b|$)/i,
+      );
+      return match?.[1]?.trim().replace(/\.$/, "") || null;
+    };
+    const checkInReasonFromText = extractPunchReason(/\bcheck[\s-]?in\b/i);
+    const checkOutReasonFromText = extractPunchReason(/\bcheck[\s-]?out\b/i);
+    const checkInLocation =
+      data.checkInLocation ||
+      readableText.match(/(?:^|\n)\s*Check-In Location:\s*([^\r\n]+)/i)?.[1]?.trim() ||
+      null;
+    const checkOutLocation =
+      data.checkOutLocation ||
+      readableText.match(/(?:^|\n)\s*Check-Out Location:\s*([^\r\n]+)/i)?.[1]?.trim() ||
+      null;
 
     const isTimeEdit = data.punchType === "time-edit" || readableText.toLowerCase().includes("time edit");
 
@@ -287,6 +522,24 @@ const parseCorrectionFromDescription = (description) => {
         .trim();
     }
 
+    reason = String(reason || "")
+      .replace(/^(?:Forgot Punch|Time Edit) request for [^\r\n]*(?:\r?\n|$)/i, "")
+      .replace(/(?:^|\r?\n)\s*Check-In Location:\s*[^\r\n]*/gi, "")
+      .replace(/(?:^|\r?\n)\s*Check-Out Location:\s*[^\r\n]*/gi, "")
+      .replace(/\|?\s*Pending admin approval\.?/gi, "")
+      .replace(/\|?\s*Approved by admin\.?/gi, "")
+      .replace(/\|?\s*Rejected by admin\.?/gi, "")
+      .replace(/^\s*Reason:\s*/i, "")
+      .replace(/\|/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (
+      isTimeEdit &&
+      reason.toLowerCase() === "i want to change my attendance time."
+    ) {
+      reason = "";
+    }
+
     return {
       date: data.date,
       isTimeEdit,
@@ -297,12 +550,25 @@ const parseCorrectionFromDescription = (description) => {
             ? "Check Out"
             : data.punchType === "time-edit"
               ? "Time Edit"
-              : "Check In + Check Out",
+              : data.punchType === "both"
+                ? "Check In + Check Out"
+                : null,
       checkInTime: data.checkInTime,
       checkOutTime: data.checkOutTime,
-      checkInLocation: data.checkInLocation,
-      checkOutLocation: data.checkOutLocation,
-      reason: reason || "No reason provided.",
+      originalCheckInTime: data.originalCheckInTime || null,
+      originalCheckOutTime: data.originalCheckOutTime || null,
+      checkInLocation,
+      checkOutLocation,
+      checkInLatitude: data.checkInLatitude ?? null,
+      checkInLongitude: data.checkInLongitude ?? null,
+      checkOutLatitude: data.checkOutLatitude ?? null,
+      checkOutLongitude: data.checkOutLongitude ?? null,
+      attendanceId: data.attendanceId || null,
+      checkInLocationSource: data.checkInLocationSource || null,
+      checkOutLocationSource: data.checkOutLocationSource || null,
+      checkInReason: data.checkInReason || checkInReasonFromText || null,
+      checkOutReason: data.checkOutReason || checkOutReasonFromText || null,
+      reason: reason || (isTimeEdit ? "" : "No reason provided."),
     };
   } catch {
     return null;
@@ -310,47 +576,148 @@ const parseCorrectionFromDescription = (description) => {
 };
 
 const normalizeRequests = (items) =>
-  (items || []).map((item) => ({
-    id: item.id,
-    source: "REQUEST",
-    type: item.type,
-    title:
-      item.type === "CORRECTION"
-        ? (item.subject?.toLowerCase().includes("time edit") || item.description?.includes('"punchType":"time-edit"')
-            ? `Time Edit Request - ${item.subject?.replace(/Time Edit Request\s*-?\s*/i, "") || "Attendance Time"}`
-            : `Forgot Punch${getPunchTypeLabel(item) ? ` - ${getPunchTypeLabel(item)}` : ""}`)
-        : item.subject || "Employee request",
-    punchType: item.type === "CORRECTION" ? getPunchTypeLabel(item) : null,
-    correctionDetails:
-      item.type === "CORRECTION"
-        ? (() => {
-            const parsed = parseCorrectionFromDescription(item.description);
-            if (item.notification && parsed) {
-              return {
-                ...item.notification,
-                ...parsed,
-                reason: parsed.reason || item.notification.reason || "",
-              };
-            }
-            return parsed || item.notification || null;
-          })()
+  (items || []).map((item) => {
+    const parsed = parseCorrectionFromDescription(item.description);
+    const rawPunchType = String(
+      parsed?.punchType || item.notification?.punchType || "",
+    ).toLowerCase();
+    const hasBothPunches =
+      rawPunchType === "both" ||
+      (rawPunchType.includes("check in") &&
+        rawPunchType.includes("check out"));
+    const isTimeEditRequest =
+      parsed?.isTimeEdit ||
+      rawPunchType === "time-edit" ||
+      rawPunchType === "time edit" ||
+      item.subject?.toLowerCase().includes("time edit");
+    const isUnassignedCheckInWithForgotPunchCheckOut =
+      hasBothPunches &&
+      (item.subject?.toLowerCase().includes("check in (ul)") ||
+        item.subject?.toLowerCase().includes("check out (ul)") ||
+        item.subject?.toLowerCase().includes("ul check in") ||
+        item.subject?.toLowerCase().includes("ul check out") ||
+        item.subject?.toLowerCase().includes("forgot check in") ||
+        item.subject?.toLowerCase().includes("forgot check out") ||
+        item.subject?.toLowerCase().includes("location approval") ||
+        item.description?.toLowerCase().includes("unassigned location") ||
+        item.description?.toLowerCase().includes("outside assigned location") ||
+        parsed?.checkInLocationSource === "unassigned-location" ||
+        parsed?.checkOutLocationSource === "unassigned-location");
+    const checkInLat = parsed?.checkInLocationSource === "forgot-punch"
+      ? null
+      : item.checkInLatitude ?? item.notification?.checkInLatitude ?? parsed?.checkInLatitude ?? null;
+    const checkInLng = parsed?.checkInLocationSource === "forgot-punch"
+      ? null
+      : item.checkInLongitude ?? item.notification?.checkInLongitude ?? parsed?.checkInLongitude ?? null;
+    const checkOutLat = parsed?.checkOutLocationSource === "forgot-punch"
+      ? null
+      : item.checkOutLatitude ?? item.notification?.checkOutLatitude ?? parsed?.checkOutLatitude ?? null;
+    const checkOutLng = parsed?.checkOutLocationSource === "forgot-punch"
+      ? null
+      : item.checkOutLongitude ?? item.notification?.checkOutLongitude ?? parsed?.checkOutLongitude ?? null;
+
+    return {
+      id: item.id,
+      source: "REQUEST",
+      type: item.type,
+      subject: item.subject,
+      title: getApprovalDisplayTitle({
+        id: item.id,
+        source: "REQUEST",
+        type: item.type,
+        subject: item.subject,
+        description: item.description,
+        correctionDetails: parsed,
+        punchType: getPunchTypeLabel(item),
+        createdAt: item.createdAt,
+      }),
+      punchType: item.type === "CORRECTION"
+        ? getPunchTypeLabel(item)
         : null,
-    description:
-      item.description || item.notification?.reason || "No details provided.",
-    employee:
-      item.employee?.fullName || item.employee?.user?.fullName || "Employee",
-    employeeCode: item.employee?.employeeCode || "",
-    employeeId: item.employee?.id || item.employeeId || "",
-    reviewNote: item.reviewNote || null,
-    reviewedAt: item.reviewedAt || null,
-    reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
-    checkInLatitude: item.checkInLatitude,
-    checkInLongitude: item.checkInLongitude,
-    checkOutLatitude: item.checkOutLatitude,
-    checkOutLongitude: item.checkOutLongitude,
-    status: item.status === "PENDING" ? "PENDING" : item.status,
-    createdAt: item.createdAt,
-  }));
+      correctionDetails:
+        item.type === "CORRECTION"
+          ? (() => {
+              if (item.notification && parsed) {
+                return {
+                  ...item.notification,
+                  ...parsed,
+                  checkInLatitude: checkInLat,
+                  checkInLongitude: checkInLng,
+                  checkOutLatitude: checkOutLat,
+                  checkOutLongitude: checkOutLng,
+                  checkInLocation:
+                    parsed.checkInLocation ||
+                    item.notification.checkInLocation ||
+                    null,
+                  checkOutLocation:
+                    parsed.checkOutLocation ||
+                    item.notification.checkOutLocation ||
+                    null,
+                  checkInLocationSource:
+                    parsed.checkInLocationSource ||
+                    item.notification.checkInLocationSource ||
+                    null,
+                  checkOutLocationSource:
+                    parsed.checkOutLocationSource ||
+                    item.notification.checkOutLocationSource ||
+                    null,
+                  reason: parsed.reason || item.notification.reason || "",
+                  originalCheckInTime:
+                    parsed.originalCheckInTime ||
+                    item.notification.originalCheckInTime ||
+                    null,
+                  originalCheckOutTime:
+                    parsed.originalCheckOutTime ||
+                    item.notification.originalCheckOutTime ||
+                    null,
+                  checkInReason:
+                    parsed.checkInReason ||
+                    item.notification.checkInReason ||
+                    null,
+                  checkOutReason:
+                    parsed.checkOutReason ||
+                    item.notification.checkOutReason ||
+                    null,
+                };
+              }
+              if (parsed) {
+                return {
+                  ...parsed,
+                  checkInLatitude: checkInLat,
+                  checkInLongitude: checkInLng,
+                  checkOutLatitude: checkOutLat,
+                  checkOutLongitude: checkOutLng,
+                };
+              }
+              if (item.notification) {
+                return {
+                  ...item.notification,
+                  checkInLatitude: checkInLat,
+                  checkInLongitude: checkInLng,
+                  checkOutLatitude: checkOutLat,
+                  checkOutLongitude: checkOutLng,
+                };
+              }
+              return null;
+            })()
+          : null,
+      description:
+        item.description || item.notification?.reason || "No details provided.",
+      employee:
+        item.employee?.fullName || item.employee?.user?.fullName || "Employee",
+      employeeCode: item.employee?.employeeCode || "",
+      employeeId: item.employee?.id || item.employeeId || "",
+      reviewNote: item.reviewNote || null,
+      reviewedAt: item.reviewedAt || null,
+      reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
+      checkInLatitude: checkInLat,
+      checkInLongitude: checkInLng,
+      checkOutLatitude: checkOutLat,
+      checkOutLongitude: checkOutLng,
+      status: item.status === "PENDING" ? "PENDING" : item.status,
+      createdAt: item.createdAt,
+    };
+  });
 
 const normalizeLeave = (items) =>
   (items || []).map((item) => ({
@@ -374,12 +741,20 @@ const normalizeAttendance = (items) =>
     const isCheckoutApproval =
       !!item.checkOut ||
       (item.note?.includes("Checkout") && !item.note?.includes("Checkin"));
+    const isUnassignedCheckInWithCheckOut =
+      isCheckoutApproval &&
+      (item.note?.toLowerCase().includes("unassigned location") ||
+        item.note?.toLowerCase().includes("outside assigned location"));
+    const dateLabel = String(item.date || item.checkIn || item.createdAt || "")
+      .slice(0, 10);
 
     return {
       id: item.id,
       source: "ATTENDANCE",
       title:
-        item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
+        isUnassignedCheckInWithCheckOut
+          ? `UL Check In + Forgot Check Out (${dateLabel})`
+          : item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
           ? isCheckoutApproval
             ? "Checkout Location Approval"
             : "Checkin Location Approval"
@@ -389,6 +764,7 @@ const normalizeAttendance = (items) =>
       description: item.note || "Employee attendance requires approval.",
       employee: item.fullName || item.employee?.user?.fullName || "Employee",
       employeeCode: item.employee?.employeeCode || "",
+      employeeId: item.employeeId || item.employee?.id || "",
       reviewNote: item.note || null,
       reviewedAt: item.updatedAt || null,
       reviewedBy: item.reviewedBy?.fullName || item.reviewedBy || null,
@@ -452,6 +828,7 @@ const getAttendanceDetails = (note = "") => {
   const sanitize = (rawStr) => {
     if (!rawStr) return "";
     return rawStr
+      .replace(/^Forgot Punch (?:approved|pending approval|rejected)\.?\s*/gi, "")
       .replace(/^Checkin\s+(from|to|location|location requires approval)?[^.]*?\.\s*/i, "")
       .replace(/^Checkout\s+(recorded|from|to|location|outside|location requires approval)?[^.]*?\.\s*/i, "")
       .replace(/^Checkin:/i, "")
@@ -549,14 +926,15 @@ const getReadableReason = (approval) => {
     text = text.substring(0, markerIndex).trim();
   }
 
-  // 2. Strip system preamble "Forgot Punch request for ... on YYYY-MM-DD."
+  // 2. Strip system preamble "Forgot Punch / Time Edit request for ... "
   text = text
+    .replace(/(?:^|\r?\n)\s*(?:Time Edit|Forgot Punch) request for [^\r\n.]*(?:\.\s*|\r?\n|$)/gi, "")
     .replace(
-      /^Forgot Punch request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
+      /^(?:Forgot Punch|Time Edit) request for (?:both|check-in|check-out|Check In|Check Out) on \d{4}-\d{2}-\d{2}\.?\s*/i,
       "",
     )
     .replace(
-      /^Forgot Punch request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
+      /^(?:Forgot Punch|Time Edit) request for .*? on \d{4}-\d{2}-\d{2} at .*?(?:\.\s*|$)/i,
       "",
     )
     .trim();
@@ -998,10 +1376,14 @@ const Approvals = () => {
     }
   };
 
-  // Set default filters to ALL so all requests display immediately
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+
+  // Default to current month and year
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [yearFilter, setYearFilter] = useState("ALL");
-  const [monthFilter, setMonthFilter] = useState("ALL");
+  const [yearFilter, setYearFilter] = useState(String(currentYear));
+  const [monthFilter, setMonthFilter] = useState(String(currentMonth));
   const [employeeFilter, setEmployeeFilter] = useState("ALL");
   
   // Get type filter from URL params (for granular approval modules)
@@ -1033,11 +1415,250 @@ const Approvals = () => {
       const invItems = inventoryResult.status === "fulfilled" ? (inventoryResult.value?.items || []) : [];
       setInventoryItems(invItems);
 
+      const normalizedReqs = normalizeRequests(requests);
+      const normalizedLvs = normalizeLeave(leave);
+      const normalizedAtts = normalizeAttendance(attendance);
+
+      // Pre-correlate attendance unassigned-location note & reason onto correction requests
+      normalizedReqs.forEach((req) => {
+        if (req.type === "CORRECTION" || req.title?.includes("UL Check In") || req.subject?.includes("UL Check In")) {
+          const empId = req.employeeId || "";
+          const date = req.correctionDetails?.date || req.subject?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+          const matchingAtt = normalizedAtts.find((att) => {
+            const attEmpId = att.employeeId || "";
+            const empMatches = attEmpId === empId || (req.employeeCode && att.employeeCode === req.employeeCode);
+            if (!empMatches) return false;
+            if (!date) return true;
+            const attDateStr = String(att.date || "");
+            const attCheckInStr = String(att.checkInTime || "");
+            const match1 = attDateStr.includes(date) || attCheckInStr.includes(date);
+            const match2 = att.date ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(att.date)) === date : false;
+            const match3 = att.checkInTime ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(att.checkInTime)) === date : false;
+            return match1 || match2 || match3;
+          });
+          if (matchingAtt) {
+            req.actualAttendanceNote = matchingAtt.description || matchingAtt.reviewNote;
+            const attDetails = getAttendanceDetails(req.actualAttendanceNote);
+            const attReason = (attDetails?.checkInReason && !REASON_PLACEHOLDERS.includes(attDetails.checkInReason) ? attDetails.checkInReason : "") ||
+              matchingAtt.description?.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
+            if (attReason && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(attReason)) {
+              req.checkInReason = attReason;
+              if (req.correctionDetails) {
+                req.correctionDetails.checkInReason = req.correctionDetails.checkInReason || attReason;
+              }
+            }
+          }
+        }
+      });
+
+      // Track known attendance IDs and date keys across EmployeeRequest tickets
+      const knownAttendanceIds = new Set();
+      const knownEmployeeDateKeys = new Set();
+
+      normalizedReqs.forEach((req) => {
+        const attId = req.correctionDetails?.attendanceId;
+        if (attId) {
+          knownAttendanceIds.add(String(attId));
+        }
+        if (req.type === "CORRECTION" && req.correctionDetails?.date) {
+          const empId = req.employeeId || "";
+          knownEmployeeDateKeys.add(`${empId}_${req.correctionDetails.date}`);
+        }
+      });
+
+      // Filter out duplicate attendance records where a CORRECTION EmployeeRequest already exists
+      const filteredAttendance = normalizedAtts.filter((att) => {
+        const attIdStr = String(att.id);
+        if (knownAttendanceIds.has(attIdStr)) {
+          return false;
+        }
+        const empId = att.employeeId || "";
+        const dateKey = att.date ? new Date(att.date).toISOString().slice(0, 10) : "";
+        const checkInDateKey = att.checkInTime ? new Date(att.checkInTime).toISOString().slice(0, 10) : "";
+        if (dateKey && knownEmployeeDateKeys.has(`${empId}_${dateKey}`)) {
+          return false;
+        }
+        if (checkInDateKey && knownEmployeeDateKeys.has(`${empId}_${checkInDateKey}`)) {
+          return false;
+        }
+        return true;
+      });
+
+      // Keep requests separate; the backend explicitly combines only related punches.
+      const seenEmployeeDateRequests = new Map();
+      const consolidatedRequests = [];
+
+      normalizedReqs.forEach((req) => {
+        if (req.type === "CORRECTION") {
+          const key = req.id;
+
+          if (seenEmployeeDateRequests.has(key)) {
+            // Merge with the existing item to form 1 single request
+            const existing = seenEmployeeDateRequests.get(key);
+            const existingPunchType = String(
+              existing.correctionDetails?.punchType || existing.punchType || "",
+            ).toLowerCase();
+            const addedPunchType = String(
+              req.correctionDetails?.punchType || req.punchType || "",
+            ).toLowerCase();
+            const existingHasCheckIn =
+              existingPunchType.includes("check in") ||
+              existingPunchType === "both";
+            const existingHasCheckOut =
+              existingPunchType.includes("check out") ||
+              existingPunchType === "both";
+            const addedHasCheckIn =
+              addedPunchType.includes("check in") || addedPunchType === "both";
+            const addedHasCheckOut =
+              addedPunchType.includes("check out") || addedPunchType === "both";
+            const hasSamePunchType =
+              (existingHasCheckIn && addedHasCheckIn) ||
+              (existingHasCheckOut && addedHasCheckOut);
+            if (hasSamePunchType) {
+              consolidatedRequests.push(req);
+              return;
+            }
+            const hasLocationApproval =
+              existing.title?.toLowerCase().includes("location approval") ||
+              existing.description?.toLowerCase().includes("unassigned location") ||
+              existing.description?.toLowerCase().includes("outside assigned location") ||
+              req.title?.toLowerCase().includes("location approval") ||
+              req.description?.toLowerCase().includes("unassigned location") ||
+              req.description?.toLowerCase().includes("outside assigned location");
+            const isUnassignedCheckInWithForgotPunchCheckOut =
+              hasLocationApproval &&
+              existingHasCheckIn &&
+              (addedHasCheckOut ||
+                existingHasCheckOut ||
+                Boolean(existing.correctionDetails?.checkOutReason) ||
+                Boolean(req.correctionDetails?.checkOutReason));
+            const checkInLocationSource =
+              (addedPunchType.includes("check-in") &&
+              req.correctionDetails?.checkInLocationSource
+                ? req.correctionDetails.checkInLocationSource
+                : existing.correctionDetails?.checkInLocationSource) ||
+              (existing.correctionDetails?.checkInLatitude != null
+                ? "unassigned-location"
+                : "forgot-punch");
+            const checkOutLocationSource =
+              (addedPunchType.includes("check-out") &&
+              req.correctionDetails?.checkOutLocationSource
+                ? req.correctionDetails.checkOutLocationSource
+                : existing.correctionDetails?.checkOutLocationSource) ||
+              (existing.correctionDetails?.checkOutLatitude != null
+                ? "unassigned-location"
+                : "forgot-punch");
+
+            existing.relatedRequestIds = Array.from(
+              new Set([
+                ...(existing.relatedRequestIds || [
+                  ...(existing.status === "PENDING" ? [existing.id] : []),
+                ]),
+                ...(req.status === "PENDING" ? [req.id] : []),
+              ]),
+            );
+            existing.punchType = "Check In + Check Out";
+            existing.title = isUnassignedCheckInWithForgotPunchCheckOut
+              ? `Check In (UL) and Check Out (Forgot Punch) (${dateStr})`
+              : hasLocationApproval
+                ? `Location Approval - Check In + Check Out (${dateStr})`
+              : `Forgot Punch - Check In + Check Out`;
+            existing.checkInLatitude = existing.checkInLatitude ?? req.checkInLatitude;
+            existing.checkInLongitude = existing.checkInLongitude ?? req.checkInLongitude;
+            existing.checkOutLatitude = req.checkOutLatitude ?? existing.checkOutLatitude;
+            existing.checkOutLongitude = req.checkOutLongitude ?? existing.checkOutLongitude;
+            if (
+              addedPunchType.includes("check-in") &&
+              req.correctionDetails?.checkInLocationSource === "forgot-punch"
+            ) {
+              existing.checkInLatitude = null;
+              existing.checkInLongitude = null;
+            }
+            if (
+              addedPunchType.includes("check-out") &&
+              req.correctionDetails?.checkOutLocationSource === "forgot-punch"
+            ) {
+              existing.checkOutLatitude = null;
+              existing.checkOutLongitude = null;
+            }
+            if (existing.correctionDetails) {
+              existing.correctionDetails.punchType = "both";
+              existing.correctionDetails.checkInTime = existing.correctionDetails.checkInTime || req.correctionDetails?.checkInTime;
+              existing.correctionDetails.checkOutTime = req.correctionDetails?.checkOutTime || existing.correctionDetails.checkOutTime;
+              existing.correctionDetails.checkInReason =
+                (addedHasCheckIn
+                  ? req.correctionDetails?.checkInReason ||
+                    (addedPunchType === "check-in"
+                      ? req.correctionDetails?.reason
+                      : null)
+                  : null) ||
+                existing.correctionDetails.checkInReason ||
+                (existingPunchType === "check-in"
+                  ? existing.correctionDetails.reason
+                  : null);
+              existing.correctionDetails.checkOutReason =
+                (addedHasCheckOut
+                  ? req.correctionDetails?.checkOutReason ||
+                    (addedPunchType === "check-out"
+                      ? req.correctionDetails?.reason
+                      : null)
+                  : null) ||
+                existing.correctionDetails.checkOutReason ||
+                (existingPunchType === "check-out"
+                  ? existing.correctionDetails.reason
+                  : null);
+              existing.correctionDetails.checkInLocation =
+                (addedPunchType.includes("check-in")
+                  ? req.correctionDetails?.checkInLocation
+                  : null) ||
+                existing.correctionDetails.checkInLocation ||
+                req.correctionDetails?.checkInLocation ||
+                null;
+              existing.correctionDetails.checkOutLocation =
+                (addedPunchType.includes("check-out")
+                  ? req.correctionDetails?.checkOutLocation
+                  : null) ||
+                existing.correctionDetails.checkOutLocation ||
+                req.correctionDetails?.checkOutLocation ||
+                null;
+              existing.correctionDetails.checkInLocationSource =
+                checkInLocationSource;
+              existing.correctionDetails.checkOutLocationSource =
+                checkOutLocationSource;
+              existing.correctionDetails.checkInLatitude = existing.checkInLatitude;
+              existing.correctionDetails.checkInLongitude = existing.checkInLongitude;
+              existing.correctionDetails.checkOutLatitude = existing.checkOutLatitude;
+              existing.correctionDetails.checkOutLongitude = existing.checkOutLongitude;
+            }
+            if (existing.status === "PENDING" || req.status === "PENDING") {
+              existing.status = "PENDING";
+            } else if (
+              existing.status === "REJECTED" ||
+              req.status === "REJECTED"
+            ) {
+              existing.status = "REJECTED";
+            }
+            if (req.description && !existing.description.includes(req.description)) {
+              existing.description = `${existing.description} | ${req.description}`;
+            }
+            return;
+          } else {
+            seenEmployeeDateRequests.set(key, req);
+            if (req.status === "PENDING") {
+              req.relatedRequestIds = [req.id];
+            }
+            consolidatedRequests.push(req);
+            return;
+          }
+        }
+        consolidatedRequests.push(req);
+      });
+
       setApprovals(
         [
-          ...normalizeRequests(requests),
-          ...normalizeLeave(leave),
-          ...normalizeAttendance(attendance),
+          ...consolidatedRequests,
+          ...normalizedLvs,
+          ...filteredAttendance,
         ].sort(
           (first, second) =>
             new Date(second.createdAt || 0) - new Date(first.createdAt || 0),
@@ -1102,42 +1723,84 @@ const Approvals = () => {
     }
   }, [pollTick]);
 
-  // Fetch existing attendance record as fallback if reasonModal is opened for a correction with missing times
+  // Keep saved attendance punches separate from the times requested for correction.
   useEffect(() => {
-    if (!reasonModal || reasonModal.source !== "REQUEST" || !reasonModal.correctionDetails) return;
-    const { date, checkInTime, checkOutTime } = reasonModal.correctionDetails;
-    const employeeId = reasonModal.employeeId;
-    if ((!checkInTime || !checkOutTime || reasonModal.checkInLatitude == null || reasonModal.checkOutLatitude == null) && date && employeeId) {
+    if (!reasonModal || reasonModal.source !== "REQUEST") return;
+    const date = reasonModal.correctionDetails?.date || reasonModal.date || reasonModal.subject?.match(/\d{4}-\d{2}-\d{2}/)?.[0] || reasonModal.description?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    const employeeId = reasonModal.employeeId || reasonModal.employee?.id;
+    if (date && employeeId) {
       apiGet(`/attendance/by-date?date=${date}&employeeId=${employeeId}`)
         .then((res) => {
           if (res?.record) {
             setReasonModal((prev) => {
               if (!prev || prev.id !== reasonModal.id) return prev;
+              const details = prev.correctionDetails || {};
+              const checkInSource = getPunchLocationSource(
+                prev,
+                details,
+                "checkIn",
+              );
+              const checkOutSource = getPunchLocationSource(
+                prev,
+                details,
+                "checkOut",
+              );
+              const attDetails = getAttendanceDetails(res.record.note || "");
+              const extractedReason = res.record.checkInReason || (attDetails?.checkInReason && !REASON_PLACEHOLDERS.includes(attDetails.checkInReason) ? attDetails.checkInReason : "") || (() => {
+                const n = String(res.record.note || "");
+                const m = n.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
+                return m && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(m) ? m : null;
+              })() || null;
+
               return {
                 ...prev,
-                checkInLatitude: prev.checkInLatitude ?? res.record.checkInLatitude ?? null,
-                checkInLongitude: prev.checkInLongitude ?? res.record.checkInLongitude ?? null,
-                checkOutLatitude: prev.checkOutLatitude ?? res.record.checkOutLatitude ?? null,
-                checkOutLongitude: prev.checkOutLongitude ?? res.record.checkOutLongitude ?? null,
+                actualCheckInTime: res.record.checkInTime || null,
+                actualCheckOutTime: res.record.checkOutTime || null,
+                actualCheckInLatitude: res.record.checkInLatitude ?? null,
+                actualCheckInLongitude: res.record.checkInLongitude ?? null,
+                actualCheckOutLatitude: res.record.checkOutLatitude ?? null,
+                actualCheckOutLongitude: res.record.checkOutLongitude ?? null,
+                actualAttendanceNote: res.record.note || null,
+                checkInReason: prev.checkInReason || extractedReason,
                 correctionDetails: {
-                  ...prev.correctionDetails,
-                  checkInTime: prev.correctionDetails?.checkInTime || res.record.checkInTime || null,
-                  checkOutTime: prev.correctionDetails?.checkOutTime || res.record.checkOutTime || null,
+                  ...details,
+                  checkInReason: details.checkInReason || extractedReason,
+                  originalCheckInTime:
+                    details.originalCheckInTime ||
+                    (prev.status === "PENDING"
+                      ? res.record.checkInTime
+                      : null) ||
+                    null,
+                  originalCheckOutTime:
+                    details.originalCheckOutTime ||
+                    (prev.status === "PENDING"
+                      ? res.record.checkOutTime
+                      : null) ||
+                    null,
                 },
+                ...(checkInSource !== "forgot-punch" && {
+                  checkInLatitude: res.record.checkInLatitude ?? null,
+                  checkInLongitude: res.record.checkInLongitude ?? null,
+                }),
+                ...(checkOutSource !== "forgot-punch" && {
+                  checkOutLatitude: res.record.checkOutLatitude ?? null,
+                  checkOutLongitude: res.record.checkOutLongitude ?? null,
+                }),
               };
             });
           }
         })
         .catch(() => {});
     }
-  }, [reasonModal?.id]);
+  }, [reasonModal?.id, pollTick]);
 
   const years = [
-    ...new Set(
-      approvals
+    ...new Set([
+      currentYear,
+      ...approvals
         .map((approval) => new Date(approval.createdAt || 0).getFullYear())
         .filter((year) => year > 1970),
-    ),
+    ]),
   ].sort((first, second) => second - first);
 
   // Get unique employee names for filter
@@ -1246,21 +1909,42 @@ const Approvals = () => {
 
     setActingId(`${approval.source}:${approval.id}`);
     try {
-      const endpoint =
-        approval.source === "LEAVE"
-          ? `/leave/admin/${approval.id}/${decision}`
-          : approval.source === "ATTENDANCE"
-            ? `/attendance/${decision}/${approval.id}`
-            : `/requests/${approval.id}/${decision}`;
-
       const payload = {
         reason: reason || "",
         note: reason || "",
       };
 
-      await apiPost(endpoint, payload);
+      const requestIds =
+        approval.source === "REQUEST" &&
+        Array.isArray(approval.relatedRequestIds) &&
+        approval.relatedRequestIds.length > 0
+          ? approval.relatedRequestIds
+          : [approval.id];
+      let completedActions = 0;
+      try {
+        for (const requestId of requestIds) {
+          const endpoint =
+            approval.source === "LEAVE"
+              ? `/leave/admin/${requestId}/${decision}`
+              : approval.source === "ATTENDANCE"
+                ? `/attendance/${decision}/${requestId}`
+                : `/requests/${requestId}/${decision}`;
+          await apiPost(endpoint, payload);
+          completedActions += 1;
+        }
+      } catch (error) {
+        if (completedActions > 0 && completedActions < requestIds.length) {
+          throw new Error(
+            `Combined approval was only partially processed (${completedActions} of ${requestIds.length} requests). ${error.message}`,
+          );
+        }
+        throw error;
+      }
+
       toast.success(
-        `Request ${decision === "approve" ? "approved" : "rejected"}.`,
+        requestIds.length > 1
+          ? `Combined request ${decision === "approve" ? "approved" : "rejected"}.`
+          : `Request ${decision === "approve" ? "approved" : "rejected"}.`,
       );
       setRejectModal(null);
       setRejectReason("");
@@ -1273,7 +1957,7 @@ const Approvals = () => {
   };
 
   const attendanceDetails =
-    reasonModal?.source === "ATTENDANCE"
+    (reasonModal?.source === "ATTENDANCE" || (reasonModal?.source === "REQUEST" && reasonModal?.correctionDetails))
       ? getAttendanceDetails(reasonModal.description)
       : null;
 
@@ -1431,30 +2115,55 @@ const Approvals = () => {
                 const actionId = `${approval.source}:${approval.id}`;
                 const acting = actingId === actionId;
 
-                // Determine icon and color based on source
+                const isEquipment = approval.source === "REQUEST" && approval.type === "EQUIPMENT";
+                const isLocationApproval =
+                  approval.source === "ATTENDANCE" ||
+                  approval.title?.toLowerCase().includes("location approval") ||
+                  approval.title?.toLowerCase().includes("(ul)") || approval.title?.toLowerCase().includes("ul check") || approval.subject?.toLowerCase().includes("ul check") ||
+                  approval.description?.toLowerCase().includes("unassigned location") ||
+                  approval.description?.toLowerCase().includes("outside assigned location") ||
+                  approval.correctionDetails?.checkInLocationSource === "unassigned-location" ||
+                  approval.correctionDetails?.checkOutLocationSource === "unassigned-location";
+                const isForgotPunch =
+                  !isLocationApproval &&
+                  (approval.type === "CORRECTION" ||
+                   approval.title?.toLowerCase().includes("forgot punch") ||
+                   approval.title?.toLowerCase().includes("time edit") ||
+                   approval.description?.includes("[ATTENDANCE_CORRECTION]"));
+                const isLeave = approval.source === "LEAVE" || approval.type === "LEAVE";
+
+                // Determine icon and color based on category / request type
                 const getSourceIcon = () => {
-                  switch (approval.source) {
-                    case "ATTENDANCE":
-                      return <Clock3 className="h-6 w-6" />;
-                    case "LEAVE":
-                      return <Briefcase className="h-6 w-6" />;
-                    default:
-                      return <FileText className="h-6 w-6" />;
+                  if (isEquipment) {
+                    return <Package className="h-6 w-6" />;
                   }
+                  if (isLocationApproval) {
+                    return <MapPin className="h-6 w-6" />;
+                  }
+                  if (isForgotPunch) {
+                    return <Clock3 className="h-6 w-6" />;
+                  }
+                  if (isLeave) {
+                    return <Briefcase className="h-6 w-6" />;
+                  }
+                  return <FileText className="h-6 w-6" />;
                 };
 
                 const getSourceGradient = () => {
-                  switch (approval.source) {
-                    case "ATTENDANCE":
-                      return "bg-gradient-to-br from-rose-500 to-rose-600";
-                    case "LEAVE":
-                      return "bg-gradient-to-br from-violet-500 to-violet-600";
-                    default:
-                      return "bg-gradient-to-br from-blue-500 to-blue-600";
+                  if (isEquipment) {
+                    return "bg-gradient-to-br from-amber-500 to-amber-600";
                   }
+                  if (isLocationApproval) {
+                    return "bg-gradient-to-br from-rose-500 to-rose-600";
+                  }
+                  if (isForgotPunch) {
+                    return "bg-gradient-to-br from-sky-500 to-blue-600";
+                  }
+                  if (isLeave) {
+                    return "bg-gradient-to-br from-violet-500 to-violet-600";
+                  }
+                  return "bg-gradient-to-br from-blue-500 to-blue-600";
                 };
-
-                const isEquipment = approval.source === "REQUEST" && approval.type === "EQUIPMENT";
                 const isHold = isEquipment && approval.reviewNote?.includes("[ON_HOLD]");
                 const returnStep = isEquipment ? getReturnStep(approval) : 0;
                 const isProductFound = isEquipment && (returnStep === 4 || approval.reviewNote?.includes("[PRODUCT_FOUND]") || approval.status === "COMPLETED");
@@ -1534,19 +2243,42 @@ const Approvals = () => {
                             {/* Badges Row */}
                             <div className="flex flex-wrap items-center gap-2">
                               <span
-                                className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
-                                  approval.source === "ATTENDANCE"
-                                    ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                                    : approval.source === "LEAVE"
-                                      ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-                                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
+                                  isEquipment
+                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                                    : isLocationApproval
+                                      ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                                      : isForgotPunch
+                                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                        : isLeave
+                                          ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                                          : "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400"
                                 }`}
                               >
-                                {approval.source === "ATTENDANCE"
-                                  ? "Attendance"
-                                  : approval.source === "LEAVE"
-                                    ? "Leave"
-                                    : "Request"}
+                                {isEquipment ? (
+                                  <Package className="h-3.5 w-3.5" />
+                                ) : isLocationApproval ? (
+                                  <MapPin className="h-3.5 w-3.5" />
+                                ) : isForgotPunch ? (
+                                  <Clock3 className="h-3.5 w-3.5" />
+                                ) : isLeave ? (
+                                  <Briefcase className="h-3.5 w-3.5" />
+                                ) : (
+                                  <FileText className="h-3.5 w-3.5" />
+                                )}
+                                <span>
+                                  {isEquipment
+                                    ? "Inventory / Tool"
+                                    : isLocationApproval && (approval.subject?.toLowerCase().includes("time edit") || approval.title?.toLowerCase().includes("time edit"))
+                                      ? "Location (UL) + Time Edit"
+                                      : isLocationApproval
+                                        ? "Location (UL)"
+                                        : isForgotPunch
+                                          ? "Forgot Punch"
+                                          : isLeave
+                                            ? "Leave"
+                                            : "Request"}
+                                </span>
                               </span>
                               <span
                                 className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${badgeClass}`}
@@ -1560,17 +2292,10 @@ const Approvals = () => {
                             </div>
 
                             {/* Title */}
-                            <FormattedInventoryTitle title={approval.title} className="mt-3" />
-
-                            {/* Punch Type Badge */}
-                            {approval.punchType && (
-                              <div className="mt-2 flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-900/30 w-fit">
-                                <Clock3 className="h-4 w-4 text-slate-600 dark:text-slate-400" />
-                                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                                  {approval.punchType}
-                                </span>
-                              </div>
-                            )}
+                            <FormattedInventoryTitle
+                              title={getApprovalDisplayTitle(approval)}
+                              className="mt-3"
+                            />
 
                             {/* Employee Info */}
                             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1591,6 +2316,51 @@ const Approvals = () => {
                             {(() => {
                               const matchedInvItem = (approval.source === "REQUEST" && approval.type === "EQUIPMENT") ? getInventoryItemLocation(approval) : null;
                               const isLocationOpen = openLocationIds.has(approval.id);
+                              const isCorrectionRequest =
+                                approval.source === "REQUEST" &&
+                                approval.type === "CORRECTION";
+                              const isLocationCorrection =
+                                isCorrectionRequest &&
+                                (approval.title?.toLowerCase().includes("location approval") ||
+                                  approval.title?.toLowerCase().includes("(ul)") ||
+                                  approval.subject?.toLowerCase().includes("approval") ||
+                                  approval.description?.toLowerCase().includes("unassigned location") ||
+                                  approval.description?.toLowerCase().includes("outside assigned location") ||
+                                  approval.correctionDetails?.checkInLocationSource === "unassigned-location" ||
+                                  approval.correctionDetails?.checkOutLocationSource === "unassigned-location");
+                              const canShowPunchLocation =
+                                !isCorrectionRequest || isLocationCorrection;
+                              const hasForgotPunchCheckInLocation = Boolean(
+                                String(
+                                  approval.correctionDetails?.checkInLocation ||
+                                    "",
+                                ).trim(),
+                              );
+                              const hasForgotPunchCheckOutLocation = Boolean(
+                                String(
+                                  approval.correctionDetails?.checkOutLocation ||
+                                    "",
+                                ).trim(),
+                              );
+
+                              // Only show check-in/out location for the punches this request actually covers
+                              const cardPunchType = String(
+                                approval.correctionDetails?.punchType ||
+                                  approval.punchType ||
+                                  "",
+                              ).toLowerCase();
+                              const cardIncludesCheckIn =
+                                cardPunchType === "check-in" ||
+                                cardPunchType.includes("check in") ||
+                                cardPunchType === "both" ||
+                                approval.correctionDetails?.checkInLocationSource === "unassigned-location" ||
+                                approval.correctionDetails?.checkInLocationSource === "forgot-punch";
+                              const cardIncludesCheckOut =
+                                cardPunchType === "check-out" ||
+                                cardPunchType.includes("check out") ||
+                                cardPunchType === "both" ||
+                                approval.correctionDetails?.checkOutLocationSource === "unassigned-location" ||
+                                approval.correctionDetails?.checkOutLocationSource === "forgot-punch";
 
                               return (
                                 <div className="mt-3 space-y-3">
@@ -1608,8 +2378,8 @@ const Approvals = () => {
                                       <span>View Reason</span>
                                     </button>
 
-                                    {/* Attendance Check-in GPS Location Button */}
-                                    {approval.checkInLatitude != null && approval.checkInLongitude != null && (
+                                    {/* Attendance Check-in GPS Location Button (UL/location approval only) */}
+                                    {cardIncludesCheckIn && canShowPunchLocation && !isCorrectionRequest && approval.correctionDetails?.checkInLocationSource !== "forgot-punch" && approval.checkInLatitude != null && approval.checkInLongitude != null && (
                                       <button
                                         type="button"
                                         onClick={(event) => {
@@ -1623,8 +2393,10 @@ const Approvals = () => {
                                       </button>
                                     )}
 
-                                    {/* Attendance Check-out GPS Location Button */}
-                                    {approval.checkOutLatitude != null && approval.checkOutLongitude != null && (
+                                    {/* Manual location text is shown inside the View Reason modal only */}
+
+                                    {/* Attendance Check-out GPS Location Button (UL/location approval only) */}
+                                    {cardIncludesCheckOut && canShowPunchLocation && !isCorrectionRequest && approval.correctionDetails?.checkOutLocationSource !== "forgot-punch" && approval.checkOutLatitude != null && approval.checkOutLongitude != null && (
                                       <button
                                         type="button"
                                         onClick={(event) => {
@@ -1637,6 +2409,8 @@ const Approvals = () => {
                                         <span>Check-Out Location</span>
                                       </button>
                                     )}
+
+                                    {/* Manual typed check-out location shown in modal only */}
 
                                     {/* View Location Button (Inventory item) */}
                                     {matchedInvItem && (
@@ -1879,20 +2653,53 @@ const Approvals = () => {
             }
           }}
         >
-          <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
             {/* ================= HEADER ================= */}
-            <div className="flex items-center justify-between border-b border-border bg-background px-6 py-5">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <MessageSquareText className="h-5 w-5" />
-                </div>
+            <div className="flex shrink-0 items-center justify-between border-b border-border bg-background px-4 py-4 sm:px-6 sm:py-5">
+              <div className="flex items-center gap-4 min-w-0">
+                {(() => {
+                  const isEq = reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT";
+                  const isLoc =
+                    reasonModal.source === "ATTENDANCE" ||
+                    reasonModal.title?.toLowerCase().includes("location approval") || reasonModal.title?.toLowerCase().includes("ul check") || reasonModal.subject?.toLowerCase().includes("ul check") ||
+                    reasonModal.description?.toLowerCase().includes("unassigned location") ||
+                    reasonModal.description?.toLowerCase().includes("outside assigned location");
+                  const isFP =
+                    !isLoc &&
+                    (reasonModal.type === "CORRECTION" ||
+                     reasonModal.title?.toLowerCase().includes("forgot punch") ||
+                     reasonModal.title?.toLowerCase().includes("time edit") ||
+                     reasonModal.description?.includes("[ATTENDANCE_CORRECTION]"));
+                  const isLv = reasonModal.source === "LEAVE" || reasonModal.type === "LEAVE";
+
+                  const iconBoxClass = isEq
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                    : isLoc
+                      ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                      : isFP
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+                        : isLv
+                          ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
+                          : "bg-primary/10 text-primary";
+
+                  const IconComponent = isEq ? Package : isLoc ? MapPin : isFP ? Clock3 : isLv ? Briefcase : MessageSquareText;
+
+                  return (
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm ${iconBoxClass}`}>
+                      <IconComponent className="h-5 w-5" />
+                    </div>
+                  );
+                })()}
 
                 <div className="min-w-0">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Approval Details
                   </p>
 
-                  <FormattedInventoryTitle title={reasonModal.title} className="mt-1" />
+                  <FormattedInventoryTitle
+                    title={getApprovalDisplayTitle(reasonModal)}
+                    className="mt-1"
+                  />
                 </div>
               </div>
 
@@ -1907,7 +2714,7 @@ const Approvals = () => {
             </div>
 
             {/* ================= CONTENT ================= */}
-            <div className="max-h-[72vh] space-y-5 overflow-y-auto p-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
               {/* ================= EMPLOYEE ================= */}
               <section>
                 <div className="mb-2 flex items-center gap-2">
@@ -1918,8 +2725,8 @@ const Approvals = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-4 rounded-2xl border border-border bg-secondary/20 p-4">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <div className="flex items-center gap-4 rounded-2xl border border-border bg-gradient-to-r from-primary/[0.04] to-transparent p-4 shadow-sm">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <UserRound className="h-6 w-6" />
                   </div>
 
@@ -1966,58 +2773,217 @@ const Approvals = () => {
                         : "Rejected"}
                   </span>
                 </div>
-
                 {reasonModal.source === "REQUEST" &&
                 reasonModal.correctionDetails ? (
-                  <div className="grid gap-3 rounded-2xl border border-border bg-secondary/20 px-4 py-4 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">
-                        Date
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-foreground">
-                        {formatPunchDate(reasonModal.correctionDetails.date)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">
-                        Punch Type
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-foreground">
-                        {reasonModal.punchType || "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">
-                        Check-in Time
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-foreground">
-                        {formatTimeIST(
-                          reasonModal.correctionDetails.checkInTime,
+                  (() => {
+                    const forgotPunch = reasonModal.correctionDetails || {};
+                    const punchType = String(forgotPunch.punchType || reasonModal.punchType || "").toLowerCase();
+                    const isCombinedPunch = punchType === "both" || (punchType.includes("check in") && punchType.includes("check out"));
+                    const dateLabel = (() => {
+                      const m = String(forgotPunch.date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                      return m ? m[3] + "/" + m[2] + "/" + m[1] : (forgotPunch.date || "—");
+                    })();
+                    const isTimeEditRequest = forgotPunch.isTimeEdit || punchType === "time-edit" || punchType === "time edit" || String(reasonModal.subject || "").toLowerCase().includes("time edit");
+                    const descText = String(reasonModal.description || "");
+                    const parsedCheckInFromDesc = descText.match(/at check-in\s+([0-9]{1,2}:[0-9]{2}(?:\s*[AaPp][Mm])?)/i)?.[1]?.trim() || null;
+                    const parsedCheckOutFromDesc = descText.match(/(?:and|at)\s+check-out\s+([0-9]{1,2}:[0-9]{2}(?:\s*[AaPp][Mm])?)/i)?.[1]?.trim() || null;
+
+                    const teType = forgotPunch.timeEditPunchType || forgotPunch.timeEditType ||
+                      (forgotPunch.checkInTime && !forgotPunch.checkOutTime ? "check-in" :
+                       forgotPunch.checkOutTime && !forgotPunch.checkInTime ? "check-out" :
+                       (descText.includes("at check-in") && !descText.includes("at check-out") && !descText.includes("and check-out") ? "check-in" :
+                        descText.includes("at check-out") && !descText.includes("at check-in") ? "check-out" : null));
+
+                    const actualCheckInTime = reasonModal.actualCheckInTime || null;
+                    const actualCheckOutTime = reasonModal.actualCheckOutTime || null;
+
+                    const checkInTime = isTimeEditRequest
+                      ? (forgotPunch.checkInTime || parsedCheckInFromDesc || actualCheckInTime)
+                      : (actualCheckInTime || forgotPunch.checkInTime);
+                    const checkOutTime = isTimeEditRequest
+                      ? (forgotPunch.checkOutTime || parsedCheckOutFromDesc || actualCheckOutTime)
+                      : (actualCheckOutTime || forgotPunch.checkOutTime);
+
+                    const origCheckInTime = forgotPunch.originalCheckInTime || (isTimeEditRequest && actualCheckInTime && formatTimeIST(actualCheckInTime) !== formatTimeIST(checkInTime) ? actualCheckInTime : null);
+                    const origCheckOutTime = forgotPunch.originalCheckOutTime || (isTimeEditRequest && actualCheckOutTime && formatTimeIST(actualCheckOutTime) !== formatTimeIST(checkOutTime) ? actualCheckOutTime : null);
+
+                    const hasCheckInEdit = isTimeEditRequest && (teType === "check-in" || teType === "both" || Boolean(origCheckInTime));
+                    const hasCheckOutEdit = isTimeEditRequest && (teType === "check-out" || teType === "both" || Boolean(origCheckOutTime));
+
+                    const showCheckInTime = Boolean(checkInTime);
+                    const showCheckOutTime = Boolean(checkOutTime);
+
+                    const _isCheckOutOnly = isTimeEditRequest ? (teType === "check-out" && !showCheckInTime) : (punchType === "check-out" || (punchType.includes("check out") && !punchType.includes("check in")));
+                    const _isCheckInOnly  = isTimeEditRequest ? (teType === "check-in" && !showCheckOutTime) : (punchType === "check-in"  || (punchType.includes("check in")  && !punchType.includes("check out")));
+
+                    const checkInLocSrc = _isCheckOutOnly && (actualCheckInTime || forgotPunch.checkInTime)
+                      ? "default-location"
+                      : getPunchLocationSource(reasonModal, forgotPunch, "checkIn");
+                    const checkOutLocSrc = getPunchLocationSource(reasonModal, forgotPunch, "checkOut");
+
+                    const punchTypeLabel = (() => {
+                      if (isTimeEditRequest) {
+                        if (hasCheckInEdit && hasCheckOutEdit) return "Check In + Check Out (Time Edit)";
+                        if (hasCheckInEdit) return showCheckOutTime ? "Check In (Time Edit) + Check Out" : "Check In (Time Edit)";
+                        if (hasCheckOutEdit) return showCheckInTime ? "Check In + Check Out (Time Edit)" : "Check Out (Time Edit)";
+                        return "Time Edit";
+                      }
+                      if (punchType === "both" || (showCheckInTime && showCheckOutTime)) return "Check In + Check Out";
+                      if (showCheckOutTime && !showCheckInTime) return "Check Out";
+                      return "Check In";
+                    })();
+                    const readLoc = (label) => {
+                      const desc = String(reasonModal.description || "");
+                      const readable = desc.split("[ATTENDANCE_CORRECTION]")[0];
+                      const fromText = readable.match(new RegExp("(?:^|\\n)\\s*Check-" + label + " Location:\\s*([^\\r\\n]+)", "i"))?.[1]?.trim();
+                      if (fromText) return fromText;
+                      const meta = desc.split("[ATTENDANCE_CORRECTION]").at(-1)?.trim();
+                      if (meta) { try { return String(JSON.parse(meta)[label === "In" ? "checkInLocation" : "checkOutLocation"] || "").trim(); } catch { return ""; } }
+                      return "";
+                    };
+                    const checkInLocation  = String(readLoc("In")  || forgotPunch.checkInLocation  || "").trim();
+                    const checkOutLocation = String(readLoc("Out") || forgotPunch.checkOutLocation || "").trim();
+                    const checkInLat  = checkInLocSrc  === "forgot-punch" ? null : (reasonModal.actualCheckInLatitude  ?? forgotPunch.checkInLatitude  ?? reasonModal.checkInLatitude);
+                    const checkInLng  = checkInLocSrc  === "forgot-punch" ? null : (reasonModal.actualCheckInLongitude ?? forgotPunch.checkInLongitude ?? reasonModal.checkInLongitude);
+                    const checkOutLat = checkOutLocSrc === "forgot-punch" ? null : (reasonModal.actualCheckOutLatitude  ?? forgotPunch.checkOutLatitude  ?? reasonModal.checkOutLatitude);
+                    const checkOutLng = checkOutLocSrc === "forgot-punch" ? null : (reasonModal.actualCheckOutLongitude ?? forgotPunch.checkOutLongitude ?? reasonModal.checkOutLongitude);
+                    const checkInUsesMap  = checkInLat  != null && Number.isFinite(Number(checkInLat))  && checkInLocSrc  === "unassigned-location";
+                    const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && checkOutLocSrc === "unassigned-location";
+                    // For checkout-only forgot-punch, don't fabricate a default check-in location card
+                    const isForgotPunchCheckOut = _isCheckOutOnly && checkOutLocSrc === "forgot-punch";
+                    const effCheckInSrc  = checkInLocSrc  || (!isForgotPunchCheckOut && _isCheckOutOnly && actualCheckInTime  && !checkInUsesMap  ? "default-location" : null);
+                    // For check-in-only forgot-punch, don't fabricate a default check-out location card
+                    const isForgotPunchCheckIn = _isCheckInOnly && checkInLocSrc === "forgot-punch";
+                    const effCheckOutSrc = checkOutLocSrc || (!isForgotPunchCheckIn && _isCheckInOnly  && actualCheckOutTime && !checkOutUsesMap ? "default-location" : null);
+                    const showCheckInLoc  = checkInUsesMap  || Boolean(checkInLocation)  || effCheckInSrc  === "default-location";
+                    const showCheckOutLoc = checkOutUsesMap || Boolean(checkOutLocation) || effCheckOutSrc === "default-location";
+                    const REASON_PLACEHOLDERS = ["No check-in reason provided.","No check-out reason provided.","No reason provided.","No reason provided for check-out."];
+                    const cleanR = (v) => {
+                      const s = String(v||"").trim();
+                      if (!s || REASON_PLACEHOLDERS.includes(s) || /^(?:Time Edit|Forgot Punch) request for/i.test(s)) {
+                        return "";
+                      }
+                      return s;
+                    };
+
+                    const descMatchReason = String(reasonModal.description || "").match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim() || "";
+                    const safeDescReason = descMatchReason && !/^(?:unassigned location|outside assigned location|pending admin|time edit request)/i.test(descMatchReason) ? descMatchReason : "";
+                    const noteMatchReason = String(reasonModal.actualAttendanceNote || reasonModal.note || forgotPunch.note || "").match(/(?:Check-In Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim() || "";
+                    const safeNoteReason = noteMatchReason && !/^(?:unassigned location|outside assigned location|pending admin|time edit request)/i.test(noteMatchReason) ? noteMatchReason : "";
+
+                    const candidateForgotReason = String(forgotPunch.reason || "").trim();
+                    const isAutomatedForgotReason = /^(?:unassigned location|outside assigned location|time edit request|no reason)/i.test(candidateForgotReason);
+                    const safeForgotReason = !isAutomatedForgotReason ? candidateForgotReason : "";
+
+                    const attDetails = getAttendanceDetails(reasonModal.actualAttendanceNote || reasonModal.note || forgotPunch.note || "");
+                    const safeAttReason = attDetails?.checkInReason && !REASON_PLACEHOLDERS.includes(attDetails.checkInReason) ? attDetails.checkInReason : "";
+
+                    const isPureCombinedForgotPunch = !isTimeEditRequest && (punchType === "both" || (!forgotPunch.checkInReason && !forgotPunch.checkOutReason));
+                    const sameSharedForgotReason = isPureCombinedForgotPunch && safeForgotReason ? safeForgotReason : null;
+
+                    const rawCheckInReason =
+                      sameSharedForgotReason ||
+                      safeAttReason ||
+                      forgotPunch.checkInReason ||
+                      reasonModal.checkInReason ||
+                      safeDescReason ||
+                      safeNoteReason ||
+                      safeForgotReason ||
+                      "";
+                    const checkInReason  = cleanR(cleanPureReason(rawCheckInReason, ""));
+                    const rawCheckOutReason =
+                      sameSharedForgotReason ||
+                      forgotPunch.checkOutReason ||
+                      String(reasonModal.description || "").match(/(?:Check-Out Reason|Checkout Reason)\s*:\s*([^\r\n|]+)/i)?.[1]?.trim() ||
+                      (!isTimeEditRequest && _isCheckOutOnly ? forgotPunch.reason : "");
+                    const checkOutReason = cleanR(cleanPureReason(rawCheckOutReason, ""));
+
+                    const timeEditReason = cleanR(forgotPunch.timeEditReason || String(reasonModal.description || "").match(/Time Edit Reason\s*:\s*([^\r\n|]+)/i)?.[1]?.trim() || "");
+                    const reqReason = isTimeEditRequest ? timeEditReason : cleanR(cleanPureReason(forgotPunch.reason, reasonModal.description));
+                    const renderLocCard = (label, location, lat, lng, source, usesMap, tone) => {
+                      if (!usesMap && !Boolean(location) && source !== "default-location") return null;
+                      const em = tone === "emerald";
+                      return (
+                        <div className={em ? "rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-white p-4 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-background" : "rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50/80 to-white p-4 dark:border-rose-900/40 dark:from-rose-950/30 dark:to-background"}>
+                          <p className={em ? "text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-400" : "text-xs font-bold uppercase tracking-wide text-rose-800 dark:text-rose-400"}>{label}</p>
+                          {usesMap ? (
+                            <button type="button" onClick={() => window.open("https://www.google.com/maps?q=" + lat + "," + lng, "_blank", "noopener,noreferrer")}
+                              className={em ? "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"}>
+                              <MapPin className="h-3.5 w-3.5" /> View on Google Maps
+                            </button>
+                          ) : source === "default-location" ? (
+                            <p className="mt-3 break-words rounded-lg bg-white/80 px-3 py-2 text-sm font-semibold text-foreground dark:bg-background/70">Office <span className="text-xs font-normal text-muted-foreground">(Default)</span></p>
+                          ) : (
+                            <p className="mt-3 break-words rounded-lg bg-white/80 px-3 py-2 text-sm font-semibold text-foreground dark:bg-background/70">{location}</p>
+                          )}
+                        </div>
+                      );
+                    };
+                    return (
+                      <div className="space-y-3">
+                        <div className="grid gap-x-5 gap-y-4 rounded-2xl border border-border bg-background p-4 shadow-sm sm:grid-cols-2">
+                          <div><p className="text-xs font-semibold text-muted-foreground">Date</p><p className="mt-1 text-sm font-semibold text-foreground">{dateLabel}</p></div>
+                          <div><p className="text-xs font-semibold text-muted-foreground">Punch Type</p><p className="mt-1 text-sm font-semibold text-foreground">{punchTypeLabel}</p></div>
+                          {showCheckInTime && checkInTime && (
+                            <div>
+                              <p className={isTimeEditRequest ? "text-xs font-bold text-emerald-700 dark:text-emerald-300" : "text-xs font-semibold text-muted-foreground"}>
+                                {isTimeEditRequest ? "Requested Check-in Time" : checkInLocSrc === "forgot-punch" ? "Check-in Time (Forgot Punch)" : checkInLocSrc === "unassigned-location" ? "Check-in Time (UL)" : "Check-in Time"}
+                              </p>
+                              <p className="mt-1 inline-flex rounded-md bg-emerald-500/10 px-2 py-1 text-sm font-bold text-emerald-700 dark:text-emerald-300">{formatTimeIST(checkInTime)}</p>
+                              {isTimeEditRequest && (origCheckInTime || actualCheckInTime) && (
+                                <>
+                                  <p className="mt-2 text-xs font-semibold text-muted-foreground">Previous Check-in Time</p>
+                                  <p className="mt-1 inline-flex rounded-md bg-secondary px-2 py-1 text-sm font-semibold text-foreground">
+                                    {formatTimeIST(origCheckInTime || actualCheckInTime)}
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          {showCheckOutTime && checkOutTime && (
+                            <div>
+                              <p className={isTimeEditRequest ? "text-xs font-bold text-rose-700 dark:text-rose-300" : "text-xs font-semibold text-muted-foreground"}>
+                                {isTimeEditRequest ? "Requested Check-out Time" : checkOutLocSrc === "forgot-punch" ? "Check-out Time (Forgot Punch)" : checkOutLocSrc === "unassigned-location" ? "Check-out Time (UL)" : effCheckOutSrc === "default-location" ? "Check-out Time (Marked Attendance)" : "Check-out Time"}
+                              </p>
+                              <p className="mt-1 inline-flex rounded-md bg-rose-500/10 px-2 py-1 text-sm font-bold text-rose-700 dark:text-rose-300">{formatTimeIST(checkOutTime)}</p>
+                              {isTimeEditRequest && origCheckOutTime && <><p className="mt-2 text-xs font-semibold text-muted-foreground">Previous Check-out Time</p><p className="mt-1 inline-flex rounded-md bg-secondary px-2 py-1 text-sm font-semibold text-foreground">{formatTimeIST(origCheckOutTime)}</p></>}
+                            </div>
+                          )}
+                        </div>
+                        {(showCheckInLoc || showCheckOutLoc) && (
+                          <div className={showCheckInLoc && showCheckOutLoc ? "grid gap-3 sm:grid-cols-2" : "grid gap-3 grid-cols-1"}>
+                            {renderLocCard("Check-In Location",  checkInLocation,  checkInLat,  checkInLng,  effCheckInSrc,  checkInUsesMap,  "emerald")}
+                            {renderLocCard("Check-Out Location", checkOutLocation, checkOutLat, checkOutLng, effCheckOutSrc, checkOutUsesMap, "rose")}
+                          </div>
                         )}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">
-                        Check-out Time
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-foreground">
-                        {formatTimeIST(
-                          reasonModal.correctionDetails.checkOutTime,
+                        {(checkInReason || checkOutReason) && (
+                          checkInReason && checkOutReason && checkInReason === checkOutReason ? (
+                            <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 dark:border-blue-900/40 dark:bg-blue-950/20">
+                              <p className="text-xs font-bold text-blue-800 dark:text-blue-400">Reason</p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-5 text-foreground">{checkInReason}</p>
+                            </div>
+                          ) : (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {checkInReason  && <div className={"rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20" + (!checkOutReason ? " sm:col-span-2" : "")}><p className="text-xs font-bold text-emerald-800 dark:text-emerald-400">Check-In Reason</p><p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-5 text-foreground">{checkInReason}</p></div>}
+                              {checkOutReason && <div className={"rounded-xl border border-rose-200 bg-rose-50/40 p-3 dark:border-rose-900/40 dark:bg-rose-950/20"    + (!checkInReason  ? " sm:col-span-2" : "")}><p className="text-xs font-bold text-rose-800 dark:text-rose-400">Check-Out Reason</p><p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-5 text-foreground">{checkOutReason}</p></div>}
+                            </div>
+                          )
                         )}
-                      </p>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <p className="text-xs font-semibold text-muted-foreground">
-                        Employee Reason
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
-                        {cleanPureReason(
-                          reasonModal.correctionDetails.reason,
-                          reasonModal.description,
+                        {timeEditReason && (
+                          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
+                            <p className="text-xs font-bold text-sky-800 dark:text-sky-300">Time Edit Reason</p>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-5 text-foreground">{timeEditReason}</p>
+                          </div>
                         )}
-                      </p>
-                    </div>
-                  </div>
+                        {!isTimeEditRequest && !checkInReason && !checkOutReason && reqReason && (
+                          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
+                            <p className="text-xs font-bold text-sky-800 dark:text-sky-300">Reason</p>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-5 text-foreground">{reqReason}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
                 ) : reasonModal.source === "ATTENDANCE" ? (
                   <div className="space-y-4">
                         {/* 1. CHECK-IN DIV */}
@@ -2152,96 +3118,6 @@ const Approvals = () => {
                 )}
               </section>
 
-              {/* ================= ATTENDANCE LOCATION ================= */}
-              {(
-                (reasonModal.checkInLatitude != null && reasonModal.checkInLongitude != null) ||
-                (reasonModal.checkOutLatitude != null && reasonModal.checkOutLongitude != null)
-              ) && (
-                <section>
-                  <div className="mb-2 flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-primary" />
-
-                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      Attendance GPS Location
-                    </p>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {/* CHECK-IN */}
-                    {reasonModal.checkInLatitude != null &&
-                      reasonModal.checkInLongitude != null && (
-                        <button
-                          type="button"
-                          onClick={() => openCheckInMap(reasonModal)}
-                          className="group rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50 hover:shadow-md dark:border-emerald-900/50 dark:bg-emerald-950/20"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400">
-                              <MapPin className="h-5 w-5" />
-                            </div>
-
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                                Check-in Location
-                              </p>
-
-                              <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
-                                View on Google Maps
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 rounded-xl bg-white/80 px-3 py-2.5 dark:bg-black/10">
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-semibold">
-                                Coordinates:
-                              </span>{" "}
-                              {reasonModal.checkInLatitude},{" "}
-                              {reasonModal.checkInLongitude}
-                            </p>
-                          </div>
-                        </button>
-                      )}
-
-                    {/* CHECK-OUT */}
-                    {reasonModal.checkOutLatitude != null &&
-                      reasonModal.checkOutLongitude != null && (
-                        <button
-                          type="button"
-                          onClick={() => openCheckOutMap(reasonModal)}
-                          className="group rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-left transition hover:border-rose-300 hover:bg-rose-50 hover:shadow-md dark:border-rose-900/50 dark:bg-rose-950/20"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400">
-                              <MapPin className="h-5 w-5" />
-                            </div>
-
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold text-rose-700 dark:text-rose-400">
-                                Check-out Location
-                              </p>
-
-                              <p className="mt-0.5 text-xs text-rose-600 dark:text-rose-400">
-                                View on Google Maps
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 rounded-xl bg-white/80 px-3 py-2.5 dark:bg-black/10">
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-semibold">
-                                Coordinates:
-                              </span>{" "}
-                              {reasonModal.checkOutLatitude},{" "}
-                              {reasonModal.checkOutLongitude}
-                            </p>
-                          </div>
-                        </button>
-                      )}
-                  </div>
-                </section>
-              )}
-
               {/* ================= ADMIN RESPONSE / REJECTION REASON ================= */}
               {reasonModal.status === "REJECTED" && reasonModal.reviewNote && (
                 <section>
@@ -2322,7 +3198,7 @@ const Approvals = () => {
             </div>
 
             {/* ================= FOOTER ================= */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-6 py-4">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-background px-4 py-3.5 shadow-[0_-8px_24px_rgba(15,23,42,0.04)] sm:px-6">
               {(() => {
                 const { canApprove, canReject } = getApprovalPermissions(reasonModal);
                 const acting = Boolean(actingId);

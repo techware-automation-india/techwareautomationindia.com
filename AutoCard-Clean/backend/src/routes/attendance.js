@@ -74,7 +74,14 @@ const normalizeUTCDate = (d) => {
 const calculateWorkedHours = (checkIn, checkOut) => {
   if (!checkIn || !checkOut) return null;
 
-  const workedMs = new Date(checkOut).getTime() - new Date(checkIn).getTime();
+  const inDate = new Date(checkIn);
+  const outDate = new Date(checkOut);
+
+  // Strip seconds and milliseconds so attendance calculation strictly counts whole minutes
+  inDate.setSeconds(0, 0);
+  outDate.setSeconds(0, 0);
+
+  const workedMs = outDate.getTime() - inDate.getTime();
 
   if (workedMs < 0) return 0;
 
@@ -415,20 +422,24 @@ const parseManualPunchDateTime = (dateValue, timeValue) => {
   if (trimmedTime.includes("T")) {
     trimmedTime = trimmedTime.split("T")[1];
   }
-  const timeMatch = trimmedTime.match(/^(\d{1,2}):(\d{1,2})/);
-  if (!timeMatch) return null;
+  const ampmMatch = trimmedTime.match(/(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(AM|PM)?/i);
+  if (!ampmMatch) return null;
 
-  const hours = String(timeMatch[1]).padStart(2, "0");
-  const minutes = String(timeMatch[2]).padStart(2, "0");
+  let hours = parseInt(ampmMatch[1], 10);
+  const minutes = String(ampmMatch[2]).padStart(2, "0");
+  const modifier = ampmMatch[3]?.toUpperCase();
+
+  if (modifier === "PM" && hours < 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
 
   // IMPORTANT: Manual attendance time is always India Standard Time (IST)
-  const safeDate = new Date(`${trimmedDate}T${hours}:${minutes}:00+05:30`);
+  const safeDate = new Date(`${trimmedDate}T${String(hours).padStart(2, "0")}:${minutes}:00+05:30`);
 
   if (Number.isNaN(safeDate.getTime())) return null;
 
   return safeDate;
 };
-const parsePendingCorrection = (description) => {
+const parsePendingCorrection = (description, subject = "") => {
   if (typeof description !== "string") return null;
 
   const match = description.match(
@@ -438,15 +449,19 @@ const parsePendingCorrection = (description) => {
 
   try {
     const correction = JSON.parse(match[1]);
-    if (
-      !correction.date ||
-      !["check-in", "both"].includes(correction.punchType) ||
-      !correction.checkInTime
-    ) {
+    if (!correction.date || (!correction.checkInTime && !correction.checkOutTime)) {
       return null;
     }
 
-    return correction;
+    const isLocationApproval =
+      (typeof subject === "string" && (subject.toLowerCase().includes("check-in approval") || subject.toLowerCase().includes("check-out approval"))) ||
+      description.toLowerCase().includes("unassigned location") ||
+      description.toLowerCase().includes("outside assigned location");
+
+    return {
+      ...correction,
+      isLocationApproval,
+    };
   } catch {
     return null;
   }
@@ -986,19 +1001,19 @@ router.get("/me/today", requireAuth, async (req, res) => {
         effectiveUnclosedPrevious.correctionRequest.status === "APPROVED");
 
     if ((!activeRecord || !activeRecord.checkIn) && !isPreviousCheckoutHandled) {
-      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
       const recentShift = await prisma.attendance.findFirst({
         where: {
           employeeId: profile.id,
           date: { lt: today },
-          checkIn: { gte: twentyFourHoursAgo, not: null },
-          checkOut: null, // Only adopt if overnight shift is still open (unclosed)
+          checkIn: { gte: fortyEightHoursAgo, not: null },
+          checkOut: null, // Only adopt if overnight/prior shift is still open (unclosed)
         },
         orderBy: { date: "desc" },
       });
 
       if (recentShift) {
-        // Less than 24 hours have passed since check-in and checkout is still pending: adopt as activeRecord!
+        // Prior shift has check-in and checkout is still pending: adopt as activeRecord!
         activeRecord = recentShift;
         effectiveUnclosedPrevious = null;
       }
@@ -1035,9 +1050,14 @@ router.get("/me/today", requireAuth, async (req, res) => {
               correction.punchType === "time-edit") &&
             correction.checkInTime;
 
-          let isWithin24HoursCorrection = false;
+          // If the shift already has a check-out time or represents a completed shift from a previous date,
+          // it must NOT occupy today's check-in slot.
+          const hasCheckOut = !!correction.checkOutTime;
+
+          let isWithin48HoursCorrection = false;
           if (
             !isTodayCorrection &&
+            !hasCheckOut &&
             correction.date &&
             correction.checkInTime &&
             (correction.punchType === "check-in" ||
@@ -1047,14 +1067,23 @@ router.get("/me/today", requireAuth, async (req, res) => {
             const [h, m] = String(correction.checkInTime).split(":").map(Number);
             if (Number.isFinite(h) && Number.isFinite(m)) {
               const checkInDateTime = new Date(`${correction.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
-              const twentyFourHoursMs = 24 * 60 * 60 * 1000;
-              if (now.getTime() - checkInDateTime.getTime() <= twentyFourHoursMs && now.getTime() >= checkInDateTime.getTime()) {
-                isWithin24HoursCorrection = true;
+              const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+              if (now.getTime() - checkInDateTime.getTime() <= fortyEightHoursMs && now.getTime() >= checkInDateTime.getTime()) {
+                isWithin48HoursCorrection = true;
               }
             }
           }
 
-          if (isTodayCorrection || isWithin24HoursCorrection) {
+          if (isTodayCorrection || isWithin48HoursCorrection) {
+            // Also verify if linked attendance record is already checked out
+            if (correction.attendanceId) {
+              const linkedRecord = await prisma.attendance.findUnique({
+                where: { id: correction.attendanceId },
+              });
+              if (linkedRecord && linkedRecord.checkOut && !isTodayCorrection) {
+                continue;
+              }
+            }
             pendingCheckInRequest = { req, correction };
             break;
           }
@@ -1183,6 +1212,12 @@ router.get("/by-date", requireAuth, async (req, res) => {
           include: { user: { select: { fullName: true, email: true } } },
         });
       }
+      if (!targetProfile) {
+        targetProfile = await prisma.employeeProfile.findFirst({
+          where: { employeeCode: String(employeeId).trim() },
+          include: { user: { select: { fullName: true, email: true } } },
+        });
+      }
     }
 
     if (!targetProfile) {
@@ -1202,15 +1237,26 @@ router.get("/by-date", requireAuth, async (req, res) => {
     }
     const nextDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
 
-    const [record, approvedLeave] = await Promise.all([
-      prisma.attendance.findFirst({
+    const [allRecords, approvedLeave] = await Promise.all([
+      prisma.attendance.findMany({
         where: {
           employeeId: targetProfile.id,
-          date: {
-            gte: selectedDate,
-            lt: nextDate,
-          },
+          OR: [
+            {
+              date: {
+                gte: selectedDate,
+                lt: nextDate,
+              },
+            },
+            {
+              checkIn: {
+                gte: selectedDate,
+                lt: nextDate,
+              },
+            },
+          ],
         },
+        orderBy: { checkIn: "asc" },
       }),
       prisma.leaveRequest.findFirst({
         where: {
@@ -1223,25 +1269,39 @@ router.get("/by-date", requireAuth, async (req, res) => {
       }),
     ]);
 
+    const firstCheckInRecord = allRecords.find((r) => r.checkIn) || allRecords[0] || null;
+    const lastCheckOutRecord = [...allRecords].reverse().find((r) => r.checkOut) || null;
+    const recordWithNote = allRecords.find((r) => r.note && (r.note.includes("Reason:") || !r.note.startsWith("No reason"))) || firstCheckInRecord;
+
     let checkInTime = null;
     let checkOutTime = null;
 
-    if (record?.checkIn) {
+    if (firstCheckInRecord?.checkIn) {
       checkInTime = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Asia/Kolkata",
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
-      }).format(new Date(record.checkIn));
+      }).format(new Date(firstCheckInRecord.checkIn));
     }
 
-    if (record?.checkOut) {
+    if (lastCheckOutRecord?.checkOut) {
       checkOutTime = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Asia/Kolkata",
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
-      }).format(new Date(record.checkOut));
+      }).format(new Date(lastCheckOutRecord.checkOut));
+    }
+
+    const effectiveRecord = firstCheckInRecord || lastCheckOutRecord;
+    const noteText = recordWithNote?.note || effectiveRecord?.note || "";
+    let checkInReason = null;
+    if (noteText) {
+      const match = noteText.match(/(?:Check-In Reason|Checkin Reason|Reason)\s*:\s*([^.\r\n|]+)/i)?.[1]?.trim();
+      if (match && !/^(?:unassigned location|outside assigned location|pending admin)/i.test(match)) {
+        checkInReason = match;
+      }
     }
 
     return res.json({
@@ -1251,21 +1311,22 @@ router.get("/by-date", requireAuth, async (req, res) => {
         employeeCode: targetProfile.employeeCode,
         fullName: targetProfile.user?.fullName,
       },
-      record: record
+      record: effectiveRecord
         ? {
-            id: record.id,
-            status: record.status,
-            checkIn: record.checkIn,
-            checkOut: record.checkOut,
+            id: effectiveRecord.id,
+            status: effectiveRecord.status,
+            checkIn: firstCheckInRecord?.checkIn || effectiveRecord.checkIn,
+            checkOut: lastCheckOutRecord?.checkOut || effectiveRecord.checkOut,
             checkInTime,
             checkOutTime,
-            workedHours: record.workedHours,
-            overtimeHours: record.overtimeHours,
-            note: record.note,
-            checkInLatitude: record.checkInLatitude,
-            checkInLongitude: record.checkInLongitude,
-            checkOutLatitude: record.checkOutLatitude,
-            checkOutLongitude: record.checkOutLongitude,
+            workedHours: effectiveRecord.workedHours,
+            overtimeHours: effectiveRecord.overtimeHours,
+            note: noteText,
+            checkInReason,
+            checkInLatitude: firstCheckInRecord?.checkInLatitude ?? effectiveRecord.checkInLatitude,
+            checkInLongitude: firstCheckInRecord?.checkInLongitude ?? effectiveRecord.checkInLongitude,
+            checkOutLatitude: lastCheckOutRecord?.checkOutLatitude ?? effectiveRecord.checkOutLatitude,
+            checkOutLongitude: lastCheckOutRecord?.checkOutLongitude ?? effectiveRecord.checkOutLongitude,
           }
         : null,
       approvedLeave: approvedLeave
@@ -1676,7 +1737,7 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
 
     const approvalSuffix = req.user.role === "ADMIN" ? ". Approved by admin." : "";
     updates.note = fitAttendanceNote(
-      `Manual attendance correction: ${manualReason}${approvalSuffix}`,
+      `Manual attendance correction: ${isTimeEdit ? `Time Edit. ${manualReason}` : manualReason}${approvalSuffix}`,
     );
 
     // --------------------------------------------------
@@ -1698,6 +1759,8 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
         punchType: normalizedType,
         checkInTime: updates.checkIn ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updates.checkIn)) : null,
         checkOutTime: updates.checkOut ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updates.checkOut)) : null,
+        originalCheckInTime: record?.checkIn ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(record.checkIn)) : null,
+        originalCheckOutTime: record?.checkOut ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(record.checkOut)) : null,
         isOvernight: Boolean(isOvernight || checkOutDateStr > date),
       });
       const readableText = `Forgot Punch request for ${normalizedType} on ${date}.\n\n${manualReason}`;
@@ -1820,6 +1883,8 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     // ----------------------------------------------------------
 
     const now = new Date();
+    // Seconds and milliseconds must never be stored in database for attendance check-in
+    now.setSeconds(0, 0);
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
@@ -2068,15 +2133,19 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
         defaultLocation && checkinLocation.id === defaultLocation.id;
 
       if (!isAssignedLocation && !isDefaultLocation) {
+        if (!normalizedReason) {
+          return res.status(403).json({
+            message: `You are at ${checkinLocation.name}, which is not your assigned location. Please provide a reason to submit for approval.`,
+          });
+        }
+
         requiresApproval = true;
 
         status = "PENDING_APPROVAL";
 
         note = `Checkin to unassigned location: ${checkinLocation.name} (${formatDistanceKm(
           officeDistance,
-        )} away). Reason: ${
-          normalizedReason || "No reason provided"
-        }. Pending admin approval.`;
+        )} away). Reason: ${normalizedReason}. Pending admin approval.`;
       } else {
         note = `Checkin: ${checkinLocation.name}`;
       }
@@ -2154,18 +2223,22 @@ router.post("/checkin", requireAuth, checkRolePermission(["mark-attendance", "at
     if (requiresApproval) {
       try {
         const todayDateKey = getIndiaDateKey(now);
+        const checkInDistanceFormatted = formatDistanceKm(officeDistance);
         const jsonMetadata = JSON.stringify({
           date: todayDateKey,
           punchType: "check-in",
           checkInTime: formatTime12h(now),
           attendanceId: record.id,
           reason: normalizedReason || "",
+          checkInDistance: checkInDistanceFormatted,
+          checkInLatitude: coordinates.latitude,
+          checkInLongitude: coordinates.longitude,
         });
         await prisma.employeeRequest.create({
           data: {
             employeeId: profile.id,
             type: "CORRECTION",
-            subject: `Check-in Approval Request: ${profile.firstName || "Employee"} (${todayDateKey})`,
+            subject: `UL Check In (${todayDateKey})`,
             description: `${note}\n\n[ATTENDANCE_CORRECTION]${jsonMetadata}`,
             status: "PENDING",
           },
@@ -2380,6 +2453,8 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // --------------------------------------------------------
 
     const now = new Date();
+    // Seconds and milliseconds must never be stored in database for attendance check-out
+    now.setSeconds(0, 0);
 
     const { start: today, end: tomorrow } = getIndiaDayRange(now);
 
@@ -2417,12 +2492,12 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     });
 
     if (!record || !record.checkIn) {
-      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
       const activeUnclosed = await prisma.attendance.findFirst({
         where: {
           employeeId: profile.id,
           date: { lt: today },
-          checkIn: { gte: twentyFourHoursAgo, not: null },
+          checkIn: { gte: fortyEightHoursAgo, not: null },
           checkOut: null,
         },
         orderBy: { date: "desc" },
@@ -2487,7 +2562,7 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
             correction.punchType === "time-edit") &&
           correction.checkInTime;
 
-        let isWithin24HoursCorrection = false;
+        let isWithin48HoursCorrection = false;
         if (
           !isTodayCorrection &&
           correction.date &&
@@ -2496,17 +2571,16 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
             correction.punchType === "both" ||
             correction.punchType === "time-edit")
         ) {
-          const [h, m] = String(correction.checkInTime).split(":").map(Number);
-          if (Number.isFinite(h) && Number.isFinite(m)) {
-            const checkInDateTime = new Date(`${correction.date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+05:30`);
-            const twentyFourHoursMs = 24 * 60 * 60 * 1000;
-            if (now.getTime() - checkInDateTime.getTime() <= twentyFourHoursMs && now.getTime() >= checkInDateTime.getTime()) {
-              isWithin24HoursCorrection = true;
+          const checkInDateTime = parseManualPunchDateTime(correction.date, correction.checkInTime);
+          if (checkInDateTime) {
+            const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+            if (now.getTime() - checkInDateTime.getTime() <= fortyEightHoursMs && now.getTime() >= checkInDateTime.getTime()) {
+              isWithin48HoursCorrection = true;
             }
           }
         }
 
-        if (isTodayCorrection || isWithin24HoursCorrection) {
+        if (isTodayCorrection || isWithin48HoursCorrection) {
           // If this request already supplied checkOutTime and was approved, skip
           if (request.status === "APPROVED" && correction.checkOutTime) {
             continue;
@@ -2516,25 +2590,56 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
             correction,
           };
           break;
+        } else if (!isTodayCorrection && correction.date && correction.checkInTime) {
+          const parsedCheckIn = parseManualPunchDateTime(correction.date, correction.checkInTime);
+          if (parsedCheckIn) {
+            const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+            if (now.getTime() - parsedCheckIn.getTime() <= fortyEightHoursMs && now.getTime() >= parsedCheckIn.getTime()) {
+              if (!(request.status === "APPROVED" && correction.checkOutTime)) {
+                pendingForgotPunchCheckIn = {
+                  request,
+                  correction,
+                };
+                break;
+              }
+            }
+          }
         }
       } catch (error) {
         console.error("Failed to parse Forgot Punch request:", error);
       }
     }
 
-    const hasPendingForgotPunchCheckIn = !!pendingForgotPunchCheckIn;
+    const hasForgotPunchCheckIn = !!pendingForgotPunchCheckIn;
+    const hasPendingForgotPunchCheckIn =
+      pendingForgotPunchCheckIn?.request?.status === "PENDING";
 
-    if (!record && hasPendingForgotPunchCheckIn) {
+    if (!record && hasForgotPunchCheckIn) {
       const correctionDate = pendingForgotPunchCheckIn.correction?.date;
       const recordDate = correctionDate ? new Date(`${correctionDate}T00:00:00.000+05:30`) : today;
 
-      // Look if record already exists for that correction date
-      const existingRecordForDate = await prisma.attendance.findFirst({
-        where: {
-          employeeId: profile.id,
-          date: recordDate,
-        },
-      });
+      // 1. Look up by attendanceId if specified in metadata
+      let existingRecordForDate = null;
+      if (pendingForgotPunchCheckIn.correction?.attendanceId) {
+        existingRecordForDate = await prisma.attendance.findUnique({
+          where: { id: pendingForgotPunchCheckIn.correction.attendanceId },
+        });
+      }
+
+      // 2. Fallback: look if record already exists for that correction date
+      if (!existingRecordForDate) {
+        existingRecordForDate = await prisma.attendance.findFirst({
+          where: {
+            employeeId: profile.id,
+            date: recordDate,
+          },
+        });
+      }
+
+      const isLocationApproval =
+        pendingForgotPunchCheckIn.request.subject?.toLowerCase().includes("check-in approval") ||
+        pendingForgotPunchCheckIn.request.description?.toLowerCase().includes("unassigned location") ||
+        pendingForgotPunchCheckIn.request.description?.toLowerCase().includes("outside assigned location");
 
       if (existingRecordForDate) {
         record = existingRecordForDate;
@@ -2554,18 +2659,20 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
             checkIn: effectiveCheckIn,
             checkOut: null,
             workedHours: null,
-            status: "PRESENT",
+            status: isLocationApproval ? "PENDING_APPROVAL" : "PRESENT",
             note: fitAttendanceNote(
               pendingForgotPunchCheckIn.request.status === "APPROVED"
-                ? "Forgot Punch check-in approved."
-                : "Checkout recorded while Forgot Punch Check In request is pending.",
+                ? (isLocationApproval ? "Location check-in approved." : "Forgot Punch check-in approved.")
+                : (isLocationApproval
+                    ? "Checkout recorded while Check-In Location Approval is pending."
+                    : "Checkout recorded while Forgot Punch Check In request is pending."),
             ),
           },
         });
       }
     }
 
-    if (record && !record.checkIn && hasPendingForgotPunchCheckIn) {
+    if (record && !record.checkIn && hasForgotPunchCheckIn) {
       const correctionDate = pendingForgotPunchCheckIn.correction?.date;
       if (pendingForgotPunchCheckIn.correction?.checkInTime && correctionDate) {
         const effectiveCheckIn = parseManualPunchDateTime(
@@ -2617,9 +2724,12 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
             : getIndiaDateKey(now);
           const customDate = new Date(`${targetDateKey}T${h}:${m}:00+05:30`);
           if (!Number.isNaN(customDate.getTime())) {
+            customDate.setSeconds(0, 0);
             adminCheckOutDate = customDate;
           }
         }
+      } else {
+        adminCheckOutDate.setSeconds(0, 0);
       }
 
       const diffMs = adminCheckOutDate.getTime() - new Date(record.checkIn).getTime();
@@ -2680,8 +2790,8 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // EMPLOYEE CHECKOUT
     // ========================================================
 
-    const isPendingForgotPunchOnly =
-      hasPendingForgotPunchCheckIn && !record.checkIn;
+    const isForgotPunchCheckInOnly =
+      hasForgotPunchCheckIn && !record.checkIn;
 
     // if (record.status === "PENDING_APPROVAL" && !isPendingForgotPunchOnly) {
     //   return res.status(400).json({
@@ -2780,9 +2890,12 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
           : getIndiaDateKey(now);
         const customDate = new Date(`${targetDateKey}T${h}:${m}:00+05:30`);
         if (!Number.isNaN(customDate.getTime())) {
+          customDate.setSeconds(0, 0);
           employeeCheckOutDate = customDate;
         }
       }
+    } else {
+      employeeCheckOutDate.setSeconds(0, 0);
     }
 
     const diffMs = employeeCheckOutDate.getTime() - new Date(record.checkIn).getTime();
@@ -2791,12 +2904,6 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     if (diffHours < 0) {
       return res.status(400).json({
         message: "Check-out time cannot be before check-in time.",
-      });
-    }
-
-    if (diffHours > 24) {
-      return res.status(400).json({
-        message: `Total shift duration cannot exceed 24 hours (${diffHours.toFixed(1)} hours calculated).`,
       });
     }
 
@@ -2861,25 +2968,146 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       });
 
       try {
-        const todayDateKey = getIndiaDateKey(employeeCheckOutDate);
-        const jsonMetadata = JSON.stringify({
-          date: todayDateKey,
-          punchType: "check-out",
-          checkOutTime: formatTime12h(employeeCheckOutDate),
-          attendanceId: updated.id,
-          reason: normalizedReason || "",
-        });
-        await prisma.employeeRequest.create({
-          data: {
-            employeeId: profile.id,
-            type: "CORRECTION",
-            subject: `Check-out Approval Request: ${profile.firstName || "Employee"} (${todayDateKey})`,
-            description: `${updatedNote}\n\n[ATTENDANCE_CORRECTION]${jsonMetadata}`,
-            status: "PENDING",
-          },
-        });
+        const shiftDateKey = getIndiaDateKey(record.date || record.checkIn);
+        const todayDateKey = shiftDateKey;
+
+        // Find existing pending EmployeeRequest ticket for this attendance/employee/date
+        const existingPendingRequest = pendingForgotPunchCheckIn?.request?.status === "PENDING"
+          ? pendingForgotPunchCheckIn.request
+          : await prisma.employeeRequest.findFirst({
+              where: {
+                employeeId: profile.id,
+                type: "CORRECTION",
+                status: "PENDING",
+                OR: [
+                  { description: { contains: `"attendanceId":"${updated.id}"` } },
+                  { description: { contains: `"attendanceId":"${record.id}"` } },
+                  {
+                    AND: [
+                      { description: { contains: `"date":"${todayDateKey}"` } },
+                      {
+                        OR: [
+                          { description: { contains: `"punchType":"check-in"` } },
+                          { description: { contains: `"punchType":"both"` } },
+                          { subject: { contains: "Check-in Approval" } },
+                          { subject: { contains: "Location Approval" } },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              orderBy: { createdAt: "desc" },
+            });
+
+        const checkOutDistanceFormatted = formatDistanceKm(distToUse);
+
+        if (existingPendingRequest) {
+          // Merge check-in and check-out into single unified ticket
+          const existingCheckInTime = formatTime12h(record.checkIn);
+          const isUnassignedCheckInRequest =
+            existingPendingRequest.subject?.toLowerCase().includes("location approval") ||
+            existingPendingRequest.description?.toLowerCase().includes("unassigned location") ||
+            existingPendingRequest.description?.toLowerCase().includes("outside assigned location");
+          let prevCheckInDistance = null;
+          let prevCheckInReason = null;
+          let prevCheckOutReason = null;
+          let prevCheckInLocation = null;
+          let prevIsTimeEdit = false;
+          let prevTimeEditPunchType = null;
+          let prevRequestedCheckInTime = null;
+          let prevOriginalCheckInTime = null;
+          try {
+            const prevMatch = existingPendingRequest.description?.match(/\[ATTENDANCE_CORRECTION\]\s*(\{[\s\S]*\})\s*$/);
+            if (prevMatch) {
+              const prevData = JSON.parse(prevMatch[1]);
+              prevCheckInDistance = prevData.checkInDistance;
+              prevCheckInReason = prevData.checkInReason || prevData.reason;
+              prevCheckOutReason = prevData.checkOutReason;
+              prevCheckInLocation = prevData.checkInLocation || null;
+              prevIsTimeEdit = Boolean(prevData.isTimeEdit || prevData.punchType === "time-edit" || existingPendingRequest.subject?.toLowerCase().includes("time edit"));
+              prevTimeEditPunchType = prevData.timeEditPunchType || null;
+              prevRequestedCheckInTime = prevData.checkInTime || null;
+              prevOriginalCheckInTime = prevData.originalCheckInTime || null;
+            }
+          } catch (e) {}
+          const isForgotPunchCheckInRequest =
+            !isUnassignedCheckInRequest &&
+            existingPendingRequest.subject?.toLowerCase().includes("forgot punch");
+
+          const effectiveCheckIn = prevIsTimeEdit && prevRequestedCheckInTime ? prevRequestedCheckInTime : existingCheckInTime;
+
+          const combinedMetadata = JSON.stringify({
+            date: todayDateKey,
+            punchType: prevIsTimeEdit ? "time-edit" : "both",
+            isTimeEdit: prevIsTimeEdit,
+            timeEditPunchType: prevIsTimeEdit ? (prevTimeEditPunchType || "check-in") : undefined,
+            checkInTime: effectiveCheckIn,
+            checkOutTime: formatTime12h(employeeCheckOutDate),
+            originalCheckInTime: prevIsTimeEdit ? (prevOriginalCheckInTime || existingCheckInTime) : undefined,
+            attendanceId: updated.id,
+            reason: normalizedReason || prevCheckInReason || "",
+            checkInReason: prevCheckInReason || undefined,
+            checkOutReason: normalizedReason || prevCheckOutReason || undefined,
+            checkInLocation: prevCheckInLocation || undefined,
+            checkOutLocation: undefined,
+            checkInLocationSource: isForgotPunchCheckInRequest
+              ? "forgot-punch"
+              : "unassigned-location",
+            checkOutLocationSource: "unassigned-location",
+            checkInDistance: prevCheckInDistance || undefined,
+            checkOutDistance: checkOutDistanceFormatted,
+            checkInLatitude: isForgotPunchCheckInRequest
+              ? null
+              : record.checkInLatitude,
+            checkInLongitude: isForgotPunchCheckInRequest
+              ? null
+              : record.checkInLongitude,
+            checkOutLatitude: coordinates.latitude,
+            checkOutLongitude: coordinates.longitude,
+          });
+
+          const combinedSubject = prevIsTimeEdit
+            ? (isUnassignedCheckInRequest
+                ? `UL Check In + UL Check Out (Time Edit) (${todayDateKey})`
+                : `UL Check In + Time Edit (${todayDateKey})`)
+            : (isUnassignedCheckInRequest
+                ? `UL Check In + UL Check Out (${todayDateKey})`
+                : isForgotPunchCheckInRequest
+                  ? `Forgot Check In + UL Check Out (${todayDateKey})`
+                : `Location Approval Request: ${profile.firstName || "Employee"} (${todayDateKey})`);
+
+          await prisma.employeeRequest.update({
+            where: { id: existingPendingRequest.id },
+            data: {
+              subject: combinedSubject,
+              description: `${updatedNote}\n\n[ATTENDANCE_CORRECTION]${combinedMetadata}`,
+            },
+          });
+        } else {
+          // No pending check-in ticket found, create check-out ticket
+          const jsonMetadata = JSON.stringify({
+            date: todayDateKey,
+            punchType: "check-out",
+            checkOutTime: formatTime12h(employeeCheckOutDate),
+            attendanceId: updated.id,
+            reason: normalizedReason || "",
+            checkOutDistance: checkOutDistanceFormatted,
+            checkOutLatitude: coordinates.latitude,
+            checkOutLongitude: coordinates.longitude,
+          });
+          await prisma.employeeRequest.create({
+            data: {
+              employeeId: profile.id,
+              type: "CORRECTION",
+              subject: `UL Check Out (${todayDateKey})`,
+              description: `${updatedNote}\n\n[ATTENDANCE_CORRECTION]${jsonMetadata}`,
+              status: "PENDING",
+            },
+          });
+        }
       } catch (reqErr) {
-        console.warn("Could not create EmployeeRequest ticket for check-out approval:", reqErr.message);
+        console.warn("Could not handle EmployeeRequest ticket for check-out approval:", reqErr.message);
       }
 
       return res.json({
@@ -2893,12 +3121,24 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
     // NORMAL EMPLOYEE CHECKOUT
     // --------------------------------------------------------
 
-    const status = isPendingForgotPunchOnly
+    const status = isForgotPunchCheckInOnly
       ? "PRESENT"
       : getAttendanceStatusAfterCheckout(record.checkIn, employeeCheckOutDate, record.status);
 
-    const checkoutNote = isPendingForgotPunchOnly
-      ? "Checkout recorded while Forgot Punch Check In request is pending."
+    const isLocationApprovalPending =
+      pendingForgotPunchCheckIn?.request?.status === "PENDING" &&
+      (pendingForgotPunchCheckIn?.request?.subject?.toLowerCase().includes("check-in approval") ||
+        pendingForgotPunchCheckIn?.request?.description?.toLowerCase().includes("unassigned location") ||
+        pendingForgotPunchCheckIn?.request?.description?.toLowerCase().includes("outside assigned location"));
+
+    // Determine if this is a UL check-in (from GPS) or forgot-punch check-in
+    const isForgotPunchCheckInPending =
+      pendingForgotPunchCheckIn?.request?.status === "PENDING" && !isLocationApprovalPending;
+
+    const checkoutNote = hasPendingForgotPunchCheckIn
+      ? (isLocationApprovalPending
+          ? "Checkout recorded while Check-In Location Approval is pending."
+          : "Checkout recorded while Forgot Punch Check In request is pending.")
       : `Checkout: ${getLocationLabel(comparisonLocation)}`;
 
     const updatedNote = record.note
@@ -2927,11 +3167,108 @@ router.post("/checkout", requireAuth, checkRolePermission(["mark-attendance", "a
       },
     });
 
+    // --------------------------------------------------------
+    // UPDATE / CREATE REQUEST TICKET FOR MIXED PUNCH SCENARIOS
+    //
+    // Scenario 1: Forgot check-in + Normal (default loc) checkout
+    //   → Update existing forgot-punch check-in request to include checkout time
+    //   → Subject: "Forgot Check In (+ Default Check Out)"
+    //
+    // Scenario 5: UL check-in (GPS) + Normal (default loc) forgot-punch checkout
+    //   → Update existing UL check-in request to include forgot-punch checkout
+    //   → Subject: "Forgot Check Out + UL Check In (date)"
+    // --------------------------------------------------------
+    if (hasPendingForgotPunchCheckIn && pendingForgotPunchCheckIn?.request?.status === "PENDING") {
+      try {
+        const shiftDateKey = getIndiaDateKey(record.date || record.checkIn);
+        const existingReq = pendingForgotPunchCheckIn.request;
+        const existingCorrection = pendingForgotPunchCheckIn.correction;
+
+        // Parse previous metadata
+        let prevCheckInTime = existingCorrection?.checkInTime || formatTime12h(record.checkIn);
+        let prevCheckInDistance = existingCorrection?.checkInDistance || null;
+        let prevCheckInReason = existingCorrection?.checkInReason || existingCorrection?.reason || "";
+        let prevCheckInLocation = existingCorrection?.checkInLocation || null;
+        let prevCheckInLatitude = isLocationApprovalPending ? (existingCorrection?.checkInLatitude ?? record.checkInLatitude ?? null) : null;
+        let prevCheckInLongitude = isLocationApprovalPending ? (existingCorrection?.checkInLongitude ?? record.checkInLongitude ?? null) : null;
+
+        const checkOutTimeFormatted = formatTime12h(employeeCheckOutDate);
+        const checkOutDateKey = getIndiaDateKey(employeeCheckOutDate);
+
+        if (isForgotPunchCheckInPending) {
+          // Scenario 1: Forgot check-in + Normal (default loc) checkout
+          const defaultLocName = comparisonLocation?.name || defaultLocation?.name || null;
+          const combinedMetadata = JSON.stringify({
+            date: shiftDateKey,
+            checkOutDate: checkOutDateKey,
+            punchType: "check-in",
+            checkInTime: prevCheckInTime,
+            checkOutTime: checkOutTimeFormatted,
+            attendanceId: updated.id,
+            reason: prevCheckInReason || "",
+            checkInReason: prevCheckInReason || undefined,
+            checkOutReason: undefined,
+            checkInLocation: prevCheckInLocation || undefined,
+            checkOutLocation: defaultLocName || undefined,
+            checkInLocationSource: "forgot-punch",
+            checkOutLocationSource: "default-location",
+            checkInLatitude: null,
+            checkInLongitude: null,
+            checkOutLatitude: coordinates.latitude,
+            checkOutLongitude: coordinates.longitude,
+          });
+          const combinedDescription = `Forgot Punch request for Check In on ${shiftDateKey}. Checked out via Mark Attendance (default location) at ${checkOutTimeFormatted}.\n\n${prevCheckInReason || ""}\n\n[ATTENDANCE_CORRECTION]${combinedMetadata}`;
+          await prisma.employeeRequest.update({
+            where: { id: existingReq.id },
+            data: {
+              subject: `Forgot Check In (${shiftDateKey})`,
+              description: combinedDescription,
+            },
+          });
+        } else if (isLocationApprovalPending) {
+          // Scenario 5: UL check-in (GPS) + Normal (default loc) checkout
+          const defaultLocName = comparisonLocation?.name || defaultLocation?.name || null;
+          const combinedMetadata = JSON.stringify({
+            date: shiftDateKey,
+            checkOutDate: checkOutDateKey,
+            punchType: "check-in",
+            checkInTime: prevCheckInTime,
+            checkOutTime: checkOutTimeFormatted,
+            attendanceId: updated.id,
+            reason: prevCheckInReason || "",
+            checkInReason: prevCheckInReason || undefined,
+            checkOutReason: undefined,
+            checkInLocation: undefined,
+            checkOutLocation: defaultLocName || undefined,
+            checkInLocationSource: "unassigned-location",
+            checkOutLocationSource: "default-location",
+            checkInDistance: prevCheckInDistance || undefined,
+            checkInLatitude: prevCheckInLatitude,
+            checkInLongitude: prevCheckInLongitude,
+            checkOutLatitude: coordinates.latitude,
+            checkOutLongitude: coordinates.longitude,
+          });
+          const combinedDescription = `UL Check In pending approval on ${shiftDateKey}. Checked out via Mark Attendance (default location) at ${checkOutTimeFormatted}.\n\n${prevCheckInReason || ""}\n\n[ATTENDANCE_CORRECTION]${combinedMetadata}`;
+          await prisma.employeeRequest.update({
+            where: { id: existingReq.id },
+            data: {
+              subject: `UL Check In (${shiftDateKey})`,
+              description: combinedDescription,
+            },
+          });
+        }
+      } catch (reqErr) {
+        console.warn("Could not update EmployeeRequest for normal checkout with pending forgot punch:", reqErr.message);
+      }
+    }
+
     return res.json({
       record: updated,
 
       message: hasPendingForgotPunchCheckIn
-        ? "Checked out successfully. Your Forgot Punch Check In request is still pending admin approval."
+        ? (isLocationApprovalPending
+            ? "Checked out successfully. Your Check-In Location Approval is pending admin review."
+            : "Checked out successfully. Your Forgot Punch Check In request is still pending admin approval.")
         : "Checked out successfully.",
 
       forgotPunchPending: hasPendingForgotPunchCheckIn,
@@ -3166,6 +3503,7 @@ router.get("/my-requests", requireAuth, async (req, res) => {
         employeeId: profile.id,
         OR: [
           { note: { contains: "Pending admin approval" } },
+          { note: { contains: "Forgot Punch approved" } },
           { note: { contains: "Admin approved" } },
           { note: { contains: "Admin rejected" } },
           { note: { contains: "Approved by admin" } },
@@ -3188,7 +3526,19 @@ router.get("/my-requests", requireAuth, async (req, res) => {
       orderBy: { updatedAt: "desc" },
     });
 
-    const enriched = await enrichAttendanceRecordsWithDistance(records);
+    const requestRecords = records.filter((record) => {
+      if (
+        record.note?.includes("Checkout recorded while Forgot Punch Check In request is pending.") &&
+        !record.note?.includes("outside") &&
+        !record.note?.includes("unassigned") &&
+        !record.note?.includes("requires approval")
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    const enriched = await enrichAttendanceRecordsWithDistance(requestRecords);
 
     res.json({ records: enriched });
   } catch (err) {
@@ -3529,7 +3879,7 @@ router.get("/register/weekly", async (req, res) => {
           status: "PENDING",
           ...(isFullManager ? {} : { employee: { userId: req.user.id } }),
         },
-        select: { employeeId: true, description: true },
+        select: { employeeId: true, description: true, subject: true },
       }),
       prisma.rosterEntry.findMany({
         where: {
@@ -3586,7 +3936,7 @@ router.get("/register/weekly", async (req, res) => {
     const pendingCorrectionByEmployeeAndDate = new Map(
       pendingCorrectionRequests
         .map((request) => {
-          const correction = parsePendingCorrection(request.description);
+          const correction = parsePendingCorrection(request.description, request.subject);
           const key = getPendingCorrectionKey(request.employeeId, correction);
           return key ? [key, correction] : null;
         })
@@ -3661,14 +4011,33 @@ router.get("/register/weekly", async (req, res) => {
           note = "Weekly off.";
         }
 
-        if (pendingCorrection?.checkInTime) {
-          checkIn = new Date(
-            `${dateKey}T${pendingCorrection.checkInTime}:00+05:30`,
-          );
+        if (pendingCorrection?.checkInTime || pendingCorrection?.checkOutTime) {
+          if (pendingCorrection.checkInTime) {
+            const parsedIn = parseManualPunchDateTime(dateKey, pendingCorrection.checkInTime);
+            if (parsedIn) checkIn = parsedIn;
+          }
+          if (pendingCorrection.checkOutTime) {
+            const parsedOut = parseManualPunchDateTime(dateKey, pendingCorrection.checkOutTime);
+            if (parsedOut) checkOut = parsedOut;
+          }
           status = "PENDING_APPROVAL";
-          note = note
-            ? `${note} | Forgot Punch Check In pending approval.`
-            : "Forgot Punch Check In pending approval.";
+
+          const isLocAppr = pendingCorrection.isLocationApproval;
+          const pendingLabel = isLocAppr
+            ? (pendingCorrection.checkOutTime && !pendingCorrection.checkInTime
+                ? "Check-Out Location Approval pending."
+                : "Check-In Location Approval pending.")
+            : "Forgot Punch pending approval.";
+
+          if (!note || note === "No attendance record.") {
+            note = pendingLabel;
+          } else if (!note.includes(pendingLabel) && !note.includes("approval")) {
+            note = `${note} | ${pendingLabel}`;
+          }
+        }
+
+        if (checkIn && checkOut) {
+          workedHours = calculateWorkedHours(checkIn, checkOut);
         }
 
         const isHolOrSun = Boolean(holiday || !isWorkingDay(date));
@@ -3812,9 +4181,13 @@ router.post(
       const reviewerName = reviewer?.fullName || (req.user.role === "ADMIN" ? "Admin" : "Employee");
 
       const approvalText = `Approved by ${reviewerName}.`;
-      const updatedNote = record.note
-        ? `${record.note} | ${approvalText}`
-        : approvalText;
+      let cleanedNote = record.note ? record.note.replace(/\.?\s*Pending admin approval\.?/gi, ". Approved by admin.") : "";
+      if (cleanedNote && !cleanedNote.includes(approvalText) && !cleanedNote.includes("Approved by admin")) {
+        cleanedNote = `${cleanedNote} | ${approvalText}`;
+      } else if (!cleanedNote) {
+        cleanedNote = approvalText;
+      }
+      const updatedNote = cleanedNote;
 
       const updated = await prisma.attendance.update({
         where: { id },
@@ -3904,9 +4277,13 @@ router.post(
         ? `Rejected by ${reviewerName}: ${reason}`
         : `Rejected by ${reviewerName}.`;
 
-      const updatedNote = record.note
-        ? `${record.note} | ${rejectionNote}`
-        : rejectionNote;
+      let cleanedNote = record.note ? record.note.replace(/\.?\s*Pending admin approval\.?/gi, ". Rejected by admin.") : "";
+      if (cleanedNote && !cleanedNote.includes(rejectionNote)) {
+        cleanedNote = `${cleanedNote} | ${rejectionNote}`;
+      } else if (!cleanedNote) {
+        cleanedNote = rejectionNote;
+      }
+      const updatedNote = cleanedNote;
 
       const updated = await prisma.attendance.update({
         where: { id },
@@ -4015,7 +4392,7 @@ router.get(
             type: "CORRECTION",
             status: "PENDING",
           },
-          select: { description: true },
+          select: { description: true, subject: true },
         }),
         prisma.rosterEntry.findMany({
           where: {
@@ -4053,7 +4430,7 @@ router.get(
       const leaveByDate = new Map();
       const pendingCorrectionByDate = new Map(
         pendingCorrectionRequests
-          .map((request) => parsePendingCorrection(request.description))
+          .map((request) => parsePendingCorrection(request.description, request.subject))
           .filter(Boolean)
           .map((correction) => [correction.date, correction]),
       );
@@ -4105,9 +4482,22 @@ router.get(
             status = "ON_LEAVE";
           }
 
+          let effectiveCheckIn = existing.checkIn;
+          let effectiveCheckOut = existing.checkOut;
+
+          if (pendingCorrection?.checkInTime) {
+            const parsedIn = parseManualPunchDateTime(key, pendingCorrection.checkInTime);
+            if (parsedIn) effectiveCheckIn = parsedIn;
+          }
+          if (pendingCorrection?.checkOutTime) {
+            const parsedOut = parseManualPunchDateTime(key, pendingCorrection.checkOutTime);
+            if (parsedOut) effectiveCheckOut = parsedOut;
+          }
+
           const calculatedWorkedHours =
-            existing.workedHours ??
-            calculateWorkedHours(existing.checkIn, existing.checkOut);
+            (effectiveCheckIn && effectiveCheckOut)
+              ? calculateWorkedHours(effectiveCheckIn, effectiveCheckOut)
+              : (existing.workedHours ?? calculateWorkedHours(existing.checkIn, existing.checkOut));
 
           const isHolOrSun = Boolean(holidayObj || isSunday);
           const overtimeHours = calculateOvertimeHours(calculatedWorkedHours, isHolOrSun);
@@ -4118,15 +4508,29 @@ router.get(
 
           const dayShift = getAssignedShiftForDate(key, existing);
 
+          const isLocAppr = pendingCorrection?.isLocationApproval;
+          const pendingLabel = isLocAppr
+            ? (pendingCorrection.checkOutTime && !pendingCorrection.checkInTime
+                ? "Check-Out Location Approval pending."
+                : "Check-In Location Approval pending.")
+            : "Forgot Punch pending approval.";
+
+          let recordNote = existing.note || holidayNote;
+          if (pendingCorrection) {
+            if (!recordNote) {
+              recordNote = pendingLabel;
+            } else if (!recordNote.includes(pendingLabel) && !recordNote.includes("approval")) {
+              recordNote = `${recordNote} | ${pendingLabel}`;
+            }
+          } else if (leaveByDate.has(key) && status === "ON_LEAVE") {
+            recordNote = `Approved leave: ${leaveByDate.get(key).leaveType?.name || leaveByDate.get(key).leaveType?.code || "Leave"}`;
+          }
+
           populatedRecords.push({
             id: existing.id,
             date: existing.date,
-            checkIn: pendingCorrection?.checkInTime
-              ? new Date(`${key}T${pendingCorrection.checkInTime}:00+05:30`)
-              : existing.checkIn,
-            checkOut: pendingCorrection?.checkOutTime
-              ? new Date(`${key}T${pendingCorrection.checkOutTime}:00+05:30`)
-              : existing.checkOut,
+            checkIn: effectiveCheckIn,
+            checkOut: effectiveCheckOut,
             checkInLatitude: existing.checkInLatitude,
             checkInLongitude: existing.checkInLongitude,
             checkOutLatitude: existing.checkOutLatitude,
@@ -4146,11 +4550,7 @@ router.get(
             isShortDay,
             createdAt: existing.createdAt,
             updatedAt: existing.updatedAt,
-            note: pendingCorrection
-              ? `${existing.note || ""}${existing.note ? " | " : ""}Forgot Punch Check In pending approval.`
-              : (leaveByDate.has(key) && status === "ON_LEAVE"
-                  ? `Approved leave: ${leaveByDate.get(key).leaveType?.name || leaveByDate.get(key).leaveType?.code || "Leave"}`
-                  : existing.note || holidayNote),
+            note: recordNote,
           });
           continue;
         }
@@ -4214,19 +4614,29 @@ router.get(
 
         if (pendingCorrection?.checkInTime || pendingCorrection?.checkOutTime) {
           summary.PENDING_APPROVAL += 1;
+          const parsedIn = pendingCorrection?.checkInTime
+            ? parseManualPunchDateTime(key, pendingCorrection.checkInTime)
+            : null;
+          const parsedOut = pendingCorrection?.checkOutTime
+            ? parseManualPunchDateTime(key, pendingCorrection.checkOutTime)
+            : null;
+
+          const isLocAppr = pendingCorrection.isLocationApproval;
+          const pendingLabel = isLocAppr
+            ? (pendingCorrection.checkOutTime && !pendingCorrection.checkInTime
+                ? "Check-Out Location Approval pending."
+                : "Check-In Location Approval pending.")
+            : "Forgot Punch pending approval.";
+
           populatedRecords.push({
             id: null,
             date: new Date(current),
-            checkIn: pendingCorrection?.checkInTime
-              ? new Date(`${key}T${pendingCorrection.checkInTime}:00+05:30`)
-              : null,
-            checkOut: pendingCorrection?.checkOutTime
-              ? new Date(`${key}T${pendingCorrection.checkOutTime}:00+05:30`)
-              : null,
+            checkIn: parsedIn,
+            checkOut: parsedOut,
             status: "PENDING_APPROVAL",
             shift: shiftPayload,
-            workedHours: null,
-            note: "Forgot Punch pending approval.",
+            workedHours: parsedIn && parsedOut ? calculateWorkedHours(parsedIn, parsedOut) : null,
+            note: pendingLabel,
           });
           continue;
         }

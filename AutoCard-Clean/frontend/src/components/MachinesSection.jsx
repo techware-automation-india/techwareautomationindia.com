@@ -65,6 +65,8 @@ const MachinesSection = () => {
                 <img
                   src={machine.image}
                   alt={machine.name}
+                  loading="lazy"
+                  decoding="async"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition duration-500"
                 />
               </div>

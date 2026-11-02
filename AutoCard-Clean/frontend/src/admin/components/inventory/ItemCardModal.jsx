@@ -8,6 +8,7 @@ import {
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPut, apiUpload } from "../../../lib/api.js";
 import { getAuthUser } from "../../../lib/auth.js";
+import { formatTimeWithPeriod } from "../../../lib/timeFormat.js";
 import UnitModal from "./UnitModal.jsx";
 import CameraCaptureModal from "./CameraCaptureModal.jsx";
 
@@ -26,7 +27,7 @@ const formatTimestamp = (d) => {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
-  const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const timeStr = formatTimeWithPeriod(date, "en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
   return `${day}/${month}/${year} ${timeStr}`;
 };
 
@@ -424,8 +425,8 @@ const ItemCardModal = ({
       return;
     }
 
-    if (/[^a-zA-Z0-9\s]/.test(code.trim())) {
-      toast.error("Item Code / SKU cannot contain special characters (.-,@# etc.). Only letters and numbers are allowed.");
+    if (/[^a-zA-Z0-9\s.,]/.test(code.trim())) {
+      toast.error("Item Code / SKU can only contain letters, numbers, spaces, dots (.) and commas (,).");
       return;
     }
 
@@ -692,7 +693,7 @@ const ItemCardModal = ({
                       Item Code / SKU <span className="text-rose-500">*</span>
                     </label>
                     <span className="text-[10px] text-muted-foreground font-medium">
-                      Only letters & numbers
+                      Letters, numbers, dots (.) & commas (,)
                     </span>
                   </div>
                   <div className="relative">

@@ -6,7 +6,6 @@ import { ShieldCheck, Briefcase, User, Mail, Lock, ArrowLeft, LogIn, Eye, EyeOff
 import { apiPost } from "../lib/api.js";
 import { saveAuth } from "../lib/auth.js";
 
-import logo from "../assets/techwareLogo.png";
 
 const roleConfig = {
   admin: {
@@ -131,7 +130,7 @@ const Login = () => {
           <div className="flex flex-col items-center text-center mb-8">
             <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-white dark:bg-card border border-border shadow-lg flex items-center justify-center p-3.5 mb-4 transition-transform hover:scale-105">
               <img
-                src={logo}
+                src="/techwareLogo.svg"
                 alt="Techware Automation India Logo"
                 className="w-full h-full object-contain drop-shadow-sm"
               />

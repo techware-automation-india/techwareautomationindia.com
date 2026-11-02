@@ -23,7 +23,10 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiGet } from "../../lib/api.js";
 import { printSingleEmployeeAttendancePdf } from "../../utils/attendancePdfExport.js";
-import { formatTimeRange } from "../../lib/timeFormat.js";
+import {
+  formatTimeRange,
+  formatTimeWithPeriod,
+} from "../../lib/timeFormat.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +50,7 @@ const REGULAR_HOURS = 8;
 
 const fmtTime = (v) =>
   v
-    ? new Date(v).toLocaleTimeString("en-IN", {
+    ? formatTimeWithPeriod(new Date(v), "en-IN", {
         hour: "2-digit",
         minute: "2-digit",
         hour12: true,
@@ -113,7 +116,11 @@ const getNumericWorkedMinutes = (record) => {
   let hours = Number(record.workedHours);
   if (Number.isNaN(hours) || hours <= 0) {
     if (record.checkIn && record.checkOut) {
-      const diffMs = new Date(record.checkOut) - new Date(record.checkIn);
+      const inDate = new Date(record.checkIn);
+      const outDate = new Date(record.checkOut);
+      inDate.setSeconds(0, 0);
+      outDate.setSeconds(0, 0);
+      const diffMs = outDate - inDate;
       if (diffMs > 0) hours = diffMs / 3600000;
     }
   }
@@ -202,6 +209,20 @@ const parseNoteSegment = (segment, record) => {
     }
   }
 
+  if (isForgotPunch) {
+    userReason = text
+      .replace(/^Forgot Punch approved\.\s*/i, "")
+      .replace(/^Reason:\s*/i, "")
+      .replace(/^Forgot Punch request for [^\n]*(?:\n|$)\s*/i, "")
+      .replace(/\s*Check-In Location:.*$/im, "")
+      .replace(/\s*Check-Out Location:.*$/im, "")
+      .replace(/\s*Pending admin approval\.?/gi, "")
+      .replace(/\s*Approved by admin\.?/gi, "")
+      .replace(/\s*Rejected by admin\.?/gi, "")
+      .trim();
+    if (!userReason) userReason = null;
+  }
+
   // Extract distance if present
   const distMatch = text.match(/\(([0-9.]+(?:\s*(?:km|m))?)\s*(?:away)?\)/i);
   const distance = distMatch ? distMatch[1].trim() : null;
@@ -213,7 +234,24 @@ const parseNoteSegment = (segment, record) => {
     record?.employee?.employeeCode?.startsWith("ADMIN") ||
     record?.user?.role === "ADMIN";
 
-  if (lower.includes("pending")) {
+  const isOverallApproved =
+    record?.status === "PRESENT" ||
+    record?.status === "HALF_DAY" ||
+    String(record?.note || "").toLowerCase().includes("approved by") ||
+    String(record?.note || "").toLowerCase().includes("approved");
+
+  const isOverallRejected =
+    record?.status === "ABSENT" &&
+    (String(record?.note || "").toLowerCase().includes("rejected by") ||
+     String(record?.note || "").toLowerCase().includes("rejected"));
+
+  if (isOverallApproved || lower.includes("approved")) {
+    status = "APPROVED";
+    statusLabel = isAdminRecord ? "Approved (Auto-Approved)" : "Approved";
+  } else if (isOverallRejected || lower.includes("rejected")) {
+    status = "REJECTED";
+    statusLabel = "Rejected";
+  } else if (lower.includes("pending")) {
     if (isAdminRecord) {
       status = "APPROVED";
       statusLabel = "Approved (Auto-Approved)";
@@ -221,12 +259,6 @@ const parseNoteSegment = (segment, record) => {
       status = "PENDING";
       statusLabel = "Pending Approval";
     }
-  } else if (lower.includes("approved")) {
-    status = "APPROVED";
-    statusLabel = "Approved";
-  } else if (lower.includes("rejected")) {
-    status = "REJECTED";
-    statusLabel = "Rejected";
   } else if (isManualCorrection || isForgotPunch || isAdminRecord) {
     status = "APPROVED";
     statusLabel = "Approved";
@@ -234,7 +266,7 @@ const parseNoteSegment = (segment, record) => {
 
   let locationInfo = null;
   if (lower.includes("unassigned location")) {
-    const locM = text.match(/unassigned location:\s*([^.]+?)(?=\.|\s*Reason:|\s*Pending|$)/i);
+    const locM = text.match(/unassigned location:\s*([^(.]+?)(?=\s*\(|\.|\s*Reason:|\s*Pending|$)/i);
     const locName = locM ? locM[1].trim() : "Unassigned Location";
     locationInfo = distance ? `${locName} (${distance} away)` : locName;
   } else if (lower.includes("outside assigned location")) {
@@ -248,7 +280,9 @@ const parseNoteSegment = (segment, record) => {
     timeStr = fmtTime(record.checkOut);
   }
 
-  let cleanSummary = text
+  let cleanSummary = isForgotPunch
+    ? userReason || ""
+    : text
     .replace(/^Checkin\s+(from|to|location)?[^.]*?\.\s*/i, "")
     .replace(/^Checkout\s+(recorded|from|to|location|outside)?[^.]*?\.\s*/i, "")
     .replace(/Forgot Punch\s*(approved|rejected|pending approval)?\.?/gi, "")
@@ -687,8 +721,22 @@ const Attendance = () => {
           </div>
 
           <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-            {selectedRecordForNote.note?.split("|").map((segment, idx) => {
+            {selectedRecordForNote.note
+              ?.split("|")
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0 && !s.match(/^(?:Approved|Rejected)\s+by/i))
+              .map((segment, idx) => {
               const parsed = parseNoteSegment(segment, selectedRecordForNote);
+              const forgotPunchType = parsed.isForgotPunch
+                ? /check[\s-]?in/i.test(parsed.rawText) &&
+                  /check[\s-]?out/i.test(parsed.rawText)
+                  ? "Check In + Check Out"
+                  : /check[\s-]?out/i.test(parsed.rawText)
+                    ? "Check Out"
+                    : /time[\s-]?edit/i.test(parsed.rawText)
+                      ? "Time Edit"
+                      : "Check In"
+                : "";
 
               return (
                 <div
@@ -729,6 +777,30 @@ const Attendance = () => {
                   </div>
 
                   {/* Details Grid */}
+                  {parsed.isForgotPunch ? (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">Date</div>
+                        <div className="font-bold text-foreground mt-0.5">{fmtDate(selectedRecordForNote.date)}</div>
+                      </div>
+                      <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                        <div className="text-[10px] uppercase font-semibold text-muted-foreground">Punch Type</div>
+                        <div className="font-bold text-foreground mt-0.5">{forgotPunchType}</div>
+                      </div>
+                      {selectedRecordForNote.checkIn && (
+                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">Check-in Time</div>
+                          <div className="font-bold text-foreground mt-0.5">{fmtTime(selectedRecordForNote.checkIn)}</div>
+                        </div>
+                      )}
+                      {selectedRecordForNote.checkOut && (
+                        <div className="rounded-lg bg-background p-2.5 border border-border/50">
+                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">Check-out Time</div>
+                          <div className="font-bold text-foreground mt-0.5">{fmtTime(selectedRecordForNote.checkOut)}</div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {/* Punch Time */}
                     {parsed.timeStr && (
@@ -786,11 +858,35 @@ const Attendance = () => {
                       </div>
                     </div>
                   </div>
+                  )}
 
                   {/* Reason / Note Details */}
-                  <div className="rounded-lg bg-background p-3 border border-border/50 space-y-1.5">
-                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                      {parsed.isForgotPunch ? "Forgot Punch Reason" : parsed.userReason ? "Employee Reason" : "Reason / Note Details"}
+                  <div className={`rounded-lg p-3 border space-y-1.5 ${
+                    parsed.isForgotPunch
+                      ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20"
+                      : "bg-background border-border/50"
+                  }`}>
+                    <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center justify-between">
+                      <span>
+                        {parsed.isForgotPunch
+                          ? /check[\s-]?in/i.test(parsed.rawText)
+                            ? "Check-In Reason"
+                            : /check[\s-]?out/i.test(parsed.rawText)
+                              ? "Check-Out Reason"
+                              : "Forgot Punch Reason"
+                          : parsed.isCheckIn
+                          ? "Check In Reason"
+                          : parsed.isCheckOut
+                          ? "Check Out Reason"
+                          : parsed.userReason
+                          ? "Employee Reason"
+                          : "Reason / Note Details"}
+                      </span>
+                      {parsed.type && (
+                        <span className="text-[9px] font-semibold text-primary/80 lowercase bg-primary/10 px-2 py-0.5 rounded">
+                          {parsed.type}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs font-medium text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/30 whitespace-pre-wrap break-words leading-relaxed">
                       {parsed.userReason || parsed.cleanSummary || parsed.rawText || "No reason provided."}
@@ -996,12 +1092,6 @@ const Attendance = () => {
                                   <MessageSquare className="h-3.5 w-3.5" />
                                   View Reason
                                 </button>
-                                {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance") || r.note.toLowerCase().includes("forgot punch")) && (
-                                  <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
-                                    <Clock className="h-3 w-3" />
-                                    <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
-                                  </div>
-                                )}
                               </div>
                             ) : (
                               <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
@@ -1010,12 +1100,6 @@ const Attendance = () => {
                                     {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
                                   </div>
                                 ))}
-                                {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance")) && (
-                                  <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
-                                    <Clock className="h-3 w-3" />
-                                    <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
-                                  </div>
-                                )}
                               </div>
                             )
                           ) : (
@@ -1961,12 +2045,6 @@ const Attendance = () => {
                                       <MessageSquare className="h-3.5 w-3.5" />
                                       View Reason
                                     </button>
-                                    {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance") || r.note.toLowerCase().includes("forgot punch")) && (
-                                      <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
-                                        <Clock className="h-3 w-3" />
-                                        <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
-                                      </div>
-                                    )}
                                   </div>
                                 ) : (
                                   <div className="space-y-1 text-sm font-medium text-foreground whitespace-nowrap">
@@ -1975,12 +2053,6 @@ const Attendance = () => {
                                         {n.replace(/(Checkin:|Checkout:)/g, "").trim()}
                                       </div>
                                     ))}
-                                    {r.updatedAt && (r.note.toLowerCase().includes("approved") || r.note.toLowerCase().includes("manual attendance")) && (
-                                      <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
-                                        <Clock className="h-3 w-3" />
-                                        <span>Approved: {fmtDate(r.updatedAt)} {fmtTime(r.updatedAt)}</span>
-                                      </div>
-                                    )}
                                   </div>
                                 )
                               ) : (
@@ -2021,4 +2093,3 @@ const Attendance = () => {
 };
 
 export default Attendance;
-

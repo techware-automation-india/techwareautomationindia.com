@@ -6,7 +6,6 @@ import { ShieldCheck, Mail, Lock, ArrowLeft, LogIn, Eye, EyeOff, Loader2 } from 
 import { apiPost } from "../lib/api.js";
 import { saveAuth } from "../lib/auth.js";
 
-import logo from "../assets/techwareLogo.png";
 
 const UniversalLogin = () => {
   const navigate = useNavigate();
@@ -72,7 +71,7 @@ const UniversalLogin = () => {
           {/* Header with Prominent Company Logo */}
           <div className="flex flex-col items-center text-center mb-8">
             <img
-              src={logo}
+              src="/techwareLogo.svg"
               alt="Techware Automation India Logo"
               className="h-24 sm:h-28 w-auto object-contain mb-4 transition-transform hover:scale-105"
             />

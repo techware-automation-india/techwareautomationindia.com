@@ -126,6 +126,14 @@ export const printSingleEmployeeAttendancePdf = ({
   const netWorkedMins = Math.max(0, totalWorkedMins - totalOtMins);
   const netWorkedText = fmtMinutesToHMString(netWorkedMins);
 
+  const empShift =
+    employee?.shift?.name ||
+    employee?.shiftName ||
+    (employee?.shift?.startTime && employee?.shift?.endTime
+      ? `${employee.shift.name || "Shift"} (${employee.shift.startTime} - ${employee.shift.endTime})`
+      : null) ||
+    "—";
+
   const rowsHtml = sortedRecords.length > 0
     ? sortedRecords
         .map((r, idx) => {
@@ -154,6 +162,14 @@ export const printSingleEmployeeAttendancePdf = ({
             statusClass = "status-present";
           }
 
+          const shiftName =
+            r.shift?.name ||
+            (r.shift?.startTime && r.shift?.endTime
+              ? `${r.shift.startTime} - ${r.shift.endTime}`
+              : null) ||
+            empShift ||
+            "—";
+
           const inTime = r.status === "ON_LEAVE" || r.status === "ABSENT" ? "—" : (r.checkIn ? fmtTimeFn(r.checkIn) : "—");
           const outTime = r.status === "ON_LEAVE" || r.status === "ABSENT" ? "—" : (r.checkOut ? fmtTimeFn(r.checkOut) : "—");
           const worked = r.status === "ON_LEAVE" || r.status === "ABSENT" ? "—" : (fmtWorkedHoursFn(r.workedHoursTotal ?? r.workedHours) || "—");
@@ -170,6 +186,9 @@ export const printSingleEmployeeAttendancePdf = ({
                 <div>${fmtDateFn(r.date)}</div>
                 <div class="cell-day">${dayName}</div>
               </td>
+              <td class="cell-shift">
+                <span class="badge-shift">${shiftName}</span>
+              </td>
               <td class="cell-status"><span class="badge ${statusClass}">${statusText}</span></td>
               <td class="cell-time">${inTime}</td>
               <td class="cell-time">${outTime}</td>
@@ -179,7 +198,7 @@ export const printSingleEmployeeAttendancePdf = ({
           `;
         })
         .join("")
-    : `<tr><td colspan="6" style="text-align:center; padding: 24px; color: #64748b;">No attendance records found for this period.</td></tr>`;
+    : `<tr><td colspan="7" style="text-align:center; padding: 24px; color: #64748b;">No attendance records found for this period.</td></tr>`;
 
   const htmlContent = `
     <!doctype html>
@@ -426,6 +445,17 @@ export const printSingleEmployeeAttendancePdf = ({
           .status-absent { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
           .status-leave { background: #f3e8ff; color: #6d28d9; border: 1px solid #e9d5ff; }
           .status-holiday { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }
+          .badge-shift {
+            display: inline-block;
+            background: #f1f5f9;
+            color: #334155;
+            font-weight: 600;
+            font-size: 11px;
+            padding: 2px 7px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+          }
+          .cell-shift { }
           .badge-ot {
             display: inline-block;
             background: #ffedd5;
@@ -513,6 +543,10 @@ export const printSingleEmployeeAttendancePdf = ({
               <span class="emp-val">${department}</span>
             </div>
             <div class="emp-item">
+              <span class="emp-label">Shift</span>
+              <span class="emp-val">${empShift}</span>
+            </div>
+            <div class="emp-item">
               <span class="emp-label">Total Worked Hours</span>
               <span class="emp-val">${totalWorkedText}</span>
             </div>
@@ -565,12 +599,13 @@ export const printSingleEmployeeAttendancePdf = ({
           <table>
             <thead>
               <tr>
-                <th style="width: 20%;">Date &amp; Day</th>
-                <th style="width: 20%;">Status (Present, Short Day, Holiday, Leave, Absent)</th>
-                <th style="width: 15%;">Check In</th>
-                <th style="width: 15%;">Check Out</th>
-                <th style="width: 15%;">Working Hours</th>
-                <th style="width: 15%;">OT</th>
+                <th style="width: 16%;">Date &amp; Day</th>
+                <th style="width: 15%;">Shift</th>
+                <th style="width: 19%;">Status</th>
+                <th style="width: 13%;">Check In</th>
+                <th style="width: 13%;">Check Out</th>
+                <th style="width: 13%;">Working Hours</th>
+                <th style="width: 11%;">OT</th>
               </tr>
             </thead>
             <tbody>
@@ -630,11 +665,18 @@ export const printTeamAttendancePdf = ({
       const netWorkedMinutes = Math.max(0, (summary.totalWorkedMinutes || 0) - (summary.totalOtMinutes || 0));
       const netWorkedText = `${Math.floor(netWorkedMinutes / 60)}h ${Math.round(netWorkedMinutes % 60)}m`;
 
+      const empShiftName =
+        emp.shift?.name ||
+        emp.shiftName ||
+        (emp.shift?.startTime && emp.shift?.endTime
+          ? `${emp.shift.startTime} - ${emp.shift.endTime}`
+          : null);
+
       return `
         <tr class="${idx % 2 === 1 ? 'row-alt' : ''}">
           <td class="cell-emp">
             <strong>${emp.fullName}</strong>
-            <div class="emp-code">${emp.employeeCode || "—"}</div>
+            <div class="emp-code">${emp.employeeCode || "—"}${empShiftName ? ` &bull; Shift: ${empShiftName}` : ""}</div>
           </td>
           <td class="cell-num text-present">${summary.present}</td>
           <td class="cell-num text-short">${summary.shortDay}</td>

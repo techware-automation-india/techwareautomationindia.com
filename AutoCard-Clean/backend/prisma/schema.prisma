@@ -322,6 +322,9 @@ model Attendance {
   shiftId     String?
   shift       Shift?           @relation(fields: [shiftId], references: [id])
   note        String?          @db.Text
+  reason      String?          @db.Text
+  checkInReason  String?       @db.Text
+  checkOutReason String?       @db.Text
   checkInLatitude   Float?  // GPS latitude where employee checked in
   checkInLongitude  Float?  // GPS longitude where employee checked in
   checkOutLatitude  Float?  // GPS latitude where employee checked out

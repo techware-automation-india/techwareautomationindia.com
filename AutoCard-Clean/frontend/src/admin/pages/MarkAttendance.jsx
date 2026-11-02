@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getAuthUser } from "../../lib/auth.js";
+import { formatTimeWithPeriod } from "../../lib/timeFormat.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -139,7 +140,7 @@ const TimePicker12h = ({ value, onChange, disabled = false }) => {
 
 const fmtTime = (v) =>
   v
-    ? new Date(v).toLocaleTimeString("en-IN", {
+    ? formatTimeWithPeriod(new Date(v), "en-IN", {
         hour: "2-digit",
         minute: "2-digit",
         hour12: true,
@@ -653,7 +654,7 @@ const AdminMarkAttendance = () => {
           <span className="text-sm text-muted-foreground">{fmtDate(now)}</span>
         </div>
         <div className="font-display text-5xl font-bold tracking-tight text-primary">
-          {now.toLocaleTimeString("en-IN", {
+          {formatTimeWithPeriod(now, "en-IN", {
             hour: "2-digit",
             minute: "2-digit",
             second: "2-digit",

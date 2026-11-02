@@ -1,7 +1,7 @@
 
 import { motion } from "framer-motion";
 import { ArrowRight, Play } from "lucide-react";
-import heroMachine from "../assets/herobackground_img.jpg"; // Your machine image
+import heroMachine from "../assets/herobackground_img.webp";
 
 const HeroSection = () => {
   return (
@@ -149,4 +149,3 @@ const HeroSection = () => {
 };
 
 export default HeroSection;
-

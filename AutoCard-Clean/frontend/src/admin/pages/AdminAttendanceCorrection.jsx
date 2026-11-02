@@ -833,6 +833,7 @@ const AdminAttendanceCorrection = () => {
                   type="button"
                   onClick={() => {
                     setDate(unclosedPrevious.record.dateKey);
+                    setCheckOutDate(unclosedPrevious.record.dateKey);
                     setPunchType("check-out");
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"

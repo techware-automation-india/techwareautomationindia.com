@@ -5,7 +5,6 @@ import { adminModules } from "./modules.js";
 import { getAuthUser, clearAuth } from "../lib/auth.js";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import { usePoll } from "../lib/pollContext.jsx";
-import logo from "../assets/techwareLogo.png";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
@@ -298,7 +297,7 @@ const AdminLayout = () => {
             className="pointer-events-none select-none fixed inset-0 flex items-center justify-center z-0 overflow-hidden lg:pl-64 pt-16"
           >
             <img
-              src={logo}
+              src="/techwareLogo.svg"
               alt=""
               className="w-[70vw] max-w-[500px] sm:w-[55vw] sm:max-w-[580px] md:w-[45vw] md:max-w-[650px] h-auto object-contain opacity-[0.035] dark:opacity-[0.05] filter grayscale transition-opacity"
             />

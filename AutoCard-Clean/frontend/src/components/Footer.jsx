@@ -1,5 +1,4 @@
 
-import logo from "../assets/techwareLogo.png";
 import {
   FaLinkedinIn,
   FaWhatsapp,
@@ -45,7 +44,7 @@ const Footer = () => {
           <div>
             <a href="#home" className="flex items-center mb-4">
               <img
-                src={logo}
+                src="/techwareLogo.svg"
                 alt="Techware Automation India"
                 className="h-20 w-auto"
               />
@@ -184,4 +183,3 @@ const Footer = () => {
 };
 
 export default Footer;
-

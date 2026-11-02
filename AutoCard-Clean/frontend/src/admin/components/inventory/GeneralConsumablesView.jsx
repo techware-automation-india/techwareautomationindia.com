@@ -29,6 +29,7 @@ import {
 import { toast } from "sonner";
 import { apiGet, apiPut, apiPost } from "../../../lib/api.js";
 import { canPerformAction } from "../../../lib/permissions.js";
+import { formatTimeWithPeriod } from "../../../lib/timeFormat.js";
 
 const formatDate = (val) => {
   if (!val) return "—";
@@ -41,7 +42,7 @@ const formatTime = (val) => {
   if (!val) return "";
   const d = new Date(val);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return formatTimeWithPeriod(d, "en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
 };
 
 const resolveImageUrl = (url) => {

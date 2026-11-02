@@ -1,82 +1,81 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { PollProvider } from "./lib/pollContext.jsx";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import ScrollToTop from "./components/ScrollToTop.jsx";
 import { applyTheme, getPreferredTheme, onThemeChange } from "./lib/theme.js";
-import Index from "./pages/Index.jsx";
-
-import Login from "./pages/Login.jsx";
-import UniversalLogin from "./pages/UniversalLogin.jsx";
-import Machines from "./pages/Machines.jsx";
 import NotFound from "./pages/NotFound.jsx";
-
-// import AdminProfile from "./admin/AdminProfile.jsx";
-import ChangePassword from "./admin/pages/ChangePassword.jsx";
-import AdminLayout from "./admin/AdminLayout.jsx";
-import Overview from "./admin/pages/Overview.jsx";
-import Employee from "./admin/pages/Employee.jsx";
-import EmployeeList from "./admin/pages/EmployeeList.jsx";
-// CUSTOMER ADMIN PAGES COMMENTED OUT
-// import Customer from "./admin/pages/Customer.jsx";
-// import CustomerList from "./admin/pages/CustomerList.jsx";
-import RequestsHome from "./admin/pages/RequestsHome.jsx";
-import AdminTrackRequests from "./admin/pages/AdminTrackRequests.jsx";
-import AdminAttendanceCorrection from "./admin/pages/AdminAttendanceCorrection.jsx";
-import AdminApplyLeave from "./admin/pages/AdminApplyLeave.jsx";
-import Approvals from "./admin/pages/Approvals.jsx";
-import LeavePolicy from "./admin/pages/LeavePolicy.jsx";
-import Holidays from "./admin/pages/Holidays.jsx";
-import LeavePolicyHome from "./admin/pages/LeavePolicyHome.jsx";
-import AdminMarkAttendance from "./admin/pages/MarkAttendance.jsx";
-
-import Attendance from "./admin/pages/Attendance.jsx";
-import AttendanceRequests from "./admin/pages/AttendanceRequests.jsx";
-import Projects from "./admin/pages/Projects.jsx";
-import ProjectDetails from "./admin/pages/ProjectDetails.jsx";
-import Services from "./admin/pages/Services.jsx";
-import RolesAccess from "./admin/pages/RolesAccess";
-import ShiftLocation from "./admin/pages/ShiftLocation.jsx";
-import Roster from "./admin/pages/Roster.jsx";
-import Inventory from "./admin/pages/Inventory.jsx";
-import ToolsSettings from "./admin/pages/ToolsSettings.jsx";
-
-import EmployeeLayout from "./employee/EmployeeLayout.jsx";
-import EmployeeOverview from "./employee/pages/Overview.jsx";
-// import EmployeeProfile from "./employee/EmployeeProfile.jsx";
-import EmployeeChangePassword from "./employee/pages/ChangePassword.jsx";
-import EmployeeOnboarding from "./employee/pages/Onboarding.jsx";
-import EmployeeMarkAttendance from "./employee/pages/MarkAttendance.jsx";
-import EmployeeAttendance from "./employee/pages/Attendance.jsx";
-import MyTools from "./employee/pages/MyTools.jsx";
-import EmployeeLeave from "./employee/pages/Leave.jsx";
-import EmployeeHolidays from "./employee/pages/Holidays.jsx";
-import EmployeeAccessModules from "./employee/pages/AccessModules.jsx";
-import AcademicCalendar from "./employee/pages/AcademicCalendar.jsx";
-// CUSTOMER MANAGEMENT COMMENTED OUT
-// import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
-import EmployeeRequests from "./employee/pages/Requests.jsx";
-import AttendanceCorrection from "./employee/pages/AttendanceCorrection.jsx";
-import TrackRequests from "./employee/pages/TrackRequests.jsx";
-import EmployeeApplyLeave from "./employee/pages/EmployeeApplyLeave.jsx";
-import RequestToolsInventory from "./employee/pages/RequestToolsInventory.jsx";
-import EmployeeProjects from "./employee/pages/Projects.jsx";
-import EmployeeServices from "./employee/pages/Services.jsx";
-import EmployeeShiftLocation from "./employee/pages/ShiftLocation.jsx";
-import EmployeeRoster from "./employee/pages/Roster.jsx";
-import EmployeeManagement from "./employee/pages/EmployeeManagement.jsx";
 import RequireOnboarding from "./employee/components/RequireOnboarding.jsx";
 import RequireModuleAccess from "./employee/components/RequireModuleAccess.jsx";
 
-import CustomerLayout from "./customer/CustomerLayout.jsx";
-import CustomerOverview from "./customer/pages/Overview.jsx";
-import CustomerProfile from "./customer/pages/Profile.jsx";
-import CustomerProjects from "./customer/pages/Projects.jsx";
-import CustomerRequests from "./customer/pages/Requests.jsx";
-import CustomerDocuments from "./customer/pages/Documents.jsx";
-import CustomerSupport from "./customer/pages/Support.jsx";
-import CustomerNotifications from "./customer/pages/Notifications.jsx";
-import CustomerSettings from "./customer/pages/Settings.jsx";
+const Index = lazy(() => import("./pages/Index.jsx"));
+const Login = lazy(() => import("./pages/Login.jsx"));
+const UniversalLogin = lazy(() => import("./pages/UniversalLogin.jsx"));
+const Machines = lazy(() => import("./pages/Machines.jsx"));
+
+// import AdminProfile from "./admin/AdminProfile.jsx";
+const ChangePassword = lazy(() => import("./admin/pages/ChangePassword.jsx"));
+const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
+const Overview = lazy(() => import("./admin/pages/Overview.jsx"));
+const Employee = lazy(() => import("./admin/pages/Employee.jsx"));
+const EmployeeList = lazy(() => import("./admin/pages/EmployeeList.jsx"));
+// CUSTOMER ADMIN PAGES COMMENTED OUT
+// import Customer from "./admin/pages/Customer.jsx";
+// import CustomerList from "./admin/pages/CustomerList.jsx";
+const RequestsHome = lazy(() => import("./admin/pages/RequestsHome.jsx"));
+const AdminTrackRequests = lazy(() => import("./admin/pages/AdminTrackRequests.jsx"));
+const AdminAttendanceCorrection = lazy(() => import("./admin/pages/AdminAttendanceCorrection.jsx"));
+const AdminApplyLeave = lazy(() => import("./admin/pages/AdminApplyLeave.jsx"));
+const Approvals = lazy(() => import("./admin/pages/Approvals.jsx"));
+const LeavePolicy = lazy(() => import("./admin/pages/LeavePolicy.jsx"));
+const Holidays = lazy(() => import("./admin/pages/Holidays.jsx"));
+const LeavePolicyHome = lazy(() => import("./admin/pages/LeavePolicyHome.jsx"));
+const AdminMarkAttendance = lazy(() => import("./admin/pages/MarkAttendance.jsx"));
+
+const Attendance = lazy(() => import("./admin/pages/Attendance.jsx"));
+const AttendanceRequests = lazy(() => import("./admin/pages/AttendanceRequests.jsx"));
+const Projects = lazy(() => import("./admin/pages/Projects.jsx"));
+const ProjectDetails = lazy(() => import("./admin/pages/ProjectDetails.jsx"));
+const Services = lazy(() => import("./admin/pages/Services.jsx"));
+const RolesAccess = lazy(() => import("./admin/pages/RolesAccess"));
+const ShiftLocation = lazy(() => import("./admin/pages/ShiftLocation.jsx"));
+const Roster = lazy(() => import("./admin/pages/Roster.jsx"));
+const Inventory = lazy(() => import("./admin/pages/Inventory.jsx"));
+const ToolsSettings = lazy(() => import("./admin/pages/ToolsSettings.jsx"));
+
+const EmployeeLayout = lazy(() => import("./employee/EmployeeLayout.jsx"));
+const EmployeeOverview = lazy(() => import("./employee/pages/Overview.jsx"));
+// import EmployeeProfile from "./employee/EmployeeProfile.jsx";
+const EmployeeChangePassword = lazy(() => import("./employee/pages/ChangePassword.jsx"));
+const EmployeeMarkAttendance = lazy(() => import("./employee/pages/MarkAttendance.jsx"));
+const EmployeeAttendance = lazy(() => import("./employee/pages/Attendance.jsx"));
+const MyTools = lazy(() => import("./employee/pages/MyTools.jsx"));
+const EmployeeLeave = lazy(() => import("./employee/pages/Leave.jsx"));
+const EmployeeHolidays = lazy(() => import("./employee/pages/Holidays.jsx"));
+const EmployeeAccessModules = lazy(() => import("./employee/pages/AccessModules.jsx"));
+const AcademicCalendar = lazy(() => import("./employee/pages/AcademicCalendar.jsx"));
+// CUSTOMER MANAGEMENT COMMENTED OUT
+// import CustomerManagement from "./employee/pages/CustomerManagement.jsx";
+const EmployeeRequests = lazy(() => import("./employee/pages/Requests.jsx"));
+const AttendanceCorrection = lazy(() => import("./employee/pages/AttendanceCorrection.jsx"));
+const TrackRequests = lazy(() => import("./employee/pages/TrackRequests.jsx"));
+const EmployeeApplyLeave = lazy(() => import("./employee/pages/EmployeeApplyLeave.jsx"));
+const RequestToolsInventory = lazy(() => import("./employee/pages/RequestToolsInventory.jsx"));
+const EmployeeProjects = lazy(() => import("./employee/pages/Projects.jsx"));
+const EmployeeServices = lazy(() => import("./employee/pages/Services.jsx"));
+const EmployeeShiftLocation = lazy(() => import("./employee/pages/ShiftLocation.jsx"));
+const EmployeeRoster = lazy(() => import("./employee/pages/Roster.jsx"));
+const EmployeeManagement = lazy(() => import("./employee/pages/EmployeeManagement.jsx"));
+
+const CustomerLayout = lazy(() => import("./customer/CustomerLayout.jsx"));
+const CustomerOverview = lazy(() => import("./customer/pages/Overview.jsx"));
+const CustomerProfile = lazy(() => import("./customer/pages/Profile.jsx"));
+const CustomerProjects = lazy(() => import("./customer/pages/Projects.jsx"));
+const CustomerRequests = lazy(() => import("./customer/pages/Requests.jsx"));
+const CustomerDocuments = lazy(() => import("./customer/pages/Documents.jsx"));
+const CustomerSupport = lazy(() => import("./customer/pages/Support.jsx"));
+const CustomerNotifications = lazy(() => import("./customer/pages/Notifications.jsx"));
+const CustomerSettings = lazy(() => import("./customer/pages/Settings.jsx"));
 
 const dashboardPrefixes = ["/admin", "/employee", "/customer"];
 
@@ -121,7 +120,17 @@ const AppRoutes = () => {
         theme={isDashboardRoute ? theme : "light"}
         richColors
       />
-      <Routes>
+      <Suspense
+        fallback={
+          <div
+            className="flex min-h-screen items-center justify-center text-sm text-muted-foreground"
+            role="status"
+          >
+            Loading page...
+          </div>
+        }
+      >
+        <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/machines" element={<Machines />} />
         <Route path="/login" element={<UniversalLogin />} />
@@ -164,7 +173,6 @@ const AppRoutes = () => {
 
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeOverview />} />
-          {/* <Route path="onboarding" element={<EmployeeOnboarding />} /> */}
 
           <Route path="my-tools" element={<MyTools />} />
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />
@@ -358,7 +366,8 @@ const AppRoutes = () => {
         </Route>
 
         <Route path="*" element={<NotFound />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </>
   );
 };

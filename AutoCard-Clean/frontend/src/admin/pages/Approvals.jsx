@@ -753,7 +753,7 @@ const normalizeAttendance = (items) =>
       source: "ATTENDANCE",
       title:
         isUnassignedCheckInWithCheckOut
-          ? `UL Check In + Forgot Check Out (${dateLabel})`
+          ? `UL Check In (${dateLabel})`
           : item.note?.includes("outside") || item.note?.includes("unassigned") || item.note?.includes("requires approval")
           ? isCheckoutApproval
             ? "Checkout Location Approval"
@@ -3037,10 +3037,32 @@ const Approvals = () => {
                                 reasonModal.checkInLongitude != null ? (
                                 <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                                   Distance from office: GPS Recorded (
-                                  {reasonModal.checkInLatitude.toFixed(4)},{" "}
-                                  {reasonModal.checkInLongitude.toFixed(4)})
+                                  {Number(reasonModal.checkInLatitude).toFixed(4)},{" "}
+                                  {Number(reasonModal.checkInLongitude).toFixed(4)})
                                 </p>
                               ) : null}
+                              {reasonModal.checkInLatitude != null &&
+                               reasonModal.checkInLongitude != null &&
+                               Number.isFinite(Number(reasonModal.checkInLatitude)) && (
+                                <div className="mt-3 pt-2 border-t border-emerald-200/60 dark:border-emerald-900/40">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      window.open(
+                                        `https://www.google.com/maps?q=${reasonModal.checkInLatitude},${reasonModal.checkInLongitude}`,
+                                        "_blank",
+                                        "noopener,noreferrer"
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                  >
+                                    <MapPin className="h-3.5 w-3.5" /> View on Google Maps
+                                  </button>
+                                  <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">
+                                    GPS: {Number(reasonModal.checkInLatitude).toFixed(6)}, {Number(reasonModal.checkInLongitude).toFixed(6)}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
@@ -3083,10 +3105,32 @@ const Approvals = () => {
                                 reasonModal.checkOutLongitude != null ? (
                                 <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
                                   Distance from office: GPS Recorded (
-                                  {reasonModal.checkOutLatitude.toFixed(4)},{" "}
-                                  {reasonModal.checkOutLongitude.toFixed(4)})
+                                  {Number(reasonModal.checkOutLatitude).toFixed(4)},{" "}
+                                  {Number(reasonModal.checkOutLongitude).toFixed(4)})
                                 </p>
                               ) : null}
+                              {reasonModal.checkOutLatitude != null &&
+                               reasonModal.checkOutLongitude != null &&
+                               Number.isFinite(Number(reasonModal.checkOutLatitude)) && (
+                                <div className="mt-3 pt-2 border-t border-rose-200/60 dark:border-rose-900/40">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      window.open(
+                                        `https://www.google.com/maps?q=${reasonModal.checkOutLatitude},${reasonModal.checkOutLongitude}`,
+                                        "_blank",
+                                        "noopener,noreferrer"
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800 shadow-sm transition hover:bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+                                  >
+                                    <MapPin className="h-3.5 w-3.5" /> View on Google Maps
+                                  </button>
+                                  <p className="mt-1.5 text-[11px] font-mono text-muted-foreground">
+                                    GPS: {Number(reasonModal.checkOutLatitude).toFixed(6)}, {Number(reasonModal.checkOutLongitude).toFixed(6)}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

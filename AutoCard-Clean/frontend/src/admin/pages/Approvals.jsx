@@ -2847,8 +2847,18 @@ const Approvals = () => {
                     const checkInLng  = checkInLocSrc  === "forgot-punch" ? null : (reasonModal.actualCheckInLongitude ?? forgotPunch.checkInLongitude ?? reasonModal.checkInLongitude);
                     const checkOutLat = checkOutLocSrc === "forgot-punch" ? null : (reasonModal.actualCheckOutLatitude  ?? forgotPunch.checkOutLatitude  ?? reasonModal.checkOutLatitude);
                     const checkOutLng = checkOutLocSrc === "forgot-punch" ? null : (reasonModal.actualCheckOutLongitude ?? forgotPunch.checkOutLongitude ?? reasonModal.checkOutLongitude);
-                    const checkInUsesMap  = checkInLat  != null && Number.isFinite(Number(checkInLat))  && (checkInLocSrc  === "unassigned-location" || isLocationCorrection || (!checkInLocation && checkInLocSrc !== "forgot-punch"));
-                    const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && (checkOutLocSrc === "unassigned-location" || isLocationCorrection || (!checkOutLocation && checkOutLocSrc !== "forgot-punch"));
+                    const isModalLocationCorrection = Boolean(
+                      reasonModal.title?.toLowerCase().includes("location approval") ||
+                      reasonModal.title?.toLowerCase().includes("(ul)") ||
+                      reasonModal.subject?.toLowerCase().includes("approval") ||
+                      reasonModal.subject?.toLowerCase().includes("ul") ||
+                      reasonModal.description?.toLowerCase().includes("unassigned location") ||
+                      reasonModal.description?.toLowerCase().includes("outside assigned location") ||
+                      forgotPunch?.checkInLocationSource === "unassigned-location" ||
+                      forgotPunch?.checkOutLocationSource === "unassigned-location"
+                    );
+                    const checkInUsesMap  = checkInLat  != null && Number.isFinite(Number(checkInLat))  && (checkInLocSrc  === "unassigned-location" || isModalLocationCorrection || (!checkInLocation && checkInLocSrc !== "forgot-punch"));
+                    const checkOutUsesMap = checkOutLat != null && Number.isFinite(Number(checkOutLat)) && (checkOutLocSrc === "unassigned-location" || isModalLocationCorrection || (!checkOutLocation && checkOutLocSrc !== "forgot-punch"));
                     // For checkout-only forgot-punch, don't fabricate a default check-in location card
                     const isForgotPunchCheckOut = _isCheckOutOnly && checkOutLocSrc === "forgot-punch";
                     const effCheckInSrc  = checkInLocSrc  || (!isForgotPunchCheckOut && _isCheckOutOnly && actualCheckInTime  && !checkInUsesMap  ? "default-location" : null);

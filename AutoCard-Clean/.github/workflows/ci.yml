@@ -1,0 +1,127 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+      - deployment
+  pull_request:
+    branches:
+      - dev
+      - main
+      - deployment
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ========================================================
+  # JOB 1: Frontend Build & Verification
+  # ========================================================
+  frontend-build:
+    name: Frontend Verification (Vite Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Build Frontend
+        run: npm run build
+
+  # ========================================================
+  # JOB 2: Backend Verification (Prisma & Node.js Syntax)
+  # ========================================================
+  backend-check:
+    name: Backend Verification (Prisma & Syntax)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install Backend Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Verify Backend Entry Point
+        run: node -c src/index.js
+
+  # ========================================================
+  # JOB 3: Continuous Deployment (CD)
+  # Triggered automatically on push to 'main' or 'deployment'
+  # ========================================================
+  deploy:
+    name: Deploy to Production
+    needs: [frontend-build, backend-check]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/deployment')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # Deploy Frontend to Vercel (Optional: configure if VERCEL_TOKEN set)
+      # ------------------------------------------------------------------
+      - name: Deploy Frontend to Vercel
+        if: env.VERCEL_TOKEN != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npm install --global vercel@latest
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          vercel build --prod --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+
+      # ------------------------------------------------------------------
+      # Deploy Backend to Render (Optional: configure if RENDER_DEPLOY_HOOK_URL set)
+      # ------------------------------------------------------------------
+      - name: Trigger Render Backend Deployment
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          curl -f -X POST "$RENDER_DEPLOY_HOOK_URL"
+
+      # ------------------------------------------------------------------
+      # Deploy via SSH (Optional: configure if SSH_HOST set for Hostinger VPS)
+      # ------------------------------------------------------------------
+      - name: Deploy via SSH to VPS
+        if: env.SSH_HOST != ''
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "cd /var/www/techwareautomationindia.com && git pull origin main && npm run deploy"

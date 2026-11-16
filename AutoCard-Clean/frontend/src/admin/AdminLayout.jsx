@@ -169,11 +169,7 @@ const AdminLayout = () => {
                 title="Approvals"
               >
                 <Bell className="h-5 w-5" />
-                {adminPendingCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 ring-2 ring-background animate-pulse">
-                    {adminPendingCount > 99 ? "99+" : adminPendingCount}
-                  </span>
-                )}
+                
               </button>
 
               {notifOpen && (

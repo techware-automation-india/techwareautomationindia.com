@@ -63,19 +63,13 @@ const Overview = () => {
             type="button"
             onClick={() => navigate("/admin/approvals")}
             className={`relative rounded-lg border p-3 transition-colors hover:bg-secondary ${
-              pendingCount > 0
-                ? "border-rose-200 text-rose-500 hover:text-rose-600"
-                : "border-emerald-200 text-emerald-500 hover:text-emerald-600"
+              "border-border text-foreground hover:bg-secondary"
             }`}
             aria-label={`Notifications${pendingCount ? `, ${pendingCount} pending` : ""}`}
             title="Notifications"
           >
             <Bell className="h-6 w-6" />
-            {pendingCount > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-bold text-white">
-                {pendingCount}
-              </span>
-            )}
+            
           </button>
           {showNotifications && (
             <div className="absolute right-0 top-full z-20 mt-3 w-72 rounded-xl border border-border bg-background p-4 shadow-lg">

@@ -469,11 +469,7 @@ const Overview = () => {
           >
             <Bell className="h-6 w-6" />
 
-            {requestNotifications.length > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
-                {requestNotifications.length}
-              </span>
-            )}
+            
           </button>
 
           {/* =================================================

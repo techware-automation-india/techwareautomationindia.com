@@ -149,12 +149,30 @@ router.post("/login", async (req, res) => {
       roleId: user.roleId 
     });
 
-    if (user.roleId && !user.customRole) {
+    if (!user.customRole) {
       try {
-        user.customRole = await prisma.roleTable.findUnique({
-          where: { id: user.roleId },
-          include: { modules: true },
-        });
+        if (user.roleId) {
+          user.customRole = await prisma.roleTable.findUnique({
+            where: { id: user.roleId },
+            include: { modules: true },
+          });
+        }
+        // Fallback: If employee has no roleId or customRole, attach default Employee role
+        if (!user.customRole && user.role === "EMPLOYEE") {
+          user.customRole = await prisma.roleTable.findFirst({
+            where: {
+              OR: [
+                { isDefault: true, name: { equals: "Employee" } },
+                { name: { equals: "Employee" } },
+                { isDefault: true },
+              ],
+            },
+            include: { modules: true },
+          });
+          if (user.customRole) {
+            user.roleId = user.customRole.id;
+          }
+        }
       } catch (roleErr) {
         console.warn("Failed to fetch customRole for user:", roleErr.message);
       }

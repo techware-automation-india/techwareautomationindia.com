@@ -127,7 +127,11 @@ export const PollProvider = ({ children }) => {
           ];
 
           const filtered = all
-            .filter((r) => r.type === "ROSTER" || ["APPROVED", "REJECTED"].includes(r.status))
+            .filter((r) => 
+              r.type === "ROSTER" || 
+              ["APPROVED", "REJECTED"].includes(r.status) || 
+              (r.reviewNote && (r.reviewNote.includes("[RESTOCKED_AVAILABLE]") || r.reviewNote.includes("[ON_HOLD]")))
+            )
             .filter((r) => r.createdAt)
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
             .slice(0, 5);

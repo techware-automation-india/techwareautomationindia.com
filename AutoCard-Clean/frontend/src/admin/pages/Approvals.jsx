@@ -26,6 +26,11 @@ import {
   FolderKanban,
   Wrench,
   CheckCircle2,
+  Layers,
+  Warehouse,
+  Box,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -716,6 +721,7 @@ const normalizeRequests = (items) =>
       checkOutLongitude: checkOutLng,
       status: item.status === "PENDING" ? "PENDING" : item.status,
       createdAt: item.createdAt,
+      updatedAt: item.updatedAt || item.reviewedAt || null,
     };
   });
 
@@ -1030,6 +1036,30 @@ const getReviewerInfo = (approval) => {
   return "Admin";
 };
 
+
+// Extracts the item found timestamp from reviewNote or updatedAt
+const getItemFoundTime = (req) => {
+  if (!req) return null;
+  const note = String(req.reviewNote || req.adminNote || "");
+  const foundMatch = note.match(/\[FOUND_AT:([^\]]+)\]/);
+  if (foundMatch && foundMatch[1]) {
+    const d = new Date(foundMatch[1]);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const isFound = note.includes("[PRODUCT_FOUND]") || String(req.status || "").toUpperCase() === "COMPLETED";
+  if (isFound) {
+    if (req.updatedAt) {
+      const d = new Date(req.updatedAt);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    if (req.reviewedAt) {
+      const d = new Date(req.reviewedAt);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+  return null;
+};
+
 const parseRequestDetails = (rawText) => {
   if (!rawText || typeof rawText !== "string") return null;
 
@@ -1040,8 +1070,10 @@ const parseRequestDetails = (rawText) => {
     "Product Type",
     "Product ID",
     "Project Name",
+    "Project Code",
     "Item Name",
     "Quantity",
+    "Items",
     "Urgency Level",
     "Item Condition",
     "Date",
@@ -1057,10 +1089,7 @@ const parseRequestDetails = (rawText) => {
   const pairs = [];
   let remarks = "";
 
-  const pattern = new RegExp(
-    `(?:^|\\n|\\s)(Action Type|Category|Product Type|Product ID|Project Name|Item Name|Quantity|Urgency Level|Item Condition|Date|Purpose \\/ Work Details \\/ Remarks|Purpose \\/ Remarks|Remarks|Reason):\\s*`,
-    "gi"
-  );
+  const pattern = /(?:^|\n|\s)(Action Type|Category|Product Type|Product ID|Project Name|Project Code|Item Name|Quantity|Items\s*\(\d+\)|Items|Urgency Level|Item Condition|Date|Purpose \/ Work Details \/ Remarks|Purpose \/ Remarks|Remarks|Reason):\s*/gi;
 
   const matches = [...text.matchAll(pattern)];
   if (matches.length === 0) return null;
@@ -1069,7 +1098,15 @@ const parseRequestDetails = (rawText) => {
     const key = matches[i][1].trim();
     const startIndex = matches[i].index + matches[i][0].length;
     const endIndex = i + 1 < matches.length ? matches[i + 1].index : text.length;
-    const val = text.substring(startIndex, endIndex).trim();
+    let val = text.substring(startIndex, endIndex).trim();
+
+    // If key is Project Name, make sure to strip any concatenated Project Code or Items text if present
+    if (key.toLowerCase() === "project name") {
+      val = val
+        .replace(/\s*Project Code:.*$/i, "")
+        .replace(/\s*Items\s*(?:\(\d+\))?:.*$/i, "")
+        .trim();
+    }
 
     if (key.match(/Purpose|Remarks|Reason/i) && (key.includes("Purpose") || key.includes("Remarks") || key === "Reason")) {
       remarks = val;
@@ -1083,9 +1120,11 @@ const parseRequestDetails = (rawText) => {
   const isToolsCategory = categoryName.includes("tool");
 
   const filteredPairs = pairs.filter((pair) => {
-    if (pair.label.toLowerCase().includes("project")) {
+    const l = pair.label.toLowerCase();
+    if (l.includes("items")) return false;
+    if (l.includes("project")) {
       if (isToolsCategory || !pair.value || pair.value === "N/A") {
-        return false; // Remove Project Name from view reason/details modal if request category is Tools
+        return false;
       }
     }
     return true;
@@ -1191,23 +1230,58 @@ const RenderFormattedDetails = ({ text }) => {
 
 const parseInventorySubject = (titleStr = "") => {
   if (!titleStr || typeof titleStr !== "string") return null;
-  const match = titleStr.match(/^\[(Inventory Return|Inventory Taking)(?:\s*:\s*([^\]]+))?\]\s*(.*?)(?:\s*\((.*?)\))?$/i);
-  if (!match) return null;
+
+  // Extract all [...] tags
+  const tags = [];
+  let rest = titleStr.replace(/\[(.*?)\]/g, (_, tag) => {
+    tags.push(tag.trim());
+    return "";
+  }).trim();
+
+  let actionType = "Inventory Taking";
+  let codeOrProject = "";
+  let categoryType = "";
+
+  tags.forEach((t) => {
+    if (t.toLowerCase().includes("return")) {
+      actionType = "Inventory Return";
+    } else if (t.toLowerCase().includes("taking")) {
+      actionType = "Inventory Taking";
+    } else {
+      codeOrProject = t;
+    }
+    if (t.includes(":")) {
+      const parts = t.split(":");
+      if (parts[0].toLowerCase().includes("return")) actionType = "Inventory Return";
+      if (parts[0].toLowerCase().includes("taking")) actionType = "Inventory Taking";
+      codeOrProject = parts.slice(1).join(":").trim();
+    }
+  });
+
+  const catMatch = rest.match(/\((.*?)\)$/);
+  if (catMatch) {
+    categoryType = catMatch[1].trim();
+    rest = rest.replace(/\((.*?)\)$/, "").trim();
+  }
+  const itemName = rest.replace(/^\d+\s+Items?:\s*/i, "").trim();
+
   return {
-    actionType: match[1].trim(),
-    codeOrProject: match[2]?.trim() || "",
-    itemName: match[3]?.trim() || titleStr,
-    categoryType: match[4]?.trim() || "",
-    isReturn: match[1].toLowerCase().includes("return"),
+    hasTags: tags.length > 0,
+    actionType,
+    codeOrProject,
+    categoryType,
+    itemName: itemName || rest || titleStr,
+    isReturn: actionType.toLowerCase().includes("return"),
   };
 };
 
 const FormattedInventoryTitle = ({ title, className = "" }) => {
   const parsed = parseInventorySubject(title);
-  if (!parsed) {
+  if (!parsed || !parsed.hasTags) {
+    const cleanTitle = typeof title === "string" ? title.replace(/^\d+\s+Items?:\s*/i, "").trim() : title;
     return (
       <h3 className={`text-lg font-bold leading-tight text-foreground ${className}`}>
-        {title}
+        {cleanTitle}
       </h3>
     );
   }
@@ -1240,9 +1314,7 @@ const FormattedInventoryTitle = ({ title, className = "" }) => {
         )}
       </div>
 
-      <h3 className="text-lg font-bold leading-snug text-foreground">
-        {parsed.itemName}
-      </h3>
+      {/* Item names line removed per request */}
     </div>
   );
 };
@@ -1289,6 +1361,80 @@ const getReturnStep = (req) => {
   return 1;
 };
 
+
+// Parses equipment request item lines: "1. [dfv] fdff (Qty: 1, Nos, Mechanical)" or single item fields
+
+// Parses item allocation notes like: "Item Allocation: [code] Full (1/1), [gtgt] Partial (1/4)"
+const parseAllocations = (reviewNote) => {
+  if (!reviewNote || typeof reviewNote !== "string") return {};
+  const allocMatch = reviewNote.match(/Item Allocation:\s*([^|]+)/i);
+  if (!allocMatch) return {};
+  const str = allocMatch[1].trim();
+  const res = {};
+  const itemRegex = /\[([^\]]+)\]\s*([^,]+)/g;
+  let m;
+  while ((m = itemRegex.exec(str)) !== null) {
+    const code = m[1].trim();
+    const detail = m[2].trim();
+    res[code] = detail;
+  }
+  return res;
+};
+
+const parseEquipmentItems = (description) => {
+  if (!description || typeof description !== "string") return [];
+  const lines = description.split("\n");
+  const items = [];
+  const multiItemRegex = /^\d+\.\s*\[([^\]]+)\]\s*([^(\n]+)(?:\((.*?)\))?/;
+
+  for (const line of lines) {
+    const m = line.trim().match(multiItemRegex);
+    if (m) {
+      const code = m[1].trim();
+      const name = m[2].trim();
+      const meta = m[3] ? m[3].trim() : "";
+      let qty = 1;
+      let unit = "Nos";
+      let type = "";
+
+      const qm = meta.match(/Qty:\s*(\d+)/i);
+      if (qm) qty = parseInt(qm[1], 10);
+      const parts = meta.split(",").map((s) => s.trim());
+      parts.forEach((p) => {
+        if (!p.toLowerCase().includes("qty") && p) {
+          if (["nos", "pcs", "kg", "m", "box", "set", "pack"].includes(p.toLowerCase())) {
+            unit = p;
+          } else {
+            type = p;
+          }
+        }
+      });
+
+      items.push({ code, name, qty, unit, type, rawMeta: meta });
+    }
+  }
+
+  if (items.length === 0) {
+    const prodIdLine = lines.find((l) => /^Product ID:\s*/i.test(l.trim()));
+    const itemNameLine = lines.find((l) => /^Item Name:\s*/i.test(l.trim()));
+    const qtyLine = lines.find((l) => /^Quantity:\s*/i.test(l.trim()));
+    const unitLine = lines.find((l) => /^Unit:\s*/i.test(l.trim()));
+    const typeLine = lines.find((l) => /^Product Type:\s*/i.test(l.trim()));
+
+    if (prodIdLine || itemNameLine) {
+      items.push({
+        code: prodIdLine ? prodIdLine.replace(/^Product ID:\s*/i, "").trim() : "",
+        name: itemNameLine ? itemNameLine.replace(/^Item Name:\s*/i, "").trim() : "Equipment Item",
+        qty: qtyLine ? parseInt(qtyLine.replace(/^Quantity:\s*/i, "").trim(), 10) || 1 : 1,
+        unit: unitLine ? unitLine.replace(/^Unit:\s*/i, "").trim() : "Nos",
+        type: typeLine ? typeLine.replace(/^Product Type:\s*/i, "").trim() : "",
+      });
+    }
+  }
+
+  return items;
+};
+
 const Approvals = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -1302,11 +1448,95 @@ const Approvals = () => {
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [holdModal, setHoldModal] = useState(null);
+  const [partialApprovalModal, setPartialApprovalModal] = useState(null);
   const [holdReason, setHoldReason] = useState("Product currently out of stock / unavailable.");
   const [permissions, setPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [inventoryItems, setInventoryItems] = useState([]);
   const [openLocationIds, setOpenLocationIds] = useState(new Set());
+
+  
+  // Returns all items in the request with matching inventory stock, warehouse, rack, and category hierarchy chain
+  const getInventoryItemsWithLocation = (approval) => {
+    if (!approval) return [];
+    const text = `${approval.title || ""} ${approval.description || ""} ${approval.subject || ""}`;
+    const parsedItems = parseEquipmentItems(text);
+    const allocations = parseAllocations(approval.reviewNote || approval.adminNote);
+
+    return parsedItems.map((pi) => {
+      let matched = null;
+      if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
+        matched = inventoryItems.find((inv) => {
+          const invCode = (inv.code || inv.sku || "").toLowerCase().trim();
+          const invName = (inv.name || "").toLowerCase().trim();
+          const pCode = (pi.code || "").toLowerCase().trim();
+          const pName = (pi.name || "").toLowerCase().trim();
+          return (pCode && invCode && invCode === pCode) || (pName && invName && invName === pName);
+        });
+      }
+
+      const allocInfo = allocations[pi.code] || null;
+
+      // Extract category hierarchy chain: Root 1, Root 2, Root 3, Root 4
+      const chain = [];
+      let curr = matched?.categoryRef;
+      while (curr) {
+        if (curr.name) chain.unshift(curr.name);
+        curr = curr.parent;
+      }
+      if (chain.length === 0 && matched?.category) {
+        chain.push(matched.category);
+      }
+
+      const root1 = chain[0] || "—";
+      const root2 = chain[1] || "—";
+      const root3 = chain[2] || "—";
+      const root4 = chain[3] || "—";
+
+      const stockNum = matched?.quantity != null ? Number(matched.quantity) : null;
+      const reqQty = Number(pi.qty || 1);
+
+      // Check if item is partial:
+      // 1. Allocation text contains 'partial' (e.g. "Partial (1/4)" or "Partial (1 Nos In Stock)")
+      // 2. Or in stock quantity is > 0 but less than requested quantity
+      const isPartial = Boolean(
+        (allocInfo && allocInfo.toLowerCase().includes("partial")) ||
+        (stockNum !== null && stockNum > 0 && stockNum < reqQty)
+      );
+
+      const isOutOfStock = Boolean(
+        (allocInfo && allocInfo.toLowerCase().includes("out of stock")) ||
+        (stockNum !== null && stockNum <= 0)
+      );
+
+      return {
+        code: pi.code || (matched?.code || ""),
+        name: pi.name || (matched?.name || "Equipment Item"),
+        requestedQty: reqQty,
+        unit: pi.unit || matched?.unit || "Nos",
+        type: pi.type || matched?.category || "",
+        stock: stockNum,
+        warehouse: matched?.warehouse || "Main Warehouse",
+        location: matched?.location || matched?.rack || "Warehouse Shelf",
+        allocation: allocInfo,
+        root1,
+        root2,
+        root3,
+        root4,
+        isPartial,
+        isOutOfStock,
+        matched,
+      };
+    });
+  };
+
+    const checkShortageItems = (approval) => {
+    if (!approval || approval.source !== "REQUEST" || approval.type !== "EQUIPMENT") return [];
+    const isTaking = (approval.description || "").toLowerCase().includes("taking") || (approval.description || "").toLowerCase().includes("action type: taking");
+    if (!isTaking) return [];
+    const items = getInventoryItemsWithLocation(approval);
+    return items.filter((it) => it.isPartial || it.isOutOfStock);
+  };
 
   const getInventoryItemLocation = (approval) => {
     if (!approval || !Array.isArray(inventoryItems) || inventoryItems.length === 0) return null;
@@ -1811,7 +2041,9 @@ const Approvals = () => {
   const filteredApprovals = approvals.filter((approval) => {
     const createdAt = new Date(approval.createdAt || 0);
     const matchesStatus =
-      statusFilter === "ALL" || approval.status === statusFilter;
+      statusFilter === "ALL" ||
+      approval.status === statusFilter ||
+      (statusFilter === "APPROVED" && (approval.status === "COMPLETED" || isApprovedOrCompletedStatus(approval.status, approval.reviewNote)));
     const matchesYear =
       yearFilter === "ALL" || String(createdAt.getFullYear()) === yearFilter;
     const matchesMonth =
@@ -1895,14 +2127,15 @@ const Approvals = () => {
     return { canApprove, canReject };
   };
 
-  const review = async (approval, decision, reason = "") => {
-    if (decision === "approve" && approval.source === "REQUEST" && approval.type === "EQUIPMENT") {
-      const matchedInvItem = getInventoryItemLocation(approval);
-      const isTaking = (approval.description || "").toLowerCase().includes("taking") || (approval.description || "").toLowerCase().includes("action type: taking");
-      if (matchedInvItem && isTaking && matchedInvItem.quantity <= 0) {
-        toast.error(
-          `Cannot approve request: Product '${matchedInvItem.code || matchedInvItem.name}' is OUT OF STOCK (Available: 0 ${matchedInvItem.unit || "Nos"}). Please place the request on HOLD or restock inventory first.`
-        );
+  const review = async (approval, decision, reason = "", approvedItems = null) => {
+    if (decision === "approve" && approval.source === "REQUEST" && approval.type === "EQUIPMENT" && !approvedItems) {
+      const shortages = checkShortageItems(approval);
+      if (shortages.length > 0) {
+        setPartialApprovalModal({
+          approval,
+          shortages,
+          items: getInventoryItemsWithLocation(approval),
+        });
         return;
       }
     }
@@ -1912,6 +2145,7 @@ const Approvals = () => {
       const payload = {
         reason: reason || "",
         note: reason || "",
+        ...(Array.isArray(approvedItems) ? { approvedItems } : {}),
       };
 
       const requestIds =
@@ -2410,66 +2644,10 @@ const Approvals = () => {
                                       </button>
                                     )}
 
-                                    {/* Manual typed check-out location shown in modal only */}
-
-                                    {/* View Location Button (Inventory item) */}
-                                    {matchedInvItem && (
-                                      <button
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setOpenLocationIds((prev) => {
-                                            const next = new Set(prev);
-                                            if (next.has(approval.id)) {
-                                              next.delete(approval.id);
-                                            } else {
-                                              next.add(approval.id);
-                                            }
-                                            return next;
-                                          });
-                                        }}
-                                        className="inline-flex items-center gap-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-4 py-2 text-sm font-semibold transition hover:bg-blue-500/20 w-fit cursor-pointer"
-                                      >
-                                        <MapPin className="h-4 w-4" />
-                                        <span>{isLocationOpen ? "Hide Location" : "View Location"}</span>
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {/* Toggled Warehouse & Storage Location Details */}
-                                  {matchedInvItem && isLocationOpen && (() => {
-                                    const isOutOfStock = matchedInvItem.quantity <= 0;
-                                    return (
-                                      <div className={`p-3 rounded-xl border text-xs space-y-1 transition-all animate-in fade-in slide-in-from-top-1 ${isOutOfStock ? "bg-rose-500/10 border-rose-500/30" : "bg-blue-500/10 border-blue-500/20"}`}>
-                                        <div className="flex items-center justify-between font-bold">
-                                          <span className={`flex items-center gap-1.5 ${isOutOfStock ? "text-rose-900 dark:text-rose-300" : "text-blue-900 dark:text-blue-300"}`}>
-                                            <Package className={`h-4 w-4 shrink-0 ${isOutOfStock ? "text-rose-600" : "text-blue-600"}`} />
-                                            Warehouse Location & Stock Info:
-                                          </span>
-                                          <span className={`px-2 py-0.5 rounded text-white text-[11px] font-bold ${isOutOfStock ? "bg-rose-600 animate-pulse" : "bg-blue-600"}`}>
-                                            {isOutOfStock ? `⚠️ OUT OF STOCK (${matchedInvItem.quantity} ${matchedInvItem.unit || "Nos"})` : `${matchedInvItem.quantity} ${matchedInvItem.unit || "Nos"} in Stock`}
-                                          </span>
-                                        </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-foreground pt-1 font-medium">
-                                          <div>
-                                            <span className="text-muted-foreground">Warehouse: </span>
-                                            <span className="font-bold text-blue-700 dark:text-blue-400">{matchedInvItem.warehouse || "Main Warehouse"}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-muted-foreground">Rack / Shelf: </span>
-                                            <span className="font-bold text-foreground">{matchedInvItem.location || "Store Rack"}</span>
-                                          </div>
-                                        </div>
-                                        {isOutOfStock && (
-                                          <div className="mt-1 pt-1 border-t border-rose-500/20 text-rose-700 dark:text-rose-400 font-bold text-[11px] flex items-center gap-1">
-                                            ⚠️ Approval disabled — Product is currently out of stock. Place request on HOLD or restock inventory first.
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              );
+                                     {/* Manual typed check-out location shown in modal only */}
+                                   </div>
+                                 </div>
+                               );
                             })()}
                           </div>
                         </div>
@@ -2619,6 +2797,8 @@ const Approvals = () => {
                                       : isEquipment
                                       ? "Approved (Awaiting Employee Confirmation)"
                                       : "Approved ✓"
+                                    : isApprovedOrCompletedStatus(approval.status, approval.reviewNote)
+                                    ? "Approved ✓"
                                     : "Rejected"}
                                 </div>
                                 {isAdmin && (
@@ -2629,6 +2809,12 @@ const Approvals = () => {
                                 <div className="mt-1 text-[11px] text-muted-foreground">
                                   {formatDate(approval.reviewedAt || approval.createdAt)} • {formatTimeIST(approval.reviewedAt || approval.createdAt)}
                                 </div>
+                                {getItemFoundTime(approval) && (
+                                  <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                                    <PackageCheck className="h-3 w-3 text-emerald-600" />
+                                    <span>Found: {formatDate(getItemFoundTime(approval))} {formatTimeIST(getItemFoundTime(approval))}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )}
@@ -2653,7 +2839,7 @@ const Approvals = () => {
             }
           }}
         >
-          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
             {/* ================= HEADER ================= */}
             <div className="flex shrink-0 items-center justify-between border-b border-border bg-background px-4 py-4 sm:px-6 sm:py-5">
               <div className="flex items-center gap-4 min-w-0">
@@ -2760,15 +2946,15 @@ const Approvals = () => {
                   <span
                     className={`ml-auto inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${
                       reasonModal.status === "PENDING"
-                        ? "bg-amber-100 text-amber-700"
-                        : reasonModal.status === "APPROVED"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-rose-100 text-rose-700"
+                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                        : isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote)
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                          : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
                     }`}
                   >
                     {reasonModal.status === "PENDING"
                       ? "Pending"
-                      : reasonModal.status === "APPROVED"
+                      : isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote)
                         ? "Approved"
                         : "Rejected"}
                   </span>
@@ -3135,6 +3321,223 @@ const Approvals = () => {
                           </div>
                         )}
                       </div>
+                                ) : reasonModal.source === "REQUEST" && reasonModal.type === "EQUIPMENT" ? (
+                  (() => {
+                    const matchedItems = getInventoryItemsWithLocation(reasonModal);
+                    const parsedReason = parseRequestDetails(getReadableReason(reasonModal).reason);
+                    const metaPairs = (parsedReason?.pairs || []).filter(p => {
+                      const label = p.label.toLowerCase();
+                      return !label.includes("product id") && !label.includes("item name") && !label.includes("quantity") && !label.includes("unit") && !label.includes("items");
+                    });
+                    const remarks = parsedReason?.remarks;
+
+                    return (
+                      <div className="space-y-4">
+                        {/* 1. Header Banner */}
+                        <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                              <Package className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                Inventory / Tool Request
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {matchedItems.length} {matchedItems.length === 1 ? "Item requested" : "Items requested"} from warehouse
+                              </p>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-800 dark:text-amber-300 text-xs font-bold">
+                            {matchedItems.reduce((acc, it) => acc + (it.requestedQty || 1), 0)} Total Qty
+                          </span>
+                        </div>
+
+                        {/* 2. Items List Table */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                              <Layers className="h-4 w-4 text-primary" /> Requested Items & Storage Location
+                            </p>
+                            <span className="text-[11px] font-semibold text-muted-foreground">
+                              Scroll horizontally to view all details →
+                            </span>
+                          </div>
+
+                          {matchedItems.length === 0 ? (
+                            <div className="rounded-2xl border border-border bg-background p-4 text-xs text-muted-foreground">
+                              <RenderFormattedDetails text={getReadableReason(reasonModal).reason} />
+                            </div>
+                          ) : (
+                            <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
+                              <div className="overflow-auto max-w-full max-h-[280px]">
+                                <table className="w-full min-w-[700px] border-collapse text-left text-xs sm:text-sm">
+                                  <thead className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-xs">
+                                    <tr className="border-b border-border/80 text-[11px] font-bold uppercase tracking-wider text-muted-foreground shadow-xs">
+                                      <th className="py-3 px-3 text-center w-12 shrink-0">S.No</th>
+                                      <th className="py-3 px-3 min-w-[120px]">Category Hierarchy</th>
+                                      <th className="py-3 px-4 min-w-[200px]">Item & Allocation</th>
+                                      <th className="py-3 px-3 text-center min-w-[90px]">Qty</th>
+                                      <th className="py-3 px-4 min-w-[200px]">Storage Location</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-border/60">
+                                    {matchedItems.map((item, idx) => {
+                                      const roots = [item.root1, item.root2, item.root3, item.root4].filter(
+                                        (r) => r && r !== "—"
+                                      );
+
+                                      return (
+                                        <tr
+                                          key={idx}
+                                          className={`transition-colors hover:bg-secondary/20 ${
+                                            item.isPartial
+                                              ? "bg-rose-500/5 dark:bg-rose-950/20"
+                                              : ""
+                                          }`}
+                                        >
+                                          {/* S.No */}
+                                          <td className="py-3.5 px-3 text-center font-bold text-muted-foreground/80 align-top">
+                                            {idx + 1}
+                                          </td>
+
+                                          {/* Category Hierarchy Breadcrumbs */}
+                                          <td className="py-3.5 px-3 align-top">
+                                            {roots.length === 0 ? (
+                                              <span className="text-muted-foreground text-xs">—</span>
+                                            ) : (
+                                              <div className="space-y-1">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-secondary border border-border text-foreground">
+                                                    {roots[0]}
+                                                  </span>
+                                                  {roots.slice(1).map((sub, sIdx) => (
+                                                    <span key={sIdx} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                                      <span className="text-muted-foreground/60">›</span>
+                                                      <span className="font-medium text-foreground/80">{sub}</span>
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+                                          </td>
+
+                                          {/* Item Name + Code + Badges */}
+                                          <td className="py-3.5 px-4 align-top">
+                                            <div className="space-y-1.5">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                {item.code && (
+                                                  <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-secondary border border-border text-foreground shrink-0">
+                                                    [{item.code}]
+                                                  </span>
+                                                )}
+                                                <span
+                                                  className={`font-semibold text-sm ${
+                                                    item.isPartial
+                                                      ? "text-rose-600 dark:text-rose-400 font-bold"
+                                                      : "text-foreground"
+                                                  }`}
+                                                >
+                                                  {item.name}
+                                                </span>
+                                              </div>
+
+                                              {/* Stock / Partial Tag */}
+                                              <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                                                {item.isPartial ? (
+                                                  <span className="inline-flex items-center gap-1 font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/25">
+                                                    ● Partial ({item.stock != null ? item.stock : 0} {item.unit || "Nos"} In Stock)
+                                                  </span>
+                                                ) : item.isOutOfStock ? (
+                                                  <span className="inline-flex items-center gap-1 font-bold text-rose-600 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/25">
+                                                    ● Out of Stock (0 In Stock)
+                                                  </span>
+                                                ) : item.stock !== null ? (
+                                                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/25">
+                                                    ✓ In Stock ({item.stock} {item.unit || "Nos"})
+                                                  </span>
+                                                ) : null}
+
+                                                {item.allocation && (
+                                                  <span className="text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border/40">
+                                                    Allocation: <strong className="text-foreground">{item.allocation}</strong>
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </td>
+
+                                          {/* Qty */}
+                                          <td className="py-3.5 px-3 text-center align-top">
+                                            <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-bold bg-primary/10 text-primary border border-primary/20 shadow-2xs">
+                                              {item.requestedQty} {item.unit || "Nos"}
+                                            </span>
+                                          </td>
+
+                                          {/* Item Location */}
+                                          <td className="py-3.5 px-4 align-top">
+                                            <div className="rounded-xl border border-border/70 bg-secondary/30 p-2.5 space-y-1">
+                                              <div className="flex items-center gap-1.5 font-bold text-blue-700 dark:text-blue-400 text-xs">
+                                                <Warehouse className="h-3.5 w-3.5 shrink-0" />
+                                                <span>{item.warehouse || "Main Warehouse"}</span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground pt-0.5 border-t border-border/40">
+                                                <MapPin className="h-3 w-3 shrink-0 text-rose-500" />
+                                                <span>Shelf / Rack / Bin:</span>
+                                                <strong className="text-foreground font-mono bg-background px-1.5 py-0.5 rounded border border-border">
+                                                  {item.location || "Warehouse Shelf"}
+                                                </strong>
+                                              </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 3. Project / Category / Action Details */}
+                        {metaPairs.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                              Project & Request Attributes
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {metaPairs.map((pair, pIdx) => (
+                                <div
+                                  key={pIdx}
+                                  className="rounded-xl border border-border bg-secondary/20 p-3 space-y-1"
+                                >
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
+                                    {pair.label}
+                                  </span>
+                                  <span className="text-xs sm:text-sm font-bold text-foreground block break-words">
+                                    {pair.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 4. Remarks / Purpose */}
+                        {remarks && (
+                          <div className="rounded-2xl border border-border bg-secondary/20 p-4 space-y-1.5">
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                              Purpose / Remarks
+                            </span>
+                            <p className="text-xs sm:text-sm font-medium text-foreground whitespace-pre-wrap leading-relaxed">
+                              {remarks}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
                 ) : (
                   <div className="space-y-3">
                     <div className="rounded-2xl border border-border bg-secondary/20 px-4 py-4">
@@ -3245,6 +3648,24 @@ const Approvals = () => {
                           </span>
                           <span className={`ml-2 text-xs ${isApprovedOrCompletedStatus(reasonModal.status, reasonModal.reviewNote) ? "text-emerald-600" : "text-rose-600"}`}>
                             {formatTimeIST(reasonModal.reviewedAt)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {getItemFoundTime(reasonModal) && (
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <div className="flex items-center gap-2">
+                          <PackageCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                            Item Found / Collected At
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                            {formatDate(getItemFoundTime(reasonModal))}
+                          </span>
+                          <span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
+                            {formatTimeIST(getItemFoundTime(reasonModal))}
                           </span>
                         </div>
                       </div>
@@ -3443,6 +3864,140 @@ const Approvals = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Partial Approval & Stock Shortage Auto-Split Modal */}
+      {partialApprovalModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setPartialApprovalModal(null);
+            }
+          }}
+        >
+          <div className="flex w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-border bg-amber-500/10 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">
+                    Stock Shortage Detected
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Requested item quantity exceeds current warehouse stock
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPartialApprovalModal(null)}
+                className="rounded-xl p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium">
+                💡 <strong>Auto-Split Shortage:</strong> You can approve the <strong>available stock now</strong> for employee pickup. The remaining shortage will be placed on <strong>Hold (Awaiting Restock)</strong>. When restocked in Inventory, the employee will receive an instant dashboard notification!
+              </div>
+
+              <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+                {partialApprovalModal.items.map((it, idx) => {
+                  const avail = it.stock != null ? it.stock : 0;
+                  const reqQty = it.requestedQty || 1;
+                  const canIssue = Math.min(avail, reqQty);
+                  const shortQty = Math.max(0, reqQty - canIssue);
+
+                  return (
+                    <div key={idx} className="p-4 flex flex-wrap items-center justify-between gap-3 bg-secondary/10">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
+                            {it.code || "ITEM"}
+                          </span>
+                          <span className="text-sm font-bold text-foreground truncate">
+                            {it.name}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          <span>Requested: <strong className="text-foreground">{reqQty} {it.unit || "Nos"}</strong></span>
+                          <span>•</span>
+                          <span>Stock: <strong className={avail > 0 ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>{avail} {it.unit || "Nos"}</strong></span>
+                          {shortQty > 0 && (
+                            <>
+                              <span>•</span>
+                              <span className="text-rose-600 dark:text-rose-400 font-bold">
+                                Shortage: {shortQty} {it.unit || "Nos"}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
+                          Approve: {canIssue} {it.unit || "Nos"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/20 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = partialApprovalModal.approval;
+                  setPartialApprovalModal(null);
+                  setHoldModal({ approval: target });
+                }}
+                className="rounded-xl border border-amber-300 bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
+              >
+                Put Entire Request on Hold
+              </button>
+
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setPartialApprovalModal(null)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-semibold hover:bg-secondary transition"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const target = partialApprovalModal.approval;
+                    const itemsToApprove = partialApprovalModal.items.map((it) => {
+                      const avail = it.stock != null ? it.stock : 0;
+                      const reqQty = it.requestedQty || 1;
+                      return {
+                        code: it.code,
+                        name: it.name,
+                        unit: it.unit,
+                        requestedQty: reqQty,
+                        approvedQty: Math.min(avail, reqQty),
+                      };
+                    });
+                    setPartialApprovalModal(null);
+                    await review(target, "approve", "Approved available stock with auto-split shortage for remainder.", itemsToApprove);
+                  }}
+                  className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:from-emerald-700 hover:to-teal-700 transition cursor-pointer"
+                >
+                  Approve Available & Split Shortage →
+                </button>
+              </div>
             </div>
           </div>
         </div>

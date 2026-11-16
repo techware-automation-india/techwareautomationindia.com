@@ -25,6 +25,7 @@ import { canPerformAction } from "../../../lib/permissions.js";
 export default function InventoryApprovalView({ onBackToHub }) {
   const canAction = canPerformAction("inventory-approval", "action");
   const [requests, setRequests] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("PENDING");
   const [search, setSearch] = useState("");
@@ -54,6 +55,65 @@ export default function InventoryApprovalView({ onBackToHub }) {
   useEffect(() => {
     loadRequests();
   }, []);
+
+  const getReqItemsWithLocation = (reqItem) => {
+    if (!reqItem || !Array.isArray(inventoryItems)) return [];
+    const desc = reqItem.description || "";
+    const lines = desc.split("\n");
+    const foundItems = [];
+
+    const multiItemRegex = /^\d+\.\s*\[([^\]]+)\]\s*([^(\n]+)(?:\((.*?)\))?/;
+    for (const line of lines) {
+      const m = line.trim().match(multiItemRegex);
+      if (m) {
+        const codeStr = m[1].trim();
+        const nameStr = m[2].trim();
+        const matched = inventoryItems.find((inv) => {
+          const invCode = (inv.code || inv.sku || "").toLowerCase();
+          return (invCode && invCode === codeStr.toLowerCase());
+        }) || inventoryItems.find((inv) => {
+          const invName = (inv.name || "").toLowerCase();
+          return invName && invName === nameStr.toLowerCase();
+        });
+
+        foundItems.push({
+          code: codeStr,
+          name: nameStr,
+          warehouse: matched?.warehouse || "Main Store",
+          location: matched?.location || "Store Shelf",
+          stock: matched ? matched.quantity : null,
+          unit: matched?.unit || "Nos",
+        });
+      }
+    }
+
+    if (foundItems.length === 0) {
+      const prodIdLine = lines.find((l) => /^Product ID:\s*/i.test(l.trim()));
+      const itemNameLine = lines.find((l) => /^Item Name:\s*/i.test(l.trim()));
+      if (prodIdLine) {
+        const codeStr = prodIdLine.replace(/^Product ID:\s*/i, "").trim();
+        const nameStr = itemNameLine ? itemNameLine.replace(/^Item Name:\s*/i, "").trim() : (reqItem.subject || "");
+        const matched = inventoryItems.find((inv) => {
+          const invCode = (inv.code || inv.sku || "").toLowerCase();
+          return (invCode && invCode === codeStr.toLowerCase());
+        }) || inventoryItems.find((inv) => {
+          const invName = (inv.name || "").toLowerCase();
+          return invName && nameStr && invName === nameStr.toLowerCase();
+        });
+
+        foundItems.push({
+          code: codeStr,
+          name: nameStr,
+          warehouse: matched?.warehouse || "Main Store",
+          location: matched?.location || "Store Shelf",
+          stock: matched ? matched.quantity : null,
+          unit: matched?.unit || "Nos",
+        });
+      }
+    }
+
+    return foundItems;
+  };
 
   const parseRequestDetails = (reqItem) => {
     let details = {};

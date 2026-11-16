@@ -242,33 +242,6 @@ const ProjectDetails = () => {
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="rounded-2xl bg-background border border-border card-shadow p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            <span className="font-semibold">Project Progress</span>
-          </div>
-          <span className="text-2xl font-bold text-primary">{project.progress}%</span>
-        </div>
-        <div className="w-full bg-secondary rounded-full h-3 overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-primary to-primary/80 rounded-full transition-all duration-500"
-            style={{ width: `${project.progress}%` }}
-          />
-        </div>
-        <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-          <span>
-            {project.tasks?.filter((t) => t.status === "COMPLETED").length || 0} of {project.tasks?.length || 0} tasks completed
-          </span>
-          <span>
-            {project.endDate
-              ? `${Math.ceil((new Date(project.endDate) - new Date()) / (1000 * 60 * 60 * 24))} days remaining`
-              : "No deadline"}
-          </span>
-        </div>
-      </div>
-
       {/* Category Folders & Products Section */}
       <div className="rounded-2xl bg-background border border-border card-shadow p-6">
         <DocumentsTab project={project} setProject={setProject} />
@@ -1179,10 +1152,7 @@ const DocumentsTab = ({ project, setProject }) => {
                   <th className="p-3.5 pl-5">Product Name</th>
                   <th className="p-3.5">Product ID</th>
                   <th className="p-3.5">Emp Name (Product Taking)</th>
-                  <th className="p-3.5">Request Create Time & Date</th>
-                  <th className="p-3.5">Request Approve Time & Date</th>
                   <th className="p-3.5">Approve By</th>
-                  <th className="p-3.5">Found Time</th>
                   <th className="p-3.5 text-center">Qty</th>
                 </tr>
               </thead>
@@ -1194,7 +1164,7 @@ const DocumentsTab = ({ project, setProject }) => {
                   if (isEditing) {
                     return (
                       <tr key={item.id} className="bg-primary/5">
-                        <td colSpan={8} className="p-4">
+                        <td colSpan={5} className="p-4">
                           <div className="flex items-center justify-between border-b border-border/60 pb-2 mb-3">
                             <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
                               <Edit2 className="h-3.5 w-3.5 text-primary" /> Edit Product Details
@@ -1272,33 +1242,9 @@ const DocumentsTab = ({ project, setProject }) => {
                         {info.empName}
                       </td>
 
-                      {/* Request Create Time & Date */}
-                      <td className="p-3.5 text-muted-foreground whitespace-nowrap">
-                        {info.createdAt ? `${new Date(info.createdAt).toLocaleDateString()} ${formatTimeWithPeriod(new Date(info.createdAt), "en-IN", { hour: '2-digit', minute: '2-digit', hour12: true })}` : "—"}
-                      </td>
-
-                      {/* Request Approve Time & Date */}
-                      <td className="p-3.5 font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                        {info.approvedAt ? `${new Date(info.approvedAt).toLocaleDateString()} ${formatTimeWithPeriod(new Date(info.approvedAt), "en-IN", { hour: '2-digit', minute: '2-digit', hour12: true })}` : "—"}
-                      </td>
-
                       {/* Approve By */}
                       <td className="p-3.5 font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap">
                         {info.approvedByName}
-                      </td>
-
-                      {/* Found Time */}
-                      <td className="p-3.5 font-semibold whitespace-nowrap">
-                        {info.foundAt && !isNaN(new Date(info.foundAt).getTime()) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                            {new Date(info.foundAt).toLocaleDateString()} {formatTimeWithPeriod(new Date(info.foundAt), "en-IN", { hour: '2-digit', minute: '2-digit', hour12: true })}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-muted-foreground/60 bg-secondary/40 text-[11px] font-medium">
-                            Pending
-                          </span>
-                        )}
                       </td>
 
                       {/* Qty */}

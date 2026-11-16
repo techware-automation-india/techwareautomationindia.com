@@ -290,11 +290,7 @@ const EmployeeLayout = () => {
                 title="Track My Requests"
               >
                 <Bell className="h-5 w-5" />
-                {empNotifications.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 ring-2 ring-background animate-pulse">
-                    {empNotifications.length > 99 ? "99+" : empNotifications.length}
-                  </span>
-                )}
+                
               </button>
 
               {notifOpen && (
@@ -316,11 +312,21 @@ const EmployeeLayout = () => {
                       {empNotifications.map((item) => (
                         <div key={item.id} className="px-4 py-3 flex items-start gap-3 hover:bg-secondary/60 transition-colors">
                           <span className={`h-2 w-2 rounded-full shrink-0 mt-2 ${item.status === "APPROVED" ? "bg-emerald-500" : item.status === "REJECTED" ? "bg-rose-500" : "bg-blue-500"}`} />
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold text-foreground truncate">{item.subject || "Update"}</p>
-                            <p className={`text-xs font-medium ${item.status === "APPROVED" ? "text-emerald-600" : item.status === "REJECTED" ? "text-rose-600" : "text-blue-600"}`}>
-                              {item.status === "ASSIGNED" ? "Roster Assigned" : item.status}
-                            </p>
+                            {item.reviewNote && item.reviewNote.includes("[RESTOCKED_AVAILABLE]") ? (
+                              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                📦 Item Restocked in Store! Ready to collect.
+                              </p>
+                            ) : item.reviewNote && item.reviewNote.includes("[PARTIALLY_APPROVED]") ? (
+                              <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                                ⚡ Partially Approved (Ready for pickup)
+                              </p>
+                            ) : (
+                              <p className={`text-xs font-medium ${item.status === "APPROVED" ? "text-emerald-600" : item.status === "REJECTED" ? "text-rose-600" : "text-blue-600"}`}>
+                                {item.status === "ASSIGNED" ? "Roster Assigned" : item.status}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}

@@ -43,22 +43,43 @@ router.get("/with-roles", checkRolePermission(["roles-access", "employee", "over
       },
     });
 
-    // Transform the data to include module keys as an array
-    const usersWithRoles = users.map((user) => ({
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      role: user.role,
-      roleId: user.roleId,
-      customRole: user.customRole
-        ? {
-            id: user.customRole.id,
-            name: user.customRole.name,
-            isDefault: user.customRole.isDefault,
-            modules: user.customRole.modules.map((m) => m.moduleKey),
-          }
-        : null,
-    }));
+    // Fetch default Employee role for fallback
+    const defaultEmpRole = await prisma.roleTable.findFirst({
+      where: {
+        OR: [
+          { isDefault: true, name: { equals: "Employee" } },
+          { name: { equals: "Employee" } },
+          { isDefault: true },
+        ],
+      },
+      include: {
+        modules: {
+          select: { moduleKey: true },
+        },
+      },
+    });
+
+    // Transform the data to include module keys as an array, defaulting unassigned employees to default Employee role
+    const usersWithRoles = users.map((user) => {
+      const isUnassignedEmp = user.role === "EMPLOYEE" && (!user.customRole || !user.roleId);
+      const roleObj = isUnassignedEmp ? defaultEmpRole : user.customRole;
+
+      return {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        roleId: user.roleId || (isUnassignedEmp && defaultEmpRole ? defaultEmpRole.id : null),
+        customRole: roleObj
+          ? {
+              id: roleObj.id,
+              name: roleObj.name,
+              isDefault: roleObj.isDefault,
+              modules: (roleObj.modules || []).map((m) => (typeof m === "string" ? m : m.moduleKey)),
+            }
+          : null,
+      };
+    });
 
     res.json({ users: usersWithRoles });
   } catch (err) {
@@ -185,18 +206,45 @@ router.put(
         });
       }
 
-      // If roleId is null/empty — unassign role
+      // If roleId is null/empty — fallback to default Employee role
       if (!roleId) {
+        const defaultEmpRole = await prisma.roleTable.findFirst({
+          where: {
+            OR: [
+              { isDefault: true, name: { equals: "Employee" } },
+              { name: { equals: "Employee" } },
+              { isDefault: true },
+            ],
+          },
+          include: {
+            modules: {
+              select: { moduleKey: true },
+            },
+          },
+        });
+
+        const targetRoleId = defaultEmpRole ? defaultEmpRole.id : null;
+        const targetRoleEnum = user.role === "ADMIN" ? "ADMIN" : (user.role === "CUSTOMER" ? "CUSTOMER" : "EMPLOYEE");
+
         const updatedUser = await prisma.user.update({
           where: { id },
-          data: { roleId: null },
+          data: { roleId: targetRoleId, role: targetRoleEnum },
           select: {
             id: true,
             email: true,
             fullName: true,
             role: true,
             roleId: true,
-            customRole: true,
+            customRole: {
+              select: {
+                id: true,
+                name: true,
+                isDefault: true,
+                modules: {
+                  select: { moduleKey: true },
+                },
+              },
+            },
           },
         });
 
@@ -205,8 +253,15 @@ router.put(
           email: updatedUser.email,
           fullName: updatedUser.fullName,
           role: updatedUser.role,
-          roleId: null,
-          customRole: null,
+          roleId: updatedUser.roleId,
+          customRole: updatedUser.customRole
+            ? {
+                id: updatedUser.customRole.id,
+                name: updatedUser.customRole.name,
+                isDefault: updatedUser.customRole.isDefault,
+                modules: updatedUser.customRole.modules.map((m) => m.moduleKey),
+              }
+            : null,
         });
       }
 

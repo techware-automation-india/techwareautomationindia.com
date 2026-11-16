@@ -15,6 +15,11 @@ import {
   Edit2,
   Trash2,
   Loader2,
+  Tag,
+  LayoutGrid,
+  List,
+  Sparkles,
+  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api.js";
@@ -355,6 +360,7 @@ const Projects = () => {
   const [view, setView] = useState("all"); // all, archived
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
+  const [viewMode, setViewMode] = useState("grid"); // grid, table
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -426,9 +432,13 @@ const Projects = () => {
   const filteredProjects = projects
     .filter((p) => (view === "archived" ? p.isArchived : !p.isArchived))
     .filter((p) => {
+      const q = searchTerm.toLowerCase();
       const matchesSearch =
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+        p.name?.toLowerCase().includes(q) ||
+        p.code?.toLowerCase().includes(q) ||
+        p.customer?.name?.toLowerCase().includes(q) ||
+        p.customer?.fullName?.toLowerCase().includes(q) ||
+        p.customer?.companyName?.toLowerCase().includes(q);
       const matchesFilter = filterStatus === "ALL" || p.status === filterStatus;
       return matchesSearch && matchesFilter;
     });
@@ -525,191 +535,336 @@ const Projects = () => {
           </button>
         </div>
 
-        {/* Search & Filter */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        {/* Search & Filter & View Toggle */}
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search projects or customers..."
+              placeholder="Search by project name, project code, customer..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm"
             />
           </div>
 
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="ALL">All Status</option>
-            <option value="PLANNING">Planning</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="ON_HOLD">On Hold</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="CANCELLED">Cancelled</option>
-          </select>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3.5 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm font-medium flex-1 sm:flex-initial"
+            >
+              <option value="ALL">All Status</option>
+              <option value="PLANNING">Planning</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="ON_HOLD">On Hold</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+
+            <div className="flex items-center rounded-xl border border-border bg-secondary/30 p-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                title="Grid View"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  viewMode === "grid"
+                    ? "bg-background text-foreground shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                title="Table View"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  viewMode === "table"
+                    ? "bg-background text-foreground shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Projects Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredProjects.map((project) => (
-          <div
-            key={project.id}
-            onClick={() => navigate(`/admin/project/${project.id}`)}
-            className="rounded-2xl bg-background border border-border card-shadow overflow-hidden hover:shadow-lg transition-shadow block cursor-pointer"
-          >
-            <div className="p-6 space-y-4">
-              {/* Header */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold text-lg">{project.name}</h3>
-                    <select
-                      value={project.status}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onChange={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleStatusChange(project.id, e.target.value);
-                      }}
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border cursor-pointer focus:outline-none transition-colors ${getStatusColor(
-                        project.status
-                      )}`}
-                    >
-                      <option value="PLANNING">Planning</option>
-                      <option value="IN_PROGRESS">In Progress</option>
-                      <option value="ON_HOLD">On Hold</option>
-                      <option value="COMPLETED">Completed</option>
-                      <option value="CANCELLED">Cancelled</option>
-                    </select>
-                  </div>
-                  <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
-                </div>
+      {/* Projects Content: Grid or Table */}
+      {viewMode === "grid" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {filteredProjects.map((project) => (
+            <div
+              key={project.id}
+              onClick={() => navigate(`/admin/project/${project.id}`)}
+              className="group relative rounded-2xl bg-card border border-border/80 p-5 shadow-xs hover:shadow-md hover:border-primary/40 transition-all duration-200 cursor-pointer flex flex-col justify-between"
+            >
+              <div className="space-y-4">
+                {/* Header row: Project Code, Status & More Menu */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      {project.code && (
+                        <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-secondary border border-border text-foreground">
+                          <Tag className="h-3 w-3 text-primary" />
+                          {project.code}
+                        </span>
+                      )}
+                      <select
+                        value={project.status}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onChange={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleStatusChange(project.id, e.target.value);
+                        }}
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border cursor-pointer focus:outline-none transition-colors ${getStatusColor(
+                          project.status
+                        )}`}
+                      >
+                        <option value="PLANNING">Planning</option>
+                        <option value="IN_PROGRESS">In Progress</option>
+                        <option value="ON_HOLD">On Hold</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="CANCELLED">Cancelled</option>
+                      </select>
+                    </div>
 
-                <div
-                  className="relative group"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    className="p-2 hover:bg-secondary rounded-lg transition-colors"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </button>
+                    <h3 className="font-bold text-base sm:text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                      {project.name}
+                    </h3>
+                  </div>
+
                   <div
-                    className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-background shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10"
+                    className="relative shrink-0"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
                   >
-                    <Link
-                      to={`/admin/project/${project.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors"
-                    >
-                      <Eye className="h-4 w-4" />
-                      View Details
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setEditingProject(project);
-                        setShowCreateModal(true);
-                      }}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors text-left"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Edit Project
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleArchiveProject(project.id, project.isArchived);
-                      }}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors text-left"
-                    >
-                      <Archive className="h-4 w-4" />
-                      {project.isArchived ? "Unarchive" : "Archive"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDeleteProject(project.id);
-                      }}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive transition-colors text-left"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete Project
-                    </button>
+                    <div className="group/menu relative">
+                      <button
+                        type="button"
+                        className="p-1.5 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                      <div
+                        className="absolute right-0 top-full mt-1 w-44 rounded-xl border border-border bg-card shadow-lg opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-20 overflow-hidden py-1"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <Link
+                          to={`/admin/project/${project.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View Details
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setEditingProject(project);
+                            setShowCreateModal(true);
+                          }}
+                          className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-secondary transition-colors text-left"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                          Edit Project
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleArchiveProject(project.id, project.isArchived);
+                          }}
+                          className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-secondary transition-colors text-left"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                          {project.isArchived ? "Unarchive" : "Archive"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteProject(project.id);
+                          }}
+                          className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors text-left"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete Project
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Customer */}
-              <div className="flex items-center gap-2 text-sm">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Customer:</span>
-                <span className="font-medium">{project.customer?.name || "No customer"}</span>
-              </div>
+                {/* Description */}
+                {project.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                    {project.description}
+                  </p>
+                )}
 
-              {/* Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Progress</span>
-                  <span className="font-semibold text-primary">{project.progress}%</span>
-                </div>
-                <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all"
-                    style={{ width: `${project.progress}%` }}
-                  />
+                {/* Customer Pill */}
+                <div className="flex items-center gap-2 text-xs p-2 rounded-xl bg-secondary/30 border border-border/60">
+                  <Users className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="text-muted-foreground">Customer:</span>
+                  <span className="font-semibold text-foreground truncate">
+                    {project.customer?.fullName || project.customer?.name || project.customer?.companyName || "No customer assigned"}
+                  </span>
                 </div>
               </div>
 
-              {/* Tasks */}
-              <div className="flex items-center justify-between text-sm pt-3 border-t border-border">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-600" />
-                  <span className="text-muted-foreground">
-                    Tasks: <span className="font-medium text-foreground">
-                      {project.tasks?.filter(t => t.status === "COMPLETED").length || 0}/{project.tasks?.length || 0}
-                    </span>
+              {/* Tasks & Due Date Footer */}
+              <div className="flex items-center justify-between text-xs pt-3 mt-4 border-t border-border/70 text-muted-foreground">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>
+                    Tasks:{" "}
+                    <strong className="text-foreground font-semibold">
+                      {project.tasks?.filter((t) => t.status === "COMPLETED").length || 0}/
+                      {project.tasks?.length || 0}
+                    </strong>
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    Due: <span className="font-medium text-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground/70" />
+                  <span>
+                    Due:{" "}
+                    <strong className="text-foreground font-semibold">
                       {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Not set"}
-                    </span>
+                    </strong>
                   </span>
                 </div>
               </div>
             </div>
+          ))}
+        </div>
+      ) : (
+        /* Table View */
+        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs sm:text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary/50 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <th className="py-3 px-4">Project</th>
+                  <th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-center">Tasks</th>
+                  <th className="py-3 px-4">Due Date</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredProjects.map((project) => (
+                  <tr
+                    key={project.id}
+                    onClick={() => navigate(`/admin/project/${project.id}`)}
+                    className="hover:bg-secondary/30 transition-colors cursor-pointer"
+                  >
+                    <td className="py-3.5 px-4">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {project.code && (
+                            <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-secondary border border-border text-foreground">
+                              {project.code}
+                            </span>
+                          )}
+                          <span className="font-bold text-foreground hover:text-primary">
+                            {project.name}
+                          </span>
+                        </div>
+                        {project.description && (
+                          <p className="text-xs text-muted-foreground line-clamp-1 max-w-[260px]">
+                            {project.description}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4 font-medium text-foreground">
+                      {project.customer?.fullName || project.customer?.name || project.customer?.companyName || "—"}
+                    </td>
+
+                    <td className="py-3.5 px-4 text-center">
+                      <select
+                        value={project.status}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onChange={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleStatusChange(project.id, e.target.value);
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-xs font-bold border cursor-pointer focus:outline-none ${getStatusColor(
+                          project.status
+                        )}`}
+                      >
+                        <option value="PLANNING">Planning</option>
+                        <option value="IN_PROGRESS">In Progress</option>
+                        <option value="ON_HOLD">On Hold</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="CANCELLED">Cancelled</option>
+                      </select>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-center font-semibold">
+                      {project.tasks?.filter((t) => t.status === "COMPLETED").length || 0}/
+                      {project.tasks?.length || 0}
+                    </td>
+
+                    <td className="py-3.5 px-4 text-muted-foreground font-medium">
+                      {project.endDate ? new Date(project.endDate).toLocaleDateString() : "—"}
+                    </td>
+
+                    <td className="py-3.5 px-4 text-right">
+                      <div
+                        className="inline-flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          to={`/admin/project/${project.id}`}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProject(project);
+                            setShowCreateModal(true);
+                          }}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
       {filteredProjects.length === 0 && (
         <div className="text-center py-12 rounded-2xl bg-background border border-border">

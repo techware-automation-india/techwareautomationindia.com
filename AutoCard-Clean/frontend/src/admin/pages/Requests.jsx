@@ -1,9 +1,113 @@
 import { useEffect, useState } from "react";
-import { Inbox, Loader2, Check, X, RefreshCw, Eye, MapPin, CalendarDays, Search, SlidersHorizontal, MessageSquareText, UserRound, Clock3, FilterX, PackageCheck } from "lucide-react";
+import { Inbox, Loader2, Check, X, RefreshCw, Eye, MapPin, CalendarDays, Search, SlidersHorizontal, MessageSquareText, UserRound, Clock3, FilterX, PackageCheck, Package, Box, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { formatTimeWithPeriod } from "../../lib/timeFormat.js";
 import OnboardingPreview from "../components/OnboardingPreview.jsx";
+
+
+// Parse equipment request item lines: "1. [dfv] fdff (Qty: 1, Nos, Mechanical)" or single item fields
+const parseEquipmentItems = (description) => {
+  if (!description || typeof description !== "string") return [];
+  const lines = description.split("\n");
+  const items = [];
+  const multiItemRegex = /^\d+\.\s*\[([^\]]+)\]\s*([^(\n]+)(?:\((.*?)\))?/;
+
+  for (const line of lines) {
+    const m = line.trim().match(multiItemRegex);
+    if (m) {
+      const code = m[1].trim();
+      const name = m[2].trim();
+      const meta = m[3] ? m[3].trim() : "";
+      let qty = 1;
+      let unit = "Nos";
+      let type = "";
+
+      const qm = meta.match(/Qty:\s*(\d+)/i);
+      if (qm) qty = parseInt(qm[1], 10);
+      const parts = meta.split(",").map((s) => s.trim());
+      parts.forEach((p) => {
+        if (!p.toLowerCase().includes("qty") && p) {
+          if (["nos", "pcs", "kg", "m", "box", "set", "pack"].includes(p.toLowerCase())) {
+            unit = p;
+          } else {
+            type = p;
+          }
+        }
+      });
+
+      items.push({ code, name, qty, unit, type, rawMeta: meta });
+    }
+  }
+
+  if (items.length === 0) {
+    const prodIdLine = lines.find((l) => /^Product ID:\s*/i.test(l.trim()));
+    const itemNameLine = lines.find((l) => /^Item Name:\s*/i.test(l.trim()));
+    const qtyLine = lines.find((l) => /^Quantity:\s*/i.test(l.trim()));
+    const unitLine = lines.find((l) => /^Unit:\s*/i.test(l.trim()));
+    const typeLine = lines.find((l) => /^Product Type:\s*/i.test(l.trim()));
+
+    if (prodIdLine || itemNameLine) {
+      items.push({
+        code: prodIdLine ? prodIdLine.replace(/^Product ID:\s*/i, "").trim() : "",
+        name: itemNameLine ? itemNameLine.replace(/^Item Name:\s*/i, "").trim() : "Equipment Item",
+        qty: qtyLine ? parseInt(qtyLine.replace(/^Quantity:\s*/i, "").trim(), 10) || 1 : 1,
+        unit: unitLine ? unitLine.replace(/^Unit:\s*/i, "").trim() : "Nos",
+        type: typeLine ? typeLine.replace(/^Product Type:\s*/i, "").trim() : "",
+      });
+    }
+  }
+
+  return items;
+};
+
+const parseAllocations = (reviewNote) => {
+  if (!reviewNote || typeof reviewNote !== "string") return {};
+  const allocMatch = reviewNote.match(/Item Allocation:\s*([^|]+)/i);
+  if (!allocMatch) return {};
+  const str = allocMatch[1].trim();
+  const res = {};
+  const itemRegex = /\[([^\]]+)\]\s*([^,]+)/g;
+  let m;
+  while ((m = itemRegex.exec(str)) !== null) {
+    const code = m[1].trim();
+    const detail = m[2].trim();
+    res[code] = detail;
+  }
+  return res;
+};
+
+// Formatted Inventory Title Component
+const FormattedInventoryTitle = ({ title, className = "" }) => {
+  if (!title || typeof title !== "string") return <h3 className={`font-bold ${className}`}>{title}</h3>;
+
+  const match = title.match(/^\[(.*?)\]\s*(.*)$/);
+  if (!match) {
+    return <h3 className={`text-base font-bold text-foreground ${className}`}>{title}</h3>;
+  }
+
+  const tag = match[1].trim();
+  const rest = match[2].trim().replace(/^\d+\s+Items?:\s*/i, "").trim();
+
+  let tagColor = "bg-primary/10 text-primary border-primary/20";
+  if (tag.toLowerCase().includes("taking")) {
+    tagColor = "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20";
+  } else if (tag.toLowerCase().includes("return")) {
+    tagColor = "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20";
+  }
+
+  return (
+    <div className={`space-y-1.5 ${className}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${tagColor}`}>
+          <Tag className="h-3 w-3" />
+          {tag}
+        </span>
+      </div>
+      {/* Item names line removed per request */}
+    </div>
+  );
+};
 
 const fmt = (value) => {
   if (!value) return "—";

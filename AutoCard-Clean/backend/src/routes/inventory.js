@@ -7,6 +7,7 @@ import fs from "fs";
 import prisma from "../prismaClient.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { checkRolePermission, checkRoleActionPermission } from "../middleware/checkRolePermission.js";
+import { notifyShortagesOnRestock } from "./requests.js";
 
 const router = Router();
 
@@ -885,6 +886,14 @@ router.post("/items", requireAuth, checkRoleActionPermission("inventory-in", "cr
       include: { categoryRef: true },
     });
 
+    if (item && item.quantity > 0) {
+      try {
+        notifyShortagesOnRestock(item);
+      } catch (notifyErr) {
+        console.warn("⚠️ notifyShortagesOnRestock error on create:", notifyErr);
+      }
+    }
+
     res.status(201).json({ item, message: "Inventory item created successfully." });
   } catch (err) {
     console.error("Failed to create item:", err);
@@ -1014,6 +1023,14 @@ router.put("/items/:id", requireAuth, checkRoleActionPermission("inventory-in", 
       },
       include: { categoryRef: true },
     });
+
+    if (item && item.quantity > 0) {
+      try {
+        notifyShortagesOnRestock(item);
+      } catch (notifyErr) {
+        console.warn("⚠️ notifyShortagesOnRestock error on update:", notifyErr);
+      }
+    }
 
     res.json({ item, message: "Inventory item updated successfully." });
   } catch (err) {

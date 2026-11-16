@@ -1,7 +1,5 @@
-import { useState } from "react";
 import { MODULES } from "../../data/modules";
-import { Check, ChevronDown, CheckSquare, Square, Settings } from "lucide-react";
-import InventorySettingsModal from "../../admin/components/inventory/InventorySettingsModal.jsx";
+import { Check } from "lucide-react";
 
 /**
  * ModuleSelector Component
@@ -13,39 +11,22 @@ import InventorySettingsModal from "../../admin/components/inventory/InventorySe
  * @param {boolean} disabled - Whether the selector is disabled
  */
 export default function ModuleSelector({ selectedModules = [], onChange, disabled = false }) {
-  const [activeSettingsModule, setActiveSettingsModule] = useState(null);
+
   const handleToggleParent = (module) => {
     if (disabled) return;
 
     if (module.subModules && module.subModules.length > 0) {
       const subKeys = module.subModules.map((s) => s.key);
-      const allActionKeys = [];
-      module.subModules.forEach((s) => {
-        if (s.actions) {
-          s.actions.forEach((a) => allActionKeys.push(`${s.key}:${a.key}`));
-        }
-      });
-
       const isParentActive = selectedModules.includes(module.key) || subKeys.some((k) => selectedModules.includes(k));
 
       let updated;
       if (isParentActive) {
-        // Deselect parent, all sub-modules, and all action keys
-        const removeSet = new Set([module.key, ...subKeys, ...allActionKeys]);
+        // Deselect parent and all sub-modules
+        const removeSet = new Set([module.key, ...subKeys]);
         updated = selectedModules.filter((k) => !removeSet.has(k));
       } else {
-        // Select parent and all sub-modules (with default non-delete actions)
-        const toAdd = [module.key, ...subKeys];
-        module.subModules.forEach((s) => {
-          if (s.actions) {
-            s.actions.forEach((a) => {
-              if (a.key !== "delete") {
-                toAdd.push(`${s.key}:${a.key}`);
-              }
-            });
-          }
-        });
-        const newKeys = new Set([...selectedModules, ...toAdd]);
+        // Select parent and all sub-modules
+        const newKeys = new Set([...selectedModules, module.key, ...subKeys]);
         updated = Array.from(newKeys);
       }
       onChange(updated);
@@ -63,69 +44,22 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
   const handleSubModuleToggle = (module, subModule) => {
     if (disabled) return;
     const subKey = subModule.key;
-    const subActions = subModule.actions || [];
-    const actionKeys = subActions.map((a) => `${subKey}:${a.key}`);
-
-    const isSubActive = selectedModules.includes(subKey) || actionKeys.some((ak) => selectedModules.includes(ak));
+    const isSubActive = selectedModules.includes(subKey);
     let updated;
 
     if (isSubActive) {
-      // Remove sub-module and all its action keys
-      const removeSet = new Set([subKey, ...actionKeys]);
-      updated = selectedModules.filter((k) => !removeSet.has(k));
+      // Remove sub-module
+      updated = selectedModules.filter((k) => k !== subKey);
 
-      // Check if any sibling sub-modules or action keys remain selected
+      // Check if any sibling sub-modules remain selected
       const allSiblings = module.subModules.map((s) => s.key);
-      const remainingSubs = updated.filter((k) => allSiblings.includes(k) || allSiblings.some((sk) => k.startsWith(`${sk}:`)));
+      const remainingSubs = updated.filter((k) => allSiblings.includes(k));
       if (remainingSubs.length === 0) {
         updated = updated.filter((k) => k !== module.key);
       }
     } else {
-      // Add sub-module and default actions (view, create, edit; leave delete unchecked by default)
-      const toAdd = [module.key, subKey];
-      if (subActions.length > 0) {
-        subActions.forEach((a) => {
-          if (a.key !== "delete") {
-            toAdd.push(`${subKey}:${a.key}`);
-          }
-        });
-      }
-      const newKeys = new Set([...selectedModules, ...toAdd]);
-      updated = Array.from(newKeys);
-    }
-
-    onChange(updated);
-  };
-
-  const handleActionToggle = (module, subModule, actionKey, e) => {
-    if (disabled) return;
-    if (e) e.stopPropagation();
-
-    const subKey = subModule.key;
-    const fullActionKey = `${subKey}:${actionKey}`;
-    const isActionActive = selectedModules.includes(fullActionKey);
-
-    let updated;
-    if (isActionActive) {
-      // If toggling off 'view', remove the whole submodule and all actions
-      if (actionKey === "view") {
-        const subActions = (subModule.actions || []).map((a) => `${subKey}:${a.key}`);
-        const removeSet = new Set([subKey, ...subActions]);
-        updated = selectedModules.filter((k) => !removeSet.has(k));
-
-        const allSiblings = module.subModules.map((s) => s.key);
-        const remainingSubs = updated.filter((k) => allSiblings.includes(k) || allSiblings.some((sk) => k.startsWith(`${sk}:`)));
-        if (remainingSubs.length === 0) {
-          updated = updated.filter((k) => k !== module.key);
-        }
-      } else {
-        // Just remove this action key
-        updated = selectedModules.filter((k) => k !== fullActionKey);
-      }
-    } else {
-      // Turning ON action: ensure module, submodule, and 'view' action are all included
-      const toAdd = [module.key, subKey, `${subKey}:view`, fullActionKey];
-      const newKeys = new Set([...selectedModules, ...toAdd]);
+      // Add sub-module and parent module
+      const newKeys = new Set([...selectedModules, module.key, subKey]);
       updated = Array.from(newKeys);
     }
 
@@ -134,13 +68,7 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
 
   const handleSelectAllSub = (module) => {
     if (disabled || !module.subModules) return;
-    const toAdd = [module.key];
-    module.subModules.forEach((s) => {
-      toAdd.push(s.key);
-      if (s.actions) {
-        s.actions.forEach((a) => toAdd.push(`${s.key}:${a.key}`));
-      }
-    });
+    const toAdd = [module.key, ...module.subModules.map((s) => s.key)];
     const newKeys = new Set([...selectedModules, ...toAdd]);
     onChange(Array.from(newKeys));
   };
@@ -148,13 +76,7 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
   const handleClearAllSub = (module) => {
     if (disabled || !module.subModules) return;
     const subKeys = module.subModules.map((s) => s.key);
-    const actionKeys = [];
-    module.subModules.forEach((s) => {
-      if (s.actions) {
-        s.actions.forEach((a) => actionKeys.push(`${s.key}:${a.key}`));
-      }
-    });
-    const removeSet = new Set([module.key, ...subKeys, ...actionKeys]);
+    const removeSet = new Set([module.key, ...subKeys]);
     const updated = selectedModules.filter((k) => !removeSet.has(k));
     onChange(updated);
   };
@@ -168,9 +90,7 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
 
           if (hasSubs) {
             const subKeys = module.subModules.map((s) => s.key);
-            const selectedSubCount = subKeys.filter((k) => 
-              selectedModules.includes(k) || selectedModules.some((smk) => smk.startsWith(`${k}:`))
-            ).length;
+            const selectedSubCount = subKeys.filter((k) => selectedModules.includes(k)).length;
             const isFullySelected = selectedSubCount === subKeys.length && selectedSubCount > 0;
             const isParentActive = selectedModules.includes(module.key) || selectedSubCount > 0;
 
@@ -221,22 +141,13 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Select specific sub-modules & permissions to grant for this role
+                        Select specific sub-modules to grant for this role
                       </p>
                     </div>
                   </button>
 
-                  {/* Bulk Actions & Settings for Submodules */}
+                  {/* Bulk Actions for Submodules */}
                   <div className="flex items-center gap-2 ml-auto">
-                    <button
-                      type="button"
-                      onClick={() => setActiveSettingsModule({ key: module.key, label: module.label })}
-                      className="px-2.5 py-1 text-xs font-semibold rounded-md bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs group"
-                      title={`Open ${module.label} Access Settings (Employee permissions table)`}
-                    >
-                      <Settings className="h-3.5 w-3.5 group-hover:rotate-45 transition-transform" />
-                      <span>Settings</span>
-                    </button>
                     <button
                       type="button"
                       onClick={() => handleSelectAllSub(module)}
@@ -260,17 +171,16 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
                 <div className="p-4 bg-background/60">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {module.subModules.map((subModule) => {
-                      const hasActions = Array.isArray(subModule.actions) && subModule.actions.length > 0;
                       const subKey = subModule.key;
-                      const actionKeys = hasActions ? subModule.actions.map((a) => `${subKey}:${a.key}`) : [];
-                      const isSubActive = selectedModules.includes(subKey) || actionKeys.some((ak) => selectedModules.includes(ak));
+                      const isSubActive = selectedModules.includes(subKey);
                       const SubIcon = subModule.icon || Icon;
 
                       return (
                         <div
                           key={subModule.key}
+                          onClick={() => handleSubModuleToggle(module, subModule)}
                           className={`
-                            flex flex-col p-3 rounded-xl border-2 transition-all select-none
+                            flex flex-col p-3 rounded-xl border-2 transition-all select-none cursor-pointer
                             ${isSubActive
                               ? "border-emerald-500/80 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm"
                               : "border-border bg-card hover:border-border/80 hover:bg-secondary/30"
@@ -279,14 +189,11 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
                           `}
                         >
                           {/* Submodule Header Row */}
-                          <div
-                            onClick={() => handleSubModuleToggle(module, subModule)}
-                            className="flex items-start gap-2.5 cursor-pointer"
-                          >
+                          <div className="flex items-start gap-2.5">
                             <input
                               type="checkbox"
                               checked={isSubActive}
-                              onChange={() => {}} // Handled by onClick
+                              onChange={() => {}} // Handled by container onClick
                               disabled={disabled}
                               className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                             />
@@ -304,37 +211,6 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
                               )}
                             </div>
                           </div>
-
-                          {/* Granular Action Checkboxes (View, Create, Edit, Delete) */}
-                          {hasActions && isSubActive && (
-                            <div className="mt-2.5 pt-2 border-t border-border/60 flex flex-wrap items-center gap-1.5">
-                              {subModule.actions.map((action) => {
-                                const fullActionKey = `${subKey}:${action.key}`;
-                                const isActionSelected = selectedModules.includes(fullActionKey);
-
-                                return (
-                                  <button
-                                    key={action.key}
-                                    type="button"
-                                    onClick={(e) => handleActionToggle(module, subModule, action.key, e)}
-                                    disabled={disabled}
-                                    className={`
-                                      inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all cursor-pointer border
-                                      ${isActionSelected
-                                        ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
-                                        : "bg-background border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
-                                      }
-                                      ${disabled ? "opacity-50 cursor-not-allowed" : ""}
-                                    `}
-                                    title={`Toggle ${action.label}`}
-                                  >
-                                    <span className={`w-1.5 h-1.5 rounded-full ${isActionSelected ? "bg-white" : "bg-muted-foreground/50"}`} />
-                                    <span>{action.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -383,16 +259,6 @@ export default function ModuleSelector({ selectedModules = [], onChange, disable
           );
         })}
       </div>
-
-      {/* Module Access Settings Modal for any submodule-enabled module */}
-      {activeSettingsModule && (
-        <InventorySettingsModal
-          isOpen={Boolean(activeSettingsModule)}
-          onClose={() => setActiveSettingsModule(null)}
-          parentModuleKey={activeSettingsModule.key}
-          moduleTitle={activeSettingsModule.label}
-        />
-      )}
     </div>
   );
 }

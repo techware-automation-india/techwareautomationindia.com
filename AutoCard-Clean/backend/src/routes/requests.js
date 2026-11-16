@@ -32,6 +32,17 @@ const CORRECTION_MARKER = "[ATTENDANCE_CORRECTION]";
 const reviewSchema = z.object({
   note: z.string().optional(),
   reason: z.string().optional(),
+  approvedItems: z
+    .array(
+      z.object({
+        code: z.string().optional(),
+        name: z.string().optional(),
+        approvedQty: z.number().int().min(0),
+        requestedQty: z.number().int().optional(),
+        unit: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 const employeeRequestSchema = z.object({
@@ -2406,6 +2417,57 @@ async function findTargetProject(projName) {
   return null;
 }
 
+function extractRequestedItems(description) {
+  if (!description || typeof description !== "string") return [];
+  const items = [];
+  const marker = "Items (";
+  const startIdx = description.indexOf(marker);
+  if (startIdx !== -1) {
+    const afterMarker = description.substring(startIdx);
+    const colonIdx = afterMarker.indexOf(":");
+    if (colonIdx !== -1) {
+      const body = afterMarker.substring(colonIdx + 1);
+      const lines = body.split("\n");
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (/^[A-Za-z\s\/]+:\s*/.test(line) && !/^\d+\./.test(line)) {
+          break;
+        }
+        const match = line.match(/^(?:\d+\.\s*)?(?:\[([^\]]+)\]\s*)?(.*?)(?:\s*\(Qty:\s*(\d+)(?:,\s*([^,)]+))?(?:,\s*([^)]+))?\))?$/i);
+        if (match) {
+          items.push({
+            code: match[1]?.trim() || "",
+            name: match[2]?.trim() || "",
+            quantity: parseInt(match[3] || "1", 10),
+            unit: match[4]?.trim() || "Nos",
+            productType: match[5]?.trim() || "",
+          });
+        }
+      }
+    }
+  }
+
+  if (items.length === 0) {
+    const productIdMatch = description.match(/Product ID:\s*([^\n\r|]+)/i);
+    const itemNameMatch = description.match(/Item Name:\s*([^\n\r|]+)/i) || description.match(/Tool \/ Item Name:\s*([^\n\r|]+)/i);
+    const quantityMatch = description.match(/Quantity:\s*(\d+)/i);
+    const unitMatch = description.match(/Unit:\s*([^\n\r|]+)/i);
+    const productTypeMatch = description.match(/Product Type:\s*([^\n\r|]+)/i);
+    if (productIdMatch || itemNameMatch) {
+      items.push({
+        code: productIdMatch ? productIdMatch[1].trim() : "",
+        name: itemNameMatch ? itemNameMatch[1].trim() : (productIdMatch ? productIdMatch[1].trim() : "Product"),
+        quantity: quantityMatch ? parseInt(quantityMatch[1], 10) : 1,
+        unit: unitMatch ? unitMatch[1].trim() : "Nos",
+        productType: productTypeMatch ? productTypeMatch[1].trim() : "",
+      });
+    }
+  }
+
+  return items;
+}
+
 async function addOrEnsureProductInProject(request, actionUserId = null) {
   if (!request || !request.description) return null;
 
@@ -2682,7 +2744,7 @@ async function updateEmployeeAssignedTools(request) {
   return null;
 }
 
-async function handleInventoryStockUpdate(request, note, isProductFoundAction = false) {
+async function handleInventoryStockUpdate(request, note, isProductFoundAction = false, approvedItemsList = null) {
   if (!request || request.type !== "EQUIPMENT" || !request.description) {
     return note || "Request approved.";
   }
@@ -3069,48 +3131,97 @@ async function reviewRequest(
           )
         : null;
 
-async function validateInventoryStockAvailability(request) {
+function buildSplitRemainderDescription(originalDesc, remainingItems) {
+  if (!originalDesc || !Array.isArray(remainingItems) || remainingItems.length === 0) return "";
+  const lines = originalDesc.split("\n");
+  const baseLines = [];
+
+  for (const line of lines) {
+    const l = line.trim();
+    if (
+      l.startsWith("Action Type:") ||
+      l.startsWith("Category:") ||
+      l.startsWith("Project Name:") ||
+      l.startsWith("Project Code:") ||
+      l.startsWith("Urgency Level:") ||
+      l.startsWith("Date:")
+    ) {
+      baseLines.push(line);
+    }
+  }
+
+  if (remainingItems.length === 1) {
+    const it = remainingItems[0];
+    baseLines.push(
+      `Product ID: ${it.code}`,
+      `Item Name: ${it.name}`,
+      `Quantity: ${it.remainingQty}`,
+      `Unit: ${it.unit || "Nos"}`
+    );
+  } else {
+    baseLines.push(`Items (${remainingItems.length}):`);
+    remainingItems.forEach((it, idx) => {
+      baseLines.push(
+        `${idx + 1}. [${it.code}] ${it.name} (Qty: ${it.remainingQty}, ${it.unit || "Nos"})`
+      );
+    });
+  }
+
+  baseLines.push(
+    `Purpose / Work Details / Remarks: [AUTO-SPLIT REMAINDER] Awaiting inventory stock restock from Request.`
+  );
+
+  return baseLines.join("\n");
+}
+
+async function validateInventoryStockAvailability(request, approvedMap = null) {
   if (!request || request.type !== "EQUIPMENT" || !request.description) {
     return { ok: true };
   }
 
   const text = request.description;
-  const productIdMatch = text.match(/Product ID:\s*([^\n\r|]+)/i);
-  const quantityMatch = text.match(/Quantity:\s*(\d+)/i);
   const actionMatch = text.match(/Action Type:\s*([^\n\r|]+)/i);
-
-  const code = productIdMatch ? productIdMatch[1].trim() : null;
-  const qty = quantityMatch ? parseInt(quantityMatch[1], 10) : 1;
   const action = actionMatch ? actionMatch[1].trim().toUpperCase() : "TAKING";
 
   if (!action.includes("TAKING") && !action.includes("TAKE")) {
     return { ok: true };
   }
 
-  if (!code) return { ok: true };
+  const requestedItems = extractRequestedItems(text);
+  if (requestedItems.length === 0) return { ok: true };
 
-  const item = await prisma.inventoryItem.findFirst({
-    where: {
-      OR: [
-        { code: { equals: code } },
-        { sku: { equals: code } },
-        { name: { equals: code } },
-      ],
-    },
-  });
+  for (const itm of requestedItems) {
+    const code = itm.code;
+    const effectiveQty = approvedMap && approvedMap[code] !== undefined ? approvedMap[code] : itm.quantity;
+    if (effectiveQty <= 0) continue; // 0 approved means deferred/skipped, so not blocking stock check
 
-  if (!item) {
-    return {
-      ok: false,
-      message: `Cannot approve request: Product ID '${code}' was not found in catalog.`,
-    };
-  }
+    const item = await prisma.inventoryItem.findFirst({
+      where: {
+        OR: [
+          ...(code ? [{ code: { equals: code } }, { sku: { equals: code } }] : []),
+          ...(itm.name ? [{ name: { equals: itm.name } }] : []),
+        ],
+      },
+    });
 
-  if (item.quantity <= 0 || item.quantity < qty) {
-    return {
-      ok: false,
-      message: `Cannot approve request: Product '${item.code || item.name}' is OUT OF STOCK (Available: ${item.quantity} ${item.unit || "Nos"}, Requested: ${qty} ${item.unit || "Nos"}). Please place request on HOLD or restock inventory first.`,
-    };
+    if (!item) {
+      return {
+        ok: false,
+        message: `Cannot approve request: Product ID '${code || itm.name}' was not found in catalog.`,
+      };
+    }
+
+    if (item.quantity <= 0 || item.quantity < effectiveQty) {
+      return {
+        ok: false,
+        isShortage: true,
+        availableStock: item.quantity,
+        requestedQty: itm.quantity,
+        approvedQty: effectiveQty,
+        item,
+        message: `Product '${item.code || item.name}' has insufficient stock (Available: ${item.quantity} ${item.unit || "Nos"}, Approving: ${effectiveQty} ${item.unit || "Nos"}).`,
+      };
+    }
   }
 
   return { ok: true };
@@ -3123,15 +3234,65 @@ async function validateInventoryStockAvailability(request) {
     */
 
     if (!correction) {
-      const stockCheck = await validateInventoryStockAvailability(request);
+      let approvedMap = null;
+      if (Array.isArray(parsed.data.approvedItems)) {
+        approvedMap = {};
+        parsed.data.approvedItems.forEach((ai) => {
+          if (ai.code) approvedMap[ai.code] = ai.approvedQty;
+        });
+      }
+
+      // Check stock availability
+      const stockCheck = await validateInventoryStockAvailability(request, approvedMap);
       if (!stockCheck.ok) {
         return res.status(400).json({
           message: stockCheck.message,
         });
       }
 
-      const finalReviewNote = await handleInventoryStockUpdate(request, note);
-      const safeReviewNote = typeof finalReviewNote === "string" ? finalReviewNote.slice(0, 4000) : finalReviewNote;
+      // Detect auto-split shortage if partial approval given
+      const requestedItems = extractRequestedItems(request.description);
+      const remainingShortages = [];
+      const approvedItemsList = [];
+
+      for (const itm of requestedItems) {
+        const approvedQty = approvedMap && approvedMap[itm.code] !== undefined ? approvedMap[itm.code] : itm.quantity;
+        approvedItemsList.push({ ...itm, approvedQty });
+
+        if (itm.quantity > approvedQty) {
+          remainingShortages.push({
+            code: itm.code,
+            name: itm.name,
+            unit: itm.unit,
+            remainingQty: itm.quantity - approvedQty,
+          });
+        }
+      }
+
+      // If any shortage remains, create an auto-split remainder request for backorder
+      let createdShortageRequest = null;
+      if (remainingShortages.length > 0) {
+        const remainderDesc = buildSplitRemainderDescription(request.description, remainingShortages);
+        const remainderSubject = `[SHORTAGE BACKORDER] ${remainingShortages.map(s => `${s.name} (${s.remainingQty} ${s.unit || "Nos"})`).join(", ")}`;
+
+        createdShortageRequest = await prisma.employeeRequest.create({
+          data: {
+            employeeId: request.employeeId,
+            type: "EQUIPMENT",
+            subject: remainderSubject.slice(0, 160),
+            description: remainderDesc,
+            status: "PENDING",
+            reviewNote: `[ON_HOLD] Shortage remainder (${remainingShortages.map(s => `${s.remainingQty} ${s.unit}`).join(", ")}) awaiting warehouse restock.`,
+          },
+        });
+      }
+
+      const finalReviewNote = await handleInventoryStockUpdate(request, note, false, approvedItemsList);
+      let safeReviewNote = typeof finalReviewNote === "string" ? finalReviewNote.slice(0, 4000) : finalReviewNote;
+
+      if (remainingShortages.length > 0) {
+        safeReviewNote = `${safeReviewNote} | [PARTIALLY_APPROVED] Approved: ${approvedItemsList.map(a => `${a.name} (${a.approvedQty} ${a.unit})`).join(", ")}. Remaining shortage auto-split to Request #${createdShortageRequest?.id?.slice(0, 8)}.`;
+      }
 
       const updatedRequest =
         await prisma.employeeRequest.update({
@@ -3153,11 +3314,13 @@ async function validateInventoryStockAvailability(request) {
         });
 
       return res.json({
-        message:
-          "Request approved.",
+        message: remainingShortages.length > 0
+          ? `Partially approved (${approvedItemsList.map(a => `${a.approvedQty} ${a.unit}`).join(", ")}). Remaining ${remainingShortages.map(s => `${s.remainingQty} ${s.unit}`).join(", ")} placed on Shortage Hold.`
+          : "Request approved.",
 
         request:
           updatedRequest,
+        shortageRequest: createdShortageRequest,
       });
     }
 
@@ -3690,9 +3853,10 @@ const handleFoundRequest = async (req, res) => {
       });
     }
 
+    const nowIso = new Date().toISOString();
     const foundNoteText = isReturnRequest
-      ? "[PRODUCT_FOUND] Admin confirmed item found in store and restocked to inventory."
-      : "[PRODUCT_FOUND] Product found and collected by employee.";
+      ? `[PRODUCT_FOUND] [FOUND_AT:${nowIso}] Admin confirmed item found in store and restocked to inventory.`
+      : `[PRODUCT_FOUND] [FOUND_AT:${nowIso}] Product found and collected by employee.`;
 
     const cleanReviewNote = (request.reviewNote || "").replace(/\[ITEM_NOT_FOUND\][^|]*/g, "").trim();
     const noteWithFound = [cleanReviewNote, foundNoteText].filter(Boolean).join(" | ");
@@ -3905,5 +4069,84 @@ router.post(
 |--------------------------------------------------------------------------
 */
 
-export { addOrEnsureProductInProject };
+
+/*
+|--------------------------------------------------------------------------
+| NOTIFY EMPLOYEES ON INVENTORY RESTOCK
+|--------------------------------------------------------------------------
+|
+| Scans for open shortage remainder requests waiting for this item code/name,
+| sends in-app notifications to the employees and marks them ready.
+|
+|--------------------------------------------------------------------------
+*/
+async function notifyShortagesOnRestock(item) {
+  if (!item) return 0;
+  try {
+    const itemCode = (item.code || item.sku || "").trim().toLowerCase();
+    const itemName = (item.name || "").trim().toLowerCase();
+
+    // Find all pending shortage requests on hold waiting for restock
+    const pendingHoldRequests = await prisma.employeeRequest.findMany({
+      where: {
+        type: "EQUIPMENT",
+        status: "PENDING",
+        reviewNote: {
+          contains: "[ON_HOLD]",
+        },
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            userId: true,
+            user: { select: { fullName: true } },
+          },
+        },
+      },
+    });
+
+    let notifiedCount = 0;
+    for (const req of pendingHoldRequests) {
+      const desc = req.description || "";
+      const isShortageRemainder = desc.includes("[AUTO-SPLIT REMAINDER]") || req.reviewNote?.includes("Shortage");
+
+      // Check if this request is waiting for this item
+      const descLower = desc.toLowerCase();
+      const matchesItem =
+        (itemCode && descLower.includes(itemCode)) ||
+        (itemName && descLower.includes(itemName));
+
+      if (matchesItem && isShortageRemainder && req.employee?.userId) {
+        // Send notification to employee
+        await prisma.notification.create({
+          data: {
+            userId: req.employee.userId,
+            title: "Item Restocked in Store! 📦",
+            message: `Good news! Your remaining requested item "${item.name}" (Code: ${item.code || "N/A"}) is now restocked with ${item.quantity} ${item.unit || "Nos"} available. Please visit store to collect.`,
+            type: "EQUIPMENT",
+            referenceId: req.id,
+            isRead: false,
+          },
+        });
+
+        // Update request note so employee sees in dashboard
+        await prisma.employeeRequest.update({
+          where: { id: req.id },
+          data: {
+            reviewNote: `[RESTOCKED_AVAILABLE] Item has been restocked in inventory! Available in store now: ${item.quantity} ${item.unit || "Nos"}.`,
+          },
+        });
+
+        notifiedCount++;
+      }
+    }
+    return notifiedCount;
+  } catch (err) {
+    console.warn("⚠️ notifyShortagesOnRestock error:", err);
+    return 0;
+  }
+}
+
+export { addOrEnsureProductInProject, notifyShortagesOnRestock };
 export default router;

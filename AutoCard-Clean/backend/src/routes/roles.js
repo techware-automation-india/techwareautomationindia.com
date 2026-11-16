@@ -11,6 +11,19 @@ import {
 
 const router = Router();
 
+const DEFAULT_CORE_MODULE_KEYS = [
+  "overview",
+  "mark-attendance",
+  "attendance",
+  "requests",
+  "requests-apply-leave",
+  "requests-forgot-punch",
+  "requests-tools-inventory",
+  "requests-track",
+  "academic-calendar",
+  "academic-holidays",
+];
+
 // All routes require authentication
 router.use(requireAuth);
 

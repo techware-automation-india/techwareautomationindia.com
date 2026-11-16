@@ -17,7 +17,7 @@ const createEmployeeSchema = z.object({
   password: z.string().min(1, "Password is required."),
   employeeCode: z.string().min(1, "Employee code is required."),
   jobTitle: z.string().optional(),
-  roleId: z.string().min(1, "Role is required."),
+  roleId: z.string().optional().nullable(),
 });
 
 // ============================================================================
@@ -102,16 +102,30 @@ router.post(
 
     try {
       // ------------------------------------------------------------
-      // Check role exists
+      // Resolve role (default to Employee if not provided or empty)
       // ------------------------------------------------------------
-      const role = await prisma.roleTable.findUnique({
-        where: { id: roleId },
-      });
+      let targetRoleId = roleId;
+      let role = null;
+
+      if (targetRoleId) {
+        role = await prisma.roleTable.findUnique({
+          where: { id: targetRoleId },
+        });
+      }
 
       if (!role) {
-        return res.status(400).json({
-          message: "Selected role does not exist.",
+        role = await prisma.roleTable.findFirst({
+          where: {
+            OR: [
+              { isDefault: true, name: { equals: "Employee" } },
+              { name: { equals: "Employee" } },
+              { isDefault: true },
+            ],
+          },
         });
+        if (role) {
+          targetRoleId = role.id;
+        }
       }
 
       // ------------------------------------------------------------
@@ -156,9 +170,9 @@ router.post(
       // Determine user role enum
       // ------------------------------------------------------------
       let roleEnum = "EMPLOYEE";
-      if (role.name.toUpperCase() === "ADMIN") {
+      if (role?.name?.toUpperCase() === "ADMIN") {
         roleEnum = "ADMIN";
-      } else if (role.name.toUpperCase() === "CUSTOMER") {
+      } else if (role?.name?.toUpperCase() === "CUSTOMER") {
         roleEnum = "CUSTOMER";
       }
 
@@ -172,7 +186,7 @@ router.post(
           fullName,
           passwordHash,
           role: roleEnum,
-          roleId: role.id,
+          roleId: role?.id || null,
 
           employeeProfile: {
             create: {

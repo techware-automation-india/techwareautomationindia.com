@@ -23,6 +23,9 @@ import {
   Briefcase,
   Tag,
   UserRound,
+  Wrench,
+  Box,
+  Check,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -51,23 +54,58 @@ const typeStyles = {
 
 const parseInventorySubject = (titleStr = "") => {
   if (!titleStr || typeof titleStr !== "string") return null;
-  const match = titleStr.match(/^\[(Inventory Return|Inventory Taking)(?:\s*:\s*([^\]]+))?\]\s*(.*?)(?:\s*\((.*?)\))?$/i);
-  if (!match) return null;
+
+  // Extract all [...] tags
+  const tags = [];
+  let rest = titleStr.replace(/\[(.*?)\]/g, (_, tag) => {
+    tags.push(tag.trim());
+    return "";
+  }).trim();
+
+  let actionType = "Inventory Taking";
+  let codeOrProject = "";
+  let categoryType = "";
+
+  tags.forEach((t) => {
+    if (t.toLowerCase().includes("return")) {
+      actionType = "Inventory Return";
+    } else if (t.toLowerCase().includes("taking")) {
+      actionType = "Inventory Taking";
+    } else {
+      codeOrProject = t;
+    }
+    if (t.includes(":")) {
+      const parts = t.split(":");
+      if (parts[0].toLowerCase().includes("return")) actionType = "Inventory Return";
+      if (parts[0].toLowerCase().includes("taking")) actionType = "Inventory Taking";
+      codeOrProject = parts.slice(1).join(":").trim();
+    }
+  });
+
+  const catMatch = rest.match(/\((.*?)\)$/);
+  if (catMatch) {
+    categoryType = catMatch[1].trim();
+    rest = rest.replace(/\((.*?)\)$/, "").trim();
+  }
+  const itemName = rest.replace(/^\d+\s+Items?:\s*/i, "").trim();
+
   return {
-    actionType: match[1].trim(),
-    codeOrProject: match[2]?.trim() || "",
-    itemName: match[3]?.trim() || titleStr,
-    categoryType: match[4]?.trim() || "",
-    isReturn: match[1].toLowerCase().includes("return"),
+    hasTags: tags.length > 0,
+    actionType,
+    codeOrProject,
+    categoryType,
+    itemName: itemName || rest || titleStr,
+    isReturn: actionType.toLowerCase().includes("return"),
   };
 };
 
 const FormattedInventoryTitle = ({ title, className = "" }) => {
   const parsed = parseInventorySubject(title);
-  if (!parsed) {
+  if (!parsed || !parsed.hasTags) {
+    const cleanTitle = typeof title === "string" ? title.replace(/^\d+\s+Items?:\s*/i, "").trim() : title;
     return (
-      <h3 className={`font-semibold text-foreground ${className}`}>
-        {title}
+      <h3 className={`text-lg font-bold leading-tight text-foreground ${className}`}>
+        {cleanTitle}
       </h3>
     );
   }
@@ -100,9 +138,7 @@ const FormattedInventoryTitle = ({ title, className = "" }) => {
         )}
       </div>
 
-      <h3 className="text-base sm:text-lg font-bold leading-snug text-foreground">
-        {parsed.itemName}
-      </h3>
+      {/* Item names line removed per request */}
     </div>
   );
 };
@@ -1003,6 +1039,102 @@ const getAttendanceReason = (note = "", reason = "") => {
   };
 };
 
+
+// Parses equipment request item lines: "1. [dfv] fdff (Qty: 1, Nos, Mechanical)" or single item fields
+const parseEquipmentItems = (description) => {
+  if (!description || typeof description !== "string") return [];
+  const lines = description.split("\n");
+  const items = [];
+  const multiItemRegex = /^\d+\.\s*\[([^\]]+)\]\s*([^(\n]+)(?:\((.*?)\))?/;
+
+  for (const line of lines) {
+    const m = line.trim().match(multiItemRegex);
+    if (m) {
+      const code = m[1].trim();
+      const name = m[2].trim();
+      const meta = m[3] ? m[3].trim() : "";
+      let qty = 1;
+      let unit = "Nos";
+      let type = "";
+
+      const qm = meta.match(/Qty:\s*(\d+)/i);
+      if (qm) qty = parseInt(qm[1], 10);
+      const parts = meta.split(",").map((s) => s.trim());
+      parts.forEach((p) => {
+        if (!p.toLowerCase().includes("qty") && p) {
+          if (["nos", "pcs", "kg", "m", "box", "set", "pack"].includes(p.toLowerCase())) {
+            unit = p;
+          } else {
+            type = p;
+          }
+        }
+      });
+
+      items.push({ code, name, qty, unit, type, rawMeta: meta });
+    }
+  }
+
+  if (items.length === 0) {
+    const prodIdLine = lines.find((l) => /^Product ID:\s*/i.test(l.trim()));
+    const itemNameLine = lines.find((l) => /^Item Name:\s*/i.test(l.trim()));
+    const qtyLine = lines.find((l) => /^Quantity:\s*/i.test(l.trim()));
+    const unitLine = lines.find((l) => /^Unit:\s*/i.test(l.trim()));
+    const typeLine = lines.find((l) => /^Product Type:\s*/i.test(l.trim()));
+
+    if (prodIdLine || itemNameLine) {
+      items.push({
+        code: prodIdLine ? prodIdLine.replace(/^Product ID:\s*/i, "").trim() : "",
+        name: itemNameLine ? itemNameLine.replace(/^Item Name:\s*/i, "").trim() : "Equipment Item",
+        qty: qtyLine ? parseInt(qtyLine.replace(/^Quantity:\s*/i, "").trim(), 10) || 1 : 1,
+        unit: unitLine ? unitLine.replace(/^Unit:\s*/i, "").trim() : "Nos",
+        type: typeLine ? typeLine.replace(/^Product Type:\s*/i, "").trim() : "",
+      });
+    }
+  }
+
+  return items;
+};
+
+const parseAllocations = (reviewNote) => {
+  if (!reviewNote || typeof reviewNote !== "string") return {};
+  const allocMatch = reviewNote.match(/Item Allocation:\s*([^|]+)/i);
+  if (!allocMatch) return {};
+  const str = allocMatch[1].trim();
+  const res = {};
+  const itemRegex = /\[([^\]]+)\]\s*([^,]+)/g;
+  let m;
+  while ((m = itemRegex.exec(str)) !== null) {
+    const code = m[1].trim();
+    const detail = m[2].trim();
+    res[code] = detail;
+  }
+  return res;
+};
+
+
+// Extracts the item found timestamp from reviewNote or updatedAt
+const getItemFoundTime = (req) => {
+  if (!req) return null;
+  const note = String(req.reviewNote || req.adminNote || "");
+  const foundMatch = note.match(/\[FOUND_AT:([^\]]+)\]/);
+  if (foundMatch && foundMatch[1]) {
+    const d = new Date(foundMatch[1]);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const isFound = note.includes("[PRODUCT_FOUND]") || String(req.status || "").toUpperCase() === "COMPLETED";
+  if (isFound) {
+    if (req.updatedAt) {
+      const d = new Date(req.updatedAt);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    if (req.reviewedAt) {
+      const d = new Date(req.reviewedAt);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+  return null;
+};
+
 const parseRequestDetails = (rawText) => {
   if (!rawText || typeof rawText !== "string") return null;
 
@@ -1013,8 +1145,10 @@ const parseRequestDetails = (rawText) => {
     "Product Type",
     "Product ID",
     "Project Name",
+    "Project Code",
     "Item Name",
     "Quantity",
+    "Items",
     "Urgency Level",
     "Item Condition",
     "Date",
@@ -1030,10 +1164,7 @@ const parseRequestDetails = (rawText) => {
   const pairs = [];
   let remarks = "";
 
-  const pattern = new RegExp(
-    `(?:^|\\n|\\s)(Action Type|Category|Product Type|Product ID|Project Name|Item Name|Quantity|Urgency Level|Item Condition|Date|Purpose \\/ Work Details \\/ Remarks|Purpose \\/ Remarks|Remarks|Reason):\\s*`,
-    "gi"
-  );
+  const pattern = /(?:^|\n|\s)(Action Type|Category|Product Type|Product ID|Project Name|Project Code|Item Name|Quantity|Items\s*\(\d+\)|Items|Urgency Level|Item Condition|Date|Purpose \/ Work Details \/ Remarks|Purpose \/ Remarks|Remarks|Reason):\s*/gi;
 
   const matches = [...text.matchAll(pattern)];
   if (matches.length === 0) return null;
@@ -1042,7 +1173,15 @@ const parseRequestDetails = (rawText) => {
     const key = matches[i][1].trim();
     const startIndex = matches[i].index + matches[i][0].length;
     const endIndex = i + 1 < matches.length ? matches[i + 1].index : text.length;
-    const val = text.substring(startIndex, endIndex).trim();
+    let val = text.substring(startIndex, endIndex).trim();
+
+    // If key is Project Name, make sure to strip any concatenated Project Code or Items text if present
+    if (key.toLowerCase() === "project name") {
+      val = val
+        .replace(/\s*Project Code:.*$/i, "")
+        .replace(/\s*Items\s*(?:\(\d+\))?:.*$/i, "")
+        .trim();
+    }
 
     if (key.match(/Purpose|Remarks|Reason/i) && (key.includes("Purpose") || key.includes("Remarks") || key === "Reason")) {
       remarks = val;
@@ -1065,11 +1204,55 @@ const RenderFormattedDetails = ({ text }) => {
     );
   }
 
+  const eqItems = parseEquipmentItems(text);
+  const itemsPair = parsed.pairs.find(p => p.label.toLowerCase().includes("items") || p.label.toLowerCase().includes("item name"));
+
   return (
     <div className="space-y-3">
-      {parsed.pairs.length > 0 && (
+      {/* Redesigned Item Grid if equipment request contains multi items */}
+      {eqItems.length > 0 && (
+        <div className="rounded-2xl border border-border bg-secondary/15 p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between text-xs font-bold text-foreground uppercase tracking-wider">
+            <span className="flex items-center gap-1.5">
+              <Box className="h-4 w-4 text-primary" />
+              Requested Equipment Items ({eqItems.length}):
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {eqItems.map((item, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl border border-border bg-background p-3 shadow-2xs space-y-1.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {item.code && (
+                      <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 shrink-0">
+                        [{item.code}]
+                      </span>
+                    )}
+                    <span className="font-bold text-sm text-foreground truncate" title={item.name}>
+                      {item.name}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-primary/10 text-primary border border-primary/20 shrink-0">
+                    {item.qty} {item.unit}
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground pt-1 border-t border-border/50 flex items-center justify-between">
+                  <span>Category/Type: <strong className="text-foreground">{item.type || "General"}</strong></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Other Formatted Detail Pairs */}
+      {parsed.pairs.filter(p => !p.label.toLowerCase().includes("items")).length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {parsed.pairs.map((pair, idx) => (
+          {parsed.pairs.filter(p => !p.label.toLowerCase().includes("items")).map((pair, idx) => (
             <div
               key={idx}
               className="rounded-xl border border-border bg-background p-3 shadow-2xs"
@@ -1735,11 +1918,17 @@ const TrackRequests = ({ isAdmin = false }) => {
         (request.reviewNote.includes("[PRODUCT_FOUND]") ||
           request.reviewNote.includes("Product found")));
 
-    const isHold =
-      typeof request.reviewNote === "string" &&
-      (request.reviewNote.includes("[ON_HOLD]") ||
-        request.reviewNote.toLowerCase().includes("out of stock") ||
-        request.reviewNote.toLowerCase().includes("on hold"));
+                    const isRestockedAvailable =
+                      typeof request.reviewNote === "string" &&
+                      request.reviewNote.includes("[RESTOCKED_AVAILABLE]");
+
+                    const isHold =
+                      !isRestockedAvailable &&
+                      request.status !== "COMPLETED" &&
+                      request.status !== "APPROVED" &&
+                      request.status !== "REJECTED" &&
+                      typeof request.reviewNote === "string" &&
+                      request.reviewNote.includes("[ON_HOLD]");
 
     let matchesStatus = statusFilter === "ALL";
     if (!matchesStatus) {
@@ -1985,12 +2174,17 @@ const TrackRequests = ({ isAdmin = false }) => {
                       typeof request.reviewNote === "string" &&
                       request.reviewNote.includes("[ITEM_NOT_FOUND]");
 
-                    const isHold =
+                    const isRestockedAvailable =
                       isEquipment &&
                       typeof request.reviewNote === "string" &&
-                      (request.reviewNote.includes("[ON_HOLD]") ||
-                        request.reviewNote.toLowerCase().includes("out of stock") ||
-                        request.reviewNote.toLowerCase().includes("on hold"));
+                      request.reviewNote.includes("[RESTOCKED_AVAILABLE]");
+
+                    const isHold =
+                      request.status !== "COMPLETED" &&
+                      request.status !== "APPROVED" &&
+                      request.status !== "REJECTED" &&
+                      typeof request.reviewNote === "string" &&
+                      request.reviewNote.includes("[ON_HOLD]");
 
                     const isQualityInspected =
                       isEquipment &&
@@ -2012,8 +2206,10 @@ const TrackRequests = ({ isAdmin = false }) => {
                       ? isReturnRequest ? "FOUND & RESTOCKED" : "COMPLETED"
                       : isItemNotFound
                       ? "ITEM NOT FOUND"
+                      : isRestockedAvailable
+                      ? "RESTOCKED IN STORE"
                       : isHold
-                      ? "ON HOLD"
+                      ? "ON HOLD (AWAITING RESTOCK)"
                       : (isReturnRequest && isItemReturned)
                       ? "ITEM RETURNED"
                       : (isReturnRequest && isQualityInspected)
@@ -2024,6 +2220,8 @@ const TrackRequests = ({ isAdmin = false }) => {
                       ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 font-bold"
                       : isItemNotFound
                       ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 font-bold border border-rose-500/30"
+                      : isRestockedAvailable
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 font-bold border border-emerald-500/30 animate-pulse"
                       : isHold
                       ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 font-bold border border-amber-500/30"
                       : (isReturnRequest && isItemReturned)
@@ -2054,6 +2252,78 @@ const TrackRequests = ({ isAdmin = false }) => {
 
               {/* Card Content */}
               <FormattedInventoryTitle title={request.subject} className="mb-3" />
+
+              {/* Redesigned Requested Equipment Items Cards */}
+              {request.type === "EQUIPMENT" && (() => {
+                const eqItems = parseEquipmentItems(request.description);
+                if (eqItems.length === 0) return null;
+                const allocations = parseAllocations(request.reviewNote);
+
+                return (
+                  <div className="my-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-muted-foreground uppercase tracking-wider px-1">
+                      <span className="flex items-center gap-1.5">
+                        <Box className="h-3.5 w-3.5 text-primary" />
+                        Requested Items ({eqItems.length}):
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      {eqItems.map((item, idx) => {
+                        const allocInfo = allocations[item.code];
+                        const isPartialAlloc = allocInfo && allocInfo.toLowerCase().includes("partial");
+                        const isFullAlloc = allocInfo && allocInfo.toLowerCase().includes("full");
+                        const isOutOfStockAlloc = allocInfo && (allocInfo.toLowerCase().includes("out of stock") || allocInfo.toLowerCase().includes("0/"));
+
+                        return (
+                          <div
+                            key={idx}
+                            className="relative overflow-hidden rounded-xl border border-border/80 bg-background p-3 shadow-2xs transition-all hover:border-primary/40 space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {item.code && (
+                                  <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 shrink-0">
+                                    [{item.code}]
+                                  </span>
+                                )}
+                                <span className="font-bold text-sm text-foreground truncate" title={item.name}>
+                                  {item.name}
+                                </span>
+                              </div>
+
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-primary/10 text-primary border border-primary/20 shrink-0">
+                                {item.qty} {item.unit}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60 text-xs">
+                              <span className="text-muted-foreground text-[11px] font-medium">
+                                Type: <strong className="text-foreground">{item.type || "General"}</strong>
+                              </span>
+
+                              {allocInfo && (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    isFullAlloc
+                                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
+                                      : isPartialAlloc
+                                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25"
+                                      : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25"
+                                  }`}
+                                >
+                                  {isFullAlloc && <Check className="h-3 w-3" />}
+                                  {allocInfo}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid gap-2 text-sm">
                 <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
@@ -2136,6 +2406,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                         <span>Rejected: {formatDate(request.reviewedAt || request.updatedAt)} {formatTime(request.reviewedAt || request.updatedAt)}</span>
                       </span>
                     ) : null}
+
+                    {getItemFoundTime(request) && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20 font-bold">
+                        <PackageCheck className="h-3.5 w-3.5 text-teal-600" />
+                        <span>Item Found: {formatDate(getItemFoundTime(request))} {formatTime(getItemFoundTime(request))}</span>
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -2155,11 +2432,16 @@ const TrackRequests = ({ isAdmin = false }) => {
                       typeof request.reviewNote === "string" &&
                       request.reviewNote.includes("[ITEM_NOT_FOUND]");
 
-                    const isHold =
+                    const isRestockedAvailable =
                       typeof request.reviewNote === "string" &&
-                      (request.reviewNote.includes("[ON_HOLD]") ||
-                        request.reviewNote.toLowerCase().includes("out of stock") ||
-                        request.reviewNote.toLowerCase().includes("on hold"));
+                      request.reviewNote.includes("[RESTOCKED_AVAILABLE]");
+
+                    const isHold =
+                      request.status !== "COMPLETED" &&
+                      request.status !== "APPROVED" &&
+                      request.status !== "REJECTED" &&
+                      typeof request.reviewNote === "string" &&
+                      request.reviewNote.includes("[ON_HOLD]");
 
                     const isReturnRequest =
                       (typeof request.description === "string" && request.description.toLowerCase().includes("action type: return")) ||
@@ -2182,7 +2464,8 @@ const TrackRequests = ({ isAdmin = false }) => {
                           </span>
                           <span className="text-muted-foreground">
                             {isItemNotFound && !isProductFound && "Phase 2: Reported NOT FOUND in Store/Workshop"}
-                            {!isItemNotFound && isHold && "Phase 2: ON HOLD (Product Out of Stock)"}
+                            {isRestockedAvailable && "Phase 2: Restocked in Store (Ready for pickup!)"}
+                            {!isItemNotFound && !isRestockedAvailable && isHold && "Phase 2: ON HOLD (Awaiting Warehouse Restock)"}
                             {!isHold && isReturnRequest && (
                               isProductFound
                                 ? "Phase 4: Found Item & Restocked to Warehouse"
@@ -2201,21 +2484,21 @@ const TrackRequests = ({ isAdmin = false }) => {
 
                         {/* Step Indicators & Line */}
                         {isReturnRequest ? (
-                          <div className="relative flex items-center justify-between my-4 px-2">
+                          <div className="relative flex items-center justify-between my-4 px-6">
                             {/* Background Connecting Line */}
-                            <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-secondary rounded-full -z-0" />
+                            <div className="absolute left-6 right-6 top-3.5 h-1 bg-secondary rounded-full -z-0" />
 
                             {/* Filled Progress Line */}
                             <div
-                              className="absolute left-6 top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-500 -z-0 bg-gradient-to-r from-amber-500 via-purple-500 to-emerald-500"
+                              className="absolute left-6 top-3.5 h-1 rounded-full transition-all duration-500 -z-0 bg-gradient-to-r from-amber-500 via-purple-500 to-emerald-500"
                               style={{
                                 width: isProductFound
-                                  ? "92%"
+                                  ? "calc(100% - 48px)"
                                   : isItemReturned
-                                  ? "68%"
+                                  ? "calc(66.6% - 16px)"
                                   : isQualityInspected || request.status === "APPROVED"
-                                  ? "40%"
-                                  : "12%",
+                                  ? "calc(33.3% - 8px)"
+                                  : "20px",
                               }}
                             />
 
@@ -2270,13 +2553,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                             </div>
                           </div>
                         ) : (
-                          <div className="relative flex items-center justify-between my-4 px-2">
+                          <div className="relative flex items-center justify-between my-4 px-6">
                             {/* Background Connecting Line */}
-                            <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-secondary rounded-full -z-0" />
+                            <div className="absolute left-6 right-6 top-3.5 h-1 bg-secondary rounded-full -z-0" />
 
                             {/* Filled Progress Line */}
                             <div
-                              className={`absolute left-6 top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-500 -z-0 ${
+                              className={`absolute left-6 top-3.5 h-1 rounded-full transition-all duration-500 -z-0 ${
                                 isHold
                                   ? "bg-gradient-to-r from-blue-500 to-amber-500"
                                   : "bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500"
@@ -2284,13 +2567,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                               style={{
                                 width:
                                   isHold
-                                    ? "50%"
+                                    ? "calc(50% - 24px)"
                                     : request.status === "PENDING"
-                                    ? "35%"
+                                    ? "20px"
                                     : isProductFound
-                                    ? "90%"
+                                    ? "calc(100% - 48px)"
                                     : request.status === "APPROVED"
-                                    ? "68%"
+                                    ? "calc(50% - 24px)"
                                     : "0%",
                               }}
                             />
@@ -2327,18 +2610,46 @@ const TrackRequests = ({ isAdmin = false }) => {
                               </span>
                             </div>
 
-                            {/* Step 3 Node */}
-                            <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
+                            {/* Step 3 Node: Clickable if request is approved & waiting for product found */}
+                            <div
+                              onClick={() => {
+                                if (request.status === "APPROVED" && !isProductFound && !isReturnRequest) {
+                                  handleMarkProductFound(request.id);
+                                }
+                              }}
+                              className={`flex flex-col items-center gap-1 z-10 bg-background px-1 ${
+                                request.status === "APPROVED" && !isProductFound && !isReturnRequest
+                                  ? "cursor-pointer group"
+                                  : ""
+                              }`}
+                              title={
+                                request.status === "APPROVED" && !isProductFound && !isReturnRequest
+                                  ? "Click to confirm Product Found & collected!"
+                                  : isProductFound
+                                  ? "Product Found & Completed"
+                                  : "Awaiting Admin Approval"
+                              }
+                            >
                               <div
                                 className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                                   isProductFound
                                     ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/20"
+                                    : request.status === "APPROVED" && !isReturnRequest
+                                    ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/40 hover:scale-110 cursor-pointer animate-bounce"
                                     : "bg-secondary text-muted-foreground"
                                 }`}
                               >
-                                3
+                                {isProductFound ? <Check className="h-4 w-4" /> : "3"}
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground">Product Found</span>
+                              <span className={`text-[11px] font-semibold transition-colors ${
+                                request.status === "APPROVED" && !isProductFound && !isReturnRequest
+                                  ? "text-emerald-700 dark:text-emerald-400 group-hover:underline"
+                                  : isProductFound
+                                  ? "text-foreground font-bold"
+                                  : "text-muted-foreground"
+                              }`}>
+                                Product Found
+                              </span>
                             </div>
                           </div>
                         )}
@@ -2409,6 +2720,19 @@ const TrackRequests = ({ isAdmin = false }) => {
                                 </>
                               )}
                             </button>
+                          </div>
+                        )}
+
+                        {/* Restocked in Store Banner */}
+                        {isRestockedAvailable && !isProductFound && !isReturnRequest && (
+                          <div className="mt-3.5 p-4 rounded-2xl bg-emerald-500/10 border-2 border-emerald-500/30 space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                              <PackageCheck className="h-4 w-4 text-emerald-600" />
+                              <span>Item Restocked in Store! Ready to Collect</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              The remaining shortage for this item has arrived in the store. Please collect from the store keeper.
+                            </p>
                           </div>
                         )}
 
@@ -3085,14 +3409,27 @@ const TrackRequests = ({ isAdmin = false }) => {
                   )}
                   {reviewedAt && (
                     <div className="flex items-center justify-between border-t border-border pt-2">
-                      <div className="flex items-center gap-2 text-sm text-emerald-700">
+                      <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
                         <Clock3 className="h-4 w-4" />
                         <span className="font-semibold">
                           {isApproved ? "Approved At" : "Rejected At"}
                         </span>
                       </div>
-                      <span className="text-sm font-bold text-emerald-700">
+                      <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
                         {formatDate(reviewedAt)} {formatTime(reviewedAt)}
+                      </span>
+                    </div>
+                  )}
+                  {getItemFoundTime(reasonModal) && (
+                    <div className="flex items-center justify-between border-t border-border pt-2">
+                      <div className="flex items-center gap-2 text-sm text-teal-700 dark:text-teal-400">
+                        <PackageCheck className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                        <span className="font-semibold">
+                          Item Found / Collected At
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-teal-700 dark:text-teal-400">
+                        {formatDate(getItemFoundTime(reasonModal))} {formatTime(getItemFoundTime(reasonModal))}
                       </span>
                     </div>
                   )}

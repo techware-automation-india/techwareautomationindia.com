@@ -151,24 +151,33 @@ const ProjectDetails = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex-1">
-          <Link
-            to="/admin/projects"
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Projects
-          </Link>
+      {/* ─── Breadcrumb Back Navigation ─── */}
+      <div className="flex items-center justify-between">
+        <Link
+          to="/admin/projects"
+          className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-muted-foreground hover:text-primary transition-colors py-1 px-2.5 rounded-lg hover:bg-secondary/60"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to Projects</span>
+        </Link>
+      </div>
 
+      {/* ─── Modern Hero Header ─── */}
+      <div className="relative overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-card via-card to-primary/[0.04] p-6 sm:p-8 shadow-xs">
+        <div className="absolute right-0 top-0 -mt-6 -mr-6 h-48 w-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+        <div className="relative flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-              <FolderKanban className="h-6 w-6 text-primary" />
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20">
+              <FolderKanban className="h-7 w-7" />
             </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="font-display text-2xl font-bold">{project.name}</h1>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {project.code && (
+                  <span className="inline-flex items-center gap-1 font-mono text-xs font-black px-2.5 py-0.5 rounded-lg bg-primary/10 border border-primary/20 text-primary">
+                    <Tag className="h-3 w-3" />
+                    {project.code}
+                  </span>
+                )}
                 <select
                   value={project.status}
                   onChange={async (e) => {
@@ -181,7 +190,7 @@ const ProjectDetails = () => {
                       toast.error(err.message || "Failed to update project status");
                     }
                   }}
-                  className={`px-3 py-1 rounded-full text-xs font-semibold border cursor-pointer focus:outline-none transition-colors ${getStatusColor(
+                  className={`px-3 py-1 rounded-full text-xs font-bold border cursor-pointer focus:outline-none transition-colors ${getStatusColor(
                     project.status
                   )}`}
                 >
@@ -191,59 +200,72 @@ const ProjectDetails = () => {
                   <option value="COMPLETED">Completed</option>
                   <option value="CANCELLED">Cancelled</option>
                 </select>
-                <span className={`inline-flex items-center gap-1 text-sm font-semibold ${getPriorityColor(project.priority)}`}>
+                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-lg border ${getPriorityColor(project.priority)}`}>
                   <Target className="h-3.5 w-3.5" />
-                  {project.priority}
+                  Priority: {project.priority}
                 </span>
               </div>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                <span className="font-mono font-semibold text-primary">{project.code}</span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} -{" "}
-                  {project.endDate ? new Date(project.endDate).toLocaleDateString() : "No end date"}
+
+              <h1 className="font-display text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+                {project.name}
+              </h1>
+
+              {project.description && (
+                <p className="text-xs sm:text-sm text-muted-foreground max-w-2xl leading-relaxed">
+                  {project.description}
+                </p>
+              )}
+
+              <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap pt-1">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Calendar className="h-3.5 w-3.5 text-primary" />
+                  Timeline: {project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} → {project.endDate ? new Date(project.endDate).toLocaleDateString() : "No deadline"}
                 </span>
+                {project.customer && (
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <Users className="h-3.5 w-3.5 text-primary" />
+                    Customer: {project.customer?.fullName || project.customer?.name || project.customer?.companyName || "N/A"}
+                  </span>
+                )}
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowEditModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-sm font-medium"
-          >
-            <Edit2 className="h-4 w-4" />
-            Edit
-          </button>
-
-          <div className="relative group">
-            <button className="p-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors">
-              <MoreVertical className="h-4 w-4" />
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowEditModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border/80 bg-background hover:bg-secondary text-foreground text-xs sm:text-sm font-bold shadow-2xs transition-all cursor-pointer"
+            >
+              <Edit2 className="h-4 w-4" />
+              <span>Edit Info</span>
             </button>
-            <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-background shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-              <button
-                onClick={handleArchiveProject}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors text-left"
-              >
-                <Archive className="h-4 w-4" />
-                {project.isArchived ? "Unarchive Project" : "Archive Project"}
-              </button>
-              <button
-                onClick={handleDeleteProject}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive transition-colors text-left"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Project
-              </button>
-            </div>
+
+            <button
+              type="button"
+              onClick={handleArchiveProject}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-border/80 bg-background hover:bg-secondary text-muted-foreground hover:text-foreground text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+              title={project.isArchived ? "Unarchive Project" : "Archive Project"}
+            >
+              <Archive className="h-4 w-4" />
+              <span>{project.isArchived ? "Unarchive" : "Archive"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDeleteProject}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-destructive/20 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-semibold transition-all cursor-pointer"
+              title="Delete Project"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Category Folders & Products Section */}
-      <div className="rounded-2xl bg-background border border-border card-shadow p-6">
+      {/* ─── Category Folders & Allocated Products Section ─── */}
+      <div className="rounded-3xl bg-card border border-border/80 p-6 sm:p-8 shadow-xs">
         <DocumentsTab project={project} setProject={setProject} />
       </div>
 
@@ -823,6 +845,7 @@ const DocumentsTab = ({ project, setProject }) => {
   const docs = project?.documents || [];
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [adminInventoryCategories, setAdminInventoryCategories] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -850,22 +873,262 @@ const DocumentsTab = ({ project, setProject }) => {
         console.warn("Could not fetch root level-1 inventory categories for project folders:", err);
       }
     };
+
+    const fetchInventoryItems = async () => {
+      try {
+        const res = await apiGet("/inventory/items").catch(() => ({ items: [] }));
+        if (isMounted && res?.items && Array.isArray(res.items)) {
+          setInventoryItems(res.items);
+        }
+      } catch (err) {
+        console.warn("Could not fetch inventory items for hierarchy lookup:", err);
+      }
+    };
+
     fetchInventoryCategories();
+    fetchInventoryItems();
     return () => { isMounted = false; };
   }, []);
+
+  // Helper to extract category hierarchy: Root 1, Root 2, Root 3, Root 4 for an allocated item
+  const getItemRoots = (prodId, cleanName) => {
+    let matched = null;
+    if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
+      matched = inventoryItems.find((inv) => {
+        const invCode = (inv.code || inv.sku || "").toLowerCase().trim();
+        const invName = (inv.name || "").toLowerCase().trim();
+        const pCode = (prodId || "").toLowerCase().trim();
+        const pName = (cleanName || "").toLowerCase().trim();
+        return (pCode && invCode && invCode === pCode) || (pName && invName && invName === pName);
+      });
+    }
+
+    const chain = [];
+    let curr = matched?.categoryRef;
+    while (curr) {
+      if (curr.name) chain.unshift(curr.name);
+      curr = curr.parent;
+    }
+    if (chain.length === 0 && matched?.category) {
+      chain.push(matched.category);
+    }
+
+    return {
+      root1: chain[0] || (matched?.category || "Mechanical"),
+      root2: chain[1] || "—",
+      root3: chain[2] || "—",
+      root4: chain[3] || "—",
+      unit: matched?.unit || "Nos",
+    };
+  };
+
+  // Compile all allocated project items with roots 1, 2, 3, 4
+  const getAllProjectAllocatedItems = () => {
+    const list = [];
+    Object.entries(categoryMap).forEach(([catKey, items]) => {
+      items.forEach((item) => {
+        const info = parseProductDocInfo(item);
+        const roots = getItemRoots(info.prodId, info.cleanName);
+        list.push({
+          ...info,
+          root1: roots.root1 !== "—" ? roots.root1 : catKey,
+          root2: roots.root2,
+          root3: roots.root3,
+          root4: roots.root4,
+          unit: roots.unit,
+        });
+      });
+    });
+    return list;
+  };
+
+  // ─── Export to Excel (.xls/.csv BOM) ───
+  const handleExportExcel = () => {
+    const items = getAllProjectAllocatedItems();
+    if (items.length === 0) {
+      toast.error("No allocated items to export for this project.");
+      return;
+    }
+
+    const headers = [
+      "S.No",
+      "Product ID / Code",
+      "Item Name",
+      "Root 1 (Category)",
+      "Root 2 (Folder)",
+      "Root 3 (Sub-Folder)",
+      "Root 4 (Sub-Sub-Folder)",
+      "Allocated Qty",
+      "Unit",
+      "Unit Price (₹)",
+      "Total Cost (₹)",
+      "Allocated By",
+      "Approved By",
+      "Date",
+    ];
+
+    const rows = items.map((it, idx) => [
+      idx + 1,
+      `"${it.prodId || "N/A"}"`,
+      `"${(it.cleanName || "").replace(/"/g, '""')}"`,
+      `"${(it.root1 || "").replace(/"/g, '""')}"`,
+      `"${(it.root2 || "—").replace(/"/g, '""')}"`,
+      `"${(it.root3 || "—").replace(/"/g, '""')}"`,
+      `"${(it.root4 || "—").replace(/"/g, '""')}"`,
+      it.quantity,
+      `"${it.unit || "Nos"}"`,
+      it.unitPrice || 0,
+      it.totalPrice || 0,
+      `"${(it.empName || "Employee").replace(/"/g, '""')}"`,
+      `"${(it.approvedByName || "Admin").replace(/"/g, '""')}"`,
+      `"${it.createdAt ? new Date(it.createdAt).toLocaleDateString() : "—"}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      `"PROJECT BOM & INVENTORY ALLOCATION REPORT"\n` +
+      `"Project:","${project?.name || "Project"}"\n` +
+      `"Project Code:","${project?.code || "—"}"\n` +
+      `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\n\n` +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `${project?.code || "PROJECT"}_BOM_Items_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Excel/CSV BOM downloaded successfully!");
+  };
+
+  // ─── Export to PDF (Printable Formatted View) ───
+  const handleExportPDF = () => {
+    const items = getAllProjectAllocatedItems();
+    if (items.length === 0) {
+      toast.error("No allocated items to print/download for this project.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow popups to download/print the PDF report.");
+      return;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${project?.name || "Project"} - Bill of Materials (BOM)</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #1e293b; }
+            .header { border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
+            .title { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0; }
+            .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 15px; }
+            th { background-color: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; padding: 8px 6px; border: 1px solid #cbd5e1; text-align: left; }
+            td { padding: 8px 6px; border: 1px solid #e2e8f0; vertical-align: top; }
+            .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-weight: 700; background: #e0f2fe; color: #0369a1; }
+            .qty { font-weight: 800; color: #047857; text-align: center; }
+            .roots { color: #64748b; font-size: 10px; }
+            .total-row { font-weight: bold; background: #f8fafc; font-size: 12px; }
+            @media print {
+              body { padding: 0; }
+              @page { size: landscape; margin: 10mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">${project?.name || "Project"} — Material & Inventory Allocation (BOM)</h1>
+            <div class="meta">
+              <strong>Project Code:</strong> ${project?.code || "—"} &nbsp;|&nbsp;
+              <strong>Customer:</strong> ${project?.customer?.fullName || project?.customer?.name || "N/A"} &nbsp;|&nbsp;
+              <strong>Total Allocated Items:</strong> ${items.length} items &nbsp;|&nbsp;
+              <strong>Generated:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px; text-align: center;">#</th>
+                <th style="width: 110px;">Product Code</th>
+                <th>Item Name</th>
+                <th>Root 1 (Category)</th>
+                <th>Root 2 (Folder)</th>
+                <th>Root 3 (Sub-Folder)</th>
+                <th>Root 4 (Level 4)</th>
+                <th style="width: 60px; text-align: center;">Qty</th>
+                <th style="width: 50px;">Unit</th>
+                <th style="width: 80px; text-align: right;">Unit Price</th>
+                <th style="width: 90px; text-align: right;">Total Cost</th>
+                <th>Allocated By</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items
+                .map(
+                  (it, idx) => `
+                <tr>
+                  <td style="text-align: center; color: #64748b;">${idx + 1}</td>
+                  <td><span class="badge">${it.prodId || "N/A"}</span></td>
+                  <td><strong>${it.cleanName}</strong></td>
+                  <td>${it.root1}</td>
+                  <td>${it.root2}</td>
+                  <td>${it.root3}</td>
+                  <td>${it.root4}</td>
+                  <td class="qty">${it.quantity}</td>
+                  <td>${it.unit || "Nos"}</td>
+                  <td style="text-align: right;">${it.unitPrice > 0 ? "₹" + it.unitPrice.toLocaleString() : "—"}</td>
+                  <td style="text-align: right; font-weight: bold;">${it.totalPrice > 0 ? "₹" + it.totalPrice.toLocaleString() : "—"}</td>
+                  <td>${it.empName || "Employee"}</td>
+                </tr>
+              `
+                )
+                .join("")}
+              <tr class="total-row">
+                <td colspan="7" style="text-align: right; padding: 10px;">Total Allocated Units & Value:</td>
+                <td style="text-align: center; color: #047857;">${items.reduce((acc, it) => acc + (it.quantity || 1), 0)}</td>
+                <td>Units</td>
+                <td></td>
+                <td style="text-align: right; color: #0f172a;">₹${items.reduce((acc, it) => acc + (it.totalPrice || 0), 0).toLocaleString()}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 400);
+  };
 
   const canonicalizeCategory = (rawCat) => {
     if (!rawCat) return null;
     const cat = String(rawCat).trim();
     const lower = cat.toLowerCase();
 
-    // Do not create or show consumable, general, or tool folders in project
+    // Do not create or show consumable, general, tool, or generic 'project' folders
     if (
       lower.includes("consumable") ||
       lower.includes("consuamble") ||
       lower.includes("general") ||
       lower.includes("genral") ||
-      lower.includes("tool")
+      lower.includes("tool") ||
+      lower === "project" ||
+      lower === "projects" ||
+      lower === "product" ||
+      lower === "products"
     ) {
       return null;
     }
@@ -1009,18 +1272,20 @@ const DocumentsTab = ({ project, setProject }) => {
     const bracketMatch = name.match(/^\[(.*?)\]/);
     if (bracketMatch && bracketMatch[1]) {
       const rawTag = bracketMatch[1].trim();
-      const canonicalTag = canonicalizeCategory(rawTag) || rawTag;
+      const canonicalTag = canonicalizeCategory(rawTag);
 
-      const foundKey = Object.keys(categoryMap).find(
-        (k) =>
-          k.toLowerCase() === canonicalTag.toLowerCase() ||
-          k.toLowerCase().includes(canonicalTag.toLowerCase()) ||
-          canonicalTag.toLowerCase().includes(k.toLowerCase())
-      );
-      if (foundKey) matchedCat = foundKey;
-      else {
-        categoryMap[canonicalTag] = [];
-        matchedCat = canonicalTag;
+      if (canonicalTag) {
+        const foundKey = Object.keys(categoryMap).find(
+          (k) =>
+            k.toLowerCase() === canonicalTag.toLowerCase() ||
+            k.toLowerCase().includes(canonicalTag.toLowerCase()) ||
+            canonicalTag.toLowerCase().includes(k.toLowerCase())
+        );
+        if (foundKey) matchedCat = foundKey;
+        else {
+          categoryMap[canonicalTag] = [];
+          matchedCat = canonicalTag;
+        }
       }
     } else {
       const foundKey = Object.keys(categoryMap).find((k) =>
@@ -1298,7 +1563,25 @@ const DocumentsTab = ({ project, setProject }) => {
             Click on any folder card to view allocated products, employee details, and audit timestamps.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
+            title="Download BOM in Excel/CSV format with Root 1, 2, 3, 4 category hierarchy and quantities"
+          >
+            <Download className="h-4 w-4" />
+            <span>Download Excel (BOM)</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
+            title="Download BOM in printable PDF format with Root 1, 2, 3, 4 category hierarchy and quantities"
+          >
+            <FileText className="h-4 w-4" />
+            <span>Download PDF</span>
+          </button>
           <div className="px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold flex items-center gap-2 shadow-2xs">
             <Package className="h-4 w-4 text-primary" />
             <span>Total Products Allocated:</span>
@@ -1310,7 +1593,21 @@ const DocumentsTab = ({ project, setProject }) => {
       {/* Category Folder Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {Object.entries(categoryMap)
-          .filter(([category, items]) => items.length > 0 || adminInventoryCategories.includes(category))
+          .filter(([category, items]) => {
+            const lower = category.toLowerCase().trim();
+            if (
+              lower === "project" ||
+              lower === "projects" ||
+              lower === "product" ||
+              lower === "products" ||
+              lower.includes("consumable") ||
+              lower.includes("general") ||
+              lower.includes("tool")
+            ) {
+              return false;
+            }
+            return items.length > 0 || adminInventoryCategories.includes(category);
+          })
           .map(([category, items]) => {
           const totalUnits = items.reduce((acc, it) => acc + (it.fileSize || 1), 0);
 

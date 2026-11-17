@@ -2485,14 +2485,33 @@ async function addOrEnsureProductInProject(request, actionUserId = null) {
     const quantityMatch = text.match(/Quantity:\s*(\d+)/i);
     const projectNameMatch = text.match(/Project Name:\s*([^\n\r|]+)/i);
     const projectCodeMatch = text.match(/Project Code:\s*([^\n\r|]+)/i);
-    const productTypeMatch = text.match(/Product Type:\s*([^\n\r|]+)/i) || text.match(/Category:\s*([^\n\r|]+)/i);
+    const productTypeMatch = text.match(/Product Type:\s*([^\n\r|]+)/i);
     const itemNameMatch = text.match(/Item Name:\s*([^\n\r|]+)/i);
 
     const code = productIdMatch ? productIdMatch[1].trim() : null;
     const qty = quantityMatch ? parseInt(quantityMatch[1], 10) : 1;
-    const rawCategory = productTypeMatch ? productTypeMatch[1].trim() : "General / Consumables";
-    const prodCategory = await normalizeProductCategory(rawCategory);
     const itemName = itemNameMatch ? itemNameMatch[1].trim() : (code || "Product");
+
+    // Look up item in inventory to get its actual Root 1 Category (e.g. Mechanical, Electrical, Pneumatic)
+    let invItem = null;
+    if (code || itemName) {
+      invItem = await prisma.inventoryItem.findFirst({
+        where: {
+          OR: [
+            ...(code ? [{ code: { equals: code } }, { sku: { equals: code } }] : []),
+            ...(itemName ? [{ name: { equals: itemName } }] : []),
+          ],
+        },
+        select: { category: true, costPrice: true },
+      });
+    }
+
+    let rawCategory = productTypeMatch ? productTypeMatch[1].trim() : (invItem?.category || "Mechanical");
+    if (rawCategory.toLowerCase() === "project" || rawCategory.toLowerCase() === "product") {
+      rawCategory = invItem?.category || "Mechanical";
+    }
+
+    const prodCategory = await normalizeProductCategory(rawCategory);
 
     let projName = projectNameMatch ? projectNameMatch[1].trim() : null;
     let projCode = projectCodeMatch ? projectCodeMatch[1].trim() : null;
@@ -2663,6 +2682,128 @@ async function addOrEnsureProductInProject(request, actionUserId = null) {
     }
   } catch (err) {
     console.warn("⚠️ addOrEnsureProductInProject error:", err);
+    return null;
+  }
+}
+
+async function removeProductFromProjectOnReturn(request, actionUserId = null) {
+  if (!request || !request.description) return null;
+
+  try {
+    const text = request.description;
+    const categoryMatch = text.match(/Category:\s*([^\n\r|]+)/i);
+    const categoryVal = categoryMatch ? categoryMatch[1].trim().toLowerCase() : "";
+    if (!["project", "product"].includes(categoryVal)) {
+      return null;
+    }
+
+    const projectNameMatch = text.match(/Project Name:\s*([^\n\r|]+)/i);
+    const projectCodeMatch = text.match(/Project Code:\s*([^\n\r|]+)/i);
+
+    let projName = projectNameMatch ? projectNameMatch[1].trim() : null;
+    let projCode = projectCodeMatch ? projectCodeMatch[1].trim() : null;
+
+    if (!projName && !projCode && request.subject) {
+      const projSubjectMatch = request.subject.match(/\[Inventory (?:Taking|Return):\s*([^\]]+)\]/i);
+      if (projSubjectMatch && projSubjectMatch[1]) {
+        const extracted = projSubjectMatch[1].trim();
+        if (!extracted.startsWith("ID:") && !extracted.match(/^[A-Z0-9_-]{3,12}$/i)) {
+          projName = extracted;
+        }
+      }
+    }
+
+    if (!projName && !projCode) {
+      const allProjects = await prisma.project.findMany({ select: { id: true, name: true, code: true } });
+      const fullText = `${request.subject || ""} ${request.description || ""}`.toLowerCase();
+      const matched = allProjects.find(p => p.name && p.name.length >= 3 && fullText.includes(p.name.toLowerCase()));
+      if (matched) {
+        projName = matched.name;
+      }
+    }
+
+    let targetProject = null;
+    if (projCode) {
+      targetProject = await findTargetProject(projCode);
+    }
+    if (!targetProject && projName) {
+      targetProject = await findTargetProject(projName);
+    }
+    if (!targetProject) return null;
+
+    // Get all returned items
+    const returnedItems = extractRequestedItems(text);
+    if (returnedItems.length === 0) {
+      const productIdMatch = text.match(/Product ID:\s*([^\n\r|]+)/i);
+      const itemNameMatch = text.match(/Item Name:\s*([^\n\r|]+)/i);
+      const quantityMatch = text.match(/Quantity:\s*(\d+)/i);
+      if (productIdMatch || itemNameMatch) {
+        returnedItems.push({
+          code: productIdMatch ? productIdMatch[1].trim() : "",
+          name: itemNameMatch ? itemNameMatch[1].trim() : "",
+          quantity: quantityMatch ? parseInt(quantityMatch[1], 10) : 1,
+        });
+      }
+    }
+
+    const removedSummaries = [];
+
+    for (const itm of returnedItems) {
+      const targetCode = itm.code;
+      const targetName = itm.name;
+      const returnQty = Math.max(1, parseInt(itm.quantity || 1, 10));
+
+      // Find matching project document for this product
+      const candidateDocs = await prisma.projectDocument.findMany({
+        where: {
+          projectId: targetProject.id,
+          fileType: "used_product",
+        },
+      });
+
+      const matchedDoc = candidateDocs.find(doc => {
+        const docNameLower = (doc.fileName || "").toLowerCase();
+        const codeMatch = targetCode && docNameLower.includes(targetCode.toLowerCase());
+        const nameMatch = targetName && docNameLower.includes(targetName.toLowerCase());
+        return codeMatch || nameMatch;
+      });
+
+      if (matchedDoc) {
+        const currentQty = Math.max(1, parseInt(matchedDoc.fileSize || 1, 10));
+        if (currentQty <= returnQty) {
+          // Entire allocated quantity returned -> Delete product entry from project
+          await prisma.projectDocument.delete({
+            where: { id: matchedDoc.id },
+          });
+          removedSummaries.push(`Removed "${targetCode || targetName}" from Project "${targetProject.name}"`);
+        } else {
+          // Partial quantity returned -> Decrement remaining quantity in project
+          const remainingQty = currentQty - returnQty;
+          const updatedName = matchedDoc.fileName.replace(/\(Qty:\s*\d+\)/i, `(Qty: ${remainingQty})`);
+          await prisma.projectDocument.update({
+            where: { id: matchedDoc.id },
+            data: {
+              fileSize: remainingQty,
+              fileName: updatedName,
+            },
+          });
+          removedSummaries.push(`Decreased "${targetCode || targetName}" to Qty ${remainingQty} in Project "${targetProject.name}"`);
+        }
+
+        await prisma.projectActivity.create({
+          data: {
+            projectId: targetProject.id,
+            userId: actionUserId || request.reviewedById || request.employeeId || "system",
+            activityType: "product_returned",
+            description: `Product ${targetCode || targetName} (Qty: ${returnQty}) returned to inventory and removed/adjusted in project.`,
+          },
+        });
+      }
+    }
+
+    return removedSummaries.length > 0 ? removedSummaries.join(" | ") : null;
+  } catch (err) {
+    console.warn("⚠️ removeProductFromProjectOnReturn error:", err);
     return null;
   }
 }
@@ -2929,37 +3070,66 @@ async function handleInventoryStockUpdate(request, note, isProductFoundAction = 
         }
       }
     }
-    // ─── 2. TAKING / ISSUE WORKFLOW: Decrement Qty on Product Found ───
+    // ─── 2. TAKING / ISSUE WORKFLOW: Decrement Qty ONLY on Employee Product Found ───
     else {
+      // Stock quantity MUST NOT change until the employee clicks "Item Found" (Product Found)
       const shouldUpdateStock = (isProductFoundAction || noteStr.includes("[PRODUCT_FOUND]")) && !alreadyDecremented;
 
-      if ((code || itemName) && shouldUpdateStock) {
-        const item = await prisma.inventoryItem.findFirst({
-          where: {
-            OR: [
-              ...(code ? [{ code: { equals: code } }, { sku: { equals: code } }, { name: { equals: code } }] : []),
-              ...(itemName ? [{ name: { equals: itemName } }, { code: { equals: itemName } }] : []),
-            ],
-          },
-        });
+      if (shouldUpdateStock) {
+        // Extract all requested items (supports single item and multi-item arrays)
+        const allTargetItems = extractRequestedItems(text);
+        if (allTargetItems.length === 0 && (code || itemName)) {
+          allTargetItems.push({ code, name: itemName, quantity: qty, unit });
+        }
 
-        if (item) {
-          const newQty = Math.max(0, (item.quantity || 0) - qty);
-          if (newQty !== item.quantity) {
-            await prisma.inventoryItem.update({
-              where: { id: item.id },
-              data: { quantity: newQty },
-            });
-            stockNote = `[STOCK_UPDATED] Stock updated for ${item.code || item.name} (${item.quantity} -> ${newQty} ${item.unit || "Nos"})`;
+        const stockUpdateNotes = [];
+        for (const target of allTargetItems) {
+          const tCode = target.code;
+          const tName = target.name;
+          const tQty = Math.max(1, parseInt(target.quantity || 1, 10));
+
+          if (!tCode && !tName) continue;
+
+          const item = await prisma.inventoryItem.findFirst({
+            where: {
+              OR: [
+                ...(tCode ? [{ code: { equals: tCode } }, { sku: { equals: tCode } }, { name: { equals: tCode } }] : []),
+                ...(tName ? [{ name: { equals: tName } }, { code: { equals: tName } }] : []),
+              ],
+            },
+          });
+
+          if (item) {
+            const newQty = Math.max(0, (item.quantity || 0) - tQty);
+            if (newQty !== item.quantity) {
+              await prisma.inventoryItem.update({
+                where: { id: item.id },
+                data: { quantity: newQty },
+              });
+              stockUpdateNotes.push(`[STOCK_UPDATED] Stock updated for ${item.code || item.name} (${item.quantity} -> ${newQty} ${item.unit || "Nos"})`);
+            }
           }
+        }
+
+        if (stockUpdateNotes.length > 0) {
+          stockNote = stockUpdateNotes.join(" | ");
         }
       }
     }
 
-    // Auto-add product to Project under Category Folder on Approval (only for project/product categories)
-    const projectNote = await addOrEnsureProductInProject(request, request.reviewedById);
-    if (projectNote) {
-      stockNote = stockNote ? `${stockNote} | ${projectNote}` : projectNote;
+    // Project Documents Update on Approval:
+    // If Taking request: ensure product added under Project Category Folder
+    // If Return request: remove/decrement product from Project Category Folder
+    if (isReturnAction) {
+      const returnProjNote = await removeProductFromProjectOnReturn(request, request.reviewedById);
+      if (returnProjNote) {
+        stockNote = stockNote ? `${stockNote} | ${returnProjNote}` : returnProjNote;
+      }
+    } else {
+      const projectNote = await addOrEnsureProductInProject(request, request.reviewedById);
+      if (projectNote) {
+        stockNote = stockNote ? `${stockNote} | ${projectNote}` : projectNote;
+      }
     }
 
     // Update Employee assignedTools on Tool Request Approval
@@ -3882,6 +4052,11 @@ const handleFoundRequest = async (req, res) => {
         console.warn("⚠️ addProductToProjectOnFound failed:", projErr);
       }
     } else {
+      try {
+        await removeProductFromProjectOnReturn(updated, updated.employeeId);
+      } catch (remErr) {
+        console.warn("⚠️ removeProductFromProjectOnReturn failed:", remErr);
+      }
       try {
         await updateEmployeeAssignedTools(request);
       } catch (toolErr) {

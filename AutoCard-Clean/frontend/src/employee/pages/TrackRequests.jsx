@@ -2696,30 +2696,16 @@ const TrackRequests = ({ isAdmin = false }) => {
                           </div>
                         )}
 
-                        {/* Action Banner & Button: "Product Found" (Appears for Return Request when Employee clicked Item Return & waiting for Admin Found) */}
+                        {/* Action Status Banner: For Return Request when Employee clicked Item Return, waiting for Admin verification */}
                         {isReturnRequest && isItemReturned && !isProductFound && !isHold && (
                           <div className="mt-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between flex-wrap gap-3">
                             <div className="text-xs text-blue-700 dark:text-blue-300 font-medium flex items-center gap-2">
                               <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" />
-                              <span>Item Return submitted by employee ✓ Waiting for Admin verification and "Product Found" restock confirmation.</span>
+                              <span>Item Return submitted by employee ✓ Handed over to store. Awaiting Admin to verify and confirm restock into warehouse.</span>
                             </div>
-
-                            <button
-                              type="button"
-                              onClick={() => handleMarkProductFound(request.id)}
-                              disabled={markingId === request.id}
-                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              {markingId === request.id ? (
-                                <>
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Restocking...
-                                </>
-                              ) : (
-                                <>
-                                  <PackageCheck className="h-4 w-4" /> Product Found
-                                </>
-                              )}
-                            </button>
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                              Awaiting Admin Confirmation
+                            </span>
                           </div>
                         )}
 

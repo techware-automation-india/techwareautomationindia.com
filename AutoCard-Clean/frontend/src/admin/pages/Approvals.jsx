@@ -1955,7 +1955,7 @@ const Approvals = () => {
 
   // Keep saved attendance punches separate from the times requested for correction.
   useEffect(() => {
-    if (!reasonModal || reasonModal.source !== "REQUEST") return;
+    if (!reasonModal || reasonModal.source !== "REQUEST" || reasonModal.type !== "CORRECTION") return;
     const date = reasonModal.correctionDetails?.date || reasonModal.date || reasonModal.subject?.match(/\d{4}-\d{2}-\d{2}/)?.[0] || reasonModal.description?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
     const employeeId = reasonModal.employeeId || reasonModal.employee?.id;
     if (date && employeeId) {
@@ -2960,6 +2960,7 @@ const Approvals = () => {
                   </span>
                 </div>
                 {reasonModal.source === "REQUEST" &&
+                reasonModal.type === "CORRECTION" &&
                 reasonModal.correctionDetails ? (
                   (() => {
                     const forgotPunch = reasonModal.correctionDetails || {};

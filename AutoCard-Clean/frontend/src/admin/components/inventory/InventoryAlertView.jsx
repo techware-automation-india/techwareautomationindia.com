@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Bell,
   AlertTriangle,
@@ -16,6 +16,8 @@ import {
   X,
   Layers,
   Save,
+  Download,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPut } from "../../../lib/api.js";
@@ -27,6 +29,348 @@ export default function InventoryAlertView({ onBackToHub }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [alertFilter, setAlertFilter] = useState("ALL_ALERTS"); // "ALL_ALERTS", "OUT_OF_STOCK", "LOW_STOCK", "HEALTHY"
+
+  // Helper to format exact warehouse and rack/shelf location
+  const getExactLocation = (item) => {
+    const w = (item?.warehouse || "").trim();
+    const l = (item?.location || "").trim();
+    if (w && l) return `${w} (${l})`;
+    if (l) return l;
+    if (w) return w;
+    return "—";
+  };
+
+  // ─── Category Hierarchy (Root 1, 2, 3, 4) Resolver ──────────────────────
+  const getItemRoots = (item) => {
+    let r1 = "—";
+    let r2 = "—";
+    let r3 = "—";
+    let r4 = "—";
+
+    let curr = item?.categoryRef;
+    if (!curr) {
+      if (item?.category && typeof item.category === "string" && item.category.trim()) {
+        r1 = item.category.trim();
+      }
+      return { r1, r2, r3, r4 };
+    }
+
+    const chain = [];
+    const visited = new Set();
+    while (curr && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      chain.unshift(curr);
+      curr = curr.parent;
+    }
+
+    if (chain.length > 0) r1 = chain[0]?.name || "—";
+    if (chain.length > 1) r2 = chain[1]?.name || "—";
+    if (chain.length > 2) r3 = chain[2]?.name || "—";
+    if (chain.length > 3) r4 = chain[3]?.name || "—";
+
+    return { r1, r2, r3, r4 };
+  };
+
+  // ─── Export to Excel (.csv / .xls BOM) ──────────────────────────────────
+  const handleExportAlertExcel = () => {
+    if (!filteredItems || filteredItems.length === 0) {
+      toast.error("No items available to export for the selected filter.");
+      return;
+    }
+
+    const filterLabels = {
+      ALL_ALERTS: "All Active Stock Alerts (Out of Stock & Low Stock)",
+      OUT_OF_STOCK: "Out of Stock Items (Zero Stock)",
+      LOW_STOCK: "Low Stock Warning Items",
+      HEALTHY: "Healthy Stock Inventory",
+    };
+    const reportTitle = filterLabels[alertFilter] || "Inventory Stock Alert Report";
+    const totalUnits = filteredItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      "S.No",
+      "Root 1",
+      "Root 2",
+      "Root 3",
+      "Root 4",
+      "Item",
+      "Qty",
+      "Min Qty",
+      "Location",
+    ];
+
+    const rows = filteredItems.map((item, idx) => {
+      const roots = getItemRoots(item);
+      const qty = Number(item.quantity || 0);
+      const minS = Number(item.minStock || 5);
+
+      return [
+        idx + 1,
+        escapeCsv(roots.r1),
+        escapeCsv(roots.r2),
+        escapeCsv(roots.r3),
+        escapeCsv(roots.r4),
+        escapeCsv(item.name ? `${item.name}${item.code ? ` (${item.code})` : ""}` : "N/A"),
+        qty,
+        minS,
+        escapeCsv(getExactLocation(item)),
+      ].join(",");
+    });
+
+    const totalRow = [
+      "",
+      "",
+      "",
+      "",
+      "",
+      '"TOTAL QUANTITY:"',
+      totalUnits,
+      '""',
+      '""',
+    ].join(",");
+
+    const csvContent =
+      "\uFEFF" +
+      `"TECHWARE AUTOMATION — ${reportTitle.toUpperCase()}"\r\n` +
+      `"Filter Mode:","${alertFilter}"\r\n` +
+      `"Total Alerts:","${filteredItems.length} SKUs"\r\n` +
+      `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\r\n\r\n` +
+      [headers.join(","), ...rows, totalRow].join("\r\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const filterTag = alertFilter.toLowerCase().replace(/_/g, "-");
+    link.href = url;
+    link.download = `Inventory_Alerts_${filterTag}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("Inventory alert items exported to Excel successfully!");
+  };
+
+  // ─── Export to PDF (Print View) ──────────────────────────────────────────
+  const handleExportAlertPDF = () => {
+    if (!filteredItems || filteredItems.length === 0) {
+      toast.error("No items available to export for the selected filter.");
+      return;
+    }
+
+    const filterLabels = {
+      ALL_ALERTS: "All Active Stock Alerts (Out of Stock & Low Stock)",
+      OUT_OF_STOCK: "Out of Stock Items (Zero Stock)",
+      LOW_STOCK: "Low Stock Warning Items",
+      HEALTHY: "Healthy Stock Inventory",
+    };
+    const reportTitle = filterLabels[alertFilter] || "Inventory Stock Alert Report";
+
+    const printWin = window.open("", "_blank", "width=1200,height=850");
+    if (!printWin) {
+      toast.error("Popup blocked! Please allow popups to download or print PDF.");
+      return;
+    }
+
+    const tableRowsHtml = filteredItems
+      .map((item, idx) => {
+        const roots = getItemRoots(item);
+        const qty = Number(item.quantity || 0);
+        const minS = Number(item.minStock || 5);
+        const deficit = Math.max(0, minS - qty);
+        const cost = Number(item.costPrice || 0);
+
+        let statusColor = "#059669";
+        let statusText = "Healthy";
+        let rowBg = "#ffffff";
+
+        if (qty === 0) {
+          statusColor = "#e11d48";
+          statusText = "OUT OF STOCK";
+          rowBg = "#fff1f2";
+        } else if (qty <= minS) {
+          statusColor = "#d97706";
+          statusText = "LOW STOCK";
+          rowBg = "#fffbeb";
+        }
+
+        return `
+          <tr style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+            <td style="padding: 7px 6px; text-align: center;">${idx + 1}</td>
+            <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 600;">${roots.r1}</td>
+            <td style="padding: 7px 8px; color: #4338ca;">${roots.r2}</td>
+            <td style="padding: 7px 8px; color: #b45309;">${roots.r3}</td>
+            <td style="padding: 7px 8px; color: #be123c;">${roots.r4}</td>
+            <td style="padding: 7px 8px; font-weight: 600;">
+              <div>${item.name || "—"}</div>
+              ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
+            </td>
+            <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
+            <td style="padding: 7px 8px; text-align: right; font-weight: 600; color: #64748b;">${minS}</td>
+            <td style="padding: 7px 8px; color: #334155; font-size: 11px; font-weight: 600;">${getExactLocation(item)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${reportTitle} - Techware Automation</title>
+          <meta charset="utf-8" />
+          <style>
+            @page {
+              size: A4 landscape;
+              margin: 12mm 10mm;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              color: #0f172a;
+              margin: 0;
+              padding: 20px;
+              background: #fff;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .header-bar {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 2px solid #e2e8f0;
+              padding-bottom: 12px;
+              margin-bottom: 16px;
+            }
+            .title {
+              font-size: 18px;
+              font-weight: 800;
+              color: #0f172a;
+              margin: 0 0 4px 0;
+            }
+            .subtitle {
+              font-size: 12px;
+              color: #64748b;
+              margin: 0;
+            }
+            .summary-box {
+              display: flex;
+              gap: 16px;
+              margin-bottom: 14px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 10px 14px;
+              font-size: 11px;
+            }
+            .summary-item {
+              display: flex;
+              flex-direction: column;
+            }
+            .summary-item span:first-child {
+              color: #64748b;
+              font-weight: 500;
+            }
+            .summary-item span:last-child {
+              color: #0f172a;
+              font-weight: 700;
+              font-size: 13px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            th {
+              background: #f1f5f9;
+              color: #334155;
+              padding: 8px;
+              font-size: 10px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.03em;
+              border-bottom: 2px solid #cbd5e1;
+              text-align: left;
+            }
+            @media print {
+              .no-print { display: none !important; }
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="no-print" style="margin-bottom: 14px; display: flex; gap: 10px;">
+            <button onclick="window.print()" style="padding: 8px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Print / Save as PDF</button>
+            <button onclick="window.close()" style="padding: 8px 16px; background: #e2e8f0; color: #0f172a; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Close</button>
+          </div>
+
+          <div class="header-bar">
+            <div>
+              <h1 class="title">${reportTitle}</h1>
+              <p class="subtitle">Techware Automation — Central Inventory Management & Threshold Monitoring</p>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #64748b;">
+              <div>Generated: <strong>${new Date().toLocaleString("en-IN")}</strong></div>
+              <div>Filter Mode: <strong>${alertFilter}</strong></div>
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <div class="summary-item">
+              <span>Total Listed Items</span>
+              <span>${filteredItems.length} SKUs</span>
+            </div>
+            <div class="summary-item">
+              <span>Zero Stock (Out of Stock)</span>
+              <span style="color: #e11d48;">${filteredItems.filter(i => Number(i.quantity || 0) === 0).length}</span>
+            </div>
+            <div class="summary-item">
+              <span>Low Stock Warnings</span>
+              <span style="color: #d97706;">${filteredItems.filter(i => Number(i.quantity || 0) > 0 && Number(i.quantity || 0) <= Number(i.minStock || 5)).length}</span>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 35px; text-align: center;">S.No</th>
+                <th>Root 1</th>
+                <th>Root 2</th>
+                <th>Root 3</th>
+                <th>Root 4</th>
+                <th>Item</th>
+                <th style="text-align: right;">Qty</th>
+                <th style="text-align: right;">Min Qty</th>
+                <th>Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRowsHtml}
+            </tbody>
+          </table>
+
+          <div style="margin-top: 18px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px;">
+            Confidential & Internal Document — Techware Automation India Private Limited
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 400);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWin.document.open();
+    printWin.document.write(htmlContent);
+    printWin.document.close();
+  };
 
   // Restock / Limit Modal
   const [editModalItem, setEditModalItem] = useState(null);
@@ -217,6 +561,27 @@ export default function InventoryAlertView({ onBackToHub }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportAlertExcel}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
+            title="Download list in Excel (CSV) with Root 1, 2, 3, 4 levels, Min Qty & Present Qty"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Export Excel</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportAlertPDF}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
+            title="Download printable PDF report with Root 1, 2, 3, 4 levels, Min Qty & Present Qty"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>Export PDF</span>
+          </button>
+
+          <div className="h-4 w-px bg-border mx-1 hidden sm:block" />
+
           {[
             { id: "ALL_ALERTS", label: `Active Alerts (${outOfStockCount + lowStockCount})` },
             { id: "OUT_OF_STOCK", label: `Out of Stock (${outOfStockCount})` },

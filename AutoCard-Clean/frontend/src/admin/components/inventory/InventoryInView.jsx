@@ -4,7 +4,7 @@ import {
   Folder, FolderPlus, FolderTree, Package, Plus, Search, ChevronRight,
   ChevronDown, ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
   FileText, LayoutGrid, List, RefreshCw, X, Box, Sparkles, PackagePlus, Clock, Tag, Boxes, Eye,
-  User, Users, ShieldCheck, ArrowRightLeft
+  User, Users, ShieldCheck, ArrowRightLeft, Download, MapPin
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiDelete } from "../../../lib/api.js";
@@ -432,6 +432,389 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
   const canEdit = canPerformAction("inventory-in", "edit");
   const canDelete = canPerformAction("inventory-in", "delete");
 
+  // Helper to format exact warehouse and rack/shelf location
+  const getExactLocation = (item) => {
+    const w = (item?.warehouse || "").trim();
+    const l = (item?.location || "").trim();
+    if (w && l) return `${w} (${l})`;
+    if (l) return l;
+    if (w) return w;
+    return "—";
+  };
+
+  // ─── Export Category & Items to Excel (.csv / .xls) ───────────────────────
+  const handleExportCategoryExcel = async (catArg = currentCategory) => {
+    try {
+      const targetCategory = (catArg && typeof catArg === "object" && catArg.id) ? catArg : (typeof catArg === "string" ? { name: catArg } : currentCategory);
+      const isRootLevel = !targetCategory;
+      const categoryName = isRootLevel ? "All_Root_Categories" : (targetCategory.name || "Category").replace(/\s+/g, "_");
+
+      // Build descendant IDs set if category is selected
+      let targetCatIds = null;
+      if (targetCategory?.id) {
+        targetCatIds = new Set([targetCategory.id]);
+        let added = true;
+        while (added) {
+          added = false;
+          allCategories.forEach((c) => {
+            if (c?.parentId && targetCatIds.has(c.parentId) && !targetCatIds.has(c.id)) {
+              targetCatIds.add(c.id);
+              added = true;
+            }
+          });
+        }
+      }
+
+      // Filter items belonging to target category or all inward items
+      const targetItems = isRootLevel
+        ? allInwardItems
+        : allInwardItems.filter((i) => (i.categoryId && targetCatIds.has(i.categoryId)) || i.categoryRef?.id === targetCategory.id);
+
+      if (!targetItems || targetItems.length === 0) {
+        toast.info(`No items found under ${isRootLevel ? "Root Inventory" : targetCategory.name} to export.`);
+        return;
+      }
+
+      // Map categories lookup for resolving root 1, 2, 3, 4
+      const catMap = new Map(allCategories.map((c) => [c.id, c]));
+      const resolveRoots = (item) => {
+        let r1 = "—", r2 = "—", r3 = "—", r4 = "—";
+        let curr = item.categoryRef || (item.categoryId ? catMap.get(item.categoryId) : null);
+        if (!curr) {
+          if (item.category) r1 = item.category;
+          return { r1, r2, r3, r4 };
+        }
+        const chain = [];
+        const visited = new Set();
+        while (curr && !visited.has(curr.id)) {
+          visited.add(curr.id);
+          chain.unshift(curr);
+          curr = curr.parentId ? catMap.get(curr.parentId) : curr.parent;
+        }
+        if (chain.length > 0) r1 = chain[0]?.name || "—";
+        if (chain.length > 1) r2 = chain[1]?.name || "—";
+        if (chain.length > 2) r3 = chain[2]?.name || "—";
+        if (chain.length > 3) r4 = chain[3]?.name || "—";
+        return { r1, r2, r3, r4 };
+      };
+
+      const escapeCsv = (val) => {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      };
+
+      const headers = [
+        "S.No",
+        "Root 1",
+        "Root 2",
+        "Root 3",
+        "Root 4",
+        "Item",
+        "Qty",
+        "Min Qty",
+        "Location",
+      ];
+
+      const rows = targetItems.map((item, idx) => {
+        const roots = resolveRoots(item);
+        const qty = Number(item.quantity || 0);
+        const minS = Number(item.minStock || 5);
+
+        return [
+          idx + 1,
+          escapeCsv(roots.r1),
+          escapeCsv(roots.r2),
+          escapeCsv(roots.r3),
+          escapeCsv(roots.r4),
+          escapeCsv(item.name ? `${item.name}${item.code ? ` (${item.code})` : ""}` : "N/A"),
+          qty,
+          minS,
+          escapeCsv(getExactLocation(item)),
+        ].join(",");
+      });
+
+      const totalUnits = targetItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
+      const totalRow = [
+        "",
+        "",
+        "",
+        "",
+        "",
+        '"TOTAL QUANTITY:"',
+        totalUnits,
+        '""',
+        '""',
+      ].join(",");
+
+      const csvContent =
+        "\uFEFF" +
+        `"TECHWARE AUTOMATION — INVENTORY CATALOG REPORT"\r\n` +
+        `"Category Scope:","${isRootLevel ? "All Categories" : targetCategory.name}"\r\n` +
+        `"Total SKUs:","${targetItems.length}"\r\n` +
+        `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\r\n\r\n` +
+        [headers.join(","), ...rows, totalRow].join("\r\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Inventory_${categoryName}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`Inventory exported to Excel for ${isRootLevel ? "Root Level" : targetCategory.name}!`);
+    } catch (err) {
+      console.error("Export Excel error:", err);
+      toast.error("Failed to export Excel.");
+    }
+  };
+
+  // ─── Export Category & Items to PDF (Printable Report) ─────────────────────
+  const handleExportCategoryPDF = async (targetCategory = currentCategory) => {
+    try {
+      const isRootLevel = !targetCategory;
+      const categoryName = isRootLevel ? "Root Inventory Catalog (All Categories)" : (targetCategory.name || "Category");
+
+      let targetCatIds = null;
+      if (targetCategory?.id) {
+        targetCatIds = new Set([targetCategory.id]);
+        let added = true;
+        while (added) {
+          added = false;
+          allCategories.forEach((c) => {
+            if (c?.parentId && targetCatIds.has(c.parentId) && !targetCatIds.has(c.id)) {
+              targetCatIds.add(c.id);
+              added = true;
+            }
+          });
+        }
+      }
+
+      const targetItems = isRootLevel
+        ? allInwardItems
+        : allInwardItems.filter((i) => (i.categoryId && targetCatIds.has(i.categoryId)) || i.categoryRef?.id === targetCategory.id);
+
+      if (!targetItems || targetItems.length === 0) {
+        toast.info(`No items found under ${isRootLevel ? "Root Inventory" : targetCategory.name} to export.`);
+        return;
+      }
+
+      const catMap = new Map(allCategories.map((c) => [c.id, c]));
+      const resolveRoots = (item) => {
+        let r1 = "—", r2 = "—", r3 = "—", r4 = "—";
+        let curr = item.categoryRef || (item.categoryId ? catMap.get(item.categoryId) : null);
+        if (!curr) {
+          if (item.category) r1 = item.category;
+          return { r1, r2, r3, r4 };
+        }
+        const chain = [];
+        const visited = new Set();
+        while (curr && !visited.has(curr.id)) {
+          visited.add(curr.id);
+          chain.unshift(curr);
+          curr = curr.parentId ? catMap.get(curr.parentId) : curr.parent;
+        }
+        if (chain.length > 0) r1 = chain[0]?.name || "—";
+        if (chain.length > 1) r2 = chain[1]?.name || "—";
+        if (chain.length > 2) r3 = chain[2]?.name || "—";
+        if (chain.length > 3) r4 = chain[3]?.name || "—";
+        return { r1, r2, r3, r4 };
+      };
+
+      const printWin = window.open("", "_blank", "width=1200,height=850");
+      if (!printWin) {
+        toast.error("Popup blocked! Please allow popups to download or print PDF.");
+        return;
+      }
+
+      const totalValuation = targetItems.reduce((acc, i) => acc + ((i.quantity || 0) * (i.costPrice || 0)), 0);
+      const totalUnits = targetItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
+
+      const tableRowsHtml = targetItems
+        .map((item, idx) => {
+          const roots = resolveRoots(item);
+          const qty = Number(item.quantity || 0);
+          const minS = Number(item.minStock || 5);
+
+          return `
+            <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+              <td style="padding: 7px 6px; text-align: center;">${idx + 1}</td>
+              <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 600;">${roots.r1}</td>
+              <td style="padding: 7px 8px; color: #4338ca;">${roots.r2}</td>
+              <td style="padding: 7px 8px; color: #b45309;">${roots.r3}</td>
+              <td style="padding: 7px 8px; color: #be123c;">${roots.r4}</td>
+              <td style="padding: 7px 8px; font-weight: 600;">
+                <div>${item.name || "—"}</div>
+                ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
+              </td>
+              <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
+              <td style="padding: 7px 8px; text-align: right; color: #64748b;">${minS}</td>
+              <td style="padding: 7px 8px; color: #334155; font-size: 11px; font-weight: 600;">${getExactLocation(item)}</td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${categoryName} - Techware Inventory Report</title>
+            <meta charset="utf-8" />
+            <style>
+              @page {
+                size: A4 landscape;
+                margin: 12mm 10mm;
+              }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                color: #0f172a;
+                margin: 0;
+                padding: 20px;
+                background: #fff;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .header-bar {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                border-bottom: 2px solid #e2e8f0;
+                padding-bottom: 12px;
+                margin-bottom: 16px;
+              }
+              .title {
+                font-size: 18px;
+                font-weight: 800;
+                color: #0f172a;
+                margin: 0 0 4px 0;
+              }
+              .subtitle {
+                font-size: 12px;
+                color: #64748b;
+                margin: 0;
+              }
+              .summary-box {
+                display: flex;
+                gap: 20px;
+                margin-bottom: 14px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 10px 14px;
+                font-size: 11px;
+              }
+              .summary-item {
+                display: flex;
+                flex-direction: column;
+              }
+              .summary-item span:first-child {
+                color: #64748b;
+                font-weight: 500;
+              }
+              .summary-item span:last-child {
+                color: #0f172a;
+                font-weight: 700;
+                font-size: 13px;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+              }
+              th {
+                background: #f1f5f9;
+                color: #334155;
+                padding: 8px;
+                font-size: 10px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+                border-bottom: 2px solid #cbd5e1;
+                text-align: left;
+              }
+              @media print {
+                .no-print { display: none !important; }
+                body { padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="no-print" style="margin-bottom: 14px; display: flex; gap: 10px;">
+              <button onclick="window.print()" style="padding: 8px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Print / Save as PDF</button>
+              <button onclick="window.close()" style="padding: 8px 16px; background: #e2e8f0; color: #0f172a; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Close</button>
+            </div>
+
+            <div class="header-bar">
+              <div>
+                <h1 class="title">${categoryName}</h1>
+                <p class="subtitle">Techware Automation — Central Inventory Catalog (Root 1-4 Hierarchy)</p>
+              </div>
+              <div style="text-align: right; font-size: 11px; color: #64748b;">
+                <div>Generated: <strong>${new Date().toLocaleString("en-IN")}</strong></div>
+                <div>Scope: <strong>${isRootLevel ? "Level 1 Root & All Sub-Levels" : `Category: ${targetCategory.name} (L${targetCategory.level || 1})`}</strong></div>
+              </div>
+            </div>
+
+            <div class="summary-box">
+              <div class="summary-item">
+                <span>Total SKUs Listed</span>
+                <span>${targetItems.length} Products</span>
+              </div>
+              <div class="summary-item">
+                <span>Total Quantity in Stock</span>
+                <span>${totalUnits} Units</span>
+              </div>
+              <div class="summary-item">
+                <span>Total Stock Valuation</span>
+                <span style="color: #059669;">₹${totalValuation.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 35px; text-align: center;">S.No</th>
+                  <th>Root 1</th>
+                  <th>Root 2</th>
+                  <th>Root 3</th>
+                  <th>Root 4</th>
+                  <th>Item</th>
+                  <th style="text-align: right;">Qty</th>
+                  <th style="text-align: right;">Min Qty</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRowsHtml}
+              </tbody>
+            </table>
+
+            <div style="margin-top: 18px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px;">
+              Confidential & Internal Document — Techware Automation India Private Limited
+            </div>
+
+            <script>
+              window.onload = function() {
+                setTimeout(function() {
+                  window.print();
+                }, 400);
+              };
+            </script>
+          </body>
+        </html>
+      `;
+
+      printWin.document.open();
+      printWin.document.write(htmlContent);
+      printWin.document.close();
+    } catch (err) {
+      console.error("Export PDF error:", err);
+      toast.error("Failed to export PDF.");
+    }
+  };
+
   // Build recursive category tree from all categories
   const categoryTree = useMemo(() => buildCategoryTree(allCategories), [allCategories]);
 
@@ -817,6 +1200,28 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             title="Refresh View"
           >
             <RefreshCw className="h-4 w-4" />
+          </button>
+
+          {/* Export Excel (CSV) */}
+          <button
+            type="button"
+            onClick={() => handleExportCategoryExcel(currentCategory)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold transition-all shadow-xs cursor-pointer whitespace-nowrap shrink-0"
+            title={currentCategory ? `Export products under ${currentCategory.name} to Excel (CSV)` : "Export entire inventory to Excel (CSV) with Root 1-4"}
+          >
+            <Download className="h-4 w-4" />
+            <span>Excel</span>
+          </button>
+
+          {/* Export PDF */}
+          <button
+            type="button"
+            onClick={() => handleExportCategoryPDF(currentCategory)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold transition-all shadow-xs cursor-pointer whitespace-nowrap shrink-0"
+            title={currentCategory ? `Export products under ${currentCategory.name} to printable PDF` : "Export entire inventory to PDF report with Root 1-4"}
+          >
+            <FileText className="h-4 w-4" />
+            <span>PDF</span>
           </button>
 
           {/* Add Category / Subcategory button */}
@@ -1690,6 +2095,22 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             >
                               <Eye className="h-4 w-4" />
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExportCategoryExcel(cat)}
+                              className="p-1 rounded-md hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-600 transition-colors cursor-pointer"
+                              title="Download Category Excel (CSV)"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExportCategoryPDF(cat)}
+                              className="p-1 rounded-md hover:bg-blue-500/10 text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                              title="Download Category PDF"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
                             {canEdit && (
                               <button
                                 type="button"
@@ -1769,7 +2190,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {filteredItems.map((item, idx) => {
                   let rawSpecs = item.specifications;
                   if (typeof rawSpecs === "string") {
@@ -1785,19 +2206,21 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                     ? Object.entries(rawSpecs).map(([k, v]) => ({ key: k, value: typeof v === "object" ? JSON.stringify(v) : String(v) }))
                     : [];
 
+                  const exactLoc = getExactLocation(item);
+
                   return (
                     <div
                       key={item.id ? `${item.id}-${idx}` : idx}
-                      className="rounded-2xl border border-border bg-background p-4 card-shadow flex flex-col justify-between hover:border-[#1e3a5f]/50 transition-all group"
+                      className="rounded-2xl border border-border/80 bg-background hover:bg-card card-shadow flex flex-col justify-between hover:border-primary/40 hover:shadow-lg transition-all duration-300 group overflow-hidden"
                     >
                       <div>
-                        {/* Photo Thumbnail */}
-                        <div className="w-full h-36 rounded-xl bg-secondary/40 border border-border/60 overflow-hidden flex items-center justify-center mb-3 relative">
+                        {/* Photo Thumbnail — Flipkart / E-Commerce Style Hero Image Showcase */}
+                        <div className="w-full h-64 sm:h-72 bg-white dark:bg-slate-950/60 border-b border-border/60 overflow-hidden flex items-center justify-center relative p-4 group-hover:bg-slate-50/80 dark:group-hover:bg-slate-900/60 transition-colors">
                           {(item.photoUrl || item.img) ? (
                             <img
                               src={resolveImageUrl(item.photoUrl || item.img)}
                               alt={item.name}
-                              className="w-full h-full object-contain p-2"
+                              className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal group-hover:scale-108 transition-transform duration-300 ease-out"
                               onError={(e) => {
                                 e.currentTarget.style.display = "none";
                                 if (e.currentTarget.nextSibling) {
@@ -1807,136 +2230,147 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             />
                           ) : null}
                           <div
-                            className={`flex flex-col items-center text-muted-foreground/60 ${
+                            className={`flex flex-col items-center text-muted-foreground/40 ${
                               item.photoUrl || item.img ? "hidden" : "flex"
                             }`}
                           >
-                            <Package className="h-10 w-10 stroke-[1.2]" />
-                            <span className="text-[11px] mt-1 font-mono">No Image</span>
+                            <Package className="h-16 w-16 stroke-[1]" />
+                            <span className="text-xs mt-2 font-mono">No Image Available</span>
                           </div>
 
-                          <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-background/90 backdrop-blur-xs border border-border text-[11px] font-bold text-foreground shadow-xs">
-                            {item.quantity} {item.unit || "Nos"}
-                          </span>
-                        </div>
-
-                        {/* Title & Code */}
-                        <h4 className="font-display text-sm font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">
-                          {item.name}
-                        </h4>
-                        {(item.code || item.sku) && (
-                          <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
-                            {item.code || item.sku}
-                          </p>
-                        )}
-
-                        {/* Price per Item & Total Valuation */}
-                        <div className="mt-2.5 flex items-center justify-between gap-1.5 flex-wrap">
-                          <span className="inline-flex items-center gap-1 font-bold text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 shadow-2xs">
-                            <span>₹{Number(item.costPrice || 0).toLocaleString("en-IN")}</span>
-                            <span className="text-[10px] font-normal text-muted-foreground">/ {item.unit || "Nos"}</span>
-                          </span>
-                          {Number(item.quantity || 0) > 1 && Number(item.costPrice || 0) > 0 && (
-                            <span className="text-[11px] font-semibold text-muted-foreground">
-                              Total: ₹{(Number(item.quantity || 0) * Number(item.costPrice || 0)).toLocaleString("en-IN")}
+                          {/* Stock Quantity Badge */}
+                          <div className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-border shadow-xs">
+                            <span className={`w-2 h-2 rounded-full ${Number(item.quantity || 0) <= (item.minStock || 5) ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                            <span className="text-xs font-bold text-foreground">
+                              {item.quantity} <span className="text-[10px] font-medium text-muted-foreground">{item.unit || "Nos"}</span>
                             </span>
+                          </div>
+
+                          {/* Exact Location Pill overlay on image bottom-left if present */}
+                          {exactLoc !== "—" && (
+                            <div className="absolute bottom-3 left-3 max-w-[85%] truncate px-2.5 py-1 rounded-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border border-border text-[11px] font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shadow-xs">
+                              <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span className="truncate">{exactLoc}</span>
+                            </div>
                           )}
                         </div>
 
-                        {/* Created By & Edited By Badges */}
-                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
-                          <span className="inline-flex items-center gap-1 font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]" title="Created by">
-                            👤 Created: {item.createdByName || "Admin"}
-                          </span>
-                          {item.updatedByName && (
-                            <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/30 text-[10px] shadow-2xs" title="Edited by">
-                              ✏️ Edited: {item.updatedByName}
-                            </span>
-                          )}
-                          {item.companyName && (
-                            <span className="inline-flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 text-[10px]">
-                              🏢 {item.companyName}
-                            </span>
-                          )}
-                          {item.vendorName && (
-                            <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 text-[10px]">
-                              👤 {item.vendorName}
-                            </span>
-                          )}
-                        </div>
+                        {/* Card Content Body */}
+                        <div className="p-4 space-y-3">
+                          {/* Title & SKU Code */}
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-display text-sm font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                                {item.name}
+                              </h4>
+                            </div>
+                            {(item.code || item.sku) ? (
+                              <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                                SKU: <span className="font-semibold text-foreground/80">{item.code || item.sku}</span>
+                              </p>
+                            ) : null}
+                          </div>
 
-                        {/* Hierarchy Path Badge (Root -> Level 1 -> Level 2 -> Level 3 -> Level 4) */}
-                        {(() => {
-                          const chain = [];
-                          let parent = item.categoryRef;
-                          while (parent) {
-                            chain.unshift({ id: parent.id, name: parent.name, level: parent.level || 1 });
-                            parent = parent.parent;
-                          }
-                          if (chain.length > 0) {
-                            return (
-                              <div className="mt-2.5 p-2 rounded-xl bg-secondary/35 border border-border/70 text-[10px]">
-                                <div className="flex items-center gap-1 text-muted-foreground font-semibold mb-1">
-                                  <Layers className="h-3 w-3 text-primary shrink-0" />
-                                  <span>Hierarchy Classification:</span>
+                          {/* Pricing Row */}
+                          <div className="flex items-center justify-between gap-2 bg-secondary/30 px-2.5 py-1.5 rounded-xl border border-border/50">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                ₹{Number(item.costPrice || 0).toLocaleString("en-IN")}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">/{item.unit || "Nos"}</span>
+                            </div>
+                            {Number(item.quantity || 0) > 1 && Number(item.costPrice || 0) > 0 && (
+                              <span className="text-[10px] font-semibold text-muted-foreground">
+                                Total: <strong className="text-foreground">₹{(Number(item.quantity || 0) * Number(item.costPrice || 0)).toLocaleString("en-IN")}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Hierarchy Classification Breadcrumbs */}
+                          {(() => {
+                            const chain = [];
+                            let parent = item.categoryRef;
+                            while (parent) {
+                              chain.unshift({ id: parent.id, name: parent.name, level: parent.level || 1 });
+                              parent = parent.parent;
+                            }
+                            if (chain.length > 0) {
+                              return (
+                                <div className="p-2 rounded-xl bg-secondary/35 border border-border/70 text-[10px]">
+                                  <div className="flex items-center gap-1 text-muted-foreground font-semibold mb-1">
+                                    <Layers className="h-3 w-3 text-primary shrink-0" />
+                                    <span>Hierarchy Classification:</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {chain.map((c, cIdx) => (
+                                      <div key={c.id || cIdx} className="flex items-center gap-1">
+                                        {cIdx > 0 && <span className="text-muted-foreground font-bold">›</span>}
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded font-medium border text-[10px] ${
+                                            c.level === 1
+                                              ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20"
+                                              : c.level === 2
+                                              ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20"
+                                              : c.level === 3
+                                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
+                                              : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20"
+                                          }`}
+                                        >
+                                          L{c.level}: {c.name}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {chain.map((c, cIdx) => (
-                                    <div key={c.id || cIdx} className="flex items-center gap-1">
-                                      {cIdx > 0 && <span className="text-muted-foreground font-bold">›</span>}
-                                      <span
-                                        className={`px-1.5 py-0.5 rounded font-medium border text-[10px] ${
-                                          c.level === 1
-                                            ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20"
-                                            : c.level === 2
-                                            ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20"
-                                            : c.level === 3
-                                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
-                                            : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20"
-                                        }`}
-                                      >
-                                        L{c.level}: {c.name}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* Specifications Preview (Clean Key-Value Table) */}
+                          {specsArr.length > 0 && (
+                            <div className="border border-border/60 rounded-xl overflow-hidden bg-secondary/15 max-h-32 overflow-y-auto">
+                              <div className="divide-y divide-border/40 text-[11px]">
+                                {specsArr.map((sp, sIdx) => (
+                                  <div
+                                    key={sIdx}
+                                    className="grid grid-cols-12 py-1 px-2.5 items-center hover:bg-secondary/30 transition-colors"
+                                  >
+                                    <span className="col-span-5 font-medium text-muted-foreground truncate">
+                                      {sp.key}
+                                    </span>
+                                    <span className="col-span-7 font-mono font-medium text-foreground truncate pl-1">
+                                      {sp.value}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            );
-                          }
-                          return (
-                            <div className="mt-2 text-[10px] text-muted-foreground italic flex items-center gap-1">
-                              <Layers className="h-3 w-3 text-muted-foreground/60" />
-                              <span>Direct Root Level Item</span>
                             </div>
-                          );
-                        })()}
+                          )}
 
-                        {/* Specifications Preview (No Limit) */}
-                        {specsArr.length > 0 && (
-                          <div className="mt-3 border border-border/60 rounded-xl overflow-hidden bg-secondary/20 max-h-36 overflow-y-auto">
-                            <div className="divide-y divide-border/40 text-[11px]">
-                              {specsArr.map((sp, sIdx) => (
-                                <div
-                                  key={sIdx}
-                                  className="grid grid-cols-12 py-1 px-2.5 items-center"
-                                >
-                                  <span className="col-span-5 font-semibold text-muted-foreground truncate">
-                                    {sp.key}
-                                  </span>
-                                  <span className="col-span-7 font-mono text-foreground truncate pl-1">
-                                    {sp.value}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
+                          {/* Metadata Tags: Creator & Editor */}
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            <span className="inline-flex items-center gap-1 font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 text-[10px]" title="Created by">
+                              👤 Created: {item.createdByName || "Admin"}
+                            </span>
+                            {item.updatedByName && (
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-500/30 text-[10px] shadow-2xs" title="Edited by">
+                                ✏️ {item.updatedByName}
+                              </span>
+                            )}
+                            {item.companyName && (
+                              <span className="inline-flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 text-[10px]">
+                                🏢 {item.companyName}
+                              </span>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
 
                       {/* Footer Actions */}
-                      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>
-                          Updated: {fmtDate(item.updatedAt || item.createdAt)}
+                      <div className="px-4 py-2.5 bg-secondary/25 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span className="text-[10px]">
+                          {fmtDate(item.updatedAt || item.createdAt)}
                         </span>
                         <div className="flex items-center gap-1">
                           <button
@@ -1965,7 +2399,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                                 setItemTargetCategory(currentCategory);
                                 setIsItemModalOpen(true);
                               }}
-                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg border border-border/80 hover:bg-secondary text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
                               title="Edit Item"
                             >
                               <Edit3 className="h-3.5 w-3.5" />
@@ -1975,7 +2409,7 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                             <button
                               type="button"
                               onClick={() => setDeleteItemTarget(item)}
-                              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg border border-border/80 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
                               title="Delete Item"
                             >
                               <Trash2 className="h-3.5 w-3.5" />

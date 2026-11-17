@@ -913,12 +913,23 @@ const DocumentsTab = ({ project, setProject }) => {
       chain.push(matched.category);
     }
 
+    const formatLocation = (inv) => {
+      if (!inv) return "—";
+      const w = (inv.warehouse || "").trim();
+      const l = (inv.location || "").trim();
+      if (w && l) return `${w} (${l})`;
+      if (l) return l;
+      if (w) return w;
+      return "—";
+    };
+
     return {
       root1: chain[0] || (matched?.category || "Mechanical"),
       root2: chain[1] || "—",
       root3: chain[2] || "—",
       root4: chain[3] || "—",
       unit: matched?.unit || "Nos",
+      location: formatLocation(matched),
     };
   };
 
@@ -936,80 +947,113 @@ const DocumentsTab = ({ project, setProject }) => {
           root3: roots.root3,
           root4: roots.root4,
           unit: roots.unit,
+          location: roots.location,
         });
       });
     });
     return list;
   };
 
-  // ─── Export to Excel (.xls/.csv BOM) ───
-  const handleExportExcel = () => {
-    const items = getAllProjectAllocatedItems();
+  // ─── Export to Excel (.csv / .xls BOM) ───
+  const handleExportExcel = (catArg = null) => {
+    // If called directly by React onClick without args, catArg is a SyntheticEvent object!
+    const targetCategory = typeof catArg === "string" ? catArg : null;
+    let items = getAllProjectAllocatedItems();
+    if (targetCategory) {
+      items = items.filter(
+        (it) => (it.root1 || "").toLowerCase() === targetCategory.toLowerCase()
+      );
+    }
+
     if (items.length === 0) {
-      toast.error("No allocated items to export for this project.");
+      toast.error(
+        targetCategory
+          ? `No allocated items found under "${targetCategory}" folder.`
+          : "No allocated items to export for this project."
+      );
       return;
     }
 
+    const folderTitle = targetCategory ? `Category: ${targetCategory}` : "All Project Categories";
+    const totalQty = items.reduce((acc, it) => acc + (it.quantity || 1), 0);
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
     const headers = [
       "S.No",
-      "Product ID / Code",
-      "Item Name",
-      "Root 1 (Category)",
-      "Root 2 (Folder)",
-      "Root 3 (Sub-Folder)",
-      "Root 4 (Sub-Sub-Folder)",
-      "Allocated Qty",
-      "Unit",
-      "Unit Price (₹)",
-      "Total Cost (₹)",
-      "Allocated By",
+      "Root 1",
+      "Root 2",
+      "Root 3",
+      "Root 4",
+      "Item",
+      "Qty",
       "Approved By",
-      "Date",
     ];
 
     const rows = items.map((it, idx) => [
       idx + 1,
-      `"${it.prodId || "N/A"}"`,
-      `"${(it.cleanName || "").replace(/"/g, '""')}"`,
-      `"${(it.root1 || "").replace(/"/g, '""')}"`,
-      `"${(it.root2 || "—").replace(/"/g, '""')}"`,
-      `"${(it.root3 || "—").replace(/"/g, '""')}"`,
-      `"${(it.root4 || "—").replace(/"/g, '""')}"`,
+      escapeCsv(it.root1 || "—"),
+      escapeCsv(it.root2 || "—"),
+      escapeCsv(it.root3 || "—"),
+      escapeCsv(it.root4 || "—"),
+      escapeCsv(it.cleanName ? `${it.cleanName}${it.prodId ? ` (${it.prodId})` : ""}` : "N/A"),
       it.quantity,
-      `"${it.unit || "Nos"}"`,
-      it.unitPrice || 0,
-      it.totalPrice || 0,
-      `"${(it.empName || "Employee").replace(/"/g, '""')}"`,
-      `"${(it.approvedByName || "Admin").replace(/"/g, '""')}"`,
-      `"${it.createdAt ? new Date(it.createdAt).toLocaleDateString() : "—"}"`,
+      escapeCsv(it.approvedByName || "Admin"),
     ]);
 
-    const csvContent =
-      "data:text/csv;charset=utf-8,\uFEFF" +
-      `"PROJECT BOM & INVENTORY ALLOCATION REPORT"\n` +
-      `"Project:","${project?.name || "Project"}"\n` +
-      `"Project Code:","${project?.code || "—"}"\n` +
-      `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\n\n` +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const totalRow = [
+      "",
+      "",
+      "",
+      "",
+      "",
+      '"TOTAL ALLOCATED UNITS:"',
+      totalQty,
+      '""',
+    ];
 
-    const encodedUri = encodeURI(csvContent);
+    const csvContent =
+      "\uFEFF" +
+      `"PROJECT ALLOCATED INVENTORY & BOM REPORT"\r\n` +
+      `"Project:","${(project?.name || "Project").replace(/"/g, '""')}"\r\n` +
+      `"Project Code:","${(project?.code || "—").replace(/"/g, '""')}"\r\n` +
+      `"Category Scope:","${folderTitle.replace(/"/g, '""')}"\r\n` +
+      `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\r\n\r\n` +
+      [headers.join(","), ...rows.map((r) => r.join(",")), totalRow.join(",")].join("\r\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute(
-      "download",
-      `${project?.code || "PROJECT"}_BOM_Items_${new Date().toISOString().slice(0, 10)}.csv`
-    );
+    link.href = url;
+    const catSuffix = targetCategory ? `_${targetCategory.replace(/\s+/g, "_")}` : "";
+    link.download = `${project?.code || "PROJECT"}${catSuffix}_BOM_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Excel/CSV BOM downloaded successfully!");
+    URL.revokeObjectURL(url);
+    toast.success(`Excel sheet downloaded for ${targetCategory || "all categories"}!`);
   };
 
   // ─── Export to PDF (Printable Formatted View) ───
-  const handleExportPDF = () => {
-    const items = getAllProjectAllocatedItems();
+  const handleExportPDF = (catArg = null) => {
+    const targetCategory = typeof catArg === "string" ? catArg : null;
+    let items = getAllProjectAllocatedItems();
+    if (targetCategory) {
+      items = items.filter(
+        (it) => (it.root1 || "").toLowerCase() === targetCategory.toLowerCase()
+      );
+    }
+
     if (items.length === 0) {
-      toast.error("No allocated items to print/download for this project.");
+      toast.error(
+        targetCategory
+          ? `No allocated items found under "${targetCategory}" folder.`
+          : "No allocated items to print/download for this project."
+      );
       return;
     }
 
@@ -1019,11 +1063,14 @@ const DocumentsTab = ({ project, setProject }) => {
       return;
     }
 
+    const folderTitle = targetCategory ? `Folder: ${targetCategory}` : "All Category Folders (BOM)";
+    const totalQty = items.reduce((acc, it) => acc + (it.quantity || 1), 0);
+
     const html = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${project?.name || "Project"} - Bill of Materials (BOM)</title>
+          <title>${project?.name || "Project"} - ${folderTitle}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #1e293b; }
             .header { border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
@@ -1044,11 +1091,11 @@ const DocumentsTab = ({ project, setProject }) => {
         </head>
         <body>
           <div class="header">
-            <h1 class="title">${project?.name || "Project"} — Material & Inventory Allocation (BOM)</h1>
+            <h1 class="title">${project?.name || "Project"} — ${folderTitle}</h1>
             <div class="meta">
               <strong>Project Code:</strong> ${project?.code || "—"} &nbsp;|&nbsp;
               <strong>Customer:</strong> ${project?.customer?.fullName || project?.customer?.name || "N/A"} &nbsp;|&nbsp;
-              <strong>Total Allocated Items:</strong> ${items.length} items &nbsp;|&nbsp;
+              <strong>Allocated SKUs:</strong> ${items.length} &nbsp;|&nbsp;
               <strong>Generated:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}
             </div>
           </div>
@@ -1056,18 +1103,14 @@ const DocumentsTab = ({ project, setProject }) => {
           <table>
             <thead>
               <tr>
-                <th style="width: 30px; text-align: center;">#</th>
-                <th style="width: 110px;">Product Code</th>
-                <th>Item Name</th>
-                <th>Root 1 (Category)</th>
-                <th>Root 2 (Folder)</th>
-                <th>Root 3 (Sub-Folder)</th>
-                <th>Root 4 (Level 4)</th>
+                <th style="width: 35px; text-align: center;">S.No</th>
+                <th>Root 1</th>
+                <th>Root 2</th>
+                <th>Root 3</th>
+                <th>Root 4</th>
+                <th>Item</th>
                 <th style="width: 60px; text-align: center;">Qty</th>
-                <th style="width: 50px;">Unit</th>
-                <th style="width: 80px; text-align: right;">Unit Price</th>
-                <th style="width: 90px; text-align: right;">Total Cost</th>
-                <th>Allocated By</th>
+                <th>Approved By</th>
               </tr>
             </thead>
             <tbody>
@@ -1076,27 +1119,23 @@ const DocumentsTab = ({ project, setProject }) => {
                   (it, idx) => `
                 <tr>
                   <td style="text-align: center; color: #64748b;">${idx + 1}</td>
-                  <td><span class="badge">${it.prodId || "N/A"}</span></td>
-                  <td><strong>${it.cleanName}</strong></td>
-                  <td>${it.root1}</td>
-                  <td>${it.root2}</td>
-                  <td>${it.root3}</td>
-                  <td>${it.root4}</td>
+                  <td style="color: #1e3a8a; font-weight: 600;">${it.root1}</td>
+                  <td style="color: #4338ca;">${it.root2}</td>
+                  <td style="color: #b45309;">${it.root3}</td>
+                  <td style="color: #be123c;">${it.root4}</td>
+                  <td>
+                    <strong>${it.cleanName}</strong>
+                    ${it.prodId ? `<div style="font-size: 10px; color: #64748b; font-family: monospace;">(${it.prodId})</div>` : ""}
+                  </td>
                   <td class="qty">${it.quantity}</td>
-                  <td>${it.unit || "Nos"}</td>
-                  <td style="text-align: right;">${it.unitPrice > 0 ? "₹" + it.unitPrice.toLocaleString() : "—"}</td>
-                  <td style="text-align: right; font-weight: bold;">${it.totalPrice > 0 ? "₹" + it.totalPrice.toLocaleString() : "—"}</td>
-                  <td>${it.empName || "Employee"}</td>
+                  <td style="font-weight: 600; color: #047857;">${it.approvedByName || "Admin"}</td>
                 </tr>
               `
                 )
                 .join("")}
               <tr class="total-row">
-                <td colspan="7" style="text-align: right; padding: 10px;">Total Allocated Units & Value:</td>
-                <td style="text-align: center; color: #047857;">${items.reduce((acc, it) => acc + (it.quantity || 1), 0)}</td>
-                <td>Units</td>
-                <td></td>
-                <td style="text-align: right; color: #0f172a;">₹${items.reduce((acc, it) => acc + (it.totalPrice || 0), 0).toLocaleString()}</td>
+                <td colspan="6" style="text-align: right; padding: 10px;">Total Allocated Units:</td>
+                <td style="text-align: center; color: #047857;">${totalQty}</td>
                 <td></td>
               </tr>
             </tbody>
@@ -1406,6 +1445,27 @@ const DocumentsTab = ({ project, setProject }) => {
               </div>
             </div>
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleExportExcel(selectedFolder)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
+              title={`Download Excel (BOM) for ${selectedFolder}`}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Download Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportPDF(selectedFolder)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
+              title={`Download PDF for ${selectedFolder}`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Download PDF</span>
+            </button>
+          </div>
         </div>
 
         {/* Products Data Table */}
@@ -1566,7 +1626,7 @@ const DocumentsTab = ({ project, setProject }) => {
         <div className="flex items-center gap-3 flex-wrap">
           <button
             type="button"
-            onClick={handleExportExcel}
+            onClick={() => handleExportExcel(null)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
             title="Download BOM in Excel/CSV format with Root 1, 2, 3, 4 category hierarchy and quantities"
           >
@@ -1575,7 +1635,7 @@ const DocumentsTab = ({ project, setProject }) => {
           </button>
           <button
             type="button"
-            onClick={handleExportPDF}
+            onClick={() => handleExportPDF(null)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs hover:shadow-sm transition-all cursor-pointer"
             title="Download BOM in printable PDF format with Root 1, 2, 3, 4 category hierarchy and quantities"
           >
@@ -1622,9 +1682,27 @@ const DocumentsTab = ({ project, setProject }) => {
                   <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 group-hover:scale-105 transition-transform">
                     <Folder className="h-6 w-6 fill-amber-500/30" />
                   </div>
-                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                    {items.length} {items.length === 1 ? "Product" : "Products"}
-                  </span>
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => handleExportExcel(category)}
+                      className="p-1.5 rounded-lg border border-border bg-background hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-600 transition-colors cursor-pointer"
+                      title={`Download Excel (BOM) for ${category}`}
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportPDF(category)}
+                      className="p-1.5 rounded-lg border border-border bg-background hover:bg-blue-500/10 text-muted-foreground hover:text-blue-600 transition-colors cursor-pointer"
+                      title={`Download PDF for ${category}`}
+                    >
+                      <FileText className="h-4 w-4" />
+                    </button>
+                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                      {items.length} {items.length === 1 ? "Product" : "Products"}
+                    </span>
+                  </div>
                 </div>
 
                 <div>

@@ -60,9 +60,21 @@ const INVENTORY_SUBMODULES = [
     buttonText: "Open View Inventory",
   },
   {
+    id: "approval",
+    key: "inventory-approval",
+    title: "4. Inventory Approvals",
+    tagline: "Taking & Return Approvals",
+    description: "Review and approve employee requests for taking or returning inventory items.",
+    icon: CheckCircle2,
+    badge: "Active",
+    badgeType: "active",
+    color: "from-emerald-600/10 to-teal-600/10 text-emerald-600 border-emerald-500/30",
+    buttonText: "Open Inventory Approvals",
+  },
+  {
     id: "alert",
     key: "inventory-alert",
-    title: "4. Inventory Alert",
+    title: "5. Inventory Alert",
     tagline: "Low Stock & Alerts",
     description: "Alerts for items below minimum threshold, zero stock, and reorder levels.",
     icon: Bell,
@@ -74,7 +86,7 @@ const INVENTORY_SUBMODULES = [
   {
     id: "general",
     key: "general-consumables",
-    title: "5. Tools / Consumables",
+    title: "6. Tools / Consumables",
     tagline: "Tools & Consumables Folders",
     description: "Manage tool requests and consumable item issuance history.",
     icon: Wrench,
@@ -254,6 +266,15 @@ const Inventory = ({ defaultSubmodule = null }) => {
 
   // Render Submodule 3: Inventory Approval
   if (activeSubmodule === "approval") {
+    if (!hasModuleAccess("inventory-approval")) {
+      return (
+        <div className="p-8 text-center bg-background border border-border rounded-2xl">
+          <p className="text-red-500 font-semibold mb-2">Access Denied</p>
+          <p className="text-sm text-muted-foreground mb-4">You do not have permission to view Inventory Approvals.</p>
+          <button onClick={() => handleSelectSubmodule(null)} className="px-4 py-2 bg-secondary text-sm font-medium rounded-lg">Back to Hub</button>
+        </div>
+      );
+    }
     return (
       <InventoryApprovalView
         onBackToHub={() => handleSelectSubmodule(null)}

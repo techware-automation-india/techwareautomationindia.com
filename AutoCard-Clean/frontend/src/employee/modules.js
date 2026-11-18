@@ -250,9 +250,11 @@ export function getModulesByPermissions(permissions = {}) {
         checkHasView(permissions["inventory"]) ||
         checkHasView(permissions["inventory-in"]) ||
         checkHasView(permissions["inventory-out"]) ||
+        checkHasView(permissions["inventory-approval"]) ||
         checkHasView(permissions["view-inventory"]) ||
         checkHasView(permissions["inventory-alert"]) ||
-        checkHasView(permissions["general-consumables"]);
+        checkHasView(permissions["general-consumables"]) ||
+        checkHasView(permissions["approvals-tools-inventory"]);
       if (hasInventorySub) perm = true;
     }
 

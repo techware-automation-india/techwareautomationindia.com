@@ -73,30 +73,6 @@ const AdminModulePage = ({
         </div>
       </div>
 
-      {/* Permission Badges */}
-      <div className="flex gap-2 flex-wrap">
-        {permissions.canView && (
-          <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-            ✓ View
-          </span>
-        )}
-        {permissions.canCreate && (
-          <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-            ✓ Create
-          </span>
-        )}
-        {permissions.canEdit && (
-          <span className="px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-            ✓ Edit
-          </span>
-        )}
-        {permissions.canDelete && (
-          <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-            ✓ Delete
-          </span>
-        )}
-      </div>
-
       {/* Content - Pass permissions to children */}
       {typeof children === 'function' ? children(permissions) : children}
 

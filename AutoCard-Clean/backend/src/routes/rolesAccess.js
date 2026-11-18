@@ -37,6 +37,7 @@ const employeeModules = [
   { key: "inventory", label: "Inventory" },
   { key: "inventory-in", label: "Material Inward" },
   { key: "inventory-out", label: "Material Outward" },
+  { key: "inventory-approval", label: "Inventory Approval" },
   { key: "view-inventory", label: "View Stock" },
   { key: "inventory-alert", label: "Stock Alerts" },
   { key: "general-consumables", label: "Tools & Consumables" },
@@ -107,7 +108,7 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
     }
 
     const legacyPermissions = await prisma.modulePermission.findMany({ where: { userId: req.user.id } });
-    const permissionMap = buildPermissionMap(legacyPermissions);
+    const permissionMap = {};
 
     if (roleModules.length > 0) {
       // First pass: collect all action permissions
@@ -167,7 +168,7 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
       const subKeyToParent = [
         {
           parent: "inventory",
-          subKeys: ["inventory-in", "inventory-out", "view-inventory", "inventory-alert", "general-consumables"],
+          subKeys: ["inventory-in", "inventory-out", "view-inventory", "inventory-approval", "inventory-alert", "general-consumables"],
         },
         {
           parent: "requests",
@@ -197,8 +198,9 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
             permissionMap[group.parent].canView = true;
           }
         } else if (group.parent !== "requests") {
-          // If no submodule has view access, non-default parent module must not be visible
-          if (permissionMap[group.parent]) {
+          // If the parent module itself was explicitly assigned to the role, keep it enabled!
+          const parentExplicitlyAssigned = roleModules.some((m) => m.moduleKey === group.parent || m.moduleKey.startsWith(`${group.parent}:`));
+          if (!parentExplicitlyAssigned && permissionMap[group.parent]) {
             permissionMap[group.parent].canView = false;
           }
         }
@@ -237,6 +239,9 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
           canDelete: true,
         };
       }
+    } else if (legacyPermissions.length > 0) {
+      // User has legacy per-user permissions and no role modules
+      Object.assign(permissionMap, buildPermissionMap(legacyPermissions));
     } else if (req.user?.role === "ADMIN") {
       for (const m of employeeModules) {
         permissionMap[m.key] = {

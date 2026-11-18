@@ -123,13 +123,24 @@ function isModuleAllowed(moduleKey, permissions = {}) {
       checkHasView(permissions["inventory"]) ||
       checkHasView(permissions["inventory-in"]) ||
       checkHasView(permissions["inventory-out"]) ||
+      checkHasView(permissions["inventory-approval"]) ||
       checkHasView(permissions["view-inventory"]) ||
       checkHasView(permissions["inventory-alert"]) ||
       checkHasView(permissions["general-consumables"]) ||
+      checkHasView(permissions["approvals-tools-inventory"]) ||
       Object.keys(permissions).some((k) =>
-        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
+        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables") || k === "approvals-tools-inventory") &&
         checkHasView(permissions[k])
       )
+    );
+  }
+
+  if (moduleKey === "inventory-approval") {
+    return (
+      checkHasView(permissions["inventory-approval"]) ||
+      checkHasView(permissions["approvals-tools-inventory"]) ||
+      checkHasView(permissions["approvals"]) ||
+      checkHasView(permissions["inventory"])
     );
   }
 

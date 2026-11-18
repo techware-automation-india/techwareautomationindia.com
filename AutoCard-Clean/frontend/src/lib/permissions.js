@@ -80,8 +80,17 @@ export function hasModuleAccess(key) {
         return true;
       }
       return Object.keys(perms).some((k) => 
-        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables")) &&
+        (k.startsWith("inventory-") || k.startsWith("view-inventory") || k.startsWith("general-consumables") || k === "approvals-tools-inventory") &&
         (checkValCanView(perms[k]) || checkValCanView(perms[`${k}:view`]))
+      );
+    }
+
+    if (key === "inventory-approval") {
+      return !!(
+        checkValCanView(perms["inventory-approval"]) ||
+        checkValCanView(perms["approvals-tools-inventory"]) ||
+        checkValCanView(perms["approvals"]) ||
+        checkValCanView(perms["inventory"])
       );
     }
 

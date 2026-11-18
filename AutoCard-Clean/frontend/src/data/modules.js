@@ -66,12 +66,6 @@ export const INVENTORY_SUBMODULE_ACTIONS = {
     { key: 'view', label: 'View' },
     { key: 'edit', label: 'Edit Thresholds' },
   ],
-  'inventory-approval': [
-    { key: 'view', label: 'View' },
-    { key: 'create', label: 'Approve' },
-    { key: 'edit', label: 'Edit' },
-    { key: 'delete', label: 'Reject' },
-  ],
   'general-consumables': [
     { key: 'view', label: 'View' },
     { key: 'create', label: 'Create / Issue' },
@@ -133,9 +127,8 @@ export const MODULES = [
       { key: 'inventory-in', label: '1. Inventory In', icon: ArrowDownToLine, description: 'Material Inward Register & Category Tree', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-in'] },
       { key: 'inventory-out', label: '2. Inventory Out', icon: ArrowUpFromLine, description: 'Material Outward Register & Allocations', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-out'] },
       { key: 'view-inventory', label: '3. View Stock', icon: Eye, description: 'Master Stock Catalog & Valuation', actions: INVENTORY_SUBMODULE_ACTIONS['view-inventory'] },
-      { key: 'inventory-approval', label: '4. Inventory Approvals', icon: CheckSquare, description: 'Review & approve employee inventory taking & return requests', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-approval'] },
-      { key: 'inventory-alert', label: '5. Stock Alerts', icon: AlertTriangle, description: 'Low stock & reorder notifications', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-alert'] },
-      { key: 'general-consumables', label: '6. Tools & Consumables', icon: Wrench, description: 'Tools and consumables requisition register', actions: INVENTORY_SUBMODULE_ACTIONS['general-consumables'] },
+      { key: 'inventory-alert', label: '4. Stock Alerts', icon: AlertTriangle, description: 'Low stock & reorder notifications', actions: INVENTORY_SUBMODULE_ACTIONS['inventory-alert'] },
+      { key: 'general-consumables', label: '5. Tools & Consumables', icon: Wrench, description: 'Tools and consumables requisition register', actions: INVENTORY_SUBMODULE_ACTIONS['general-consumables'] },
     ],
   },
 ];

@@ -37,7 +37,6 @@ const employeeModules = [
   { key: "inventory", label: "Inventory" },
   { key: "inventory-in", label: "Material Inward" },
   { key: "inventory-out", label: "Material Outward" },
-  { key: "inventory-approval", label: "Inventory Approval" },
   { key: "view-inventory", label: "View Stock" },
   { key: "inventory-alert", label: "Stock Alerts" },
   { key: "general-consumables", label: "Tools & Consumables" },
@@ -168,7 +167,7 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
       const subKeyToParent = [
         {
           parent: "inventory",
-          subKeys: ["inventory-in", "inventory-out", "view-inventory", "inventory-approval", "inventory-alert", "general-consumables"],
+          subKeys: ["inventory-in", "inventory-out", "view-inventory", "inventory-alert", "general-consumables"],
         },
         {
           parent: "requests",

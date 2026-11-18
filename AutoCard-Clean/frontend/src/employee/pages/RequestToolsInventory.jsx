@@ -743,14 +743,15 @@ export default function RequestToolsInventory() {
       const isToolCat = isToolCategory(name) || (cat.code && String(cat.code).toLowerCase().includes("tool"));
 
       if (isToolsReq) {
-        return isToolCat;
+        // When request type is Tools, allow all Root Level 1 categories
+        return true;
       } else if (isGenConsumable) {
         return isConsumableCat;
       } else if (isProjectReq) {
         return !isConsumableCat && !isToolCat;
       }
 
-      return !isConsumableCat && !isToolCat;
+      return true;
     });
 
     const names = [];
@@ -1449,7 +1450,7 @@ export default function RequestToolsInventory() {
                 const catName = c.name.toLowerCase();
                 const curCat = (form.category || "").toLowerCase();
                 if (isGeneralOrConsumable(curCat)) return isGeneralOrConsumable(catName);
-                if (isToolCategory(curCat)) return isToolCategory(catName);
+                if (isToolCategory(curCat)) return true; // all root level 1 folders when request type is Tools
                 return true;
               });
 

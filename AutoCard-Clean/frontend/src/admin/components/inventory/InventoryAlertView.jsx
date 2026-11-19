@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { exportStyledExcelWithLogo } from "../../../lib/excelExportHelper.js";
 import {
   Bell,
   AlertTriangle,
@@ -71,8 +72,8 @@ export default function InventoryAlertView({ onBackToHub }) {
     return { r1, r2, r3, r4 };
   };
 
-  // ─── Export to Excel (.csv / .xls BOM) ──────────────────────────────────
-  const handleExportAlertExcel = () => {
+  // ─── Export to Excel (.xlsx with Logo & Root Tabs) ──────────────────────
+  const handleExportAlertExcel = async () => {
     if (!filteredItems || filteredItems.length === 0) {
       toast.error("No items available to export for the selected filter.");
       return;
@@ -87,73 +88,148 @@ export default function InventoryAlertView({ onBackToHub }) {
     const reportTitle = filterLabels[alertFilter] || "Inventory Stock Alert Report";
     const totalUnits = filteredItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
 
-    const escapeCsv = (val) => {
-      if (val === null || val === undefined) return '""';
-      const str = String(val).replace(/"/g, '""');
-      return `"${str}"`;
-    };
-
     const headers = [
       "S.No",
       "Root 1",
       "Root 2",
       "Root 3",
       "Root 4",
-      "Item",
-      "Qty",
-      "Min Qty",
+      "Item Name",
+      "SKU / Code",
+      "Quantity",
+      "Min Stock",
+      "Status",
       "Location",
     ];
 
-    const rows = filteredItems.map((item, idx) => {
+    const colWidths = [8, 22, 22, 22, 22, 34, 18, 14, 14, 16, 22];
+    const rightAlignCols = [8, 9];
+    const centerAlignCols = [1, 10];
+
+    // Group filtered items by Root 1
+    const groupedByRoot1 = new Map();
+    filteredItems.forEach((item) => {
+      const roots = getItemRoots(item);
+      const r1Key = roots.r1 || "Unassigned";
+      if (!groupedByRoot1.has(r1Key)) {
+        groupedByRoot1.set(r1Key, []);
+      }
+      groupedByRoot1.get(r1Key).push({ item, roots });
+    });
+
+    const getItemStatus = (qty, minS) => {
+      if (qty === 0) return "OUT OF STOCK";
+      if (qty <= minS) return "LOW STOCK";
+      return "HEALTHY";
+    };
+
+    // Master sheet with all filtered items
+    const masterRows = filteredItems.map((item, idx) => {
       const roots = getItemRoots(item);
       const qty = Number(item.quantity || 0);
       const minS = Number(item.minStock || 5);
-
       return [
         idx + 1,
-        escapeCsv(roots.r1),
-        escapeCsv(roots.r2),
-        escapeCsv(roots.r3),
-        escapeCsv(roots.r4),
-        escapeCsv(item.name ? `${item.name}${item.code ? ` (${item.code})` : ""}` : "N/A"),
+        roots.r1,
+        roots.r2,
+        roots.r3,
+        roots.r4,
+        item.name || "—",
+        item.code || item.sku || "—",
         qty,
         minS,
-        escapeCsv(getExactLocation(item)),
-      ].join(",");
+        getItemStatus(qty, minS),
+        getExactLocation(item),
+      ];
     });
 
-    const totalRow = [
+    const masterSubtotal = [
       "",
       "",
       "",
       "",
       "",
-      '"TOTAL QUANTITY:"',
+      "",
+      "TOTAL QUANTITY:",
       totalUnits,
-      '""',
-      '""',
-    ].join(",");
+      "",
+      "",
+      "",
+    ];
 
-    const csvContent =
-      "\uFEFF" +
-      `"TECHWARE AUTOMATION — ${reportTitle.toUpperCase()}"\r\n` +
-      `"Filter Mode:","${alertFilter}"\r\n` +
-      `"Total Alerts:","${filteredItems.length} SKUs"\r\n` +
-      `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\r\n\r\n` +
-      [headers.join(","), ...rows, totalRow].join("\r\n");
+    const sheets = [
+      {
+        name: "Master Alerts",
+        title: `Techware Automation — ${reportTitle}`,
+        subtitle: `Filter: ${alertFilter}  |  Total Alerts: ${filteredItems.length} SKUs  |  Total Units: ${totalUnits}`,
+        headers,
+        rows: masterRows,
+        subtotalRow: masterSubtotal,
+        colWidths,
+        rightAlignCols,
+        centerAlignCols,
+      },
+    ];
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const filterTag = alertFilter.toLowerCase().replace(/_/g, "-");
-    link.href = url;
-    link.download = `Inventory_Alerts_${filterTag}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success("Inventory alert items exported to Excel successfully!");
+    // Individual Root Level 1 tabs
+    groupedByRoot1.forEach((entries, r1Name) => {
+      const catRows = entries.map(({ item, roots }, idx) => {
+        const qty = Number(item.quantity || 0);
+        const minS = Number(item.minStock || 5);
+        return [
+          idx + 1,
+          roots.r1,
+          roots.r2,
+          roots.r3,
+          roots.r4,
+          item.name || "—",
+          item.code || item.sku || "—",
+          qty,
+          minS,
+          getItemStatus(qty, minS),
+          getExactLocation(item),
+        ];
+      });
+
+      const catUnits = entries.reduce((acc, { item }) => acc + Number(item.quantity || 0), 0);
+      const catSubtotal = [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        `SUBTOTAL (${r1Name}):`,
+        catUnits,
+        "",
+        "",
+        "",
+      ];
+
+      sheets.push({
+        name: r1Name,
+        title: `Stock Alerts: ${r1Name}`,
+        subtitle: `Category: ${r1Name}  |  Filter: ${alertFilter}  |  Total SKUs: ${entries.length}  |  Units: ${catUnits}`,
+        headers,
+        rows: catRows,
+        subtotalRow: catSubtotal,
+        colWidths,
+        rightAlignCols,
+        centerAlignCols,
+      });
+    });
+
+    try {
+      const filterTag = alertFilter.toLowerCase().replace(/_/g, "-");
+      await exportStyledExcelWithLogo({
+        filename: `Inventory_Alerts_${filterTag}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheets,
+      });
+      toast.success("Inventory alert items exported to Excel successfully with company logo & root tabs!");
+    } catch (err) {
+      console.error("Export Excel error:", err);
+      toast.error("Failed to export Excel.");
+    }
   };
 
   // ─── Export to PDF (Print View) ──────────────────────────────────────────
@@ -177,43 +253,116 @@ export default function InventoryAlertView({ onBackToHub }) {
       return;
     }
 
-    const tableRowsHtml = filteredItems
-      .map((item, idx) => {
-        const roots = getItemRoots(item);
-        const qty = Number(item.quantity || 0);
-        const minS = Number(item.minStock || 5);
-        const deficit = Math.max(0, minS - qty);
-        const cost = Number(item.costPrice || 0);
+    const totalUnits = filteredItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
+    const zeroCount = filteredItems.filter(i => Number(i.quantity || 0) === 0).length;
+    const lowCount = filteredItems.filter(i => Number(i.quantity || 0) > 0 && Number(i.quantity || 0) <= Number(i.minStock || 5)).length;
 
-        let statusColor = "#059669";
-        let statusText = "Healthy";
-        let rowBg = "#ffffff";
+    // Group items by Root 1
+    const groupedByRoot1 = new Map();
+    filteredItems.forEach((item) => {
+      const roots = getItemRoots(item);
+      const r1Key = roots.r1 || "Unassigned";
+      if (!groupedByRoot1.has(r1Key)) {
+        groupedByRoot1.set(r1Key, []);
+      }
+      groupedByRoot1.get(r1Key).push({ item, roots });
+    });
 
-        if (qty === 0) {
-          statusColor = "#e11d48";
-          statusText = "OUT OF STOCK";
-          rowBg = "#fff1f2";
-        } else if (qty <= minS) {
-          statusColor = "#d97706";
-          statusText = "LOW STOCK";
-          rowBg = "#fffbeb";
-        }
+    let globalItemIndex = 0;
+    const rootSectionsHtml = Array.from(groupedByRoot1.entries())
+      .map(([r1Name, groupItems], groupIdx) => {
+        const groupUnits = groupItems.reduce((acc, { item }) => acc + Number(item.quantity || 0), 0);
+        const groupZero = groupItems.filter(({ item }) => Number(item.quantity || 0) === 0).length;
+        const groupLow = groupItems.filter(({ item }) => Number(item.quantity || 0) > 0 && Number(item.quantity || 0) <= Number(item.minStock || 5)).length;
+
+        const groupRowsHtml = groupItems
+          .map(({ item, roots }) => {
+            globalItemIndex += 1;
+            const qty = Number(item.quantity || 0);
+            const minS = Number(item.minStock || 5);
+
+            let statusColor = "#059669";
+            let statusText = "Healthy";
+            let rowBg = "#ffffff";
+
+            if (qty === 0) {
+              statusColor = "#e11d48";
+              statusText = "OUT OF STOCK";
+              rowBg = "#fff1f2";
+            } else if (qty <= minS) {
+              statusColor = "#d97706";
+              statusText = "LOW STOCK";
+              rowBg = "#fffbeb";
+            }
+
+            return `
+              <tr style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+                <td style="padding: 7px 6px; text-align: center; color: #64748b; font-weight: bold;">${globalItemIndex}</td>
+                <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 700;">${roots.r1}</td>
+                <td style="padding: 7px 8px; color: #4338ca;">${roots.r2}</td>
+                <td style="padding: 7px 8px; color: #b45309;">${roots.r3}</td>
+                <td style="padding: 7px 8px; color: #be123c;">${roots.r4}</td>
+                <td style="padding: 7px 8px; font-weight: 600;">
+                  <div>${item.name || "—"}</div>
+                  ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
+                </td>
+                <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
+                <td style="padding: 7px 8px; text-align: right; font-weight: 600; color: #64748b;">${minS}</td>
+                <td style="padding: 7px 8px; text-align: center;">
+                  <span style="display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 800; color: ${statusColor}; background: ${qty === 0 ? '#ffe4e6' : qty <= minS ? '#fef3c7' : '#d1fae5'};">
+                    ${statusText}
+                  </span>
+                </td>
+                <td style="padding: 7px 8px; color: #334155; font-size: 11px; font-weight: 600;">${getExactLocation(item)}</td>
+              </tr>
+            `;
+          })
+          .join("");
 
         return `
-          <tr style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-            <td style="padding: 7px 6px; text-align: center;">${idx + 1}</td>
-            <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 600;">${roots.r1}</td>
-            <td style="padding: 7px 8px; color: #4338ca;">${roots.r2}</td>
-            <td style="padding: 7px 8px; color: #b45309;">${roots.r3}</td>
-            <td style="padding: 7px 8px; color: #be123c;">${roots.r4}</td>
-            <td style="padding: 7px 8px; font-weight: 600;">
-              <div>${item.name || "—"}</div>
-              ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
-            </td>
-            <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
-            <td style="padding: 7px 8px; text-align: right; font-weight: 600; color: #64748b;">${minS}</td>
-            <td style="padding: 7px 8px; color: #334155; font-size: 11px; font-weight: 600;">${getExactLocation(item)}</td>
-          </tr>
+          <div class="root-section ${groupIdx > 0 ? 'page-break' : ''}">
+            <div class="root-category-banner">
+              <div class="banner-left">
+                <span class="root-badge">ROOT LEVEL 1</span>
+                <span class="root-name">${r1Name}</span>
+              </div>
+              <div class="banner-right">
+                <span>SKUs: <strong>${groupItems.length}</strong></span>
+                <span>Total Qty: <strong>${groupUnits}</strong></span>
+                ${groupZero > 0 ? `<span style="color: #e11d48;">Zero Stock: <strong>${groupZero}</strong></span>` : ''}
+                ${groupLow > 0 ? `<span style="color: #d97706;">Low Stock: <strong>${groupLow}</strong></span>` : ''}
+                <button class="no-print btn-print-cat" onclick="printCategorySection('${r1Name.replace(/'/g, "\\'")}')" title="Print/Download PDF for ${r1Name}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download ${r1Name} PDF
+                </button>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 35px; text-align: center;">S.No</th>
+                  <th>Root 1</th>
+                  <th>Root 2</th>
+                  <th>Root 3</th>
+                  <th>Root 4</th>
+                  <th>Item</th>
+                  <th style="text-align: right;">Qty</th>
+                  <th style="text-align: right;">Min Qty</th>
+                  <th style="text-align: center;">Status</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${groupRowsHtml}
+                <tr style="background: #f8fafc; font-weight: bold; border-top: 2px solid #cbd5e1; font-size: 11px;">
+                  <td colspan="6" style="padding: 8px; text-align: right; color: #475569;">SUBTOTAL FOR ROOT 1 (${r1Name}):</td>
+                  <td style="padding: 8px; text-align: right; color: #1e3a8a; font-weight: 800;">${groupUnits}</td>
+                  <td colspan="3"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         `;
       })
       .join("");
@@ -227,13 +376,13 @@ export default function InventoryAlertView({ onBackToHub }) {
           <style>
             @page {
               size: A4 landscape;
-              margin: 12mm 10mm;
+              margin: 10mm 10mm;
             }
             body {
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
               color: #0f172a;
               margin: 0;
-              padding: 20px;
+              padding: 16px;
               background: #fff;
               -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
@@ -241,26 +390,37 @@ export default function InventoryAlertView({ onBackToHub }) {
             .header-bar {
               display: flex;
               justify-content: space-between;
-              align-items: flex-start;
-              border-bottom: 2px solid #e2e8f0;
-              padding-bottom: 12px;
+              align-items: center;
+              border-bottom: 2px solid #2563eb;
+              padding-bottom: 14px;
               margin-bottom: 16px;
+            }
+            .company-brand-area {
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .company-logo-img {
+              height: 52px;
+              width: auto;
+              max-width: 160px;
+              object-fit: contain;
             }
             .title {
               font-size: 18px;
               font-weight: 800;
               color: #0f172a;
-              margin: 0 0 4px 0;
+              margin: 0 0 2px 0;
             }
             .subtitle {
-              font-size: 12px;
+              font-size: 11px;
               color: #64748b;
               margin: 0;
             }
             .summary-box {
               display: flex;
-              gap: 16px;
-              margin-bottom: 14px;
+              gap: 20px;
+              margin-bottom: 16px;
               background: #f8fafc;
               border: 1px solid #e2e8f0;
               border-radius: 8px;
@@ -280,24 +440,87 @@ export default function InventoryAlertView({ onBackToHub }) {
               font-weight: 700;
               font-size: 13px;
             }
+            .root-section {
+              margin-bottom: 24px;
+            }
+            .root-category-banner {
+              background: #f1f5f9;
+              border-left: 4px solid #2563eb;
+              padding: 8px 12px;
+              margin-bottom: 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-radius: 0 6px 6px 0;
+            }
+            .banner-left {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
+            .root-badge {
+              font-size: 9px;
+              font-weight: 800;
+              background: #2563eb;
+              color: #fff;
+              padding: 2px 6px;
+              border-radius: 4px;
+              letter-spacing: 0.05em;
+            }
+            .root-name {
+              font-size: 14px;
+              font-weight: 800;
+              color: #1e3a8a;
+            }
+            .banner-right {
+              font-size: 11px;
+              color: #475569;
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .btn-print-cat {
+              background: #2563eb;
+              color: #ffffff;
+              border: none;
+              border-radius: 4px;
+              padding: 4px 10px;
+              font-size: 10px;
+              font-weight: 700;
+              cursor: pointer;
+              display: inline-flex;
+              align-items: center;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+              transition: background 0.15s;
+            }
+            .btn-print-cat:hover {
+              background: #1d4ed8;
+            }
             table {
               width: 100%;
               border-collapse: collapse;
+              margin-bottom: 12px;
             }
             th {
-              background: #f1f5f9;
+              background: #f8fafc;
               color: #334155;
               padding: 8px;
               font-size: 10px;
               font-weight: 700;
               text-transform: uppercase;
               letter-spacing: 0.03em;
+              border-top: 1px solid #cbd5e1;
               border-bottom: 2px solid #cbd5e1;
               text-align: left;
             }
             @media print {
               .no-print { display: none !important; }
               body { padding: 0; }
+              .page-break {
+                page-break-before: always;
+                break-before: page;
+                margin-top: 20px;
+              }
             }
           </style>
         </head>
@@ -308,9 +531,12 @@ export default function InventoryAlertView({ onBackToHub }) {
           </div>
 
           <div class="header-bar">
-            <div>
-              <h1 class="title">${reportTitle}</h1>
-              <p class="subtitle">Techware Automation — Central Inventory Management & Threshold Monitoring</p>
+            <div class="company-brand-area">
+              <img src="/techwareLogo.png" alt="Techware Automation" class="company-logo-img" onerror="this.src='/techwareLogo.svg'" />
+              <div>
+                <h1 class="title">${reportTitle}</h1>
+                <p class="subtitle">Techware Automation (India) — Central Stock Threshold Monitoring</p>
+              </div>
             </div>
             <div style="text-align: right; font-size: 11px; color: #64748b;">
               <div>Generated: <strong>${new Date().toLocaleString("en-IN")}</strong></div>
@@ -320,48 +546,49 @@ export default function InventoryAlertView({ onBackToHub }) {
 
           <div class="summary-box">
             <div class="summary-item">
-              <span>Total Listed Items</span>
-              <span>${filteredItems.length} SKUs</span>
+              <span>Root Level 1 Groups</span>
+              <span>${groupedByRoot1.size} Categories</span>
+            </div>
+            <div class="summary-item">
+              <span>Total Listed SKUs</span>
+              <span>${filteredItems.length} Products</span>
+            </div>
+            <div class="summary-item">
+              <span>Total Quantity</span>
+              <span>${totalUnits} Units</span>
             </div>
             <div class="summary-item">
               <span>Zero Stock (Out of Stock)</span>
-              <span style="color: #e11d48;">${filteredItems.filter(i => Number(i.quantity || 0) === 0).length}</span>
+              <span style="color: #e11d48;">${zeroCount} SKUs</span>
             </div>
             <div class="summary-item">
               <span>Low Stock Warnings</span>
-              <span style="color: #d97706;">${filteredItems.filter(i => Number(i.quantity || 0) > 0 && Number(i.quantity || 0) <= Number(i.minStock || 5)).length}</span>
+              <span style="color: #d97706;">${lowCount} SKUs</span>
             </div>
           </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 35px; text-align: center;">S.No</th>
-                <th>Root 1</th>
-                <th>Root 2</th>
-                <th>Root 3</th>
-                <th>Root 4</th>
-                <th>Item</th>
-                <th style="text-align: right;">Qty</th>
-                <th style="text-align: right;">Min Qty</th>
-                <th>Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRowsHtml}
-            </tbody>
-          </table>
-
-          <div style="margin-top: 18px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px;">
-            Confidential & Internal Document — Techware Automation India Private Limited
-          </div>
+          ${rootSectionsHtml}
 
           <script>
-            window.onload = function() {
+            function printCategorySection(categoryName) {
+              var sections = document.querySelectorAll('.root-section');
+              sections.forEach(function(s) {
+                var nameEl = s.querySelector('.root-name');
+                if (nameEl && nameEl.innerText.trim() === categoryName.trim()) {
+                  s.style.display = 'block';
+                  s.classList.remove('page-break');
+                } else {
+                  s.style.display = 'none';
+                }
+              });
+              window.print();
               setTimeout(function() {
-                window.print();
-              }, 400);
-            };
+                sections.forEach(function(s, idx) {
+                  s.style.display = 'block';
+                  if (idx > 0) s.classList.add('page-break');
+                });
+              }, 1000);
+            }
           </script>
         </body>
       </html>

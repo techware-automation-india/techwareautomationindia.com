@@ -1239,7 +1239,25 @@ const issueSchema = z.object({
 router.get("/issues/all", requireAuth, async (req, res) => {
   try {
     const issues = await prisma.inventoryIssue.findMany({
-      include: { inventoryItem: true },
+      include: {
+        inventoryItem: {
+          include: {
+            categoryRef: {
+              include: {
+                parent: {
+                  include: {
+                    parent: {
+                      include: {
+                        parent: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
     res.json({ issues });

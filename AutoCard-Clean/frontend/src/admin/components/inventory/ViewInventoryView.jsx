@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { exportStyledExcelWithLogo } from "../../../lib/excelExportHelper.js";
 import {
   Boxes,
   Search,
@@ -29,7 +30,9 @@ import {
   Compass,
   ArrowRight,
   Building,
-  HelpCircle
+  HelpCircle,
+  Download,
+  FileText
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "../../../lib/api.js";
@@ -365,6 +368,500 @@ export default function ViewInventoryView({ onBackToHub }) {
     return filteredItems.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
   }, [filteredItems]);
 
+  // ─── Export to Excel (.xlsx) based on active Root Filters & Search ─────────
+  const handleExportExcel = async () => {
+    const exportData = filteredItems.length > 0 ? filteredItems : items;
+    if (!exportData || exportData.length === 0) {
+      toast.error("No items available to export.");
+      return;
+    }
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      "S.No",
+      "Root 1",
+      "Root 2",
+      "Root 3",
+      "Root 4",
+      "Item Name",
+      "SKU / Code",
+      "Current Qty",
+      "Min Stock",
+      "Unit Price",
+      "Valuation",
+      "Location",
+      "Status",
+    ];
+
+    // Group items by Root Level 1
+    const groupedByRoot1 = new Map();
+    exportData.forEach((item) => {
+      const details = getItemCategoryDetails(item, categories);
+      const chain = details.chain || [];
+      const r1 = chain[0]?.name || details.rootName || "General";
+      const r2 = chain[1]?.name || "—";
+      const r3 = chain[2]?.name || "—";
+      const r4 = chain[3]?.name || "—";
+
+      if (!groupedByRoot1.has(r1)) {
+        groupedByRoot1.set(r1, []);
+      }
+      groupedByRoot1.get(r1).push({ item, r1, r2, r3, r4 });
+    });
+
+    const colWidths = [8, 18, 18, 18, 18, 30, 16, 12, 12, 14, 16, 22, 14];
+    const rightAlignCols = [7, 8, 9, 10];
+    const centerAlignCols = [0, 12];
+
+    const filterScopeName = activeCategoryObj?.name
+      ? `Root Scope: ${activeCategoryObj.name}`
+      : level1Id !== "ALL"
+      ? "Root Level 1 Filtered"
+      : search.trim()
+      ? `Search: "${search}"`
+      : "Complete Stock Catalog";
+
+    const totalUnits = exportData.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
+    const totalVal = exportData.reduce((acc, i) => acc + (Number(i.quantity || 0) * Number(i.costPrice || 0)), 0);
+
+    const sheets = [];
+
+    // Master Consolidated Sheet
+    const masterRows = exportData.map((item, idx) => {
+      const details = getItemCategoryDetails(item, categories);
+      const chain = details.chain || [];
+      const r1 = chain[0]?.name || details.rootName || "—";
+      const r2 = chain[1]?.name || "—";
+      const r3 = chain[2]?.name || "—";
+      const r4 = chain[3]?.name || "—";
+      const qty = Number(item.quantity || 0);
+      const minS = Number(item.minStock || 5);
+      const cost = Number(item.costPrice || 0);
+      const valuation = qty * cost;
+      const statusText = qty === 0 ? "Out of Stock" : qty <= minS ? "Low Stock" : "In Stock";
+
+      return [
+        idx + 1,
+        r1,
+        r2,
+        r3,
+        r4,
+        item.name || "—",
+        item.code || item.sku || "—",
+        qty,
+        minS,
+        cost,
+        valuation,
+        item.warehouse || item.location || "—",
+        statusText,
+      ];
+    });
+
+    const masterSubtotal = [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "GRAND TOTAL UNITS / VALUATION:",
+      "",
+      totalUnits,
+      "",
+      "",
+      Number(totalVal.toFixed(2)),
+      "",
+      "",
+    ];
+
+    sheets.push({
+      name: "Master Catalog",
+      title: "Master Stock Inventory Catalog",
+      subtitle: `Scope: ${filterScopeName}  |  Total SKUs: ${exportData.length}  |  Units: ${totalUnits}  |  Valuation: Rs. ${totalVal.toLocaleString("en-IN")}`,
+      headers,
+      rows: masterRows,
+      subtotalRow: masterSubtotal,
+      colWidths,
+      rightAlignCols,
+      centerAlignCols,
+    });
+
+    // Individual Root Level 1 Tabs
+    groupedByRoot1.forEach((entries, r1Name) => {
+      let subtotalQty = 0;
+      let subtotalVal = 0;
+
+      const catRows = entries.map(({ item, r1, r2, r3, r4 }, idx) => {
+        const qty = Number(item.quantity || 0);
+        const minS = Number(item.minStock || 5);
+        const cost = Number(item.costPrice || 0);
+        const valuation = qty * cost;
+        const statusText = qty === 0 ? "Out of Stock" : qty <= minS ? "Low Stock" : "In Stock";
+        subtotalQty += qty;
+        subtotalVal += valuation;
+
+        return [
+          idx + 1,
+          r1,
+          r2,
+          r3,
+          r4,
+          item.name || "—",
+          item.code || item.sku || "—",
+          qty,
+          minS,
+          cost,
+          valuation,
+          item.warehouse || item.location || "—",
+          statusText,
+        ];
+      });
+
+      const catSubtotal = [
+        "",
+        "",
+        "",
+        "",
+        "",
+        `SUBTOTAL (${r1Name}):`,
+        "",
+        subtotalQty,
+        "",
+        "",
+        Number(subtotalVal.toFixed(2)),
+        "",
+        "",
+      ];
+
+      sheets.push({
+        name: r1Name,
+        title: `Category Stock Catalog: ${r1Name}`,
+        subtitle: `Category: ${r1Name}  |  Active SKUs: ${entries.length}  |  Units: ${subtotalQty}  |  Valuation: Rs. ${subtotalVal.toLocaleString("en-IN")}`,
+        headers,
+        rows: catRows,
+        subtotalRow: catSubtotal,
+        colWidths,
+        rightAlignCols,
+        centerAlignCols,
+      });
+    });
+
+    await exportStyledExcelWithLogo({
+      filename: `Inventory_Stock_Catalog_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      sheets,
+    });
+    toast.success("Inventory Catalog exported to Excel with company logo & root tabs!");
+  };
+
+  // ─── Export to PDF (Printable Formatted View) ───────────────────────────────
+  const handleExportPDF = () => {
+    const exportData = filteredItems.length > 0 ? filteredItems : items;
+    if (!exportData || exportData.length === 0) {
+      toast.error("No items available to export.");
+      return;
+    }
+
+    const printWin = window.open("", "_blank", "width=1200,height=850");
+    if (!printWin) {
+      toast.error("Popup blocked! Please allow popups to download or print PDF.");
+      return;
+    }
+
+    const totalUnits = exportData.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
+    const totalValuation = exportData.reduce((acc, i) => acc + (Number(i.quantity || 0) * Number(i.costPrice || 0)), 0);
+
+    const filterScopeName = activeCategoryObj?.name
+      ? `Root Scope: ${activeCategoryObj.name}`
+      : level1Id !== "ALL"
+      ? "Root Level 1 Filtered"
+      : search.trim()
+      ? `Search: "${search}"`
+      : "Complete Stock Catalog";
+
+    // Group items by Root Level 1
+    const groupedByRoot1 = new Map();
+    exportData.forEach((item) => {
+      const details = getItemCategoryDetails(item, categories);
+      const chain = details.chain || [];
+      const r1 = chain[0]?.name || details.rootName || "Unassigned";
+      const r2 = chain[1]?.name || "—";
+      const r3 = chain[2]?.name || "—";
+      const r4 = chain[3]?.name || "—";
+
+      if (!groupedByRoot1.has(r1)) {
+        groupedByRoot1.set(r1, []);
+      }
+      groupedByRoot1.get(r1).push({ item, r1, r2, r3, r4 });
+    });
+
+    let globalItemIndex = 0;
+    const rootSectionsHtml = Array.from(groupedByRoot1.entries())
+      .map(([r1Name, groupItems], groupIdx) => {
+        const groupUnits = groupItems.reduce((acc, { item }) => acc + Number(item.quantity || 0), 0);
+        const groupVal = groupItems.reduce((acc, { item }) => acc + ((item.quantity || 0) * (item.costPrice || 0)), 0);
+
+        const groupRowsHtml = groupItems
+          .map(({ item, r1, r2, r3, r4 }) => {
+            globalItemIndex += 1;
+            const qty = Number(item.quantity || 0);
+            const minS = Number(item.minStock || 5);
+            const cost = Number(item.costPrice || 0);
+            const val = qty * cost;
+            const statusColor = qty === 0 ? "#e11d48" : qty <= minS ? "#d97706" : "#059669";
+            const statusBg = qty === 0 ? "#ffe4e6" : qty <= minS ? "#fef3c7" : "#d1fae5";
+            const statusText = qty === 0 ? "Out of Stock" : qty <= minS ? "Low Stock" : "In Stock";
+
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+                <td style="padding: 7px 6px; text-align: center; color: #64748b; font-weight: bold;">${globalItemIndex}</td>
+                <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 700;">${r1}</td>
+                <td style="padding: 7px 8px; color: #4338ca;">${r2}</td>
+                <td style="padding: 7px 8px; color: #b45309;">${r3}</td>
+                <td style="padding: 7px 8px; color: #be123c;">${r4}</td>
+                <td style="padding: 7px 8px; font-weight: bold; color: #0f172a;">
+                  <div>${item.name || "—"}</div>
+                  ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
+                </td>
+                <td style="padding: 7px 8px; text-align: center; font-weight: bold; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
+                <td style="padding: 7px 8px; text-align: center; color: #64748b;">${minS}</td>
+                <td style="padding: 7px 8px; text-align: right; color: #334155;">₹${cost.toLocaleString("en-IN")}</td>
+                <td style="padding: 7px 8px; text-align: right; font-weight: bold; color: #047857;">₹${val.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td style="padding: 7px 8px; text-align: center;">
+                  <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; background: ${statusBg}; color: ${statusColor};">${statusText}</span>
+                </td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        return `
+          <div class="root-section ${groupIdx > 0 ? 'page-break' : ''}">
+            <div class="root-category-banner">
+              <div class="banner-left">
+                <span class="root-badge">ROOT LEVEL 1</span>
+                <span class="root-name">${r1Name}</span>
+              </div>
+              <div class="banner-right">
+                <span>SKUs: <strong>${groupItems.length}</strong></span>
+                <span>Units: <strong>${groupUnits}</strong></span>
+                <span>Valuation: <strong>₹${groupVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                <button class="no-print btn-print-cat" onclick="printCategorySection('${r1Name.replace(/'/g, "\\'")}')" title="Print/Download PDF for ${r1Name}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download ${r1Name} PDF
+                </button>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 35px; text-align: center;">S.No</th>
+                  <th>Root 1</th>
+                  <th>Root 2</th>
+                  <th>Root 3</th>
+                  <th>Root 4</th>
+                  <th>Item Name</th>
+                  <th style="text-align: center;">Qty</th>
+                  <th style="text-align: center;">Min Qty</th>
+                  <th style="text-align: right;">Unit Price</th>
+                  <th style="text-align: right;">Valuation</th>
+                  <th style="text-align: center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${groupRowsHtml}
+                <tr style="background: #f8fafc; font-weight: bold; border-top: 2px solid #cbd5e1; font-size: 11px;">
+                  <td colspan="6" style="padding: 8px; text-align: right; color: #475569;">SUBTOTAL FOR ROOT 1 (${r1Name}):</td>
+                  <td style="padding: 8px; text-align: center; color: #1e3a8a; font-weight: 800;">${groupUnits}</td>
+                  <td colspan="2"></td>
+                  <td style="padding: 8px; text-align: right; color: #047857; font-weight: 800;">₹${groupVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        `;
+      })
+      .join("");
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Inventory Master Stock Catalog - Techware Automation</title>
+          <meta charset="utf-8" />
+          <style>
+            @page { size: A4 landscape; margin: 10mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 16px; background: #fff; }
+            .no-print { margin-bottom: 14px; display: flex; gap: 10px; }
+            .header-bar {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 2px solid #7c3aed;
+              padding-bottom: 14px;
+              margin-bottom: 16px;
+            }
+            .company-brand-area {
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .company-logo-img {
+              height: 52px;
+              width: auto;
+              max-width: 160px;
+              object-fit: contain;
+            }
+            .title { font-size: 20px; font-weight: 800; color: #5b21b6; margin: 0; }
+            .subtitle { font-size: 11px; color: #64748b; margin: 2px 0 0 0; }
+            .summary-box { display: flex; gap: 15px; margin-bottom: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+            .summary-item { display: flex; flex-direction: column; }
+            .summary-item span:first-child { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; }
+            .summary-item span:last-child { font-size: 13px; font-weight: 800; color: #0f172a; }
+            .root-section { margin-bottom: 24px; }
+            .root-category-banner {
+              background: #f5f3ff;
+              border-left: 4px solid #7c3aed;
+              padding: 8px 12px;
+              margin-bottom: 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-radius: 0 6px 6px 0;
+            }
+            .banner-left { display: flex; align-items: center; gap: 8px; }
+            .root-badge {
+              font-size: 9px;
+              font-weight: 800;
+              background: #7c3aed;
+              color: #fff;
+              padding: 2px 6px;
+              border-radius: 4px;
+              letter-spacing: 0.05em;
+            }
+            .root-name { font-size: 14px; font-weight: 800; color: #4c1d95; }
+            .banner-right {
+              font-size: 11px;
+              color: #475569;
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .btn-print-cat {
+              background: #7c3aed;
+              color: #ffffff;
+              border: none;
+              border-radius: 4px;
+              padding: 4px 10px;
+              font-size: 10px;
+              font-weight: 700;
+              cursor: pointer;
+              display: inline-flex;
+              align-items: center;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+              transition: background 0.15s;
+            }
+            .btn-print-cat:hover {
+              background: #6d28d9;
+            }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 12px; }
+            th { background: #f1f5f9; padding: 8px; border-top: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; font-weight: 700; text-transform: uppercase; font-size: 10px; color: #475569; text-align: left; }
+            td { border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+            @media print {
+              .no-print { display: none; }
+              body { padding: 0; }
+              .page-break {
+                page-break-before: always;
+                break-before: page;
+                margin-top: 20px;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="no-print">
+            <button onclick="window.print()" style="padding: 8px 16px; background: #7c3aed; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Print / Save as PDF</button>
+            <button onclick="window.close()" style="padding: 8px 16px; background: #e2e8f0; color: #0f172a; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Close</button>
+          </div>
+
+          <div class="header-bar">
+            <div class="company-brand-area">
+              <img src="/techwareLogo.png" alt="Techware Automation" class="company-logo-img" onerror="this.src='/techwareLogo.svg'" />
+              <div>
+                <h1 class="title">Techware Automation — Master Inventory Catalog</h1>
+                <p class="subtitle">Techware Automation (India) — Hierarchical Stock Report Classified by Root Level 1</p>
+              </div>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #64748b;">
+              <div>Scope: <strong>${filterScopeName}</strong></div>
+              <div>Generated: <strong>${new Date().toLocaleString("en-IN")}</strong></div>
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <div class="summary-item">
+              <span>Root Level 1 Categories</span>
+              <span>${groupedByRoot1.size} Groups</span>
+            </div>
+            <div class="summary-item">
+              <span>Total Items Listed</span>
+              <span>${exportData.length} SKUs</span>
+            </div>
+            <div class="summary-item">
+              <span>Total Quantity</span>
+              <span>${totalUnits} Units</span>
+            </div>
+            <div class="summary-item">
+              <span>Total Valuation</span>
+              <span style="color: #059669;">₹${totalValuation.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+
+          ${rootSectionsHtml}
+
+          <script>
+            function printCategorySection(categoryName) {
+              var sections = document.querySelectorAll('.root-section');
+              sections.forEach(function(s) {
+                var nameEl = s.querySelector('.root-name');
+                if (nameEl && nameEl.innerText.trim() === categoryName.trim()) {
+                  s.style.display = 'block';
+                  s.classList.remove('page-break');
+                } else {
+                  s.style.display = 'none';
+                }
+              });
+              window.print();
+              setTimeout(function() {
+                sections.forEach(function(s, idx) {
+                  s.style.display = 'block';
+                  if (idx > 0) s.classList.add('page-break');
+                });
+              }, 1000);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWin.document.open();
+    printWin.document.write(htmlContent);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => {
+      try {
+        printWin.print();
+      } catch (e) {
+        console.error("Print trigger error:", e);
+      }
+    }, 400);
+  };
+
   return (
     <div className="space-y-6">
       {/* ═══════════════════════════════════════════════════════════════
@@ -403,7 +900,27 @@ export default function ViewInventoryView({ onBackToHub }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end lg:self-center">
+          <div className="flex items-center gap-2.5 flex-wrap self-end lg:self-center">
+            {/* Export Buttons */}
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              title="Download Master Catalog in Excel (.csv) format with Root 1, 2, 3, 4"
+            >
+              <Download className="h-4 w-4" />
+              <span>Export Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              title="Print or Save Master Catalog as PDF with Root 1, 2, 3, 4 hierarchy"
+            >
+              <FileText className="h-4 w-4" />
+              <span>Export PDF</span>
+            </button>
+
             {/* View Mode Toggle */}
             <div className="flex items-center bg-secondary/60 border border-border rounded-2xl p-1 shadow-inner">
               <button

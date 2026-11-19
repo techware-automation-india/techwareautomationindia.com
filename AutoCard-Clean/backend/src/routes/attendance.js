@@ -166,10 +166,20 @@ const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
   return earthRadiusMeters * c;
 };
 
+// Fast road distance calculation with memory cache to avoid external API delays
+const distanceCache = new Map();
+const MAX_DISTANCE_CACHE_SIZE = 1000;
+
 const getRoadDistanceInMeters = async (lat1, lon1, lat2, lon2) => {
   const straightDistance = getDistanceInMeters(lat1, lon1, lat2, lon2);
   if (straightDistance < 100) {
     return straightDistance;
+  }
+
+  // Round coordinates to ~10 meters precision for caching
+  const cacheKey = `${lat1.toFixed(4)},${lon1.toFixed(4)}_${lat2.toFixed(4)},${lon2.toFixed(4)}`;
+  if (distanceCache.has(cacheKey)) {
+    return distanceCache.get(cacheKey);
   }
 
   // 1. Try Google Maps Distance Matrix API if key is set
@@ -178,7 +188,7 @@ const getRoadDistanceInMeters = async (lat1, lon1, lat2, lon2) => {
   if (googleApiKey) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 1000);
       const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${lat1},${lon1}&destinations=${lat2},${lon2}&key=${googleApiKey}`;
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
@@ -187,34 +197,23 @@ const getRoadDistanceInMeters = async (lat1, lon1, lat2, lon2) => {
         const data = await res.json();
         const element = data?.rows?.[0]?.elements?.[0];
         if (element?.status === "OK" && element?.distance?.value != null) {
-          return element.distance.value;
+          const dist = element.distance.value;
+          if (distanceCache.size >= MAX_DISTANCE_CACHE_SIZE) distanceCache.clear();
+          distanceCache.set(cacheKey, dist);
+          return dist;
         }
       }
     } catch (err) {
-      console.warn("Google Distance Matrix API error, using OSRM fallback:", err.message);
+      // Google API error, fallback to fast math calculation
     }
   }
 
-  // 2. Try OSRM (Open Source Routing Machine) Free Driving Route API
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-    const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-        return data.routes[0].distance;
-      }
-    }
-  } catch (err) {
-    console.warn("OSRM routing API error, using fallback factor:", err.message);
-  }
-
-  // 3. Fallback: Straight-line * 1.35 road factor multiplier
-  return straightDistance * 1.35;
+  // 2. High-speed fallback: Straight-line distance multiplied by standard road curvature factor 1.35
+  // (Instant calculation with 0ms network latency instead of hanging on public OSRM timeouts)
+  const estimatedRoadDistance = Math.round(straightDistance * 1.35);
+  if (distanceCache.size >= MAX_DISTANCE_CACHE_SIZE) distanceCache.clear();
+  distanceCache.set(cacheKey, estimatedRoadDistance);
+  return estimatedRoadDistance;
 };
 
 const getRosterLocation = async (profileId) => {
@@ -1732,12 +1731,15 @@ router.post("/manual-correction", requireAuth, async (req, res) => {
     updates.status = "PRESENT";
 
     // --------------------------------------------------
-    // NOTE
+    // NOTE & OVERNIGHT SHIFT DATE DETAILS
     // --------------------------------------------------
 
     const approvalSuffix = req.user.role === "ADMIN" ? ". Approved by admin." : "";
+    const overnightDetail = Boolean(isOvernight || checkOutDateStr > date)
+      ? ` (Overnight shift: In on ${date}, Out on ${checkOutDateStr})`
+      : "";
     updates.note = fitAttendanceNote(
-      `Manual attendance correction: ${isTimeEdit ? `Time Edit. ${manualReason}` : manualReason}${approvalSuffix}`,
+      `Manual attendance correction: ${isTimeEdit ? `Time Edit. ${manualReason}` : manualReason}${overnightDetail}${approvalSuffix}`,
     );
 
     // --------------------------------------------------

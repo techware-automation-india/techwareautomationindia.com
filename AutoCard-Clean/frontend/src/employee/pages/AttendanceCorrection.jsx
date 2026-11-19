@@ -642,6 +642,35 @@ const AttendanceCorrection = ({ correctionType }) => {
 
     setSubmitting(true);
     try {
+      const isOvernightDuty = Boolean(isOvernight || isCrossDay);
+
+      // If this is an Overnight Duty (cross-day shift), directly record it as manual attendance without creating an approval request
+      if (isOvernightDuty) {
+        const payload = {
+          date,
+          checkOutDate: effectiveCheckOutDate,
+          punchType: requestMode === "time-edit" ? "time-edit" : punchType,
+          checkInTime: requestMode === "time-edit" ? (time || null) : (punchType === "check-out" ? null : time),
+          checkOutTime: requestMode === "time-edit" ? (checkOutTime || null) : (punchType === "check-in" ? null : (punchType === "both" ? checkOutTime : time)),
+          reason: reason.trim() || "Overnight duty shift",
+          isOvernight: true,
+        };
+
+        const res = await apiPost("/attendance/manual-correction", payload);
+        toast.success(res.message || "Overnight duty attendance recorded directly (no approval required).");
+        await loadAttendanceForDate(date);
+        setReason("");
+        setCheckInLocation("");
+        setCheckOutLocation("");
+        setOvernightModal({
+          isOpen: false,
+          checkInTime: "",
+          checkOutTime: "",
+          checkInDate: "",
+          checkOutDate: "",
+        });
+        return;
+      }
 
       if (requestMode === "time-edit") {
         const timeEditReason = reason.trim();

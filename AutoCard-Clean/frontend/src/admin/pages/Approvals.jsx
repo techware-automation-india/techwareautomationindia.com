@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { usePoll } from "../../lib/pollContext.jsx";
 import {
   BadgeCheck,
@@ -1649,22 +1649,24 @@ const Approvals = () => {
       const normalizedLvs = normalizeLeave(leave);
       const normalizedAtts = normalizeAttendance(attendance);
 
-      // Pre-correlate attendance unassigned-location note & reason onto correction requests
+      // Pre-correlate attendance unassigned-location note & reason onto correction requests using an index Map
+      const attMapByEmp = new Map();
+      normalizedAtts.forEach((att) => {
+        const empKey = att.employeeId || att.employeeCode || "";
+        if (!attMapByEmp.has(empKey)) attMapByEmp.set(empKey, []);
+        attMapByEmp.get(empKey).push(att);
+      });
+
       normalizedReqs.forEach((req) => {
         if (req.type === "CORRECTION" || req.title?.includes("UL Check In") || req.subject?.includes("UL Check In")) {
-          const empId = req.employeeId || "";
+          const empKey = req.employeeId || req.employeeCode || "";
+          const candidates = attMapByEmp.get(empKey) || [];
           const date = req.correctionDetails?.date || req.subject?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-          const matchingAtt = normalizedAtts.find((att) => {
-            const attEmpId = att.employeeId || "";
-            const empMatches = attEmpId === empId || (req.employeeCode && att.employeeCode === req.employeeCode);
-            if (!empMatches) return false;
+          const matchingAtt = candidates.find((att) => {
             if (!date) return true;
             const attDateStr = String(att.date || "");
             const attCheckInStr = String(att.checkInTime || "");
-            const match1 = attDateStr.includes(date) || attCheckInStr.includes(date);
-            const match2 = att.date ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(att.date)) === date : false;
-            const match3 = att.checkInTime ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(att.checkInTime)) === date : false;
-            return match1 || match2 || match3;
+            return attDateStr.includes(date) || attCheckInStr.includes(date);
           });
           if (matchingAtt) {
             req.actualAttendanceNote = matchingAtt.description || matchingAtt.reviewNote;
@@ -2038,65 +2040,67 @@ const Approvals = () => {
     ...new Set(approvals.map((approval) => approval.employee).filter(Boolean)),
   ].sort();
 
-  const filteredApprovals = approvals.filter((approval) => {
-    const createdAt = new Date(approval.createdAt || 0);
-    const matchesStatus =
-      statusFilter === "ALL" ||
-      approval.status === statusFilter ||
-      (statusFilter === "APPROVED" && (approval.status === "COMPLETED" || isApprovedOrCompletedStatus(approval.status, approval.reviewNote)));
-    const matchesYear =
-      yearFilter === "ALL" || String(createdAt.getFullYear()) === yearFilter;
-    const matchesMonth =
-      monthFilter === "ALL" || String(createdAt.getMonth() + 1) === monthFilter;
-    const matchesEmployee =
-      employeeFilter === "ALL" || approval.employee === employeeFilter;
-    
-    // Apply type filter from category dropdown or URL params
-    let matchesType = true;
-    const effectiveCategory = categoryFilter !== "ALL" ? categoryFilter : (urlTypeFilter || "ALL");
-    if (effectiveCategory === "attendance") {
-      matchesType = approval.source === "ATTENDANCE";
-    } else if (effectiveCategory === "forgot-punch") {
-      matchesType = approval.source === "REQUEST" && approval.type === "CORRECTION";
-    } else if (effectiveCategory === "tools-inventory" || effectiveCategory === "tools" || effectiveCategory === "equipment") {
-      matchesType = approval.source === "REQUEST" && approval.type === "EQUIPMENT";
-    } else if (effectiveCategory === "leave") {
-      matchesType = approval.source === "LEAVE";
-    }
-    
-    // Apply permission-based filtering
-    let matchesPermission = true;
-    if (!loadingPermissions && permissions) {
-      const hasMainApprovals = permissions["approvals"]?.canView || permissions["approvals"] === true;
-      const subAttendance = permissions["approvals-attendance"]?.canView || permissions["approvals-attendance"] === true;
-      const subForgotPunch = permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true;
-      const subLeave = permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true;
-      const subTools = permissions["approvals-tools-inventory"]?.canView || permissions["approvals-tools-inventory"] === true || permissions["approvals-tools"]?.canView || permissions["approvals-tools"] === true;
+  const filteredApprovals = useMemo(() => {
+    return approvals.filter((approval) => {
+      const createdAt = new Date(approval.createdAt || 0);
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        approval.status === statusFilter ||
+        (statusFilter === "APPROVED" && (approval.status === "COMPLETED" || isApprovedOrCompletedStatus(approval.status, approval.reviewNote)));
+      const matchesYear =
+        yearFilter === "ALL" || String(createdAt.getFullYear()) === yearFilter;
+      const matchesMonth =
+        monthFilter === "ALL" || String(createdAt.getMonth() + 1) === monthFilter;
+      const matchesEmployee =
+        employeeFilter === "ALL" || approval.employee === employeeFilter;
+      
+      // Apply type filter from category dropdown or URL params
+      let matchesType = true;
+      const effectiveCategory = categoryFilter !== "ALL" ? categoryFilter : (urlTypeFilter || "ALL");
+      if (effectiveCategory === "attendance") {
+        matchesType = approval.source === "ATTENDANCE";
+      } else if (effectiveCategory === "forgot-punch") {
+        matchesType = approval.source === "REQUEST" && approval.type === "CORRECTION";
+      } else if (effectiveCategory === "tools-inventory" || effectiveCategory === "tools" || effectiveCategory === "equipment") {
+        matchesType = approval.source === "REQUEST" && approval.type === "EQUIPMENT";
+      } else if (effectiveCategory === "leave") {
+        matchesType = approval.source === "LEAVE";
+      }
+      
+      // Apply permission-based filtering
+      let matchesPermission = true;
+      if (!loadingPermissions && permissions) {
+        const hasMainApprovals = permissions["approvals"]?.canView || permissions["approvals"] === true;
+        const subAttendance = permissions["approvals-attendance"]?.canView || permissions["approvals-attendance"] === true;
+        const subForgotPunch = permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true;
+        const subLeave = permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true;
+        const subTools = permissions["approvals-tools-inventory"]?.canView || permissions["approvals-tools-inventory"] === true || permissions["approvals-tools"]?.canView || permissions["approvals-tools"] === true;
 
-      const hasAnySubPerm = subAttendance || subForgotPunch || subLeave || subTools;
+        const hasAnySubPerm = subAttendance || subForgotPunch || subLeave || subTools;
 
-      if (hasAnySubPerm) {
-        if (approval.source === "ATTENDANCE" && !subAttendance) {
-          matchesPermission = false;
-        } else if (approval.source === "REQUEST") {
-          if (approval.type === "EQUIPMENT" && !subTools) {
+        if (hasAnySubPerm) {
+          if (approval.source === "ATTENDANCE" && !subAttendance) {
             matchesPermission = false;
-          } else if (approval.type === "CORRECTION" && !subForgotPunch) {
-            matchesPermission = false;
-          } else if (!subForgotPunch && !subTools) {
+          } else if (approval.source === "REQUEST") {
+            if (approval.type === "EQUIPMENT" && !subTools) {
+              matchesPermission = false;
+            } else if (approval.type === "CORRECTION" && !subForgotPunch) {
+              matchesPermission = false;
+            } else if (!subForgotPunch && !subTools) {
+              matchesPermission = false;
+            }
+          } else if (approval.source === "LEAVE" && !subLeave) {
             matchesPermission = false;
           }
-        } else if (approval.source === "LEAVE" && !subLeave) {
+        } else if (!hasMainApprovals) {
+          // If neither specific sub-permissions nor main approvals exist, filter out
           matchesPermission = false;
         }
-      } else if (!hasMainApprovals) {
-        // If neither specific sub-permissions nor main approvals exist, filter out
-        matchesPermission = false;
       }
-    }
-    
-    return matchesStatus && matchesYear && matchesMonth && matchesEmployee && matchesType && matchesPermission;
-  });
+      
+      return matchesStatus && matchesYear && matchesMonth && matchesEmployee && matchesType && matchesPermission;
+    });
+  }, [approvals, statusFilter, yearFilter, monthFilter, employeeFilter, categoryFilter, urlTypeFilter, loadingPermissions, permissions]);
 
   // Helper to determine whether the user can approve or reject a specific approval item
   const getApprovalPermissions = (approval) => {

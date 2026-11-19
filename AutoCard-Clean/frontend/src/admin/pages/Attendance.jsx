@@ -492,6 +492,34 @@ const formatDateKey = (date) => {
   }).format(d);
 };
 
+const getOvernightDates = (record) => {
+  if (!record) return { isOvernight: false, checkInDateKey: null, checkOutDateKey: null, inDateStr: null, outDateStr: null };
+  const inDateKey = record.checkIn ? formatDateKey(record.checkIn) : null;
+  const outDateKey = record.checkOut ? formatDateKey(record.checkOut) : null;
+  
+  // Also check record.note for explicit overnight shift markers if checkOut is not yet set or date string is present
+  const noteMatch = String(record.note || "").match(/Overnight shift.*?In on (\d{4}-\d{2}-\d{2}).*?Out on (\d{4}-\d{2}-\d{2})/i);
+  let effectiveInKey = inDateKey;
+  let effectiveOutKey = outDateKey;
+  let isOvernight = false;
+
+  if (noteMatch) {
+    isOvernight = true;
+    effectiveInKey = effectiveInKey || noteMatch[1];
+    effectiveOutKey = effectiveOutKey || noteMatch[2];
+  } else if (effectiveInKey && effectiveOutKey && effectiveInKey !== effectiveOutKey) {
+    isOvernight = true;
+  }
+
+  return {
+    isOvernight,
+    checkInDateKey: effectiveInKey,
+    checkOutDateKey: effectiveOutKey,
+    inDateStr: effectiveInKey ? fmtDateDMY(effectiveInKey) : null,
+    outDateStr: effectiveOutKey ? fmtDateDMY(effectiveOutKey) : null,
+  };
+};
+
 const getAttendanceRequestDate = (request) => {
   if (request.correctionDetails?.date) return String(request.correctionDetails.date).slice(0, 10);
   if (request.forgotPunch?.date) return String(request.forgotPunch.date).slice(0, 10);
@@ -3206,12 +3234,37 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                             </td>
                           ) : (
                             <>
-                              <td className="py-3 pr-4">
-                                {fmtTime(rec.checkIn) ?? "—"}
-                              </td>
-                              <td className="py-3 pr-4">
-                                {fmtTime(rec.checkOut) ?? "—"}
-                              </td>
+                              {(() => {
+                                const overnight = getOvernightDates(rec);
+                                return (
+                                  <>
+                                    <td className="py-3 pr-4">
+                                      <div className="flex flex-col">
+                                        <span className="font-semibold text-foreground">
+                                          {fmtTime(rec.checkIn) ?? "—"}
+                                        </span>
+                                        {overnight.isOvernight && overnight.inDateStr && (
+                                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                            {overnight.inDateStr}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 pr-4">
+                                      <div className="flex flex-col">
+                                        <span className="font-semibold text-foreground">
+                                          {fmtTime(rec.checkOut) ?? "—"}
+                                        </span>
+                                        {overnight.isOvernight && overnight.outDateStr && (
+                                          <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                            {overnight.outDateStr}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </>
+                                );
+                              })()}
                               <td className="py-3 pr-4">
                                 {fmtWorkedHours(Number(rec.workedHours))}
                               </td>
@@ -4217,28 +4270,40 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                                     {/* Punch In */}
                                     <td className="px-4 py-3.5 align-middle">
                                       {rec?.checkIn ? (
-                                        <div className="flex items-center gap-2">
-                                          <div className="flex flex-col">
-                                            <span className="font-extrabold text-foreground text-sm">
-                                              {fmtTime(rec.checkIn)}
-                                            </span>
-                                            <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
-                                              Check In
-                                            </span>
-                                          </div>
-                                          {checkInLocationCode && (
-                                            <span
-                                              title={`Check In Location: ${checkInLocationCode === "UL" ? "Unassigned Location" : checkInLocationCode === "A" ? "Assigned Location" : "Office"}`}
-                                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
-                                                checkInLocationCode === "UL"
-                                                  ? "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25"
-                                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25"
-                                              }`}
-                                            >
-                                              {checkInLocationCode}
-                                            </span>
-                                          )}
-                                        </div>
+                                        (() => {
+                                          const overnight = getOvernightDates(rec);
+                                          return (
+                                            <div className="flex items-center gap-2">
+                                              <div className="flex flex-col">
+                                                <span className="font-extrabold text-foreground text-sm">
+                                                  {fmtTime(rec.checkIn)}
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
+                                                    Check In
+                                                  </span>
+                                                  {overnight.isOvernight && overnight.inDateStr && (
+                                                    <span className="rounded bg-emerald-100 dark:bg-emerald-950/60 px-1 py-0.2 text-[9px] font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300/40">
+                                                      {overnight.inDateStr}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              {checkInLocationCode && (
+                                                <span
+                                                  title={`Check In Location: ${checkInLocationCode === "UL" ? "Unassigned Location" : checkInLocationCode === "A" ? "Assigned Location" : "Office"}`}
+                                                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                    checkInLocationCode === "UL"
+                                                      ? "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25"
+                                                      : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25"
+                                                  }`}
+                                                >
+                                                  {checkInLocationCode}
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })()
                                       ) : (
                                         <span className="text-xs text-muted-foreground font-semibold">—</span>
                                       )}
@@ -4247,28 +4312,40 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                                     {/* Punch Out */}
                                     <td className="px-4 py-3.5 align-middle">
                                       {rec?.checkOut ? (
-                                        <div className="flex items-center gap-2">
-                                          <div className="flex flex-col">
-                                            <span className="font-extrabold text-foreground text-sm">
-                                              {fmtTime(rec.checkOut)}
-                                            </span>
-                                            <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400">
-                                              Check Out
-                                            </span>
-                                          </div>
-                                          {checkOutLocationCode && (
-                                            <span
-                                              title={`Check Out Location: ${checkOutLocationCode === "UL" ? "Unassigned Location" : checkOutLocationCode === "A" ? "Assigned Location" : "Office"}`}
-                                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
-                                                checkOutLocationCode === "UL"
-                                                  ? "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25"
-                                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25"
-                                              }`}
-                                            >
-                                              {checkOutLocationCode}
-                                            </span>
-                                          )}
-                                        </div>
+                                        (() => {
+                                          const overnight = getOvernightDates(rec);
+                                          return (
+                                            <div className="flex items-center gap-2">
+                                              <div className="flex flex-col">
+                                                <span className="font-extrabold text-foreground text-sm">
+                                                  {fmtTime(rec.checkOut)}
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400">
+                                                    Check Out
+                                                  </span>
+                                                  {overnight.isOvernight && overnight.outDateStr && (
+                                                    <span className="rounded bg-rose-100 dark:bg-rose-950/60 px-1 py-0.2 text-[9px] font-bold text-rose-800 dark:text-rose-300 border border-rose-300/40">
+                                                      {overnight.outDateStr}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              {checkOutLocationCode && (
+                                                <span
+                                                  title={`Check Out Location: ${checkOutLocationCode === "UL" ? "Unassigned Location" : checkOutLocationCode === "A" ? "Assigned Location" : "Office"}`}
+                                                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                    checkOutLocationCode === "UL"
+                                                      ? "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25"
+                                                      : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25"
+                                                  }`}
+                                                >
+                                                  {checkOutLocationCode}
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })()
                                       ) : (
                                         <span className="text-xs text-muted-foreground font-semibold">—</span>
                                       )}
@@ -4629,24 +4706,39 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                                       </div>
 
                                       {/* Punch In / Out chips */}
-                                      <div className="grid gap-2 mb-2 grid-cols-2">
-                                        <div className="rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 px-2.5 py-1.5 flex flex-col justify-center">
-                                          <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                                            In
+                                      {(() => {
+                                        const overnight = getOvernightDates(rec);
+                                        return (
+                                          <div className="grid gap-2 mb-2 grid-cols-2">
+                                            <div className="rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 px-2 py-1.5 flex flex-col justify-center">
+                                              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                                <span>In</span>
+                                                {overnight.isOvernight && overnight.inDateStr && (
+                                                  <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
+                                                    {overnight.inDateStr}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap tabular-nums mt-0.5">
+                                                {rec.checkIn ? fmtTime(rec.checkIn) : "—"}
+                                              </div>
+                                            </div>
+                                            <div className="rounded-xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/20 px-2 py-1.5 flex flex-col justify-center">
+                                              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                                                <span>Out</span>
+                                                {overnight.isOvernight && overnight.outDateStr && (
+                                                  <span className="text-[9px] font-bold text-rose-700 dark:text-rose-400">
+                                                    {overnight.outDateStr}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="text-xs font-bold text-rose-700 dark:text-rose-400 whitespace-nowrap tabular-nums mt-0.5">
+                                                {rec.checkOut ? fmtTime(rec.checkOut) : "—"}
+                                              </div>
+                                            </div>
                                           </div>
-                                          <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap tabular-nums">
-                                            {rec.checkIn ? fmtTime(rec.checkIn) : "—"}
-                                          </div>
-                                        </div>
-                                        <div className="rounded-xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/20 px-2.5 py-1.5 flex flex-col justify-center">
-                                          <div className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                                            Out
-                                          </div>
-                                          <div className="text-xs font-bold text-rose-700 dark:text-rose-400 whitespace-nowrap tabular-nums">
-                                            {rec.checkOut ? fmtTime(rec.checkOut) : "—"}
-                                          </div>
-                                        </div>
-                                      </div>
+                                        );
+                                      })()}
 
                                       {/* Worked Hours & OT footer */}
                                       {rec.workedHours != null && (
@@ -4980,76 +5072,100 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                               <div className="space-y-3">
                                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                                   <div className="rounded-xl border border-border bg-card p-3">
-                                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                                      Check In
-                                    </div>
-                                    <div className="mt-1.5 flex items-center justify-between gap-2">
-                                      <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
-                                        {fmtTime(selectedRecord.checkIn) || "—"}
-                                      </span>
-                                      {getCalendarLocationCode(
-                                        selectedRecord.note,
-                                        "check-in",
-                                      ) && (
-                                        <span
-                                          className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
-                                            getCalendarLocationCode(
+                                    {(() => {
+                                      const overnight = getOvernightDates(selectedRecord);
+                                      return (
+                                        <>
+                                          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                            <span>Check In</span>
+                                            {overnight.isOvernight && overnight.inDateStr && (
+                                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                                {overnight.inDateStr}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="mt-1.5 flex items-center justify-between gap-2">
+                                            <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
+                                              {fmtTime(selectedRecord.checkIn) || "—"}
+                                            </span>
+                                            {getCalendarLocationCode(
                                               selectedRecord.note,
                                               "check-in",
-                                            ) === "A"
-                                              ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                                              : getCalendarLocationCode(
+                                            ) && (
+                                              <span
+                                                className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+                                                  getCalendarLocationCode(
                                                     selectedRecord.note,
                                                     "check-in",
-                                                  ) === "UL"
-                                                ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
-                                                : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
-                                          }`}
-                                        >
-                                          {getCalendarLocationCode(
-                                            selectedRecord.note,
-                                            "check-in",
-                                          )}
-                                        </span>
-                                      )}
-                                    </div>
+                                                  ) === "A"
+                                                    ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                                                    : getCalendarLocationCode(
+                                                          selectedRecord.note,
+                                                          "check-in",
+                                                        ) === "UL"
+                                                      ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                                                      : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                                                }`}
+                                              >
+                                                {getCalendarLocationCode(
+                                                  selectedRecord.note,
+                                                  "check-in",
+                                                )}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
 
                                   <div className="rounded-xl border border-border bg-card p-3">
-                                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                                      Check Out
-                                    </div>
-                                    <div className="mt-1.5 flex items-center justify-between gap-2">
-                                      <span className="text-base font-bold text-rose-600 dark:text-rose-400">
-                                        {fmtTime(selectedRecord.checkOut) ||
-                                          "—"}
-                                      </span>
-                                      {getCalendarLocationCode(
-                                        selectedRecord.note,
-                                        "check-out",
-                                      ) && (
-                                        <span
-                                          className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
-                                            getCalendarLocationCode(
+                                    {(() => {
+                                      const overnight = getOvernightDates(selectedRecord);
+                                      return (
+                                        <>
+                                          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                            <span>Check Out</span>
+                                            {overnight.isOvernight && overnight.outDateStr && (
+                                              <span className="text-[10px] font-bold text-rose-700 dark:text-rose-400">
+                                                {overnight.outDateStr}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="mt-1.5 flex items-center justify-between gap-2">
+                                            <span className="text-base font-bold text-rose-600 dark:text-rose-400">
+                                              {fmtTime(selectedRecord.checkOut) ||
+                                                "—"}
+                                            </span>
+                                            {getCalendarLocationCode(
                                               selectedRecord.note,
                                               "check-out",
-                                              ) === "A"
-                                              ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                                              : getCalendarLocationCode(
+                                            ) && (
+                                              <span
+                                                className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+                                                  getCalendarLocationCode(
                                                     selectedRecord.note,
                                                     "check-out",
-                                                  ) === "UL"
-                                                ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
-                                                : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
-                                          }`}
-                                        >
-                                          {getCalendarLocationCode(
-                                            selectedRecord.note,
-                                            "check-out",
-                                          )}
-                                        </span>
-                                      )}
-                                    </div>
+                                                    ) === "A"
+                                                    ? "border-blue-300 dark:border-blue-800/40 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                                                    : getCalendarLocationCode(
+                                                          selectedRecord.note,
+                                                          "check-out",
+                                                        ) === "UL"
+                                                      ? "border-orange-300 dark:border-orange-800/40 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                                                      : "border-emerald-300 dark:border-emerald-800/40 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                                                }`}
+                                              >
+                                                {getCalendarLocationCode(
+                                                  selectedRecord.note,
+                                                  "check-out",
+                                                )}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
 
                                   <div className="rounded-xl border border-border bg-card p-3">
@@ -5292,31 +5408,50 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                                 ) : (
                                   <div className="space-y-1.5">
                                     {/* In & Out Grid */}
-                                    <div className="grid grid-cols-2 gap-1 text-[11px] font-semibold">
-                                      <div className="rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/50 dark:border-emerald-800/30 px-1.5 py-1 text-center">
-                                        <div className="text-[9px] uppercase tracking-wider text-emerald-700 dark:text-emerald-400 font-bold">In</div>
-                                        <div className="text-emerald-800 dark:text-emerald-200 font-bold truncate">
-                                          {fmtTime(rec.checkIn) || "—"}
-                                          {checkInLocationCode && (
-                                            <span className="ml-1 text-[8px] font-extrabold px-1 py-0.2 rounded bg-emerald-200/60 dark:bg-emerald-800/60 text-emerald-900 dark:text-emerald-100">
-                                              {checkInLocationCode}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
+                                    {(() => {
+                                      const overnight = getOvernightDates(rec);
+                                      return (
+                                        <div className="grid grid-cols-2 gap-1 text-[11px] font-semibold">
+                                          <div className="rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/50 dark:border-emerald-800/30 px-1.5 py-1 text-center">
+                                            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-emerald-700 dark:text-emerald-400 font-bold">
+                                              <span>In</span>
+                                              {overnight.isOvernight && overnight.inDateStr && (
+                                                <span className="text-[8px] font-bold text-emerald-800 dark:text-emerald-300">
+                                                  {overnight.inDateStr}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-emerald-800 dark:text-emerald-200 font-bold truncate mt-0.5">
+                                              {fmtTime(rec.checkIn) || "—"}
+                                              {checkInLocationCode && (
+                                                <span className="ml-1 text-[8px] font-extrabold px-1 py-0.2 rounded bg-emerald-200/60 dark:bg-emerald-800/60 text-emerald-900 dark:text-emerald-100">
+                                                  {checkInLocationCode}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
 
-                                      <div className="rounded-lg bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200/50 dark:border-rose-800/30 px-1.5 py-1 text-center">
-                                        <div className="text-[9px] uppercase tracking-wider text-rose-700 dark:text-rose-400 font-bold">Out</div>
-                                        <div className="text-rose-800 dark:text-rose-200 font-bold truncate">
-                                          {fmtTime(rec.checkOut) || "—"}
-                                          {checkOutLocationCode && (
-                                            <span className="ml-1 text-[8px] font-extrabold px-1 py-0.2 rounded bg-rose-200/60 dark:bg-rose-800/60 text-rose-900 dark:text-rose-100">
-                                              {checkOutLocationCode}
-                                            </span>
-                                          )}
+                                          <div className="rounded-lg bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200/50 dark:border-rose-800/30 px-1.5 py-1 text-center">
+                                            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-rose-700 dark:text-rose-400 font-bold">
+                                              <span>Out</span>
+                                              {overnight.isOvernight && overnight.outDateStr && (
+                                                <span className="text-[8px] font-bold text-rose-800 dark:text-rose-400">
+                                                  {overnight.outDateStr}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-rose-800 dark:text-rose-200 font-bold truncate mt-0.5">
+                                              {fmtTime(rec.checkOut) || "—"}
+                                              {checkOutLocationCode && (
+                                                <span className="ml-1 text-[8px] font-extrabold px-1 py-0.2 rounded bg-rose-200/60 dark:bg-rose-800/60 text-rose-900 dark:text-rose-100">
+                                                  {checkOutLocationCode}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
                                         </div>
-                                      </div>
-                                    </div>
+                                      );
+                                    })()}
 
                                     {/* Hours & OT strip */}
                                     <div className="flex items-center justify-between gap-1 px-2 py-1 rounded-lg bg-secondary/50 border border-border/60 text-[11px]">

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { exportStyledExcelWithLogo } from "../../lib/excelExportHelper.js";
 import {
   ArrowLeft,
   FolderKanban,
@@ -954,8 +955,8 @@ const DocumentsTab = ({ project, setProject }) => {
     return list;
   };
 
-  // ─── Export to Excel (.csv / .xls BOM) ───
-  const handleExportExcel = (catArg = null) => {
+  // ─── Export to Excel (.xlsx BOM with Root-based tabs) ───
+  const handleExportExcel = async (catArg = null) => {
     // If called directly by React onClick without args, catArg is a SyntheticEvent object!
     const targetCategory = typeof catArg === "string" ? catArg : null;
     let items = getAllProjectAllocatedItems();
@@ -974,68 +975,125 @@ const DocumentsTab = ({ project, setProject }) => {
       return;
     }
 
-    const folderTitle = targetCategory ? `Category: ${targetCategory}` : "All Project Categories";
-    const totalQty = items.reduce((acc, it) => acc + (it.quantity || 1), 0);
-
-    const escapeCsv = (val) => {
-      if (val === null || val === undefined) return '""';
-      const str = String(val).replace(/"/g, '""');
-      return `"${str}"`;
-    };
-
     const headers = [
       "S.No",
       "Root 1",
       "Root 2",
       "Root 3",
       "Root 4",
-      "Item",
-      "Qty",
+      "Item Name",
+      "SKU / Code",
+      "Allocated Qty",
       "Approved By",
     ];
 
-    const rows = items.map((it, idx) => [
+    // Group items by Root 1
+    const groupedByRoot1 = new Map();
+    items.forEach((it) => {
+      const r1 = it.root1 && it.root1 !== "—" ? it.root1 : "General";
+      if (!groupedByRoot1.has(r1)) {
+        groupedByRoot1.set(r1, []);
+      }
+      groupedByRoot1.get(r1).push(it);
+    });
+
+    const colWidths = [8, 18, 18, 18, 18, 30, 16, 14, 20];
+    const rightAlignCols = [7];
+    const centerAlignCols = [0];
+
+    const folderTitle = targetCategory ? `Category: ${targetCategory}` : "All Project Categories";
+    const totalQty = items.reduce((acc, it) => acc + Number(it.quantity || 1), 0);
+
+    const sheets = [];
+
+    // Master Consolidated BOM Tab
+    const masterRows = items.map((it, idx) => [
       idx + 1,
-      escapeCsv(it.root1 || "—"),
-      escapeCsv(it.root2 || "—"),
-      escapeCsv(it.root3 || "—"),
-      escapeCsv(it.root4 || "—"),
-      escapeCsv(it.cleanName ? `${it.cleanName}${it.prodId ? ` (${it.prodId})` : ""}` : "N/A"),
-      it.quantity,
-      escapeCsv(it.approvedByName || "Admin"),
+      it.root1 || "—",
+      it.root2 || "—",
+      it.root3 || "—",
+      it.root4 || "—",
+      it.cleanName || "N/A",
+      it.prodId || "—",
+      Number(it.quantity || 1),
+      it.approvedByName || "Admin",
     ]);
 
-    const totalRow = [
+    const masterSubtotal = [
       "",
       "",
       "",
       "",
       "",
-      '"TOTAL ALLOCATED UNITS:"',
+      "GRAND TOTAL ALLOCATED UNITS:",
+      "",
       totalQty,
-      '""',
+      "",
     ];
 
-    const csvContent =
-      "\uFEFF" +
-      `"PROJECT ALLOCATED INVENTORY & BOM REPORT"\r\n` +
-      `"Project:","${(project?.name || "Project").replace(/"/g, '""')}"\r\n` +
-      `"Project Code:","${(project?.code || "—").replace(/"/g, '""')}"\r\n` +
-      `"Category Scope:","${folderTitle.replace(/"/g, '""')}"\r\n` +
-      `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\r\n\r\n` +
-      [headers.join(","), ...rows.map((r) => r.join(",")), totalRow.join(",")].join("\r\n");
+    sheets.push({
+      name: "Master BOM",
+      title: "Project Bill of Materials (BOM)",
+      subtitle: `Project: ${project?.name || "Project"} (${project?.code || "—"})  |  Customer: ${project?.customer?.fullName || project?.customer?.name || "N/A"}  |  Scope: ${folderTitle}  |  Allocated Units: ${totalQty}`,
+      headers,
+      rows: masterRows,
+      subtotalRow: masterSubtotal,
+      colWidths,
+      rightAlignCols,
+      centerAlignCols,
+    });
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
+    // Individual Root Level 1 Tabs
+    groupedByRoot1.forEach((groupItems, r1Name) => {
+      let subtotalQty = 0;
+      const catRows = groupItems.map((it, idx) => {
+        const q = Number(it.quantity || 1);
+        subtotalQty += q;
+        return [
+          idx + 1,
+          it.root1 || "—",
+          it.root2 || "—",
+          it.root3 || "—",
+          it.root4 || "—",
+          it.cleanName || "N/A",
+          it.prodId || "—",
+          q,
+          it.approvedByName || "Admin",
+        ];
+      });
+
+      const catSubtotal = [
+        "",
+        "",
+        "",
+        "",
+        "",
+        `SUBTOTAL (${r1Name}):`,
+        "",
+        subtotalQty,
+        "",
+      ];
+
+      sheets.push({
+        name: r1Name,
+        title: `Category BOM: ${r1Name}`,
+        subtitle: `Project: ${project?.name || "Project"}  |  Category: ${r1Name}  |  Active SKUs: ${groupItems.length}  |  Units: ${subtotalQty}`,
+        headers,
+        rows: catRows,
+        subtotalRow: catSubtotal,
+        colWidths,
+        rightAlignCols,
+        centerAlignCols,
+      });
+    });
+
     const catSuffix = targetCategory ? `_${targetCategory.replace(/\s+/g, "_")}` : "";
-    link.download = `${project?.code || "PROJECT"}${catSuffix}_BOM_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success(`Excel sheet downloaded for ${targetCategory || "all categories"}!`);
+    await exportStyledExcelWithLogo({
+      filename: `${project?.code || "PROJECT"}${catSuffix}_BOM_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      sheets,
+    });
+    toast.success(`Excel workbook with company logo & root tabs downloaded for ${targetCategory || "all categories"}!`);
+    toast.success(`Excel workbook with root-based tabs downloaded for ${targetCategory || "all categories"}!`);
   };
 
   // ─── Export to PDF (Printable Formatted View) ───
@@ -1066,80 +1124,217 @@ const DocumentsTab = ({ project, setProject }) => {
     const folderTitle = targetCategory ? `Folder: ${targetCategory}` : "All Category Folders (BOM)";
     const totalQty = items.reduce((acc, it) => acc + (it.quantity || 1), 0);
 
+    // Group items by Root 1
+    const groupedByRoot1 = new Map();
+    items.forEach((it) => {
+      const r1 = it.root1 || "Unassigned";
+      if (!groupedByRoot1.has(r1)) {
+        groupedByRoot1.set(r1, []);
+      }
+      groupedByRoot1.get(r1).push(it);
+    });
+
+    let globalItemIndex = 0;
+    const rootSectionsHtml = Array.from(groupedByRoot1.entries())
+      .map(([r1Name, groupItems], groupIdx) => {
+        const groupUnits = groupItems.reduce((acc, it) => acc + (it.quantity || 1), 0);
+
+        const groupRowsHtml = groupItems
+          .map((it) => {
+            globalItemIndex += 1;
+            return `
+              <tr>
+                <td style="text-align: center; color: #64748b;">${globalItemIndex}</td>
+                <td style="color: #1e3a8a; font-weight: 700;">${it.root1}</td>
+                <td style="color: #4338ca;">${it.root2}</td>
+                <td style="color: #b45309;">${it.root3}</td>
+                <td style="color: #be123c;">${it.root4}</td>
+                <td>
+                  <strong>${it.cleanName}</strong>
+                  ${it.prodId ? `<div style="font-size: 10px; color: #64748b; font-family: monospace;">(${it.prodId})</div>` : ""}
+                </td>
+                <td class="qty">${it.quantity}</td>
+                <td style="font-weight: 600; color: #047857;">${it.approvedByName || "Admin"}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        return `
+          <div class="root-section ${groupIdx > 0 ? 'page-break' : ''}">
+            <div class="root-banner">
+              <div class="banner-left">
+                <span class="root-badge">ROOT LEVEL 1</span>
+                <span class="root-name">${r1Name}</span>
+              </div>
+              <div class="banner-right">
+                <span>SKUs: <strong>${groupItems.length}</strong></span>
+                <span>Units: <strong>${groupUnits}</strong></span>
+                <button class="no-print btn-print-cat" onclick="printCategorySection('${r1Name.replace(/'/g, "\\'")}')" title="Print/Download PDF for ${r1Name}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download ${r1Name} PDF
+                </button>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 35px; text-align: center;">S.No</th>
+                  <th>Root 1</th>
+                  <th>Root 2</th>
+                  <th>Root 3</th>
+                  <th>Root 4</th>
+                  <th>Item</th>
+                  <th style="width: 60px; text-align: center;">Qty</th>
+                  <th>Approved By</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${groupRowsHtml}
+                <tr class="subtotal-row">
+                  <td colspan="6" style="text-align: right; padding: 8px; font-weight: bold; color: #475569;">SUBTOTAL FOR ROOT 1 (${r1Name}):</td>
+                  <td style="text-align: center; color: #047857; font-weight: 800;">${groupUnits}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        `;
+      })
+      .join("");
+
     const html = `
       <!DOCTYPE html>
       <html>
         <head>
           <title>${project?.name || "Project"} - ${folderTitle}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #1e293b; }
-            .header { border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
-            .title { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0; }
-            .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 15px; }
-            th { background-color: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; padding: 8px 6px; border: 1px solid #cbd5e1; text-align: left; }
-            td { padding: 8px 6px; border: 1px solid #e2e8f0; vertical-align: top; }
-            .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-weight: 700; background: #e0f2fe; color: #0369a1; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; color: #1e293b; background: #fff; }
+            .header {
+              border-bottom: 2px solid #0284c7;
+              padding-bottom: 14px;
+              margin-bottom: 16px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .company-brand-area {
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .company-logo-img {
+              height: 52px;
+              width: auto;
+              max-width: 160px;
+              object-fit: contain;
+            }
+            .title { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
+            .subtitle { font-size: 11px; color: #64748b; margin: 2px 0 0 0; }
+            .meta { font-size: 11px; color: #64748b; text-align: right; }
+            .root-section { margin-bottom: 24px; }
+            .root-banner {
+              background: #f0f9ff;
+              border-left: 4px solid #0284c7;
+              padding: 8px 12px;
+              margin-bottom: 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-radius: 0 6px 6px 0;
+            }
+            .banner-left { display: flex; align-items: center; gap: 8px; }
+            .root-badge {
+              font-size: 9px;
+              font-weight: 800;
+              background: #0284c7;
+              color: #fff;
+              padding: 2px 6px;
+              border-radius: 4px;
+              letter-spacing: 0.05em;
+            }
+            .root-name { font-size: 14px; font-weight: 800; color: #0369a1; }
+            .banner-right {
+              font-size: 11px;
+              color: #475569;
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .btn-print-cat {
+              background: #0284c7;
+              color: #ffffff;
+              border: none;
+              border-radius: 4px;
+              padding: 4px 10px;
+              font-size: 10px;
+              font-weight: 700;
+              cursor: pointer;
+              display: inline-flex;
+              align-items: center;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+              transition: background 0.15s;
+            }
+            .btn-print-cat:hover {
+              background: #0369a1;
+            }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 12px; }
+            th { background-color: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; padding: 8px 6px; border: 1px solid #cbd5e1; text-align: left; font-size: 10px; }
+            td { padding: 7px 6px; border: 1px solid #e2e8f0; vertical-align: middle; }
             .qty { font-weight: 800; color: #047857; text-align: center; }
-            .roots { color: #64748b; font-size: 10px; }
-            .total-row { font-weight: bold; background: #f8fafc; font-size: 12px; }
+            .subtotal-row { background: #f8fafc; font-weight: bold; }
             @media print {
               body { padding: 0; }
-              @page { size: landscape; margin: 10mm; }
+              @page { size: A4 landscape; margin: 10mm; }
+              .page-break {
+                page-break-before: always;
+                break-before: page;
+                margin-top: 20px;
+              }
             }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1 class="title">${project?.name || "Project"} — ${folderTitle}</h1>
+            <div class="company-brand-area">
+              <img src="/techwareLogo.png" alt="Techware Automation" class="company-logo-img" onerror="this.src='/techwareLogo.svg'" />
+              <div>
+                <h1 class="title">${project?.name || "Project"} — ${folderTitle}</h1>
+                <p class="subtitle">Techware Automation (India) — Bill of Materials (BOM)</p>
+              </div>
+            </div>
             <div class="meta">
-              <strong>Project Code:</strong> ${project?.code || "—"} &nbsp;|&nbsp;
-              <strong>Customer:</strong> ${project?.customer?.fullName || project?.customer?.name || "N/A"} &nbsp;|&nbsp;
-              <strong>Allocated SKUs:</strong> ${items.length} &nbsp;|&nbsp;
-              <strong>Generated:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}
+              <div><strong>Project Code:</strong> ${project?.code || "—"}</div>
+              <div><strong>Customer:</strong> ${project?.customer?.fullName || project?.customer?.name || "N/A"}</div>
+              <div><strong>Root 1 Groups:</strong> ${groupedByRoot1.size} &nbsp;|&nbsp; <strong>SKUs:</strong> ${items.length}</div>
+              <div><strong>Generated:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
             </div>
           </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 35px; text-align: center;">S.No</th>
-                <th>Root 1</th>
-                <th>Root 2</th>
-                <th>Root 3</th>
-                <th>Root 4</th>
-                <th>Item</th>
-                <th style="width: 60px; text-align: center;">Qty</th>
-                <th>Approved By</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items
-                .map(
-                  (it, idx) => `
-                <tr>
-                  <td style="text-align: center; color: #64748b;">${idx + 1}</td>
-                  <td style="color: #1e3a8a; font-weight: 600;">${it.root1}</td>
-                  <td style="color: #4338ca;">${it.root2}</td>
-                  <td style="color: #b45309;">${it.root3}</td>
-                  <td style="color: #be123c;">${it.root4}</td>
-                  <td>
-                    <strong>${it.cleanName}</strong>
-                    ${it.prodId ? `<div style="font-size: 10px; color: #64748b; font-family: monospace;">(${it.prodId})</div>` : ""}
-                  </td>
-                  <td class="qty">${it.quantity}</td>
-                  <td style="font-weight: 600; color: #047857;">${it.approvedByName || "Admin"}</td>
-                </tr>
-              `
-                )
-                .join("")}
-              <tr class="total-row">
-                <td colspan="6" style="text-align: right; padding: 10px;">Total Allocated Units:</td>
-                <td style="text-align: center; color: #047857;">${totalQty}</td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
+          ${rootSectionsHtml}
+
+          <script>
+            function printCategorySection(categoryName) {
+              var sections = document.querySelectorAll('.root-section');
+              sections.forEach(function(s) {
+                var nameEl = s.querySelector('.root-name');
+                if (nameEl && nameEl.innerText.trim() === categoryName.trim()) {
+                  s.style.display = 'block';
+                  s.classList.remove('page-break');
+                } else {
+                  s.style.display = 'none';
+                }
+              });
+              window.print();
+              setTimeout(function() {
+                sections.forEach(function(s, idx) {
+                  s.style.display = 'block';
+                  if (idx > 0) s.classList.add('page-break');
+                });
+              }, 1000);
+            }
+          </script>
         </body>
       </html>
     `;

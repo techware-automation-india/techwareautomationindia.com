@@ -1931,29 +1931,46 @@ router.post(["/my", "/"], async (req, res) => {
       });
     }
 
+    const isOvernightCorrection = Boolean(
+      correction &&
+      (correction.isOvernight ||
+        (correction.checkOutDate && correction.date && correction.checkOutDate > correction.date))
+    );
+
+    // Auto-approve if request is submitted by ADMIN or if it is an OVERNIGHT duty request
+    const shouldAutoApprove = isAdminUser || isOvernightCorrection;
+
     let createdRequest = await prisma.employeeRequest.create({
       data: {
         employeeId: employee.id,
         type: parsed.data.type,
         subject: parsed.data.subject,
         description: finalDescription,
-        status: isAdminUser ? "APPROVED" : "PENDING",
-        ...(isAdminUser && {
-          reviewNote: "Auto-approved (Admin request does not require approval).",
+        status: shouldAutoApprove ? "APPROVED" : "PENDING",
+        ...(shouldAutoApprove && {
+          reviewNote: isAdminUser
+            ? "Auto-approved (Admin request does not require approval)."
+            : "Auto-approved (Overnight duty request does not require approval).",
           reviewedById: req.user.id,
           reviewedAt: new Date(),
         }),
       },
     });
 
-    // If Admin submits a CORRECTION (Forgot Punch / Time Edit), automatically update attendance immediately
-    if (isAdminUser && correction && parsed.data.type === "CORRECTION") {
+    // If Admin OR Overnight Duty submits a CORRECTION (Forgot Punch / Time Edit), automatically update attendance immediately
+    if (shouldAutoApprove && correction && parsed.data.type === "CORRECTION") {
       try {
         const dateKey = getDateKey(correction.date);
         const attendanceRange = dateKey ? getAttendanceDayRange(dateKey) : null;
         if (attendanceRange) {
           const requestedCheckIn = correction.checkInTime ? timeToDate(dateKey, correction.checkInTime) : null;
-          const requestedCheckOut = correction.checkOutTime ? timeToDate(dateKey, correction.checkOutTime) : null;
+          let checkOutDateKey = correction.checkOutDate || dateKey;
+          if (!correction.checkOutDate && isOvernightCorrection) {
+            const nextDate = new Date(`${dateKey}T12:00:00+05:30`);
+            nextDate.setDate(nextDate.getDate() + 1);
+            checkOutDateKey = nextDate.toISOString().slice(0, 10);
+          }
+          const requestedCheckOut = correction.checkOutTime ? timeToDate(checkOutDateKey, correction.checkOutTime) : null;
 
           const existingAttendance = await prisma.attendance.findFirst({
             where: {
@@ -1977,6 +1994,16 @@ router.post(["/my", "/"], async (req, res) => {
           }
 
           const workedHours = calculateWorkedHours(finalCheckIn, finalCheckOut);
+          const isHolOrSun = Boolean(attendanceRange.start && new Date(attendanceRange.start).getDay() === 0);
+          const overtimeHours = calculateOvertimeHours(workedHours, isHolOrSun);
+
+          const overnightShiftDetail = Boolean(isOvernightCorrection || checkOutDateKey > dateKey)
+            ? ` (Overnight shift: In on ${dateKey}, Out on ${checkOutDateKey})`
+            : "";
+
+          const autoNoteReason = isAdminUser
+            ? `Admin Forgot Punch auto-approved. Reason: ${correction.reason || "Forgot Punch request."}${overnightShiftDetail}`
+            : `Overnight duty manual attendance auto-approved. Reason: ${correction.reason || "Overnight shift."}${overnightShiftDetail}`;
 
           if (existingAttendance) {
             await prisma.attendance.update({
@@ -1985,10 +2012,11 @@ router.post(["/my", "/"], async (req, res) => {
                 checkIn: finalCheckIn,
                 checkOut: finalCheckOut,
                 workedHours,
+                overtimeHours,
                 status: "PRESENT",
                 note: [
-                  existingAttendance.note || "",
-                  `Admin Forgot Punch auto-approved. Reason: ${correction.reason || "Forgot Punch request."}`,
+                  existingAttendance.note ? existingAttendance.note.replace(/\.?\s*Pending admin approval\.?/gi, ". Approved by admin.") : "",
+                  autoNoteReason,
                 ].filter(Boolean).join(" "),
               },
             });
@@ -2000,14 +2028,15 @@ router.post(["/my", "/"], async (req, res) => {
                 checkIn: finalCheckIn,
                 checkOut: finalCheckOut,
                 workedHours,
+                overtimeHours,
                 status: "PRESENT",
-                note: `Admin Forgot Punch auto-approved. Reason: ${correction.reason || "Forgot Punch request."}`,
+                note: autoNoteReason,
               },
             });
           }
         }
       } catch (attErr) {
-        console.warn("⚠️ Failed to auto-apply attendance for admin correction:", attErr);
+        console.warn("⚠️ Failed to auto-apply attendance for correction:", attErr);
       }
     }
 
@@ -2041,15 +2070,17 @@ router.post(["/my", "/"], async (req, res) => {
     console.log(
       "✅ REQUEST CREATED:",
       createdRequest.id,
-      isAdminUser ? "(AUTO-APPROVED)" : "(PENDING)"
+      shouldAutoApprove ? "(AUTO-APPROVED)" : "(PENDING)"
     );
 
     return res.status(201).json({
-      message: isAdminUser
-        ? "Request submitted and auto-approved."
+      message: shouldAutoApprove
+        ? (isOvernightCorrection
+            ? "Overnight duty attendance recorded directly (no approval required)."
+            : "Request submitted and auto-approved.")
         : "Request submitted successfully.",
       request: createdRequest,
-      autoApproved: isAdminUser,
+      autoApproved: shouldAutoApprove,
     });
   } catch (error) {
     console.error(
@@ -3708,6 +3739,11 @@ async function validateInventoryStockAvailability(request, approvedMap = null) {
           |--------------------------------------------------------------------------
           */
 
+          const isCrossDayApproved = checkOutDateKey > dateKey || correction.isOvernight;
+          const overnightApproveDetail = isCrossDayApproved
+            ? ` (Overnight shift: In on ${dateKey}, Out on ${checkOutDateKey})`
+            : "";
+
           if (attendance) {
             updatedAttendance =
               await transaction.attendance.update(
@@ -3734,7 +3770,7 @@ async function validateInventoryStockAvailability(request, approvedMap = null) {
                       attendance.note
                         ? attendance.note.replace(/\.?\s*Pending admin approval\.?/gi, ". Approved by admin.")
                         : "",
-                      `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}`,
+                      `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}${overnightApproveDetail}`,
                       note || "",
                     ]
                       .filter(Boolean)
@@ -3773,7 +3809,7 @@ async function validateInventoryStockAvailability(request, approvedMap = null) {
                       "PRESENT",
 
                     note: [
-                      `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}`,
+                      `Forgot Punch approved. Reason: ${correction.reason || "Forgot Punch request."}${overnightApproveDetail}`,
                       note || "",
                     ]
                       .filter(Boolean)

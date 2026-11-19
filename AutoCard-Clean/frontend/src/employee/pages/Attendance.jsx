@@ -349,6 +349,33 @@ const fmtDate = (v) => {
   }).format(date);
 };
 
+const getOvernightDates = (record) => {
+  if (!record) return { isOvernight: false, checkInDateKey: null, checkOutDateKey: null, inDateStr: null, outDateStr: null };
+  const inDateKey = record.checkIn ? formatDateKey(record.checkIn) : null;
+  const outDateKey = record.checkOut ? formatDateKey(record.checkOut) : null;
+
+  const noteMatch = String(record.note || "").match(/Overnight shift.*?In on (\d{4}-\d{2}-\d{2}).*?Out on (\d{4}-\d{2}-\d{2})/i);
+  let effectiveInKey = inDateKey;
+  let effectiveOutKey = outDateKey;
+  let isOvernight = false;
+
+  if (noteMatch) {
+    isOvernight = true;
+    effectiveInKey = effectiveInKey || noteMatch[1];
+    effectiveOutKey = effectiveOutKey || noteMatch[2];
+  } else if (effectiveInKey && effectiveOutKey && effectiveInKey !== effectiveOutKey) {
+    isOvernight = true;
+  }
+
+  return {
+    isOvernight,
+    checkInDateKey: effectiveInKey,
+    checkOutDateKey: effectiveOutKey,
+    inDateStr: effectiveInKey ? fmtDate(effectiveInKey) : null,
+    outDateStr: effectiveOutKey ? fmtDate(effectiveOutKey) : null,
+  };
+};
+
 const fmtDay = (v) => {
   if (!v) return "—";
 
@@ -789,13 +816,27 @@ const Attendance = () => {
                       </div>
                       {selectedRecordForNote.checkIn && (
                         <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">Check-in Time</div>
+                          <div className="flex items-center justify-between text-[10px] uppercase font-semibold text-muted-foreground">
+                            <span>Check-in Time</span>
+                            {getOvernightDates(selectedRecordForNote).isOvernight && getOvernightDates(selectedRecordForNote).inDateStr && (
+                              <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                                {getOvernightDates(selectedRecordForNote).inDateStr}
+                              </span>
+                            )}
+                          </div>
                           <div className="font-bold text-foreground mt-0.5">{fmtTime(selectedRecordForNote.checkIn)}</div>
                         </div>
                       )}
                       {selectedRecordForNote.checkOut && (
                         <div className="rounded-lg bg-background p-2.5 border border-border/50">
-                          <div className="text-[10px] uppercase font-semibold text-muted-foreground">Check-out Time</div>
+                          <div className="flex items-center justify-between text-[10px] uppercase font-semibold text-muted-foreground">
+                            <span>Check-out Time</span>
+                            {getOvernightDates(selectedRecordForNote).isOvernight && getOvernightDates(selectedRecordForNote).outDateStr && (
+                              <span className="font-bold text-rose-700 dark:text-rose-400">
+                                {getOvernightDates(selectedRecordForNote).outDateStr}
+                              </span>
+                            )}
+                          </div>
                           <div className="font-bold text-foreground mt-0.5">{fmtTime(selectedRecordForNote.checkOut)}</div>
                         </div>
                       )}
@@ -1050,19 +1091,40 @@ const Attendance = () => {
                           </span>
                         </td>
 
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <LogIn className="h-3.5 w-3.5 text-emerald-600" />
-                            {fmtTime(r.checkIn)}
-                          </span>
-                        </td>
+                        {(() => {
+                          const overnight = getOvernightDates(r);
+                          return (
+                            <>
+                              <td className="px-5 py-3 whitespace-nowrap">
+                                <div className="flex flex-col">
+                                  <span className="flex items-center gap-1.5">
+                                    <LogIn className="h-3.5 w-3.5 text-emerald-600" />
+                                    {fmtTime(r.checkIn)}
+                                  </span>
+                                  {overnight.isOvernight && overnight.inDateStr && (
+                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 ml-5">
+                                      {overnight.inDateStr}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
 
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <LogOut className="h-3.5 w-3.5 text-rose-600" />
-                            {fmtTime(r.checkOut)}
-                          </span>
-                        </td>
+                              <td className="px-5 py-3 whitespace-nowrap">
+                                <div className="flex flex-col">
+                                  <span className="flex items-center gap-1.5">
+                                    <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                                    {fmtTime(r.checkOut)}
+                                  </span>
+                                  {overnight.isOvernight && overnight.outDateStr && (
+                                    <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 ml-5">
+                                      {overnight.outDateStr}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </>
+                          );
+                        })()}
 
                         <td className="px-5 py-3 font-medium">
                           {totalDailyWorkedHours > 0
@@ -1270,19 +1332,40 @@ const Attendance = () => {
                         {fmtDate(r.date)}
                       </td>
 
-                      <td className="px-5 py-4 whitespace-nowrap">
-                        <span className="flex items-center gap-1.5">
-                          <LogIn className="h-3.5 w-3.5 text-emerald-600" />
-                          {fmtTime(r.checkIn)}
-                        </span>
-                      </td>
+                      {(() => {
+                        const overnight = getOvernightDates(r);
+                        return (
+                          <>
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span className="flex items-center gap-1.5">
+                                  <LogIn className="h-3.5 w-3.5 text-emerald-600" />
+                                  {fmtTime(r.checkIn)}
+                                </span>
+                                {overnight.isOvernight && overnight.inDateStr && (
+                                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 ml-5">
+                                    {overnight.inDateStr}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
 
-                      <td className="px-5 py-4 whitespace-nowrap">
-                        <span className="flex items-center gap-1.5">
-                          <LogOut className="h-3.5 w-3.5 text-rose-600" />
-                          {fmtTime(r.checkOut)}
-                        </span>
-                      </td>
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span className="flex items-center gap-1.5">
+                                  <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                                  {fmtTime(r.checkOut)}
+                                </span>
+                                {overnight.isOvernight && overnight.outDateStr && (
+                                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 ml-5">
+                                    {overnight.outDateStr}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </>
+                        );
+                      })()}
 
                       <td className="px-5 py-4 font-medium">
                         {fmtWorkedHours(
@@ -1758,27 +1841,46 @@ const Attendance = () => {
                           {hasPunchData && (
                             <>
                               {/* In / Out */}
-                              <div className="grid grid-cols-2 gap-1.5">
-                                <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1.5">
-                                  <div className="flex items-center gap-1 text-[9px] font-semibold text-emerald-700">
-                                    <LogIn className="h-3 w-3" />
-                                    IN
-                                  </div>
-                                  <div className="text-[10px] font-bold text-emerald-900 mt-0.5 truncate">
-                                    {fmtTime(r.checkIn)}
-                                  </div>
-                                </div>
+                              {(() => {
+                                const overnight = getOvernightDates(r);
+                                return (
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1.5">
+                                      <div className="flex items-center justify-between text-[9px] font-semibold text-emerald-700">
+                                        <span className="flex items-center gap-1">
+                                          <LogIn className="h-3 w-3" />
+                                          IN
+                                        </span>
+                                        {overnight.isOvernight && overnight.inDateStr && (
+                                          <span className="text-[8px] font-bold text-emerald-800 dark:text-emerald-300">
+                                            {overnight.inDateStr}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[10px] font-bold text-emerald-900 mt-0.5 truncate">
+                                        {fmtTime(r.checkIn)}
+                                      </div>
+                                    </div>
 
-                                <div className="rounded-lg bg-rose-50 border border-rose-100 px-2 py-1.5">
-                                  <div className="flex items-center gap-1 text-[9px] font-semibold text-rose-700">
-                                    <LogOut className="h-3 w-3" />
-                                    OUT
+                                    <div className="rounded-lg bg-rose-50 border border-rose-100 px-2 py-1.5">
+                                      <div className="flex items-center justify-between text-[9px] font-semibold text-rose-700">
+                                        <span className="flex items-center gap-1">
+                                          <LogOut className="h-3 w-3" />
+                                          OUT
+                                        </span>
+                                        {overnight.isOvernight && overnight.outDateStr && (
+                                          <span className="text-[8px] font-bold text-rose-800 dark:text-rose-300">
+                                            {overnight.outDateStr}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[10px] font-bold text-rose-900 mt-0.5 truncate">
+                                        {fmtTime(r.checkOut)}
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="text-[10px] font-bold text-rose-900 mt-0.5 truncate">
-                                    {fmtTime(r.checkOut)}
-                                  </div>
-                                </div>
-                              </div>
+                                );
+                              })()}
 
                               {/* Hours */}
                               <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/50 px-2 py-1.5">

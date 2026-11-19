@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { exportStyledExcelWithLogo } from "../../../lib/excelExportHelper.js";
 import {
   Folder, FolderPlus, FolderTree, Package, Plus, Search, ChevronRight,
   ChevronDown, ArrowLeft, Edit3, Trash2, Loader2, Layers, AlertCircle,
@@ -465,13 +466,34 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         }
       }
 
-      // Filter items belonging to target category or all inward items
-      const targetItems = isRootLevel
+      // Filter items belonging to target category or all inward items, respecting active search and levelFilter
+      let targetItems = isRootLevel
         ? allInwardItems
         : allInwardItems.filter((i) => (i.categoryId && targetCatIds.has(i.categoryId)) || i.categoryRef?.id === targetCategory.id);
 
+      if (levelFilter !== "all") {
+        targetItems = targetItems.filter((i) => {
+          const itemLevel = i.categoryRef?.level ? String(i.categoryRef.level) : "1";
+          return itemLevel === String(levelFilter);
+        });
+      }
+
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        targetItems = targetItems.filter((i) => {
+          const nameMatch = (i.name || "").toLowerCase().includes(q);
+          const codeMatch = ((i.code || "") && (i.code || "").toLowerCase().includes(q)) ||
+                            ((i.sku || "") && (i.sku || "").toLowerCase().includes(q));
+          const compMatch = (i.companyName || "").toLowerCase().includes(q);
+          const vendMatch = (i.vendorName || "").toLowerCase().includes(q);
+          const locMatch = ((i.location || "") && (i.location || "").toLowerCase().includes(q)) ||
+                           ((i.warehouse || "") && (i.warehouse || "").toLowerCase().includes(q));
+          return nameMatch || codeMatch || compMatch || vendMatch || locMatch;
+        });
+      }
+
       if (!targetItems || targetItems.length === 0) {
-        toast.info(`No items found under ${isRootLevel ? "Root Inventory" : targetCategory.name} to export.`);
+        toast.info(`No items found matching the current filter under ${isRootLevel ? "Root Inventory" : targetCategory.name} to export.`);
         return;
       }
 
@@ -510,61 +532,120 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         "Root 2",
         "Root 3",
         "Root 4",
-        "Item",
-        "Qty",
-        "Min Qty",
+        "Item Name",
+        "SKU / Code",
+        "Quantity",
+        "Min Stock",
         "Location",
       ];
 
-      const rows = targetItems.map((item, idx) => {
+      // Group items by Root 1
+      const groupedByRoot1 = new Map();
+      targetItems.forEach((item) => {
         const roots = resolveRoots(item);
-        const qty = Number(item.quantity || 0);
-        const minS = Number(item.minStock || 5);
+        const r1Key = roots.r1 && roots.r1 !== "—" ? roots.r1 : "General";
+        if (!groupedByRoot1.has(r1Key)) {
+          groupedByRoot1.set(r1Key, []);
+        }
+        groupedByRoot1.get(r1Key).push({ item, roots });
+      });
 
+      const colWidths = [8, 18, 18, 18, 18, 32, 16, 12, 12, 22];
+      const rightAlignCols = [7, 8];
+      const centerAlignCols = [0];
+
+      const sheets = [];
+
+      // Sheet 1: Master Consolidated
+      const masterRows = targetItems.map((item, idx) => {
+        const roots = resolveRoots(item);
         return [
           idx + 1,
-          escapeCsv(roots.r1),
-          escapeCsv(roots.r2),
-          escapeCsv(roots.r3),
-          escapeCsv(roots.r4),
-          escapeCsv(item.name ? `${item.name}${item.code ? ` (${item.code})` : ""}` : "N/A"),
-          qty,
-          minS,
-          escapeCsv(getExactLocation(item)),
-        ].join(",");
+          roots.r1,
+          roots.r2,
+          roots.r3,
+          roots.r4,
+          item.name || "—",
+          item.code || item.sku || "—",
+          Number(item.quantity || 0),
+          Number(item.minStock || 5),
+          getExactLocation(item),
+        ];
       });
 
       const totalUnits = targetItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
-      const totalRow = [
+      const masterSubtotal = [
         "",
         "",
         "",
         "",
         "",
-        '"TOTAL QUANTITY:"',
+        "GRAND TOTAL QUANTITY:",
+        "",
         totalUnits,
-        '""',
-        '""',
-      ].join(",");
+        "",
+        "",
+      ];
 
-      const csvContent =
-        "\uFEFF" +
-        `"TECHWARE AUTOMATION — INVENTORY CATALOG REPORT"\r\n` +
-        `"Category Scope:","${isRootLevel ? "All Categories" : targetCategory.name}"\r\n` +
-        `"Total SKUs:","${targetItems.length}"\r\n` +
-        `"Export Date:","${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}"\r\n\r\n` +
-        [headers.join(","), ...rows, totalRow].join("\r\n");
+      sheets.push({
+        name: "All Categories",
+        title: "Central Inventory Master Catalog",
+        subtitle: `Scope: ${isRootLevel ? "All Categories" : targetCategory.name}  |  Total SKUs: ${targetItems.length}`,
+        headers,
+        rows: masterRows,
+        subtotalRow: masterSubtotal,
+        colWidths,
+        rightAlignCols,
+        centerAlignCols,
+      });
 
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `Inventory_${categoryName}_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast.success(`Inventory exported to Excel for ${isRootLevel ? "Root Level" : targetCategory.name}!`);
+      // Individual Root Level 1 Category Tabs
+      groupedByRoot1.forEach((entries, r1Name) => {
+        const catRows = entries.map(({ item, roots }, idx) => [
+          idx + 1,
+          roots.r1,
+          roots.r2,
+          roots.r3,
+          roots.r4,
+          item.name || "—",
+          item.code || item.sku || "—",
+          Number(item.quantity || 0),
+          Number(item.minStock || 5),
+          getExactLocation(item),
+        ]);
+
+        const catUnits = entries.reduce((acc, { item }) => acc + Number(item.quantity || 0), 0);
+        const catSubtotal = [
+          "",
+          "",
+          "",
+          "",
+          "",
+          `SUBTOTAL (${r1Name}):`,
+          "",
+          catUnits,
+          "",
+          "",
+        ];
+
+        sheets.push({
+          name: r1Name,
+          title: `Category Catalog: ${r1Name}`,
+          subtitle: `Category: ${r1Name}  |  Total SKUs: ${entries.length}  |  Units: ${catUnits}`,
+          headers,
+          rows: catRows,
+          subtotalRow: catSubtotal,
+          colWidths,
+          rightAlignCols,
+          centerAlignCols,
+        });
+      });
+
+      await exportStyledExcelWithLogo({
+        filename: `Inventory_${categoryName}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheets,
+      });
+      toast.success(`Inventory exported to Excel with company logo & root tabs!`);
     } catch (err) {
       console.error("Export Excel error:", err);
       toast.error("Failed to export Excel.");
@@ -592,12 +673,33 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
         }
       }
 
-      const targetItems = isRootLevel
+      let targetItems = isRootLevel
         ? allInwardItems
         : allInwardItems.filter((i) => (i.categoryId && targetCatIds.has(i.categoryId)) || i.categoryRef?.id === targetCategory.id);
 
+      if (levelFilter !== "all") {
+        targetItems = targetItems.filter((i) => {
+          const itemLevel = i.categoryRef?.level ? String(i.categoryRef.level) : "1";
+          return itemLevel === String(levelFilter);
+        });
+      }
+
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        targetItems = targetItems.filter((i) => {
+          const nameMatch = (i.name || "").toLowerCase().includes(q);
+          const codeMatch = ((i.code || "") && (i.code || "").toLowerCase().includes(q)) ||
+                            ((i.sku || "") && (i.sku || "").toLowerCase().includes(q));
+          const compMatch = (i.companyName || "").toLowerCase().includes(q);
+          const vendMatch = (i.vendorName || "").toLowerCase().includes(q);
+          const locMatch = ((i.location || "") && (i.location || "").toLowerCase().includes(q)) ||
+                           ((i.warehouse || "") && (i.warehouse || "").toLowerCase().includes(q));
+          return nameMatch || codeMatch || compMatch || vendMatch || locMatch;
+        });
+      }
+
       if (!targetItems || targetItems.length === 0) {
-        toast.info(`No items found under ${isRootLevel ? "Root Inventory" : targetCategory.name} to export.`);
+        toast.info(`No items found matching the current filter under ${isRootLevel ? "Root Inventory" : targetCategory.name} to export.`);
         return;
       }
 
@@ -632,27 +734,90 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
       const totalValuation = targetItems.reduce((acc, i) => acc + ((i.quantity || 0) * (i.costPrice || 0)), 0);
       const totalUnits = targetItems.reduce((acc, i) => acc + Number(i.quantity || 0), 0);
 
-      const tableRowsHtml = targetItems
-        .map((item, idx) => {
-          const roots = resolveRoots(item);
-          const qty = Number(item.quantity || 0);
-          const minS = Number(item.minStock || 5);
+      // Group items by Root 1
+      const groupedByRoot1 = new Map();
+      targetItems.forEach((item) => {
+        const roots = resolveRoots(item);
+        const r1Key = roots.r1 || "Unassigned";
+        if (!groupedByRoot1.has(r1Key)) {
+          groupedByRoot1.set(r1Key, []);
+        }
+        groupedByRoot1.get(r1Key).push({ item, roots });
+      });
+
+      let globalItemIndex = 0;
+      const rootSectionsHtml = Array.from(groupedByRoot1.entries())
+        .map(([r1Name, groupItems], groupIdx) => {
+          const groupUnits = groupItems.reduce((acc, { item }) => acc + Number(item.quantity || 0), 0);
+          const groupVal = groupItems.reduce((acc, { item }) => acc + ((item.quantity || 0) * (item.costPrice || 0)), 0);
+
+          const groupRowsHtml = groupItems
+            .map(({ item, roots }) => {
+              globalItemIndex += 1;
+              const qty = Number(item.quantity || 0);
+              const minS = Number(item.minStock || 5);
+
+              return `
+                <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+                  <td style="padding: 7px 6px; text-align: center; color: #64748b; font-weight: bold;">${globalItemIndex}</td>
+                  <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 700;">${roots.r1}</td>
+                  <td style="padding: 7px 8px; color: #4338ca;">${roots.r2}</td>
+                  <td style="padding: 7px 8px; color: #b45309;">${roots.r3}</td>
+                  <td style="padding: 7px 8px; color: #be123c;">${roots.r4}</td>
+                  <td style="padding: 7px 8px; font-weight: 600;">
+                    <div>${item.name || "—"}</div>
+                    ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
+                  </td>
+                  <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
+                  <td style="padding: 7px 8px; text-align: right; color: #64748b;">${minS}</td>
+                  <td style="padding: 7px 8px; color: #334155; font-size: 11px; font-weight: 600;">${getExactLocation(item)}</td>
+                </tr>
+              `;
+            })
+            .join("");
 
           return `
-            <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-              <td style="padding: 7px 6px; text-align: center;">${idx + 1}</td>
-              <td style="padding: 7px 8px; color: #1e3a8a; font-weight: 600;">${roots.r1}</td>
-              <td style="padding: 7px 8px; color: #4338ca;">${roots.r2}</td>
-              <td style="padding: 7px 8px; color: #b45309;">${roots.r3}</td>
-              <td style="padding: 7px 8px; color: #be123c;">${roots.r4}</td>
-              <td style="padding: 7px 8px; font-weight: 600;">
-                <div>${item.name || "—"}</div>
-                ${item.code || item.sku ? `<div style="font-size: 9px; font-family: monospace; color: #64748b;">${item.code || item.sku}</div>` : ""}
-              </td>
-              <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${qty === 0 ? '#e11d48' : '#0f172a'};">${qty} ${item.unit || "Nos"}</td>
-              <td style="padding: 7px 8px; text-align: right; color: #64748b;">${minS}</td>
-              <td style="padding: 7px 8px; color: #334155; font-size: 11px; font-weight: 600;">${getExactLocation(item)}</td>
-            </tr>
+            <div class="root-section ${groupIdx > 0 ? 'page-break' : ''}">
+              <div class="root-category-banner">
+                <div class="banner-left">
+                  <span class="root-badge">ROOT LEVEL 1</span>
+                  <span class="root-name">${r1Name}</span>
+                </div>
+                <div class="banner-right">
+                  <span>SKUs: <strong>${groupItems.length}</strong></span>
+                  <span>Total Qty: <strong>${groupUnits}</strong></span>
+                  ${groupVal > 0 ? `<span>Valuation: <strong>₹${groupVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>` : ''}
+                  <button class="no-print btn-print-cat" onclick="printCategorySection('${r1Name.replace(/'/g, "\\'")}')" title="Print/Download PDF for ${r1Name}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download ${r1Name} PDF
+                  </button>
+                </div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 35px; text-align: center;">S.No</th>
+                    <th>Root 1</th>
+                    <th>Root 2</th>
+                    <th>Root 3</th>
+                    <th>Root 4</th>
+                    <th>Item</th>
+                    <th style="text-align: right;">Qty</th>
+                    <th style="text-align: right;">Min Qty</th>
+                    <th>Location</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${groupRowsHtml}
+                  <tr style="background: #f8fafc; font-weight: bold; border-top: 2px solid #cbd5e1; font-size: 11px;">
+                    <td colspan="6" style="padding: 8px; text-align: right; color: #475569;">SUBTOTAL FOR ROOT 1 (${r1Name}):</td>
+                    <td style="padding: 8px; text-align: right; color: #1e3a8a; font-weight: 800;">${groupUnits}</td>
+                    <td colspan="2"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           `;
         })
         .join("");
@@ -666,13 +831,13 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             <style>
               @page {
                 size: A4 landscape;
-                margin: 12mm 10mm;
+                margin: 10mm 10mm;
               }
               body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                 color: #0f172a;
                 margin: 0;
-                padding: 20px;
+                padding: 16px;
                 background: #fff;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
@@ -680,26 +845,37 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               .header-bar {
                 display: flex;
                 justify-content: space-between;
-                align-items: flex-start;
-                border-bottom: 2px solid #e2e8f0;
-                padding-bottom: 12px;
+                align-items: center;
+                border-bottom: 2px solid #2563eb;
+                padding-bottom: 14px;
                 margin-bottom: 16px;
+              }
+              .company-brand-area {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+              }
+              .company-logo-img {
+                height: 52px;
+                width: auto;
+                max-width: 160px;
+                object-fit: contain;
               }
               .title {
                 font-size: 18px;
                 font-weight: 800;
                 color: #0f172a;
-                margin: 0 0 4px 0;
+                margin: 0 0 2px 0;
               }
               .subtitle {
-                font-size: 12px;
+                font-size: 11px;
                 color: #64748b;
                 margin: 0;
               }
               .summary-box {
                 display: flex;
                 gap: 20px;
-                margin-bottom: 14px;
+                margin-bottom: 16px;
                 background: #f8fafc;
                 border: 1px solid #e2e8f0;
                 border-radius: 8px;
@@ -719,24 +895,87 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
                 font-weight: 700;
                 font-size: 13px;
               }
+              .root-section {
+                margin-bottom: 24px;
+              }
+              .root-category-banner {
+                background: #f1f5f9;
+                border-left: 4px solid #2563eb;
+                padding: 8px 12px;
+                margin-bottom: 8px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-radius: 0 6px 6px 0;
+              }
+              .banner-left {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+              }
+              .root-badge {
+                font-size: 9px;
+                font-weight: 800;
+                background: #2563eb;
+                color: #fff;
+                padding: 2px 6px;
+                border-radius: 4px;
+                letter-spacing: 0.05em;
+              }
+              .root-name {
+                font-size: 14px;
+                font-weight: 800;
+                color: #1e3a8a;
+              }
+              .banner-right {
+                font-size: 11px;
+                color: #475569;
+                display: flex;
+                align-items: center;
+                gap: 16px;
+              }
+              .btn-print-cat {
+                background: #2563eb;
+                color: #ffffff;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: 700;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+                transition: background 0.15s;
+              }
+              .btn-print-cat:hover {
+                background: #1d4ed8;
+              }
               table {
                 width: 100%;
                 border-collapse: collapse;
+                margin-bottom: 12px;
               }
               th {
-                background: #f1f5f9;
+                background: #f8fafc;
                 color: #334155;
                 padding: 8px;
                 font-size: 10px;
                 font-weight: 700;
                 text-transform: uppercase;
                 letter-spacing: 0.03em;
+                border-top: 1px solid #cbd5e1;
                 border-bottom: 2px solid #cbd5e1;
                 text-align: left;
               }
               @media print {
                 .no-print { display: none !important; }
                 body { padding: 0; }
+                .page-break {
+                  page-break-before: always;
+                  break-before: page;
+                  margin-top: 20px;
+                }
               }
             </style>
           </head>
@@ -747,17 +986,24 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
             </div>
 
             <div class="header-bar">
-              <div>
-                <h1 class="title">${categoryName}</h1>
-                <p class="subtitle">Techware Automation — Central Inventory Catalog (Root 1-4 Hierarchy)</p>
+              <div class="company-brand-area">
+                <img src="/techwareLogo.png" alt="Techware Automation" class="company-logo-img" onerror="this.src='/techwareLogo.svg'" />
+                <div>
+                  <h1 class="title">${categoryName}</h1>
+                  <p class="subtitle">Techware Automation (India) — Central Inventory Catalog</p>
+                </div>
               </div>
               <div style="text-align: right; font-size: 11px; color: #64748b;">
                 <div>Generated: <strong>${new Date().toLocaleString("en-IN")}</strong></div>
-                <div>Scope: <strong>${isRootLevel ? "Level 1 Root & All Sub-Levels" : `Category: ${targetCategory.name} (L${targetCategory.level || 1})`}</strong></div>
+                <div>Scope: <strong>${isRootLevel ? "All Root Categories" : `Category: ${targetCategory.name}`}</strong></div>
               </div>
             </div>
 
             <div class="summary-box">
+              <div class="summary-item">
+                <span>Root Level 1 Categories</span>
+                <span>${groupedByRoot1.size} Groups</span>
+              </div>
               <div class="summary-item">
                 <span>Total SKUs Listed</span>
                 <span>${targetItems.length} Products</span>
@@ -772,35 +1018,31 @@ const InventoryInView = ({ onBackToHub, assignedUsers: propAssignedUsers, curren
               </div>
             </div>
 
-            <table>
-              <thead>
-                <tr>
-                  <th style="width: 35px; text-align: center;">S.No</th>
-                  <th>Root 1</th>
-                  <th>Root 2</th>
-                  <th>Root 3</th>
-                  <th>Root 4</th>
-                  <th>Item</th>
-                  <th style="text-align: right;">Qty</th>
-                  <th style="text-align: right;">Min Qty</th>
-                  <th>Location</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRowsHtml}
-              </tbody>
-            </table>
+            ${rootSectionsHtml}
 
-            <div style="margin-top: 18px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px;">
-              Confidential & Internal Document — Techware Automation India Private Limited
-            </div>
+            
 
             <script>
-              window.onload = function() {
+              function printCategorySection(categoryName) {
+                var sections = document.querySelectorAll('.root-section');
+                sections.forEach(function(s) {
+                  var nameEl = s.querySelector('.root-name');
+                  if (nameEl && nameEl.innerText.trim() === categoryName.trim()) {
+                    s.style.display = 'block';
+                    s.classList.remove('page-break');
+                  } else {
+                    s.style.display = 'none';
+                  }
+                });
+                window.print();
+                // Restore all sections after print dialog closes
                 setTimeout(function() {
-                  window.print();
-                }, 400);
-              };
+                  sections.forEach(function(s, idx) {
+                    s.style.display = 'block';
+                    if (idx > 0) s.classList.add('page-break');
+                  });
+                }, 1000);
+              }
             </script>
           </body>
         </html>

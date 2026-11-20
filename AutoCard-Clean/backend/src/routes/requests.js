@@ -3923,22 +3923,32 @@ router.post("/:id/item-return", async (req, res) => {
       return res.status(401).json({ message: "Authentication required." });
     }
 
-    const isAdmin = req.user.role === "ADMIN";
-    const employee = await getEmployeeProfile(req.user.id);
+    const cleanReqId = String(req.params.id).replace(/^request-/, "");
+    const userId = req.user.id || req.user.userId;
+    const isAdmin =
+      req.user.role === "ADMIN" ||
+      req.user.customRole?.name?.toUpperCase() === "ADMIN";
+    const employee = await getEmployeeProfile(userId);
     if (!employee && !isAdmin) {
       return res.status(404).json({ message: "Employee profile not found." });
     }
 
     const request = await prisma.employeeRequest.findUnique({
-      where: { id: req.params.id },
+      where: { id: cleanReqId },
     });
 
     if (!request) {
       return res.status(404).json({ message: "Request not found." });
     }
 
-    if (!isAdmin && employee && request.employeeId !== employee.id) {
-      return res.status(403).json({ message: "Not authorized to update this request." });
+    if (!isAdmin) {
+      const isOwner =
+        (employee && request.employeeId === employee.id) ||
+        (employee && request.employeeId === employee.userId) ||
+        request.employeeId === userId;
+      if (!isOwner) {
+        return res.status(403).json({ message: "Not authorized to update this request." });
+      }
     }
 
     if (request.status !== "APPROVED") {
@@ -3955,7 +3965,11 @@ router.post("/:id/item-return", async (req, res) => {
       : [currentNote, `[ITEM_RETURNED] ${handoverNote}`].filter(Boolean).join(" | ");
 
     // Remove tool from employee's assigned tools if it's a tool return
-    await updateEmployeeAssignedTools(request);
+    try {
+      await updateEmployeeAssignedTools(request);
+    } catch (toolErr) {
+      console.warn("⚠️ updateEmployeeAssignedTools on item-return failed:", toolErr);
+    }
 
     // Update inventory stock and restock / add returned item to inventory module
     let finalNote = newNote;
@@ -3966,7 +3980,7 @@ router.post("/:id/item-return", async (req, res) => {
     }
 
     const updated = await prisma.employeeRequest.update({
-      where: { id: req.params.id },
+      where: { id: cleanReqId },
       data: {
         reviewNote: typeof finalNote === "string" ? finalNote.slice(0, 4000) : finalNote,
       },
@@ -3988,15 +4002,57 @@ const handleFoundRequest = async (req, res) => {
       return res.status(401).json({ message: "Authentication required." });
     }
 
+    const cleanReqId = String(req.params.id).replace(/^request-/, "");
     const userId = req.user.id || req.user.userId;
-    const isAdmin = req.user.role === "ADMIN";
+    let isAdmin =
+      req.user.role === "ADMIN" ||
+      req.user.customRole?.name?.toUpperCase() === "ADMIN";
+
+    if (!isAdmin && userId) {
+      try {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            role: true,
+            roleId: true,
+            customRole: { select: { name: true } },
+          },
+        });
+        if (
+          dbUser?.role === "ADMIN" ||
+          dbUser?.customRole?.name?.toUpperCase() === "ADMIN"
+        ) {
+          isAdmin = true;
+        } else if (dbUser?.roleId) {
+          const roleModules = await prisma.roleModule.findMany({
+            where: { roleId: dbUser.roleId },
+            include: { module: { select: { slug: true } } },
+          });
+          const slugs = roleModules.map((rm) => rm.module?.slug).filter(Boolean);
+          if (
+            slugs.some(
+              (s) =>
+                s === "approvals" ||
+                s === "approvals-tools" ||
+                s === "approvals-tools-inventory" ||
+                s === "inventory"
+            )
+          ) {
+            isAdmin = true;
+          }
+        }
+      } catch (checkErr) {
+        console.warn("⚠️ Role check error in handleFoundRequest:", checkErr);
+      }
+    }
+
     const employee = await getEmployeeProfile(userId);
     if (!employee && !isAdmin) {
       return res.status(404).json({ message: "Employee profile not found." });
     }
 
     const request = await prisma.employeeRequest.findUnique({
-      where: { id: req.params.id },
+      where: { id: cleanReqId },
     });
 
     if (!request) {
@@ -4057,7 +4113,7 @@ const handleFoundRequest = async (req, res) => {
     }
 
     const updated = await prisma.employeeRequest.update({
-      where: { id: req.params.id },
+      where: { id: cleanReqId },
       data: {
         status: "COMPLETED",
         reviewNote: typeof updatedReviewNote === "string" ? updatedReviewNote.slice(0, 4000) : updatedReviewNote,
@@ -4114,15 +4170,57 @@ const handleNotFoundRequest = async (req, res) => {
       return res.status(401).json({ message: "Authentication required." });
     }
 
+    const cleanReqId = String(req.params.id).replace(/^request-/, "");
     const userId = req.user.id || req.user.userId;
-    const isAdmin = req.user.role === "ADMIN";
+    let isAdmin =
+      req.user.role === "ADMIN" ||
+      req.user.customRole?.name?.toUpperCase() === "ADMIN";
+
+    if (!isAdmin && userId) {
+      try {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            role: true,
+            roleId: true,
+            customRole: { select: { name: true } },
+          },
+        });
+        if (
+          dbUser?.role === "ADMIN" ||
+          dbUser?.customRole?.name?.toUpperCase() === "ADMIN"
+        ) {
+          isAdmin = true;
+        } else if (dbUser?.roleId) {
+          const roleModules = await prisma.roleModule.findMany({
+            where: { roleId: dbUser.roleId },
+            include: { module: { select: { slug: true } } },
+          });
+          const slugs = roleModules.map((rm) => rm.module?.slug).filter(Boolean);
+          if (
+            slugs.some(
+              (s) =>
+                s === "approvals" ||
+                s === "approvals-tools" ||
+                s === "approvals-tools-inventory" ||
+                s === "inventory"
+            )
+          ) {
+            isAdmin = true;
+          }
+        }
+      } catch (checkErr) {
+        console.warn("⚠️ Role check error in handleNotFoundRequest:", checkErr);
+      }
+    }
+
     const employee = await getEmployeeProfile(userId);
     if (!employee && !isAdmin) {
       return res.status(404).json({ message: "Employee profile not found." });
     }
 
     const request = await prisma.employeeRequest.findUnique({
-      where: { id: req.params.id },
+      where: { id: cleanReqId },
     });
 
     if (!request) {
@@ -4146,7 +4244,7 @@ const handleNotFoundRequest = async (req, res) => {
     const updatedNote = [cleanCurrentNote, notFoundNote].filter(Boolean).join(" | ");
 
     const updated = await prisma.employeeRequest.update({
-      where: { id: req.params.id },
+      where: { id: cleanReqId },
       data: {
         reviewNote: updatedNote.slice(0, 4000),
       },

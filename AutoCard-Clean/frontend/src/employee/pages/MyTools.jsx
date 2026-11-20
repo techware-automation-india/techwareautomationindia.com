@@ -141,7 +141,8 @@ export default function MyTools() {
     if (actingToolId) return;
     setActingToolId(id);
     try {
-      await apiPost(`/requests/${id}/found`, {});
+      const cleanId = String(id).replace(/^request-/, "");
+      await apiPost(`/requests/${cleanId}/found`, {});
       toast.success("Tool marked as found and added to your tools!");
       await fetchProfileAndTools(true);
     } catch (err) {
@@ -155,7 +156,8 @@ export default function MyTools() {
     if (actingToolId) return;
     setActingToolId(id);
     try {
-      await apiPost(`/requests/${id}/not-found`, {
+      const cleanId = String(id).replace(/^request-/, "");
+      await apiPost(`/requests/${cleanId}/not-found`, {
         reason: "Tool not found on workshop rack.",
       });
       toast.warning("Reported as Tool Not Found. Admin has been notified.");

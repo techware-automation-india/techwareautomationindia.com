@@ -72,6 +72,7 @@ const parseTakingRequest = (req) => {
   const itemName = data["item name"] || req.subject || "Unnamed Item";
   const productId = data["product id"] || data["part code"] || "—";
   const quantity = data["quantity"] || "1";
+  const unit = data["unit"] || "Nos";
   const unitPrice = data["unit price"] || data["price"] || "0";
   const actionType = (
     data["action type"] ||
@@ -156,6 +157,7 @@ const parseTakingRequest = (req) => {
     category: category || (isTool ? "Tools" : "General / Consumables"),
     productType: productType || (isTool ? "Tools" : "General / Consumables"),
     quantityRequested: Number(quantity) || 1,
+    unit: unit,
     quantityApproved: req.status !== "PENDING" && req.status !== "REJECTED" ? Number(quantity) || 1 : 0,
     unitPrice: Number(unitPrice) || 0,
     actionType,
@@ -1015,7 +1017,7 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                             <div>
                               <span className="block text-sm">{row.itemName}</span>
                               <span className="text-[11px] text-muted-foreground font-normal">
-                                Qty: {row.quantityRequested} Nos
+                                Qty: {row.quantityRequested} {row.unit || "Nos"}
                               </span>
                             </div>
                           </td>
@@ -1329,7 +1331,7 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                               <span className="block text-sm">{row.itemName}</span>
                               <div className="flex items-center gap-2 mt-0.5">
                                 <span className="text-[11px] text-muted-foreground font-normal">
-                                  Qty: {row.quantityRequested} Nos
+                                  Qty: {row.quantityRequested} {row.unit || "Nos"}
                                 </span>
                                 <span className="text-[10px] px-2 py-0.5 rounded-md bg-secondary text-muted-foreground font-semibold border border-border">
                                   {row.category}

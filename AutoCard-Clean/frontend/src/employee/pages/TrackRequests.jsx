@@ -249,7 +249,18 @@ const normalizeStatus = (status, note = "", reviewNote = "") => {
 };
 
 const isLocationApprovalRequest = (request) => {
-  if (request?.type === "ATTENDANCE") return true;
+  const note = String(request?.note || request?.description || "").toLowerCase();
+  const isManual = note.includes("manual attendance correction") || note.includes("manual attendance:");
+  if (isManual) return false;
+
+  if (request?.type === "ATTENDANCE") {
+    return (
+      note.includes("unassigned") ||
+      note.includes("outside") ||
+      note.includes("requires approval") ||
+      note.includes("location approval")
+    );
+  }
   if (request?.type !== "CORRECTION") return false;
 
   const subject = String(request.subject || "").toLowerCase();
@@ -287,6 +298,11 @@ const getCombinedLocationRequestTitle = (forgotPunch, date = "") => {
 };
 
 const getPunchLocationSource = (request, forgotPunch, punch) => {
+  const note = String(request?.note || request?.description || "").toLowerCase();
+  if (note.includes("manual attendance correction") || note.includes("manual attendance:")) {
+    return "manual";
+  }
+
   const isCheckIn = punch === "checkIn";
   const source = forgotPunch?.[`${punch}LocationSource`];
   if (source) return source;
@@ -385,6 +401,18 @@ const cleanPureReason = (rawReason, rawDescription) => {
 };
 
 const getRequestTypeInfo = (request, attendanceRecord) => {
+  const combinedNote = (String(request?.description || "") + " " + String(request?.note || "") + " " + String(attendanceRecord?.note || "")).toLowerCase();
+  const isManualAttendance = combinedNote.includes("manual attendance correction") || combinedNote.includes("manual attendance:");
+
+  if (isManualAttendance) {
+    return {
+      category: "Attendance Correction Details",
+      typeLabel: "Manual Attendance Correction",
+      displayTitle: "Manual Attendance Correction",
+      iconType: "attendance",
+    };
+  }
+
   if (!request) {
     const note = String(attendanceRecord?.note || "").toLowerCase();
     const isUnassigned = note.includes("unassigned") || note.includes("outside assigned") || note.includes("requires approval");
@@ -1456,27 +1484,34 @@ const TrackRequests = ({ isAdmin = false }) => {
 
       const attendanceRequests =
         attendanceResult.status === "fulfilled"
-          ? (attendanceResult.value.records || []).map((request) => ({
-              id: `attendance-${request.id}`,
-              type: "ATTENDANCE",
-              subject: "Attendance Location Approval",
-              status: normalizeStatus(request.status, request.note, request.reviewNote),
-              createdAt: request.createdAt || request.date,
-              reviewedAt: request.status !== "PENDING_APPROVAL" ? (request.updatedAt || null) : null,
-              checkInTime: request.checkIn || request.createdAt || request.date,
-              checkOutTime: request.checkOut || null,
-              description: request.note || "",
-              note: request.note || "",
-              reason: request.reason || "",
-              checkInLatitude: request.checkInLatitude ?? null,
-              checkInLongitude: request.checkInLongitude ?? null,
-              checkOutLatitude: request.checkOutLatitude ?? null,
-              checkOutLongitude: request.checkOutLongitude ?? null,
-              checkInDistance: request.checkInDistance ?? null,
-              checkOutDistance: request.checkOutDistance ?? null,
-              reviewNote: request.reviewNote,
-              employee: request.employee || currentEmployeeInfo,
-            }))
+          ? (attendanceResult.value.records || []).map((request) => {
+              const reqNote = String(request.note || "");
+              const isManual = reqNote.toLowerCase().includes("manual attendance correction") || reqNote.toLowerCase().includes("manual attendance:");
+              const isUL = reqNote.toLowerCase().includes("unassigned") || reqNote.toLowerCase().includes("outside") || reqNote.toLowerCase().includes("requires approval");
+              const calculatedSubject = isManual ? "Manual Attendance Correction" : isUL ? "Attendance Location Approval" : "Attendance Record";
+
+              return {
+                id: `attendance-${request.id}`,
+                type: isManual ? "CORRECTION" : isUL ? "ATTENDANCE" : "ATTENDANCE",
+                subject: calculatedSubject,
+                status: normalizeStatus(request.status, request.note, request.reviewNote),
+                createdAt: request.createdAt || request.date,
+                reviewedAt: request.status !== "PENDING_APPROVAL" ? (request.updatedAt || null) : null,
+                checkInTime: request.checkIn || request.createdAt || request.date,
+                checkOutTime: request.checkOut || null,
+                description: request.note || "",
+                note: request.note || "",
+                reason: request.reason || "",
+                checkInLatitude: request.checkInLatitude ?? null,
+                checkInLongitude: request.checkInLongitude ?? null,
+                checkOutLatitude: request.checkOutLatitude ?? null,
+                checkOutLongitude: request.checkOutLongitude ?? null,
+                checkInDistance: request.checkInDistance ?? null,
+                checkOutDistance: request.checkOutDistance ?? null,
+                reviewNote: request.reviewNote,
+                employee: request.employee || currentEmployeeInfo,
+              };
+            })
           : [];
 
       // ------------------------------------------------------------
@@ -2134,20 +2169,27 @@ const TrackRequests = ({ isAdmin = false }) => {
                       badgeIcon = <Clock3 className="h-3.5 w-3.5" />;
                       badgeLabel = "TIME EDIT";
                     } else if (request.type === "CORRECTION") {
-                      // Determine scenario-specific label from punchType
-                      const fp3 = getForgotPunchData(request);
-                      const pt3 = String(fp3?.punchType || "").toLowerCase();
-                      const subj3 = String(request.subject || "").toLowerCase();
-                      if (subj3.includes("check in (forgot punch)") && subj3.includes("check out (ul)")) {
-                        badgeLabel = "FORGOT CHECK IN + UL CHECKOUT";
-                      } else if (subj3.includes("check in (ul)") && subj3.includes("check out (forgot punch)")) {
-                        badgeLabel = "UL CHECK IN + FORGOT CHECKOUT";
-                      } else if (pt3 === "both") {
-                        badgeLabel = "FORGOT PUNCH (IN + OUT)";
-                      } else if (pt3 === "check-out") {
-                        badgeLabel = "FORGOT CHECK OUT";
-                      } else if (pt3 === "check-in") {
-                        badgeLabel = "FORGOT CHECK IN";
+                      const desc = (String(request.subject || "") + " " + String(request.description || "") + " " + String(request.note || "")).toLowerCase();
+                      if (desc.includes("manual attendance correction") || desc.includes("manual attendance:")) {
+                        badgeColor = "bg-primary/10 text-primary";
+                        badgeIcon = <Clock3 className="h-3.5 w-3.5" />;
+                        badgeLabel = "ATTENDANCE CORRECTION";
+                      } else {
+                        // Determine scenario-specific label from punchType
+                        const fp3 = getForgotPunchData(request);
+                        const pt3 = String(fp3?.punchType || "").toLowerCase();
+                        const subj3 = String(request.subject || "").toLowerCase();
+                        if (subj3.includes("check in (forgot punch)") && subj3.includes("check out (ul)")) {
+                          badgeLabel = "FORGOT CHECK IN + UL CHECKOUT";
+                        } else if (subj3.includes("check in (ul)") && subj3.includes("check out (forgot punch)")) {
+                          badgeLabel = "UL CHECK IN + FORGOT CHECKOUT";
+                        } else if (pt3 === "both") {
+                          badgeLabel = "FORGOT PUNCH (IN + OUT)";
+                        } else if (pt3 === "check-out") {
+                          badgeLabel = "FORGOT CHECK OUT";
+                        } else if (pt3 === "check-in") {
+                          badgeLabel = "FORGOT CHECK IN";
+                        }
                       }
                     }
 
@@ -3058,13 +3100,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                       ? (teType === "check-in" ? "Check In" : teType === "check-out" ? "Check Out" : "Check In + Check Out")
                       : (isCheckOutDefaultLoc && reqInfo.typeLabel === "UL Check In")
                         ? "Check In (UL)"
-                        : punchType === "both"
+                        : punchType === "both" || (showCheckInTime && showCheckOutTime)
                           ? "Check In + Check Out"
+                        : (punchType === "check-out" || punchType.includes("check out") || (showCheckOutTime && !showCheckInTime))
+                          ? "Check Out"
                         : (punchType === "check-in" || punchType.includes("check in"))
                           ? "Check In"
-                          : (punchType === "check-out" || punchType.includes("check out"))
-                            ? "Check Out"
-                            : "Check In";
+                          : "Check In";
 
                   const showCheckInLoc = checkInUsesMap || Boolean(checkInLocation) || effCheckInSrc === "default-location";
                   const showCheckOutLoc = checkOutUsesMap || Boolean(checkOutLocation) || effCheckOutSrc === "default-location";
@@ -3182,7 +3224,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                           {showCheckInTime && checkInTime && (
                             <div>
                               <p className={isTimeEditRequest ? "text-xs font-bold text-emerald-700 dark:text-emerald-300" : "text-xs font-semibold text-muted-foreground"}>
-                                {isTimeEditRequest ? "Requested Check-in Time" : checkInLocSrc === "forgot-punch" ? "Check-in Time (Forgot Punch)" : checkInLocSrc === "unassigned-location" || reasonModal.type === "ATTENDANCE" ? "Check-in Time (UL)" : "Check-in Time"}
+                                {isTimeEditRequest
+                                  ? "Requested Check-in Time"
+                                  : checkInLocSrc === "forgot-punch"
+                                    ? "Check-in Time (Forgot Punch)"
+                                    : checkInLocSrc === "unassigned-location" || (!reqInfo.typeLabel.toLowerCase().includes("manual") && reasonModal.type === "ATTENDANCE")
+                                      ? "Check-in Time (UL)"
+                                      : "Check-in Time"}
                               </p>
                               <p className="mt-1 inline-flex rounded-md bg-emerald-500/10 px-2 py-1 text-sm font-bold text-emerald-700 dark:text-emerald-300">
                                 {formatTime(checkInTime)}
@@ -3200,7 +3248,15 @@ const TrackRequests = ({ isAdmin = false }) => {
                           {showCheckOutTime && checkOutTime && (
                             <div>
                               <p className={isTimeEditRequest ? "text-xs font-bold text-rose-700 dark:text-rose-300" : "text-xs font-semibold text-muted-foreground"}>
-                                {isTimeEditRequest ? "Requested Check-out Time" : checkOutLocSrc === "forgot-punch" ? "Check-out Time (Forgot Punch)" : checkOutLocSrc === "unassigned-location" || reasonModal.type === "ATTENDANCE" ? "Check-out Time (UL)" : effCheckOutSrc === "default-location" ? "Check-out Time (Marked Attendance)" : "Check-out Time"}
+                                {isTimeEditRequest
+                                  ? "Requested Check-out Time"
+                                  : checkOutLocSrc === "forgot-punch"
+                                    ? "Check-out Time (Forgot Punch)"
+                                    : checkOutLocSrc === "unassigned-location" || (!reqInfo.typeLabel.toLowerCase().includes("manual") && reasonModal.type === "ATTENDANCE")
+                                      ? "Check-out Time (UL)"
+                                      : effCheckOutSrc === "default-location"
+                                        ? "Check-out Time (Marked Attendance)"
+                                        : "Check-out Time"}
                               </p>
                               <p className="mt-1 inline-flex rounded-md bg-rose-500/10 px-2 py-1 text-sm font-bold text-rose-700 dark:text-rose-300">
                                 {formatTime(checkOutTime)}

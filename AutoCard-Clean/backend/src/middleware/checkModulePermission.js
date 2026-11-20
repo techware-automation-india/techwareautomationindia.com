@@ -19,8 +19,22 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
         return next();
       }
 
-      // For EMPLOYEE role, check module permissions
-      if (user.role === "EMPLOYEE") {
+      // Base default employee modules accessible to all non-customer users
+      const defaultEmployeeModules = [
+        "mark-attendance",
+        "attendance",
+        "requests",
+        "requests-apply-leave",
+        "requests-forgot-punch",
+        "requests-tools-inventory",
+        "requests-track",
+        "overview",
+        "academic-calendar",
+        "academic-holidays",
+      ];
+
+      // For non-CUSTOMER users, check module permissions
+      if (user.role !== "CUSTOMER") {
         const inputKeys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
 
         const keySet = new Set();
@@ -57,6 +71,11 @@ export function checkModulePermission(moduleKey, permission = 'canView') {
           }
         }
         const keys = Array.from(keySet);
+
+        // Allow default employee base modules
+        if (keys.some((k) => defaultEmployeeModules.includes(k))) {
+          return next();
+        }
 
         // 1. Check custom role modules
         let roleId = user.roleId;

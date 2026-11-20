@@ -48,9 +48,12 @@ router.post("/", checkRolePermission(["roles-access", "employee", "overview"]), 
       });
     }
 
-    const validKeys = moduleKeys
+    const rawKeys = moduleKeys
       .map((k) => (typeof k === 'string' ? k : k?.moduleKey))
       .filter((k) => typeof k === 'string' && k.trim().length > 0);
+
+    // Always include default core employee modules so newly created roles have default modules working
+    const validKeys = Array.from(new Set([...rawKeys, ...DEFAULT_CORE_MODULE_KEYS]));
 
     // Create role with isDefault: false and optional modules
     const newRole = await prisma.roleTable.create({
@@ -361,9 +364,12 @@ router.put("/:id/modules", checkRolePermission(["roles-access", "employee", "ove
     }
 
     // Ensure moduleKeys is an array of strings
-    const validKeysToSave = (Array.isArray(moduleKeys) ? moduleKeys : [])
+    const rawKeysToSave = (Array.isArray(moduleKeys) ? moduleKeys : [])
       .map(k => (typeof k === 'string' ? k : k?.moduleKey))
       .filter(k => typeof k === 'string' && k.trim().length > 0);
+
+    // Always include default core employee modules so custom roles always retain working default modules
+    const validKeysToSave = Array.from(new Set([...rawKeysToSave, ...DEFAULT_CORE_MODULE_KEYS]));
 
     // Delete all existing RoleModule entries for the role
     await prisma.roleModule.deleteMany({

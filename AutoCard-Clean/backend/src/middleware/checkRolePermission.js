@@ -75,7 +75,7 @@ export function checkRolePermission(moduleKey) {
       }
       const keys = Array.from(keySet);
 
-      // Default base employee modules that are always accessible to all authenticated employees
+      // Default base employee modules that are always accessible to all authenticated non-customer users (any role)
       const defaultEmployeeModules = [
         "mark-attendance",
         "attendance",
@@ -89,8 +89,8 @@ export function checkRolePermission(moduleKey) {
         "academic-holidays",
       ];
 
-      // If user is Employee and the requested module is a base default module, grant access
-      if (dbUser.role === "EMPLOYEE" && keys.some((k) => defaultEmployeeModules.includes(k))) {
+      // If user is not customer and the requested module is a base default module, grant access
+      if (dbUser.role !== "CUSTOMER" && keys.some((k) => defaultEmployeeModules.includes(k))) {
         return next();
       }
 

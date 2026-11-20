@@ -906,32 +906,9 @@ router.post(["/my", "/"], async (req, res) => {
       });
     }
 
-    if (req.user.role !== "ADMIN") {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { roleId: true, customRole: { select: { name: true } } },
-      });
-      if (dbUser?.roleId && dbUser?.customRole?.name?.toUpperCase() !== "ADMIN") {
-        const roleModules = await prisma.roleModule.findMany({
-          where: { roleId: dbUser.roleId },
-          select: { moduleKey: true },
-        });
-        const userKeys = new Set(roleModules.map((m) => m.moduleKey));
-        if (parsed.data.type === "CORRECTION") {
-          if (!userKeys.has("requests-forgot-punch") && !userKeys.has("requests")) {
-            return res.status(403).json({
-              message: "Access denied. Forgot Punch service is not enabled for your role.",
-            });
-          }
-        } else if (parsed.data.type === "EQUIPMENT") {
-          if (!userKeys.has("requests-tools-inventory") && !userKeys.has("requests")) {
-            return res.status(403).json({
-              message: "Access denied. Tools & Inventory Request service is not enabled for your role.",
-            });
-          }
-        }
-      }
-    }
+    // Requests (Forgot Punch, Equipment, Leave, General) are default base services.
+    // Admin, custom Admin roles, and all employees have default access to submit requests.
+    // No role-based blocking for default request submissions.
 
 
 
@@ -3235,7 +3212,11 @@ async function reviewRequest(
       });
     }
 
-    if (req.user.role !== "ADMIN") {
+    const isReviewerAdmin =
+      req.user.role === "ADMIN" ||
+      req.user.customRole?.name?.toUpperCase() === "ADMIN";
+
+    if (!isReviewerAdmin) {
       const dbUser = await prisma.user.findUnique({
         where: { id: req.user.id },
         select: {
@@ -3245,7 +3226,9 @@ async function reviewRequest(
         },
       });
 
-      const isUserAdmin = dbUser?.role === "ADMIN" || dbUser?.customRole?.name?.toUpperCase() === "ADMIN";
+      const isUserAdmin =
+        dbUser?.role === "ADMIN" ||
+        dbUser?.customRole?.name?.toUpperCase() === "ADMIN";
 
       if (!isUserAdmin) {
         const roleModules = dbUser?.roleId

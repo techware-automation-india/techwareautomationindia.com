@@ -1678,6 +1678,11 @@ const isLocationApprovalRequest = (request) => {
 };
 
 const getPunchLocationSource = (request, forgotPunch, punch) => {
+  const note = String(request?.note || request?.description || "").toLowerCase();
+  if (note.includes("manual attendance correction") || note.includes("manual attendance:")) {
+    return "manual";
+  }
+
   const isCheckIn = punch === "checkIn";
   const source = forgotPunch?.[punch + "LocationSource"];
   if (source) return source;
@@ -1957,7 +1962,7 @@ const getAttendanceDetails = (note = "") => {
   }
 
   const fullClean = sanitize(cleanText);
-  const isCheckInUnassigned = checkinPart ? /unassigned|outside|requires approval/i.test(checkinPart) : /unassigned|outside|requires approval/i.test(cleanText);
+  const isCheckInUnassigned = checkinPart ? /unassigned|outside|requires approval/i.test(checkinPart) : (/unassigned|outside|requires approval/i.test(cleanText) && !/manual attendance/i.test(cleanText));
   const isCheckOutUnassigned = checkoutPart ? /unassigned|outside|requires approval/i.test(checkoutPart) : false;
 
   return {
@@ -2096,9 +2101,21 @@ const parseCorrectionFromDescription = (description) => {
 
   
 const getRequestTypeInfo = (request, attendanceRecord) => {
+  const combinedNote = (String(request?.description || "") + " " + String(request?.note || "") + " " + String(attendanceRecord?.note || "")).toLowerCase();
+  const isManualAttendance = combinedNote.includes("manual attendance correction") || combinedNote.includes("manual attendance:");
+
+  if (isManualAttendance) {
+    return {
+      category: "Attendance Correction Details",
+      typeLabel: "Manual Attendance Correction",
+      displayTitle: "Manual Attendance Correction",
+      iconType: "attendance",
+    };
+  }
+
   if (!request) {
     const note = String(attendanceRecord?.note || "").toLowerCase();
-    const isUnassigned = note.includes("unassigned") || note.includes("outside assigned") || note.includes("requires approval");
+    const isUnassigned = (note.includes("unassigned") || note.includes("outside assigned") || note.includes("requires approval")) && !isManualAttendance;
     if (isUnassigned) {
       return {
         category: "Location Approval Details",
@@ -2635,6 +2652,8 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                   if (isCheckOutDefaultLoc && reqInfo.typeLabel === "UL Check In") return "Check In (UL)";
                   if (punchType === "both" || (showCheckInTime && showCheckOutTime)) return "Check In + Check Out";
                   if (showCheckOutTime && !showCheckInTime) return "Check Out";
+                  if (punchType === "check-out" || punchType.includes("check out")) return "Check Out";
+                  if (punchType === "check-in" || punchType.includes("check in")) return "Check In";
                   return "Check In";
                 })();
 
@@ -2739,7 +2758,13 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                         {showCheckInTime && checkInTime && (
                           <div>
                             <p className={isTimeEditRequest ? "text-xs font-bold text-emerald-700 dark:text-emerald-300" : "text-xs font-semibold text-muted-foreground"}>
-                              {isTimeEditRequest ? "Requested Check-in Time" : checkInLocSrc === "forgot-punch" ? "Check-in Time (Forgot Punch)" : checkInLocSrc === "unassigned-location" ? "Check-in Time (UL)" : "Check-in Time"}
+                              {isTimeEditRequest
+                                ? "Requested Check-in Time"
+                                : checkInLocSrc === "forgot-punch"
+                                  ? "Check-in Time (Forgot Punch)"
+                                  : checkInLocSrc === "unassigned-location" && !reqInfo.typeLabel.toLowerCase().includes("manual")
+                                    ? "Check-in Time (UL)"
+                                    : "Check-in Time"}
                             </p>
                             <p className="mt-1 inline-flex rounded-md bg-emerald-500/10 px-2 py-1 text-sm font-bold text-emerald-700 dark:text-emerald-300">
                               {formatTimeValue(checkInTime)}
@@ -2757,7 +2782,15 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                         {showCheckOutTime && checkOutTime && (
                           <div>
                             <p className={isTimeEditRequest ? "text-xs font-bold text-rose-700 dark:text-rose-300" : "text-xs font-semibold text-muted-foreground"}>
-                              {isTimeEditRequest ? "Requested Check-out Time" : checkOutLocSrc === "forgot-punch" ? "Check-out Time (Forgot Punch)" : checkOutLocSrc === "unassigned-location" ? "Check-out Time (UL)" : effCheckOutSrc === "default-location" ? "Check-out Time (Marked Attendance)" : "Check-out Time"}
+                              {isTimeEditRequest
+                                ? "Requested Check-out Time"
+                                : checkOutLocSrc === "forgot-punch"
+                                  ? "Check-out Time (Forgot Punch)"
+                                  : checkOutLocSrc === "unassigned-location" && !reqInfo.typeLabel.toLowerCase().includes("manual")
+                                    ? "Check-out Time (UL)"
+                                    : effCheckOutSrc === "default-location"
+                                      ? "Check-out Time (Marked Attendance)"
+                                      : "Check-out Time"}
                             </p>
                             <p className="mt-1 inline-flex rounded-md bg-rose-500/10 px-2 py-1 text-sm font-bold text-rose-700 dark:text-rose-300">
                               {formatTimeValue(checkOutTime)}

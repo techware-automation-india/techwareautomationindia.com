@@ -252,6 +252,32 @@ router.get("/me/permissions", requireAuth, async (req, res) => {
       }
     }
 
+    // Ensure all base default employee modules are granted for non-customer roles even if roleModules is empty
+    if (user?.role !== "CUSTOMER" && req.user?.role !== "CUSTOMER") {
+      const baseEmployeeModules = [
+        "mark-attendance",
+        "attendance",
+        "requests",
+        "requests-apply-leave",
+        "requests-forgot-punch",
+        "requests-tools-inventory",
+        "requests-track",
+        "overview",
+        "academic-calendar",
+        "academic-holidays",
+      ];
+      for (const baseKey of baseEmployeeModules) {
+        if (!permissionMap[baseKey] || !permissionMap[baseKey].canView) {
+          permissionMap[baseKey] = {
+            canView: true,
+            canCreate: true,
+            canEdit: true,
+            canDelete: true,
+          };
+        }
+      }
+    }
+
     const hasConfiguredPermissions = legacyPermissions.length > 0 || roleModules.length > 0;
 
     let roleName = user?.customRole?.name || null;

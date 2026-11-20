@@ -33,9 +33,20 @@ async function seedDefaultRoles() {
         "overview",
         "employee",
         "requests",
+        "requests-apply-leave",
+        "requests-forgot-punch",
+        "requests-tools-inventory",
+        "requests-track",
         "approvals",
+        "approvals-attendance",
+        "approvals-forgot-punch",
+        "approvals-leave",
+        "approvals-tools-inventory",
         "mark-attendance",
         "attendance",
+        "attendance-management",
+        "academic-calendar",
+        "academic-holidays",
         "roles-access",
         "shift-location",
         "roster"
@@ -48,7 +59,13 @@ async function seedDefaultRoles() {
         "overview",
         "mark-attendance",
         "attendance",
-        "requests"
+        "requests",
+        "requests-apply-leave",
+        "requests-forgot-punch",
+        "requests-tools-inventory",
+        "requests-track",
+        "academic-calendar",
+        "academic-holidays"
       ]
     },
     {

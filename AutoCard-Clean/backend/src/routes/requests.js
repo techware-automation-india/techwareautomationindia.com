@@ -3500,14 +3500,7 @@ async function validateInventoryStockAvailability(request, approvedMap = null) {
     const effectiveQty = approvedMap && approvedMap[code] !== undefined ? approvedMap[code] : itm.quantity;
     if (effectiveQty <= 0) continue; // 0 approved means deferred/skipped, so not blocking stock check
 
-    const item = await prisma.inventoryItem.findFirst({
-      where: {
-        OR: [
-          ...(code ? [{ code: { equals: code } }, { sku: { equals: code } }] : []),
-          ...(itm.name ? [{ name: { equals: itm.name } }] : []),
-        ],
-      },
-    });
+    const item = await findInventoryItemForTarget(code, itm.name, itm.id);
 
     if (!item) {
       return {

@@ -1122,8 +1122,9 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
                                 row.actionType === "RETURN" ? (
                                   <button
                                     type="button"
-                                    onClick={() => handleUpdateStatus(row.id, "ISSUED", `Mark ${row.itemName} as found / returned?`)}
+                                    onClick={() => handleConfirmReturnReceived(row.id, row.itemName)}
                                     className="px-3 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Confirm returned item physically received and restock into inventory"
                                   >
                                     <PackageCheck className="h-3.5 w-3.5" /> Found Item
                                   </button>

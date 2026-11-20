@@ -2709,7 +2709,7 @@ const Approvals = () => {
                                 <span key={acting ? "found-loading" : "found-icon"} className="inline-flex items-center justify-center">
                                   {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                                 </span>
-                                <span>Product Found</span>
+                                <span>Found Item</span>
                               </button>
                             </div>
                           ) : approval.status === "PENDING" ? (
@@ -3756,10 +3756,10 @@ const Approvals = () => {
                                 ? "bg-emerald-600/50 opacity-60 cursor-not-allowed"
                                 : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer"
                             }`}
-                            title={!canApprove ? "View-only access: you cannot confirm product found." : "Product Found"}
+                            title={!canApprove ? "View-only access: you cannot confirm item found." : "Found Item"}
                           >
                             <PackageCheck className="h-4 w-4" />
-                            Product Found
+                            Found Item
                           </button>
                         );
                       }

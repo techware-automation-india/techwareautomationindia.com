@@ -2666,9 +2666,9 @@ const TrackRequests = ({ isAdmin = false }) => {
                               }`}
                               title={
                                 request.status === "APPROVED" && !isProductFound && !isReturnRequest
-                                  ? "Click to confirm Product Found & collected!"
+                                  ? "Click to confirm Item Found & collected!"
                                   : isProductFound
-                                  ? "Product Found & Completed"
+                                  ? "Item Found & Completed"
                                   : "Awaiting Admin Approval"
                               }
                             >
@@ -2690,7 +2690,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                                   ? "text-foreground font-bold"
                                   : "text-muted-foreground"
                               }`}>
-                                Product Found
+                                Item Found
                               </span>
                             </div>
                           </div>
@@ -2796,7 +2796,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                             )}
 
                             <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap pt-1">
-                              {/* 1. PRODUCT FOUND BUTTON */}
+                              {/* 1. ITEM FOUND BUTTON */}
                               <button
                                 type="button"
                                 onClick={() => handleMarkProductFound(request.id)}
@@ -2809,7 +2809,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                                   </>
                                 ) : (
                                   <>
-                                    <PackageCheck className="h-4 w-4" /> Product Found
+                                    <PackageCheck className="h-4 w-4" /> Item Found
                                   </>
                                 )}
                               </button>
@@ -3506,7 +3506,7 @@ const TrackRequests = ({ isAdmin = false }) => {
                           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2 font-bold text-xs text-white hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 min-w-[110px] shadow-sm cursor-pointer ring-2 ring-emerald-500/30"
                         >
                           <PackageCheck className="h-3.5 w-3.5" />
-                          Product Found
+                          Item Found
                         </button>
                         <button
                           type="button"

@@ -149,6 +149,10 @@ ALTER TABLE `inventory_items`
     ADD COLUMN IF NOT EXISTS `companyName` VARCHAR(191) NULL,
     ADD COLUMN IF NOT EXISTS `vendorName` VARCHAR(191) NULL;
 
+-- employee_requests: ensure status column has ENUM('PENDING', 'APPROVED', 'REJECTED', 'COMPLETED') DEFAULT 'PENDING'
+ALTER TABLE `employee_requests`
+    MODIFY COLUMN `status` ENUM('PENDING', 'APPROVED', 'REJECTED', 'COMPLETED') NOT NULL DEFAULT 'PENDING';
+
 -- ------------------------------------------------------------------------------
 -- 4. INSERT DEFAULT INVENTORY UNITS (Skip if already present)
 -- ------------------------------------------------------------------------------

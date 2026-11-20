@@ -4120,28 +4120,37 @@ const handleFoundRequest = async (req, res) => {
       },
     });
 
-    if (!isReturnRequest) {
-      try {
-        await addProductToProjectOnFound(updated);
-      } catch (projErr) {
-        console.warn("⚠️ addProductToProjectOnFound failed:", projErr);
+    try {
+      if (!isReturnRequest) {
+        try {
+          await addProductToProjectOnFound(updated);
+        } catch (projErr) {
+          console.warn("⚠️ addProductToProjectOnFound failed:", projErr);
+        }
+      } else {
+        try {
+          await removeProductFromProjectOnReturn(updated, updated.employeeId);
+        } catch (remErr) {
+          console.warn("⚠️ removeProductFromProjectOnReturn failed:", remErr);
+        }
+        try {
+          await updateEmployeeAssignedTools(request);
+        } catch (toolErr) {
+          console.warn("⚠️ updateEmployeeAssignedTools failed:", toolErr);
+        }
       }
-    } else {
-      try {
-        await removeProductFromProjectOnReturn(updated, updated.employeeId);
-      } catch (remErr) {
-        console.warn("⚠️ removeProductFromProjectOnReturn failed:", remErr);
-      }
-      try {
-        await updateEmployeeAssignedTools(request);
-      } catch (toolErr) {
-        console.warn("⚠️ updateEmployeeAssignedTools failed:", toolErr);
-      }
+    } catch (sideEffectErr) {
+      console.warn("⚠️ Product found post-processing error:", sideEffectErr);
     }
 
-    const requestCategory = (request.description || "").match(/Category:\s*([^\n\r|]+)/i)?.[1]
-      ?.trim()
-      .toLowerCase();
+    let requestCategory = "";
+    try {
+      requestCategory = (request.description || "").match(/Category:\s*([^\n\r|]+)/i)?.[1]
+        ?.trim()
+        .toLowerCase() || "";
+    } catch {
+      requestCategory = "";
+    }
     const isProjectCategory = ["project", "product"].includes(requestCategory);
     const inventoryFolder = requestCategory?.includes("tool")
       ? "Tools"
@@ -4157,7 +4166,9 @@ const handleFoundRequest = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ MARK PRODUCT FOUND ERROR:", error);
-    return res.status(500).json({ message: "Failed to update product status." });
+    return res.status(500).json({
+      message: error?.message || "Failed to update product status.",
+    });
   }
 };
 

@@ -11,6 +11,7 @@
   },
   "scripts": {
     "dev": "nodemon src/index.js",
+    "test": "node src/test-inventory-logic.js",
     "prestart": "prisma generate",
     "start": "node src/index.js",
     "prisma:generate": "prisma generate",

@@ -3479,6 +3479,74 @@ function buildSplitRemainderDescription(originalDesc, remainingItems) {
   return baseLines.join("\n");
 }
 
+async function computeReservedStockForItem(targetItem, excludeRequestId = null) {
+  if (!targetItem || (!targetItem.id && !targetItem.code && !targetItem.name)) return 0;
+  try {
+    const activeApprovedRequests = await prisma.employeeRequest.findMany({
+      where: {
+        type: "EQUIPMENT",
+        status: "APPROVED",
+        ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
+      },
+      select: {
+        id: true,
+        description: true,
+        subject: true,
+        reviewNote: true,
+      },
+    });
+
+    let reservedCount = 0;
+    const targetCodeUpper = (targetItem.code || targetItem.sku || "").trim().toUpperCase();
+    const targetNameUpper = (targetItem.name || "").trim().toUpperCase();
+    const targetIdStr = targetItem.id ? String(targetItem.id) : null;
+
+    for (const req of activeApprovedRequests) {
+      const noteStr = String(req.reviewNote || "");
+      // If already collected or completed, not in reserved limbo
+      if (noteStr.includes("[PRODUCT_FOUND]") || noteStr.includes("[STOCK_UPDATED]")) {
+        continue;
+      }
+
+      const desc = req.description || "";
+      const subj = req.subject || "";
+      const descLower = desc.toLowerCase();
+      const subjLower = subj.toLowerCase();
+
+      // Only TAKING/ISSUE requests reserve stock; RETURN requests do not reserve
+      const isReturn =
+        descLower.includes("action type: return") ||
+        subjLower.includes("inventory return") ||
+        descLower.includes("[inventory return") ||
+        subjLower.includes("return");
+
+      if (isReturn) continue;
+
+      const itemsInReq = extractRequestedItems(desc);
+      for (const itm of itemsInReq) {
+        const itmCodeUpper = (itm.code || "").trim().toUpperCase();
+        const itmNameUpper = (itm.name || "").trim().toUpperCase();
+        const itmIdStr = itm.id ? String(itm.id) : null;
+
+        const isMatch =
+          (targetIdStr && itmIdStr && targetIdStr === itmIdStr) ||
+          (targetCodeUpper && itmCodeUpper && targetCodeUpper === itmCodeUpper) ||
+          (targetNameUpper && itmNameUpper && targetNameUpper === itmNameUpper);
+
+        if (isMatch) {
+          const qty = Math.max(1, parseInt(itm.quantity || 1, 10));
+          reservedCount += qty;
+        }
+      }
+    }
+
+    return reservedCount;
+  } catch (err) {
+    console.warn("⚠️ computeReservedStockForItem error:", err);
+    return 0;
+  }
+}
+
 async function validateInventoryStockAvailability(request, approvedMap = null) {
   if (!request || request.type !== "EQUIPMENT" || !request.description) {
     return { ok: true };
@@ -3509,15 +3577,21 @@ async function validateInventoryStockAvailability(request, approvedMap = null) {
       };
     }
 
-    if (item.quantity <= 0 || item.quantity < effectiveQty) {
+    const currentPhysicalStock = Number(item.quantity) || 0;
+    const reservedStock = await computeReservedStockForItem(item, request.id);
+    const availableUnreservedStock = Math.max(0, currentPhysicalStock - reservedStock);
+
+    if (availableUnreservedStock <= 0 || availableUnreservedStock < effectiveQty) {
       return {
         ok: false,
         isShortage: true,
-        availableStock: item.quantity,
+        availableStock: availableUnreservedStock,
+        physicalStock: currentPhysicalStock,
+        reservedStock,
         requestedQty: itm.quantity,
         approvedQty: effectiveQty,
         item,
-        message: `Product '${item.code || item.name}' has insufficient stock (Available: ${item.quantity} ${item.unit || "Nos"}, Approving: ${effectiveQty} ${item.unit || "Nos"}).`,
+        message: `Product '${item.code || item.name}' has insufficient available stock. Physical stock: ${currentPhysicalStock}, Reserved for pending collections: ${reservedStock}, Available to approve: ${availableUnreservedStock} ${item.unit || "Nos"}, Approving: ${effectiveQty} ${item.unit || "Nos"}.`,
       };
     }
   }
@@ -4219,20 +4293,176 @@ const handleFoundRequest = async (req, res) => {
 
     const cleanReviewNote = (request.reviewNote || "").replace(/\[ITEM_NOT_FOUND\][^|]*/g, "").trim();
     const noteWithFound = [cleanReviewNote, foundNoteText].filter(Boolean).join(" | ");
-    let updatedReviewNote = noteWithFound;
+
+    // Fetch employee details to assign in InventoryIssue
+    let employeeName = "Employee";
+    let projectName = "AutoCard Assembly Line 1";
     try {
-      updatedReviewNote = await handleInventoryStockUpdate(request, noteWithFound, true);
-    } catch (stockErr) {
-      console.warn("⚠️ handleInventoryStockUpdate error:", stockErr);
+      if (request.employeeId) {
+        const empProf = await prisma.employeeProfile.findUnique({
+          where: { id: request.employeeId },
+          include: { user: { select: { fullName: true } } },
+        });
+        if (empProf?.user?.fullName) employeeName = empProf.user.fullName;
+        else if (empProf?.employeeCode) employeeName = `Employee ${empProf.employeeCode}`;
+      }
+    } catch {}
+
+    try {
+      const prjMatch = (request.description || "").match(/Project Name:\s*([^\n\r|]+)/i);
+      if (prjMatch && prjMatch[1]) projectName = prjMatch[1].trim();
+    } catch {}
+
+    // Extract target items
+    const allTargetItems = extractRequestedItems(request.description || "");
+    if (allTargetItems.length === 0) {
+      const pidM = (request.description || "").match(/Product ID:\s*([^\n\r|]+)/i);
+      const inmM = (request.description || "").match(/Item Name:\s*([^\n\r|]+)/i) || (request.description || "").match(/Tool \/ Item Name:\s*([^\n\r|]+)/i);
+      const qtyM = (request.description || "").match(/Quantity:\s*(\d+)/i);
+      const untM = (request.description || "").match(/Unit:\s*([^\n\r|]+)/i);
+      if (pidM || inmM) {
+        allTargetItems.push({
+          code: pidM ? pidM[1].trim() : "",
+          name: inmM ? inmM[1].trim() : "",
+          quantity: qtyM ? Math.max(1, parseInt(qtyM[1], 10)) : 1,
+          unit: untM ? untM[1].trim() : "Nos",
+        });
+      }
     }
 
-    const updated = await prisma.employeeRequest.update({
-      where: { id: cleanReqId },
-      data: {
-        status: "COMPLETED",
-        reviewNote: typeof updatedReviewNote === "string" ? updatedReviewNote.slice(0, 4000) : updatedReviewNote,
-      },
-    });
+    // ATOMIC TRANSACTION: Concurrency protection, stock boundary check & issue creation
+    let updated = null;
+    let stockNoteSummary = "";
+
+    try {
+      const txResult = await prisma.$transaction(async (tx) => {
+        // 1. Re-fetch request inside transaction to guard against concurrent Item Found clicks
+        const currentReq = await tx.employeeRequest.findUnique({
+          where: { id: cleanReqId },
+        });
+
+        if (!currentReq || currentReq.status === "COMPLETED" || (currentReq.reviewNote && currentReq.reviewNote.includes("[PRODUCT_FOUND]"))) {
+          return { alreadyCompleted: true, request: currentReq };
+        }
+
+        const stockUpdateNotes = [];
+
+        // 2. Process stock updates inside transaction
+        if (isReturnRequest) {
+          // Return restocking inside transaction
+          for (const target of allTargetItems) {
+            const tQty = Math.max(1, parseInt(target.quantity || 1, 10));
+            let item = null;
+            if (target.id) {
+              item = await tx.inventoryItem.findUnique({ where: { id: target.id } });
+            }
+            if (!item && target.code) {
+              item = await tx.inventoryItem.findFirst({
+                where: { OR: [{ code: target.code }, { sku: target.code }] },
+              });
+            }
+            if (!item && target.name) {
+              item = await tx.inventoryItem.findFirst({
+                where: { name: target.name },
+              });
+            }
+
+            if (item) {
+              await tx.inventoryItem.update({
+                where: { id: item.id },
+                data: { quantity: { increment: tQty } },
+              });
+              stockUpdateNotes.push(`[STOCK_RESTOCKED] Restocked ${tQty} ${item.unit || "Nos"} into inventory for "${item.name}"`);
+            }
+          }
+        } else {
+          // Taking / Issue: Atomic decrement with strict non-negative check
+          for (const target of allTargetItems) {
+            const tCode = target.code;
+            const tName = target.name;
+            const tId = target.id;
+            const tQty = Math.max(1, parseInt(target.quantity || 1, 10));
+
+            if (!tCode && !tName && !tId) continue;
+
+            let item = null;
+            if (tId) {
+              item = await tx.inventoryItem.findUnique({ where: { id: tId } });
+            }
+            if (!item && tCode) {
+              item = await tx.inventoryItem.findFirst({
+                where: { OR: [{ code: tCode }, { sku: tCode }] },
+              });
+            }
+            if (!item && tName) {
+              item = await tx.inventoryItem.findFirst({
+                where: { name: tName },
+              });
+            }
+
+            if (!item) {
+              throw new Error(`Item '${tCode || tName}' not found in inventory catalog.`);
+            }
+
+            const currentQty = Number(item.quantity) || 0;
+            if (currentQty < tQty) {
+              throw new Error(`Insufficient stock in store for '${item.name}' (${item.code || "N/A"}). Available: ${currentQty} ${item.unit || "Nos"}, Required: ${tQty} ${item.unit || "Nos"}.`);
+            }
+
+            // Decrement stock atomically
+            await tx.inventoryItem.update({
+              where: { id: item.id },
+              data: { quantity: { decrement: tQty } },
+            });
+
+            // Record outward issue log
+            await tx.inventoryIssue.create({
+              data: {
+                inventoryItemId: item.id,
+                itemName: item.name || tName || "Issued Item",
+                assignedToPerson: employeeName,
+                projectName: projectName,
+                companyName: "TECHWARE AUTOMATION (INDIA)",
+                quantity: tQty,
+                issueDate: new Date(),
+                status: "ISSUED",
+                notes: `Issued via Request #${currentReq.id.slice(-6)} [PRODUCT_FOUND]`,
+              },
+            });
+
+            stockUpdateNotes.push(`[STOCK_UPDATED] Stock updated for ${item.code || item.name} (${currentQty} -> ${currentQty - tQty} ${item.unit || "Nos"})`);
+          }
+        }
+
+        const combinedNoteText = [noteWithFound, ...stockUpdateNotes].filter(Boolean).join(" | ");
+
+        // 3. Update request status to COMPLETED inside transaction
+        const updatedReq = await tx.employeeRequest.update({
+          where: { id: cleanReqId },
+          data: {
+            status: "COMPLETED",
+            reviewNote: combinedNoteText.slice(0, 4000),
+          },
+        });
+
+        return { alreadyCompleted: false, request: updatedReq, notes: stockUpdateNotes.join(" | ") };
+      });
+
+      if (txResult.alreadyCompleted) {
+        return res.json({
+          message: "Product already marked as found.",
+          request: txResult.request,
+        });
+      }
+
+      updated = txResult.request;
+      stockNoteSummary = txResult.notes;
+    } catch (txError) {
+      console.error("❌ Atomic Item Found transaction error:", txError);
+      return res.status(400).json({
+        message: txError.message || "Failed to mark item found due to stock or inventory error.",
+      });
+    }
 
     try {
       if (!isReturnRequest) {
@@ -4565,5 +4795,68 @@ async function notifyShortagesOnRestock(item) {
   }
 }
 
-export { addOrEnsureProductInProject, notifyShortagesOnRestock };
+async function expireStaleApprovedRequests() {
+  try {
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    // Find EQUIPMENT requests approved more than 48 hours ago and never collected
+    const staleRequests = await prisma.employeeRequest.findMany({
+      where: {
+        type: "EQUIPMENT",
+        status: "APPROVED",
+        reviewedAt: { lte: fortyEightHoursAgo },
+      },
+      include: {
+        employee: { select: { userId: true } },
+      },
+    });
+
+    let expiredCount = 0;
+    for (const req of staleRequests) {
+      const note = String(req.reviewNote || "");
+      if (note.includes("[PRODUCT_FOUND]") || note.includes("[STOCK_UPDATED]")) {
+        continue;
+      }
+
+      const expiredNote = `[EXPIRED_UNCOLLECTED] Request automatically cancelled after 48 hours without collection. Reserved stock released.`;
+      const updatedNote = [note, expiredNote].filter(Boolean).join(" | ");
+
+      await prisma.employeeRequest.update({
+        where: { id: req.id },
+        data: {
+          status: "REJECTED",
+          reviewNote: updatedNote.slice(0, 4000),
+        },
+      });
+
+      if (req.employee?.userId) {
+        try {
+          await prisma.notification.create({
+            data: {
+              userId: req.employee.userId,
+              title: "Request Expired ⏳",
+              message: `Your approved tool/inventory request #${req.id.slice(-6)} expired because it was not collected within 48 hours. The reserved stock has been released.`,
+              type: "EQUIPMENT",
+              referenceId: req.id,
+              isRead: false,
+            },
+          });
+        } catch {}
+      }
+
+      expiredCount++;
+    }
+
+    if (expiredCount > 0) {
+      console.log(`🧹 Auto-expired ${expiredCount} uncollected approved inventory request(s). Reserved stock released.`);
+    }
+
+    return expiredCount;
+  } catch (err) {
+    console.warn("⚠️ expireStaleApprovedRequests error:", err);
+    return 0;
+  }
+}
+
+export { addOrEnsureProductInProject, notifyShortagesOnRestock, expireStaleApprovedRequests };
 export default router;

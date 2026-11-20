@@ -11,7 +11,7 @@ import employeesRouter from "./routes/employees.js";
 // CUSTOMER ROUTES COMMENTED OUT
 // import customersRouter from "./routes/customers.js";
 import onboardingRouter from "./routes/onboarding.js";
-import requestsRouter from "./routes/requests.js";
+import requestsRouter, { expireStaleApprovedRequests } from "./routes/requests.js";
 import leaveTypesRouter from "./routes/leaveTypes.js";
 import leaveRouter from "./routes/leave.js";
 import holidaysRouter from "./routes/holidays.js";
@@ -302,12 +302,17 @@ if (process.env.VERCEL !== "1") {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     await logDatabaseConnection();
-    
-    // Start database health check to prevent timeouts
-    //if (process.env.NODE_ENV === 'production') {
-    //  startDatabaseHealthCheck();
-    //  console.log("🔄 Database health check started");
-  ///  }
+
+    // Auto-clean stale approved uncollected inventory requests every 30 minutes
+    try {
+      expireStaleApprovedRequests();
+      setInterval(() => {
+        expireStaleApprovedRequests();
+      }, 30 * 60 * 1000);
+      console.log("⏰ Stale approved requests auto-expiry job initialized (every 30m)");
+    } catch (schedErr) {
+      console.warn("⚠️ Failed to start auto-expiry scheduler:", schedErr);
+    }
   });
 
   // Handle server errors

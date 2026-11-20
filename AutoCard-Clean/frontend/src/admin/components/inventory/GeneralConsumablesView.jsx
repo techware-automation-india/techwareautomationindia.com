@@ -244,18 +244,20 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
     if (confirmMsg && !window.confirm(confirmMsg)) return;
 
     try {
-      if (newStatus === "APPROVED" || newStatus === "REJECTED") {
-        await apiPut(`/requests/${reqId}/review`, {
-          status: newStatus,
-          note: `Reviewed by Admin in Tools/Consumables Management: ${newStatus}`,
+      const cleanReqId = String(reqId || "").replace(/^request-/, "");
+      if (newStatus === "APPROVED") {
+        await apiPost(`/requests/${cleanReqId}/approve`, {
+          note: `Approved by Admin in Tools/Consumables Management.`,
+        });
+      } else if (newStatus === "REJECTED") {
+        await apiPost(`/requests/${cleanReqId}/reject`, {
+          note: `Rejected by Admin in Tools/Consumables Management.`,
         });
       } else {
-        await apiPut(`/requests/${reqId}/found`, {
-          status: newStatus,
+        await apiPost(`/requests/${cleanReqId}/found`, {
           note: `Updated status to ${newStatus}`,
         }).catch(async () => {
-          await apiPut(`/requests/${reqId}/review`, {
-            status: newStatus,
+          await apiPut(`/requests/${cleanReqId}/found`, {
             note: `Updated status to ${newStatus}`,
           });
         });
@@ -289,17 +291,17 @@ export default function GeneralConsumablesView({ defaultFolder = null, onBackToH
     }
 
     try {
+      const cleanReqId = String(reqId || "").replace(/^request-/, "");
       // First ensure request is approved if it was pending
-      const targetReq = historyList.find((r) => r.id === reqId);
+      const targetReq = historyList.find((r) => r.id === reqId || r.id === cleanReqId);
       if (targetReq && targetReq.rawRequest?.status === "PENDING") {
-        await apiPut(`/requests/${reqId}/review`, {
-          status: "APPROVED",
+        await apiPost(`/requests/${cleanReqId}/approve`, {
           note: "Return approved upon store physical handover.",
         }).catch(() => {});
       }
 
-      await apiPost(`/requests/${reqId}/found`, {}).catch(async () => {
-        await apiPut(`/requests/${reqId}/found`, {});
+      await apiPost(`/requests/${cleanReqId}/found`, {}).catch(async () => {
+        await apiPut(`/requests/${cleanReqId}/found`, {});
       });
 
       toast.success(`Return received successfully! "${itemName || 'Item'}" has been restocked into warehouse inventory.`);

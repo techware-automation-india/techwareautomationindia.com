@@ -2354,6 +2354,75 @@ async function normalizeProductCategory(rawCategory) {
   return cat;
 }
 
+async function findInventoryItemForTarget(code, name, id = null) {
+  const cleanCode = code ? String(code).trim() : "";
+  const cleanName = name ? String(name).trim() : "";
+  const cleanId = id ? String(id).trim() : "";
+
+  if (!cleanCode && !cleanName && !cleanId) return null;
+
+  // 1. Direct ID lookup if cleanId looks like a uuid
+  if (cleanId) {
+    try {
+      const itemById = await prisma.inventoryItem.findUnique({
+        where: { id: cleanId },
+      });
+      if (itemById) return itemById;
+    } catch {}
+  }
+
+  // 2. Exact match by code, sku, or name
+  try {
+    const item = await prisma.inventoryItem.findFirst({
+      where: {
+        OR: [
+          ...(cleanCode ? [{ code: { equals: cleanCode } }, { sku: { equals: cleanCode } }, { name: { equals: cleanCode } }] : []),
+          ...(cleanName ? [{ name: { equals: cleanName } }, { code: { equals: cleanName } }] : []),
+        ],
+      },
+    });
+    if (item) return item;
+  } catch (err) {
+    console.warn("⚠️ findInventoryItemForTarget exact match error:", err);
+  }
+
+  // 3. Fallback: Case-insensitive / substring match
+  try {
+    const allItems = await prisma.inventoryItem.findMany({
+      select: { id: true, name: true, code: true, sku: true, quantity: true, unit: true, category: true },
+    });
+    const lowerCode = cleanCode.toLowerCase();
+    const lowerName = cleanName.toLowerCase();
+
+    for (const it of allItems) {
+      const itCode = (it.code || "").toLowerCase().trim();
+      const itSku = (it.sku || "").toLowerCase().trim();
+      const itName = (it.name || "").toLowerCase().trim();
+
+      if (
+        (lowerCode && (itCode === lowerCode || itSku === lowerCode || itName === lowerCode)) ||
+        (lowerName && (itName === lowerName || itCode === lowerName))
+      ) {
+        return it;
+      }
+    }
+
+    // Substring match if name is reasonably specific (>= 4 chars)
+    if (lowerName && lowerName.length >= 4) {
+      for (const it of allItems) {
+        const itName = (it.name || "").toLowerCase().trim();
+        if (itName && (itName.includes(lowerName) || lowerName.includes(itName))) {
+          return it;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ findInventoryItemForTarget fallback error:", err);
+  }
+
+  return null;
+}
+
 async function findTargetProject(projName) {
   if (!projName) return null;
   const cleanName = projName.trim();
@@ -2428,6 +2497,33 @@ async function findTargetProject(projName) {
 function extractRequestedItems(description) {
   if (!description || typeof description !== "string") return [];
   const items = [];
+
+  // Check for JSON payload inside [TOOLS_INVENTORY] block
+  if (description.includes("[TOOLS_INVENTORY]")) {
+    try {
+      const jsonStart = description.indexOf("{", description.indexOf("[TOOLS_INVENTORY]"));
+      if (jsonStart !== -1) {
+        const jsonEnd = description.lastIndexOf("}");
+        if (jsonEnd > jsonStart) {
+          const parsed = JSON.parse(description.slice(jsonStart, jsonEnd + 1));
+          if (parsed && (parsed.itemName || parsed.inventoryItemId)) {
+            items.push({
+              id: parsed.inventoryItemId || "",
+              code: parsed.inventoryItemId || "",
+              name: parsed.itemName || "",
+              quantity: parseInt(parsed.quantity || "1", 10) || 1,
+              unit: parsed.unit || "Nos",
+              productType: parsed.productType || "",
+            });
+            return items;
+          }
+        }
+      }
+    } catch {
+      // Fall through to regex parsing
+    }
+  }
+
   const marker = "Items (";
   const startIdx = description.indexOf(marker);
   if (startIdx !== -1) {
@@ -2457,8 +2553,8 @@ function extractRequestedItems(description) {
   }
 
   if (items.length === 0) {
-    const productIdMatch = description.match(/Product ID:\s*([^\n\r|]+)/i);
-    const itemNameMatch = description.match(/Item Name:\s*([^\n\r|]+)/i) || description.match(/Tool \/ Item Name:\s*([^\n\r|]+)/i);
+    const productIdMatch = description.match(/Product ID:\s*([^\n\r|]+)/i) || description.match(/Part Code:\s*([^\n\r|]+)/i);
+    const itemNameMatch = description.match(/Item Name:\s*([^\n\r|]+)/i) || description.match(/Tool \/ Item Name:\s*([^\n\r|]+)/i) || description.match(/Consumable \/ Item Name:\s*([^\n\r|]+)/i);
     const quantityMatch = description.match(/Quantity:\s*(\d+)/i);
     const unitMatch = description.match(/Unit:\s*([^\n\r|]+)/i);
     const productTypeMatch = description.match(/Product Type:\s*([^\n\r|]+)/i);
@@ -2954,15 +3050,8 @@ async function handleInventoryStockUpdate(request, note, isProductFoundAction = 
           !isDeferredReturn);
 
       if (shouldRestock && (code || itemName)) {
-        // A. Look up existing inventory item by code, sku, or name
-        let item = await prisma.inventoryItem.findFirst({
-          where: {
-            OR: [
-              ...(code ? [{ code: { equals: code } }, { sku: { equals: code } }] : []),
-              ...(itemName ? [{ name: { equals: itemName } }, { code: { equals: itemName } }] : []),
-            ],
-          },
-        });
+        // A. Look up existing inventory item by code, sku, or name using flexible matching
+        let item = await findInventoryItemForTarget(code, itemName);
 
         if (item) {
           // Increment quantity of existing inventory item
@@ -3084,38 +3173,70 @@ async function handleInventoryStockUpdate(request, note, isProductFoundAction = 
       const shouldUpdateStock = (isProductFoundAction || noteStr.includes("[PRODUCT_FOUND]")) && !alreadyDecremented;
 
       if (shouldUpdateStock) {
-        // Extract all requested items (supports single item and multi-item arrays)
+        // Extract all requested items (supports single item, multi-item arrays, and [TOOLS_INVENTORY] json)
         const allTargetItems = extractRequestedItems(text);
         if (allTargetItems.length === 0 && (code || itemName)) {
           allTargetItems.push({ code, name: itemName, quantity: qty, unit });
         }
 
+        // Fetch employee details to assign in InventoryIssue
+        let employeeName = "Employee";
+        let projectName = "AutoCard Assembly Line 1";
+        try {
+          if (request.employeeId) {
+            const empProf = await prisma.employeeProfile.findUnique({
+              where: { id: request.employeeId },
+              include: { user: { select: { fullName: true } } },
+            });
+            if (empProf?.user?.fullName) employeeName = empProf.user.fullName;
+            else if (empProf?.employeeCode) employeeName = `Employee ${empProf.employeeCode}`;
+          }
+        } catch {}
+
+        try {
+          const prjMatch = text.match(/Project Name:\s*([^\n\r|]+)/i);
+          if (prjMatch && prjMatch[1]) projectName = prjMatch[1].trim();
+        } catch {}
+
         const stockUpdateNotes = [];
         for (const target of allTargetItems) {
           const tCode = target.code;
           const tName = target.name;
+          const tId = target.id;
           const tQty = Math.max(1, parseInt(target.quantity || 1, 10));
 
-          if (!tCode && !tName) continue;
+          if (!tCode && !tName && !tId) continue;
 
-          const item = await prisma.inventoryItem.findFirst({
-            where: {
-              OR: [
-                ...(tCode ? [{ code: { equals: tCode } }, { sku: { equals: tCode } }, { name: { equals: tCode } }] : []),
-                ...(tName ? [{ name: { equals: tName } }, { code: { equals: tName } }] : []),
-              ],
-            },
-          });
+          const item = await findInventoryItemForTarget(tCode, tName, tId);
 
           if (item) {
             const newQty = Math.max(0, (item.quantity || 0) - tQty);
-            if (newQty !== item.quantity) {
-              await prisma.inventoryItem.update({
-                where: { id: item.id },
-                data: { quantity: newQty },
+            await prisma.inventoryItem.update({
+              where: { id: item.id },
+              data: { quantity: newQty },
+            });
+            stockUpdateNotes.push(`[STOCK_UPDATED] Stock updated for ${item.code || item.name} (${item.quantity} -> ${newQty} ${item.unit || "Nos"})`);
+
+            // Create inventory issue (Outward log) so it shows in Inventory Out view
+            try {
+              await prisma.inventoryIssue.create({
+                data: {
+                  inventoryItemId: item.id,
+                  itemName: item.name || tName || "Issued Item",
+                  assignedToPerson: employeeName,
+                  projectName: projectName,
+                  companyName: "TECHWARE AUTOMATION (INDIA)",
+                  quantity: tQty,
+                  issueDate: new Date(),
+                  status: "ISSUED",
+                  notes: `Issued via Request #${request.id.slice(-6)} [PRODUCT_FOUND]`,
+                },
               });
-              stockUpdateNotes.push(`[STOCK_UPDATED] Stock updated for ${item.code || item.name} (${item.quantity} -> ${newQty} ${item.unit || "Nos"})`);
+            } catch (issueLogErr) {
+              console.warn("⚠️ Error creating InventoryIssue log on Item Found:", issueLogErr);
             }
+          } else {
+            console.warn(`⚠️ Item not found in inventory catalog for code="${tCode}", name="${tName}"`);
           }
         }
 

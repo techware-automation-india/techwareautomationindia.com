@@ -45,8 +45,8 @@ CREATE TABLE IF NOT EXISTS `inventory_items` (
     `sku` VARCHAR(191) NULL,
     `categoryId` VARCHAR(191) NULL,
     `category` VARCHAR(191) NULL,
-    `photoUrl` TEXT NULL,
-    `img` TEXT NULL,
+    `photoUrl` LONGTEXT NULL,
+    `img` LONGTEXT NULL,
     `specifications` JSON NULL,
     `quantity` DOUBLE NOT NULL DEFAULT 0,
     `minStock` INTEGER NOT NULL DEFAULT 5,
@@ -56,12 +56,15 @@ CREATE TABLE IF NOT EXISTS `inventory_items` (
     `warehouse` VARCHAR(191) NULL,
     `description` TEXT NULL,
     `costPrice` DOUBLE NULL,
+    `sellingPrice` DOUBLE NULL,
     `purchaseDate` DATETIME(3) NULL,
     `date` DATETIME(3) NULL,
     `companyName` VARCHAR(191) NULL,
     `vendorName` VARCHAR(191) NULL,
     `createdById` VARCHAR(191) NULL,
     `createdByName` VARCHAR(191) NULL,
+    `updatedById` VARCHAR(191) NULL,
+    `updatedByName` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 
@@ -144,10 +147,13 @@ ALTER TABLE `projects`
     ADD COLUMN IF NOT EXISTS `progress` INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS `isArchived` BOOLEAN NOT NULL DEFAULT false;
 
--- inventory_items: companyName & vendorName (for vendor and manufacturer tracking)
+-- inventory_items: companyName & vendorName (for vendor and manufacturer tracking), sellingPrice, updatedById, updatedByName
 ALTER TABLE `inventory_items`
     ADD COLUMN IF NOT EXISTS `companyName` VARCHAR(191) NULL,
-    ADD COLUMN IF NOT EXISTS `vendorName` VARCHAR(191) NULL;
+    ADD COLUMN IF NOT EXISTS `vendorName` VARCHAR(191) NULL,
+    ADD COLUMN IF NOT EXISTS `sellingPrice` DOUBLE NULL,
+    ADD COLUMN IF NOT EXISTS `updatedById` VARCHAR(191) NULL,
+    ADD COLUMN IF NOT EXISTS `updatedByName` VARCHAR(191) NULL;
 
 -- employee_requests: ensure status column has ENUM('PENDING', 'APPROVED', 'REJECTED', 'COMPLETED') DEFAULT 'PENDING'
 ALTER TABLE `employee_requests`

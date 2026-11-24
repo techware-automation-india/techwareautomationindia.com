@@ -110,9 +110,19 @@ const fmtWorkedHours = (value) => {
   return `${h}h ${m}m`;
 };
 
+const isRecordSundayOrHoliday = (record) => {
+  if (!record || !record.date) return false;
+  if (record.status === "HOLIDAY") return true;
+  const d = new Date(record.date);
+  if (Number.isNaN(d.getTime())) return false;
+  const istDow = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(d);
+  return istDow === "Sun";
+};
+
 const fmtOvertimeHours = (record, isHolidayOrSunday = false) => {
   if (!record) return null;
-  const netOtMinutes = getNumericOvertimeMinutes(record, isHolidayOrSunday);
+  const effectiveHolOrSun = Boolean(isHolidayOrSunday || isRecordSundayOrHoliday(record));
+  const netOtMinutes = getNumericOvertimeMinutes(record, effectiveHolOrSun);
   if (netOtMinutes <= 0) return null;
   return fmtWorkedHours(netOtMinutes / 60);
 };
@@ -136,12 +146,13 @@ const getNumericWorkedMinutes = (record) => {
 
 const getNumericOvertimeMinutes = (record, isHolidayOrSunday = false) => {
   if (!record) return 0;
+  const effectiveHolOrSun = Boolean(isHolidayOrSunday || isRecordSundayOrHoliday(record));
   const workedMinutes = getNumericWorkedMinutes(record);
   if (workedMinutes <= 0) return 0;
   const workedHours = workedMinutes / 60;
 
   // On holidays or Sundays, all worked hours count as overtime (rounded to 15m intervals)
-  if (isHolidayOrSunday) {
+  if (effectiveHolOrSun) {
     const roundedOtMinutes = Math.floor(workedMinutes / 15) * 15;
     return roundedOtMinutes > 0 ? roundedOtMinutes : 0;
   }
@@ -3220,7 +3231,7 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                   <tbody className="divide-y divide-border">
                     {filteredRecords.map((rec) => {
                       const isHoliday = isHolidayDate(rec.date);
-                      const otHours = fmtOvertimeHours(rec);
+                      const otHours = fmtOvertimeHours(rec, isHoliday);
                       
                       return (
                         <tr
@@ -5219,7 +5230,7 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                                       Overtime
                                     </div>
                                     <div className="mt-1.5 text-base font-bold text-orange-700 dark:text-orange-300">
-                                      {fmtOvertimeHours(selectedRecord) || "�"}
+                                      {fmtOvertimeHours(selectedRecord, isHolidayDate(selectedRecord.date)) || "—"}
                                     </div>
                                   </div>
                                 </div>

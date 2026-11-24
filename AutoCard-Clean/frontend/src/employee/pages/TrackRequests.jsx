@@ -2509,13 +2509,13 @@ const TrackRequests = ({ isAdmin = false }) => {
                             {isRestockedAvailable && "Phase 2: Restocked in Store (Ready for pickup!)"}
                             {!isItemNotFound && !isRestockedAvailable && isHold && "Phase 2: ON HOLD (Awaiting Warehouse Restock)"}
                             {!isHold && isReturnRequest && (
-                              isProductFound
-                                ? "Phase 4: Found Item & Restocked to Warehouse"
+                              isQualityInspected || request.status === "COMPLETED"
+                                ? "Phase 4: Quality Tested & Completed ✓"
+                                : isProductFound
+                                ? "Phase 3: Item Found in Store (Under Quality Testing)"
                                 : isItemReturned
-                                ? "Phase 3: Item Returned by Employee (Awaiting Admin Found Item)"
-                                : isQualityInspected || request.status === "APPROVED"
-                                ? "Phase 2: Quality Tested & Approved (Please click Item Return)"
-                                : "Phase 1: Return Request Submitted (Pending Approval)"
+                                ? "Phase 2: Item Return Submitted (Awaiting Admin Found Item)"
+                                : "Phase 1: Return Submitted (Please click 'Item Return' below)"
                             )}
                             {!isHold && !isReturnRequest && request.status === "PENDING" && "Phase 1: In Review (Submitted to Admin)"}
                             {!isHold && !isReturnRequest && request.status === "APPROVED" && !isProductFound && "Phase 2: Admin Approved (Ready for Pickup)"}
@@ -2532,13 +2532,13 @@ const TrackRequests = ({ isAdmin = false }) => {
 
                             {/* Filled Progress Line */}
                             <div
-                              className="absolute left-6 top-3.5 h-1 rounded-full transition-all duration-500 -z-0 bg-gradient-to-r from-amber-500 via-purple-500 to-emerald-500"
+                              className="absolute left-6 top-3.5 h-1 rounded-full transition-all duration-500 -z-0 bg-gradient-to-r from-amber-500 via-blue-500 via-purple-500 to-emerald-500"
                               style={{
-                                width: isProductFound
+                                width: isQualityInspected || request.status === "COMPLETED"
                                   ? "calc(100% - 48px)"
-                                  : isItemReturned
+                                  : isProductFound
                                   ? "calc(66.6% - 16px)"
-                                  : isQualityInspected || request.status === "APPROVED"
+                                  : isItemReturned
                                   ? "calc(33.3% - 8px)"
                                   : "20px",
                               }}
@@ -2552,46 +2552,46 @@ const TrackRequests = ({ isAdmin = false }) => {
                               <span className="text-[11px] font-medium text-muted-foreground">Return Submitted</span>
                             </div>
 
-                            {/* Step 2 Node: Quality Tested */}
+                            {/* Step 2 Node: Item Return */}
                             <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
                               <div
                                 className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                                  isQualityInspected || request.status === "APPROVED" || isItemReturned || isProductFound
-                                    ? "bg-purple-600 text-white shadow-xs ring-2 ring-purple-500/20"
+                                  isItemReturned || isProductFound || isQualityInspected || request.status === "COMPLETED"
+                                    ? "bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/20"
                                     : "bg-secondary text-muted-foreground"
                                 }`}
                               >
                                 2
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground">Quality Tested</span>
+                              <span className="text-[11px] font-medium text-muted-foreground">Item Return</span>
                             </div>
 
-                            {/* Step 3 Node: Item Return */}
+                            {/* Step 3 Node: Found Item */}
                             <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
                               <div
                                 className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                                  isItemReturned || isProductFound
-                                    ? "bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/20"
+                                  isProductFound || isQualityInspected || request.status === "COMPLETED"
+                                    ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-500/20"
                                     : "bg-secondary text-muted-foreground"
                                 }`}
                               >
                                 3
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground">Item Return</span>
+                              <span className="text-[11px] font-medium text-muted-foreground">Found Item</span>
                             </div>
 
-                            {/* Step 4 Node: Found Item */}
+                            {/* Step 4 Node: Quality Tested */}
                             <div className="flex flex-col items-center gap-1 z-10 bg-background px-1">
                               <div
                                 className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                                  isProductFound
+                                  isQualityInspected || request.status === "COMPLETED"
                                     ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/20"
                                     : "bg-secondary text-muted-foreground"
                                 }`}
                               >
                                 4
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground">Found Item</span>
+                              <span className="text-[11px] font-medium text-muted-foreground">Quality Tested</span>
                             </div>
                           </div>
                         ) : (
@@ -2711,19 +2711,19 @@ const TrackRequests = ({ isAdmin = false }) => {
                           </div>
                         )}
 
-                        {/* Action Button: "Item Return" (Appears for Return Request when Approved & Quality Tested & not yet returned) */}
-                        {isReturnRequest && (request.status === "APPROVED" || isQualityInspected) && !isItemReturned && !isProductFound && !isHold && (
-                          <div className="mt-3 p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-between flex-wrap gap-3">
-                            <div className="text-xs text-purple-700 dark:text-purple-300 font-medium flex items-center gap-2">
-                              <CheckCircle2 className="h-4 w-4 shrink-0 text-purple-600" />
-                              <span>Admin approved & quality tested! Hand over item to store/admin and click below.</span>
+                        {/* Action Button: "Item Return" (Appears for Return Request right after submission, before physically returning) */}
+                        {isReturnRequest && !isItemReturned && !isProductFound && !isQualityInspected && request.status !== "COMPLETED" && !isHold && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between flex-wrap gap-3">
+                            <div className="text-xs text-blue-700 dark:text-blue-300 font-medium flex items-center gap-2">
+                              <RotateCcw className="h-4 w-4 shrink-0 text-blue-600" />
+                              <span>Ready to return? Hand over the item to the store keeper and click <strong>Item Return</strong> below.</span>
                             </div>
 
                             <button
                               type="button"
                               onClick={() => handleItemReturn(request.id)}
                               disabled={returningId === request.id}
-                              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
                             >
                               {returningId === request.id ? (
                                 <>
@@ -2739,14 +2739,27 @@ const TrackRequests = ({ isAdmin = false }) => {
                         )}
 
                         {/* Action Status Banner: For Return Request when Employee clicked Item Return, waiting for Admin verification */}
-                        {isReturnRequest && isItemReturned && !isProductFound && !isHold && (
-                          <div className="mt-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between flex-wrap gap-3">
-                            <div className="text-xs text-blue-700 dark:text-blue-300 font-medium flex items-center gap-2">
-                              <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" />
-                              <span>Item Return submitted by employee ✓ Handed over to store. Awaiting Admin to verify and confirm restock into warehouse.</span>
+                        {isReturnRequest && isItemReturned && !isProductFound && !isQualityInspected && request.status !== "COMPLETED" && !isHold && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-between flex-wrap gap-3">
+                            <div className="text-xs text-indigo-700 dark:text-indigo-300 font-medium flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 shrink-0 text-indigo-600" />
+                              <span>Item Return submitted by employee ✓ Handed over to store. Awaiting Admin to confirm physical receipt ("Found Item").</span>
                             </div>
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30">
-                              Awaiting Admin Confirmation
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30">
+                              Awaiting Store Confirmation
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Action Status Banner: For Return Request when Admin confirmed Found Item, awaiting Quality Testing */}
+                        {isReturnRequest && isProductFound && !isQualityInspected && request.status !== "COMPLETED" && !isHold && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-between flex-wrap gap-3">
+                            <div className="text-xs text-purple-700 dark:text-purple-300 font-medium flex items-center gap-2">
+                              <PackageCheck className="h-4 w-4 shrink-0 text-purple-600" />
+                              <span>Admin confirmed item found in store ✓ Undergoing Quality Testing (OK / Not OK).</span>
+                            </div>
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                              Quality Testing in Progress
                             </span>
                           </div>
                         )}

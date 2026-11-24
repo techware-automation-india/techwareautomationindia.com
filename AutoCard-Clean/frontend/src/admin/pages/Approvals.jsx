@@ -1354,10 +1354,9 @@ const getReturnStep = (req) => {
   if (!isReturnRequest(req)) return 0;
 
   const text = `${req?.status || ""} ${req?.reviewNote || ""} ${req?.adminNote || ""} ${req?.description || ""}`.toUpperCase();
-  if (text.includes("[PRODUCT_FOUND]") || req?.status === "COMPLETED") return 4;
-  if (text.includes("[ITEM_RETURNED]") || text.includes("[PHYSICALLY_RETURNED]")) return 3;
-  if (text.includes("[QUALITY_INSPECTED]") || text.includes("QUALITY INSPECTED")) return 2;
-  if (req?.status === "APPROVED") return 2;
+  if (text.includes("[QUALITY_INSPECTED]") || req?.status === "COMPLETED") return 4;
+  if (text.includes("[PRODUCT_FOUND]") || text.includes("[STORE_RECEIVED]")) return 3;
+  if (text.includes("[ITEM_RETURNED]") || text.includes("[PHYSICALLY_RETURNED]")) return 2;
   return 1;
 };
 
@@ -1573,15 +1572,20 @@ const Approvals = () => {
     }
   };
 
-  const handleQualitySubmit = async () => {
+  const handleQualitySubmit = async (decisionOverride = null) => {
     if (!qualityModal) return;
+    const isOk = decisionOverride ? decisionOverride === "OK" : (qualityCondition === "OK" || qualityCondition.includes("Good") || qualityCondition.includes("Minor"));
     setActingId(`${qualityModal.source}:${qualityModal.id}`);
     try {
-      const note = `[QUALITY_INSPECTED] Quality Inspected: ${qualityCondition}. Remarks: ${qualityRemarks.trim() || "Quality inspected by Admin."}`;
-      await review(qualityModal, "approve", note);
-      toast.success("Return Request Approved & Quality Test recorded! Awaiting employee Item Return.");
+      const cleanId = String(qualityModal.id).replace(/^request-/, "");
+      await apiPost(`/requests/${cleanId}/quality-test`, {
+        qualityResult: isOk ? "OK" : "NOT_OK",
+        condition: isOk ? "OK - Good Condition" : "NOT OK - Defective / Damaged",
+        remarks: qualityRemarks.trim() || (isOk ? "Quality Tested OK by Admin. Restocked to store." : "Quality Tested NOT OK by Admin. Defective item."),
+      });
+      toast.success(isOk ? "Quality Tested: OK! Item approved and restocked." : "Quality Tested: NOT OK! Defective return recorded.");
       setQualityModal(null);
-      setQualityCondition("Good Condition - Restock to Warehouse Stock");
+      setQualityCondition("OK");
       setQualityRemarks("");
       await loadApprovals();
     } catch (err) {
@@ -2430,22 +2434,22 @@ const Approvals = () => {
                 } else if (returnStep > 0) {
                   switch (returnStep) {
                     case 1:
-                      badgeLabel = "Step 1: Return Pending Approval & Quality Test";
+                      badgeLabel = "Step 1: Return Submitted (Awaiting Employee Item Return)";
                       badgeClass = "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
                       barClass = "bg-amber-500";
                       break;
                     case 2:
-                      badgeLabel = "Step 2: Quality Passed (Awaiting Employee Item Return)";
-                      badgeClass = "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300";
-                      barClass = "bg-purple-500";
-                      break;
-                    case 3:
-                      badgeLabel = "Step 3: Employee Clicked Item Return (Ready for Found Item)";
+                      badgeLabel = "Step 2: Employee Clicked Item Return (Ready for Found Item)";
                       badgeClass = "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300";
                       barClass = "bg-blue-600";
                       break;
+                    case 3:
+                      badgeLabel = "Step 3: Found in Store (Ready for Quality Testing)";
+                      badgeClass = "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300";
+                      barClass = "bg-purple-500";
+                      break;
                     case 4:
-                      badgeLabel = "Step 4: Item Found & Restocked ✓";
+                      badgeLabel = "Step 4: Quality Tested & Restocked ✓";
                       badgeClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
                       barClass = "bg-emerald-600";
                       break;
@@ -2659,46 +2663,26 @@ const Approvals = () => {
                         {/* Action Buttons - Right Side */}
                         <div className="flex shrink-0 flex-wrap items-center gap-2.5 lg:flex-col lg:items-stretch">
                           {returnStep === 1 ? (
-                            <div className="flex w-full gap-2 flex-wrap sm:flex-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setQualityModal(approval);
-                                  setQualityCondition("Good Condition - Restock to Warehouse Stock");
-                                  setQualityRemarks("Quality inspected and verified by Admin.");
-                                }}
-                                disabled={acting}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-purple-500/20 transition hover:from-purple-700 hover:to-indigo-700 cursor-pointer disabled:opacity-60"
-                              >
-                                <span key={acting ? "step2-loading" : "step2-icon"} className="inline-flex items-center justify-center">
-                                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
-                                </span>
-                                <span>Quality Test & Approve</span>
-                              </button>
+                            <div className="flex flex-col gap-2 w-full">
+                              <div className="text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
+                                <RotateCcw className="h-4 w-4 text-amber-600 shrink-0" />
+                                <span>Return Submitted ✓ Awaiting Employee to click <strong>Item Return</strong></span>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => setRejectModal({ approval })}
                                 disabled={acting}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed dark:bg-background dark:hover:bg-rose-950/20 cursor-pointer"
+                                className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-50 hover:shadow-sm disabled:opacity-60 dark:bg-background dark:hover:bg-rose-950/20 cursor-pointer"
                               >
-                                <span key="reject-step1-icon" className="inline-flex items-center justify-center">
-                                  <X className="h-4 w-4" />
-                                </span>
-                                <span>Reject</span>
+                                <X className="h-3.5 w-3.5" />
+                                <span>Reject Return</span>
                               </button>
                             </div>
                           ) : returnStep === 2 ? (
                             <div className="flex flex-col gap-2 w-full">
-                              <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-2 rounded-xl border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
-                                <CheckCheck className="h-4 w-4 text-purple-600 shrink-0" />
-                                <span>Quality Tested ✓ Awaiting Employee to click <strong>Item Return</strong></span>
-                              </div>
-                            </div>
-                          ) : returnStep === 3 ? (
-                            <div className="flex flex-col gap-2 w-full">
-                              <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 animate-pulse">
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                                <span>Employee pushed "Item Return"! Ready to restock</span>
+                              <div className="text-xs font-bold text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-3 py-1.5 rounded-xl border border-blue-300 dark:border-blue-800 flex items-center gap-1.5 animate-pulse">
+                                <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
+                                <span>Employee handed over item! Ready for Admin receipt</span>
                               </div>
                               <button
                                 type="button"
@@ -2710,6 +2694,28 @@ const Approvals = () => {
                                   {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                                 </span>
                                 <span>Found Item</span>
+                              </button>
+                            </div>
+                          ) : returnStep === 3 ? (
+                            <div className="flex flex-col gap-2 w-full">
+                              <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-1.5 rounded-xl border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                                <PackageCheck className="h-4 w-4 text-purple-600 shrink-0" />
+                                <span>Item Found in Store ✓ Ready for Quality Testing</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQualityModal(approval);
+                                  setQualityCondition("OK");
+                                  setQualityRemarks("Quality inspected and verified by Admin.");
+                                }}
+                                disabled={acting}
+                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-purple-500/20 transition hover:from-purple-700 hover:to-indigo-700 cursor-pointer disabled:opacity-60 ring-2 ring-purple-500/30"
+                              >
+                                <span key={acting ? "step3-loading" : "step3-icon"} className="inline-flex items-center justify-center">
+                                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+                                </span>
+                                <span>Quality Tested (OK / Not OK)</span>
                               </button>
                             </div>
                           ) : approval.status === "PENDING" ? (
@@ -3692,26 +3698,10 @@ const Approvals = () => {
                       if (returnStep === 1) {
                         return (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const target = reasonModal;
-                                setReasonModal(null);
-                                setQualityModal(target);
-                                setQualityCondition("Good Condition - Restock to Warehouse Stock");
-                                setQualityRemarks("Quality inspected and verified by Admin.");
-                              }}
-                              disabled={acting || !canApprove}
-                              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-md ${
-                                !canApprove
-                                  ? "bg-purple-600/50 opacity-60 cursor-not-allowed"
-                                  : "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
-                              }`}
-                              title={!canApprove ? "View-only access: you cannot approve return." : "Quality Test & Approve"}
-                            >
-                              <CheckCheck className="h-4 w-4" />
-                              Quality Test & Approve
-                            </button>
+                            <div className="text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
+                              <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
+                              <span>Return Submitted ✓ Awaiting Employee to click <strong>Item Return</strong></span>
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
@@ -3735,14 +3725,6 @@ const Approvals = () => {
                       }
                       if (returnStep === 2) {
                         return (
-                          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
-                            <CheckCheck className="h-3.5 w-3.5 text-purple-600" />
-                            <span>Quality Tested ✓ Awaiting Employee to click <strong>Item Return</strong></span>
-                          </div>
-                        );
-                      }
-                      if (returnStep === 3) {
-                        return (
                           <button
                             type="button"
                             onClick={async () => {
@@ -3760,6 +3742,30 @@ const Approvals = () => {
                           >
                             <PackageCheck className="h-4 w-4" />
                             Found Item
+                          </button>
+                        );
+                      }
+                      if (returnStep === 3) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const target = reasonModal;
+                              setReasonModal(null);
+                              setQualityModal(target);
+                              setQualityCondition("OK");
+                              setQualityRemarks("Quality inspected and verified by Admin.");
+                            }}
+                            disabled={acting || !canApprove}
+                            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-md ${
+                              !canApprove
+                                ? "bg-purple-600/50 opacity-60 cursor-not-allowed"
+                                : "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 cursor-pointer"
+                            }`}
+                            title={!canApprove ? "View-only access: you cannot conduct quality test." : "Quality Tested (OK / Not OK)"}
+                          >
+                            <CheckCheck className="h-4 w-4" />
+                            Quality Tested (OK / Not OK)
                           </button>
                         );
                       }
@@ -4165,7 +4171,7 @@ const Approvals = () => {
         </div>
       )}
 
-      {/* Quality Check & Mark Product Found Modal */}
+      {/* Quality Check (OK / Not OK) Modal */}
       {qualityModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
@@ -4174,17 +4180,17 @@ const Approvals = () => {
           }}
         >
           <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
-            <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-emerald-500/10">
+            <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-purple-500/10">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-600 flex items-center justify-center font-bold">
-                  <CheckCheck className="h-5 w-5 text-emerald-600" />
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-600 flex items-center justify-center font-bold">
+                  <CheckCheck className="h-5 w-5 text-purple-600" />
                 </div>
                 <div>
                   <h3 className="font-bold text-foreground text-lg">
-                    Quality Inspection & Approve Return
+                    Quality Tested (Admin Verification)
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Inspect product condition and approve return. Employee will then click "Item Return".
+                    Item received in store. Conduct physical inspection and mark <strong>OK</strong> or <strong>Not OK</strong>.
                   </p>
                 </div>
               </div>
@@ -4211,29 +4217,51 @@ const Approvals = () => {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Item Quality & Condition Status *
+                  Quality Testing Result *
                 </label>
-                <select
-                  value={qualityCondition}
-                  onChange={(e) => setQualityCondition(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-background p-3 text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-                >
-                  <option value="Good Condition - Restock to Warehouse Stock">Good Condition (Restock to Warehouse Stock)</option>
-                  <option value="Minor Wear - Acceptable for Re-issue">Minor Wear (Acceptable for Re-issue)</option>
-                  <option value="Damaged / Defective - Needs Maintenance">Damaged / Defective (Scrap / Repair Required)</option>
-                </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setQualityCondition("OK")}
+                    className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-bold text-sm transition cursor-pointer ${
+                      qualityCondition === "OK"
+                        ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/30"
+                        : "border-border bg-background text-muted-foreground hover:bg-secondary/50"
+                    }`}
+                  >
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span>OK (Restock Stock)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setQualityCondition("NOT_OK")}
+                    className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-bold text-sm transition cursor-pointer ${
+                      qualityCondition === "NOT_OK"
+                        ? "border-rose-500 bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/30"
+                        : "border-border bg-background text-muted-foreground hover:bg-secondary/50"
+                    }`}
+                  >
+                    <X className="h-4 w-4 text-rose-600" />
+                    <span>Not OK (Defective)</span>
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Quality Inspection Remarks *
+                  Inspection Remarks / Observations
                 </label>
                 <textarea
                   value={qualityRemarks}
                   onChange={(e) => setQualityRemarks(e.target.value)}
                   rows={3}
-                  placeholder="Enter physical quality inspection notes / remarks..."
-                  className="w-full rounded-xl border border-border bg-background p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  placeholder={
+                    qualityCondition === "OK"
+                      ? "Good condition, tested working properly, restocked to store shelf."
+                      : "Defective / damaged, parts missing or broken, flagged for repair/scrap."
+                  }
+                  className="w-full rounded-xl border border-border bg-background p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/30"
                 />
               </div>
             </div>
@@ -4248,16 +4276,20 @@ const Approvals = () => {
               </button>
               <button
                 type="button"
-                onClick={handleQualitySubmit}
+                onClick={() => handleQualitySubmit(qualityCondition)}
                 disabled={actingId === `${qualityModal.source}:${qualityModal.id}`}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-sm shadow-md hover:from-purple-700 hover:to-indigo-700 transition-all cursor-pointer disabled:opacity-60"
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-bold text-sm shadow-md transition-all cursor-pointer disabled:opacity-60 ${
+                  qualityCondition === "NOT_OK"
+                    ? "bg-rose-600 hover:bg-rose-700"
+                    : "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                }`}
               >
                 {actingId === `${qualityModal.source}:${qualityModal.id}` ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <CheckCheck className="h-4 w-4" />
                 )}
-                Approve & Quality Passed
+                Confirm Quality: {qualityCondition === "NOT_OK" ? "Not OK" : "OK"}
               </button>
             </div>
           </div>

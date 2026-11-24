@@ -4139,9 +4139,9 @@ router.post("/:id/item-return", async (req, res) => {
       }
     }
 
-    if (request.status !== "APPROVED") {
+    if (request.status !== "PENDING" && request.status !== "APPROVED") {
       return res.status(400).json({
-        message: "Only approved requests can be marked as Item Return.",
+        message: "Cannot mark Item Return for this request status.",
       });
     }
 
@@ -4159,23 +4159,15 @@ router.post("/:id/item-return", async (req, res) => {
       console.warn("⚠️ updateEmployeeAssignedTools on item-return failed:", toolErr);
     }
 
-    // Update inventory stock and restock / add returned item to inventory module
-    let finalNote = newNote;
-    try {
-      finalNote = await handleInventoryStockUpdate(request, newNote, true);
-    } catch (stockErr) {
-      console.warn("⚠️ handleInventoryStockUpdate error on item-return:", stockErr);
-    }
-
     const updated = await prisma.employeeRequest.update({
       where: { id: cleanReqId },
       data: {
-        reviewNote: typeof finalNote === "string" ? finalNote.slice(0, 4000) : finalNote,
+        reviewNote: typeof newNote === "string" ? newNote.slice(0, 4000) : newNote,
       },
     });
 
     return res.json({
-      message: "Item Return confirmed! Item returned and restocked in inventory module.",
+      message: "Item Return confirmed! Item handed over to store. Awaiting Admin confirmation.",
       request: updated,
     });
   } catch (error) {
@@ -4280,15 +4272,22 @@ const handleFoundRequest = async (req, res) => {
       });
     }
 
-    if (request.status !== "APPROVED") {
+    if (!isReturnRequest && request.status !== "APPROVED") {
       return res.status(400).json({
         message: "Only approved requests can be marked as found/received.",
       });
     }
 
-    const nowIso = new Date().toISOString();
+    if (isReturnRequest && request.status !== "PENDING" && request.status !== "APPROVED") {
+      return res.status(400).json({
+        message: "Cannot mark return item found for this request status.",
+      });
+    }
+
+    const isReturnPendingQuality = isReturnRequest && !request.reviewNote?.includes("[QUALITY_INSPECTED]");
+
     const foundNoteText = isReturnRequest
-      ? `[PRODUCT_FOUND] [FOUND_AT:${nowIso}] Admin confirmed item found in store and restocked to inventory.`
+      ? `[PRODUCT_FOUND] [STORE_RECEIVED] [FOUND_AT:${nowIso}] Admin / Store keeper confirmed item physically received and found in store.`
       : `[PRODUCT_FOUND] [FOUND_AT:${nowIso}] Product found and collected by employee.`;
 
     const cleanReviewNote = (request.reviewNote || "").replace(/\[ITEM_NOT_FOUND\][^|]*/g, "").trim();
@@ -4349,30 +4348,68 @@ const handleFoundRequest = async (req, res) => {
 
         // 2. Process stock updates inside transaction
         if (isReturnRequest) {
-          // Return restocking inside transaction
+          // Return restocking inside transaction (use flexible finder or create new item if not in inventory)
           for (const target of allTargetItems) {
             const tQty = Math.max(1, parseInt(target.quantity || 1, 10));
+            const tCode = target.code;
+            const tName = target.name;
+            const tId = target.id;
+            const tUnit = target.unit || "Nos";
+
             let item = null;
-            if (target.id) {
-              item = await tx.inventoryItem.findUnique({ where: { id: target.id } });
+            if (tId) {
+              item = await tx.inventoryItem.findUnique({ where: { id: tId } });
             }
-            if (!item && target.code) {
+            if (!item && tCode) {
               item = await tx.inventoryItem.findFirst({
-                where: { OR: [{ code: target.code }, { sku: target.code }] },
+                where: { OR: [{ code: tCode }, { sku: tCode }] },
               });
             }
-            if (!item && target.name) {
+            if (!item && tName) {
               item = await tx.inventoryItem.findFirst({
-                where: { name: target.name },
+                where: { name: tName },
               });
             }
 
             if (item) {
+              const newQty = (item.quantity || 0) + tQty;
               await tx.inventoryItem.update({
                 where: { id: item.id },
                 data: { quantity: { increment: tQty } },
               });
-              stockUpdateNotes.push(`[STOCK_RESTOCKED] Restocked ${tQty} ${item.unit || "Nos"} into inventory for "${item.name}"`);
+              stockUpdateNotes.push(`[STOCK_RESTOCKED] Restocked ${tQty} ${item.unit || tUnit} into inventory for "${item.name}". New stock: ${newQty}`);
+            } else {
+              // Create new inventory item if it didn't exist in catalog
+              let finalCode = tCode ? tCode.trim() : null;
+              if (finalCode) {
+                const existingCode = await tx.inventoryItem.findFirst({
+                  where: { OR: [{ code: finalCode }, { sku: finalCode }] },
+                });
+                if (existingCode) {
+                  finalCode = `${finalCode}RET${Date.now().toString().slice(-4)}`;
+                }
+              } else {
+                finalCode = `RET${Date.now().toString().slice(-6)}`;
+              }
+
+              const newItem = await tx.inventoryItem.create({
+                data: {
+                  name: tName || finalCode,
+                  code: finalCode,
+                  sku: finalCode,
+                  category: "Tools",
+                  quantity: tQty,
+                  unit: tUnit,
+                  minStock: 1,
+                  maxStock: 100,
+                  location: "Main Store / Warehouse",
+                  warehouse: "Main Warehouse",
+                  description: `Auto-added to inventory on Employee Item Return (Request #${cleanReqId.slice(-6)}${employeeName ? ` returned by ${employeeName}` : ""})`,
+                  date: new Date(),
+                  createdByName: employeeName ? `Return: ${employeeName}` : "Employee Return",
+                },
+              });
+              stockUpdateNotes.push(`[STOCK_RESTOCKED] Added returned item to inventory module as "${newItem.name}" (Code: ${newItem.code}) with initial stock ${newItem.quantity} ${newItem.unit}`);
             }
           }
         } else {
@@ -4436,11 +4473,13 @@ const handleFoundRequest = async (req, res) => {
 
         const combinedNoteText = [noteWithFound, ...stockUpdateNotes].filter(Boolean).join(" | ");
 
-        // 3. Update request status to COMPLETED inside transaction
+        // 3. Update request status inside transaction
+        // For return requests awaiting Quality Testing, status remains PENDING until Quality Tested (OK / Not OK)
+        const nextStatus = isReturnPendingQuality ? "PENDING" : "COMPLETED";
         const updatedReq = await tx.employeeRequest.update({
           where: { id: cleanReqId },
           data: {
-            status: "COMPLETED",
+            status: nextStatus,
             reviewNote: combinedNoteText.slice(0, 4000),
           },
         });
@@ -4660,6 +4699,177 @@ router.post(
       res,
       "reject",
     ),
+);
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN - QUALITY TEST (OK / NOT OK) FOR RETURN REQUESTS
+|--------------------------------------------------------------------------
+|
+| POST /api/requests/:id/quality-test
+|
+| Once Admin clicks "Found Item" on returned equipment, Admin conducts
+| physical Quality Testing.
+| - qualityResult: "OK" (Good condition -> restock into inventory stock, COMPLETED)
+| - qualityResult: "NOT_OK" (Damaged/scrap -> do not restock, flag for maintenance, COMPLETED)
+|--------------------------------------------------------------------------
+*/
+router.post(
+  "/:id/quality-test",
+  checkRolePermission(["approvals-tools-inventory", "approvals-tools", "approvals"]),
+  async (req, res) => {
+    try {
+      const cleanReqId = String(req.params.id).replace(/^request-/, "");
+      const { qualityResult, condition, remarks } = req.body;
+      const isOk = String(qualityResult).toUpperCase() === "OK";
+
+      const request = await prisma.employeeRequest.findUnique({
+        where: { id: cleanReqId },
+      });
+
+      if (!request) {
+        return res.status(404).json({ message: "Request not found." });
+      }
+
+      const descLower = typeof request.description === "string" ? request.description.toLowerCase() : "";
+      const subjLower = typeof request.subject === "string" ? request.subject.toLowerCase() : "";
+      const isReturnRequest =
+        descLower.includes("action type: return") ||
+        subjLower.includes("inventory return") ||
+        descLower.includes("[inventory return") ||
+        subjLower.includes("return");
+
+      if (!isReturnRequest) {
+        return res.status(400).json({ message: "Quality testing is only applicable to return requests." });
+      }
+
+      // Extract target items to restock if OK
+      const allTargetItems = extractRequestedItems(request.description || "");
+      if (allTargetItems.length === 0) {
+        const pidM = (request.description || "").match(/Product ID:\s*([^\n\r|]+)/i);
+        const inmM = (request.description || "").match(/Item Name:\s*([^\n\r|]+)/i) || (request.description || "").match(/Tool \/ Item Name:\s*([^\n\r|]+)/i);
+        const qtyM = (request.description || "").match(/Quantity:\s*(\d+)/i);
+        const untM = (request.description || "").match(/Unit:\s*([^\n\r|]+)/i);
+        if (pidM || inmM) {
+          allTargetItems.push({
+            code: pidM ? pidM[1].trim() : "",
+            name: inmM ? inmM[1].trim() : "",
+            quantity: qtyM ? Math.max(1, parseInt(qtyM[1], 10)) : 1,
+            unit: untM ? untM[1].trim() : "Nos",
+          });
+        }
+      }
+
+      let employeeName = "Employee";
+      if (request.employeeId) {
+        try {
+          const empProf = await prisma.employeeProfile.findUnique({
+            where: { id: request.employeeId },
+            include: { user: { select: { fullName: true } } },
+          });
+          if (empProf?.user?.fullName) employeeName = empProf.user.fullName;
+        } catch {}
+      }
+
+      const qualityTag = isOk
+        ? `[QUALITY_INSPECTED:OK] [QUALITY_PASSED] Quality Tested: OK (Passed). Condition: ${condition || "Good Condition"}. Remarks: ${remarks || "Restocked to warehouse stock"}`
+        : `[QUALITY_INSPECTED:NOT_OK] [QUALITY_FAILED] Quality Tested: NOT OK (Failed / Defective). Condition: ${condition || "Damaged"}. Remarks: ${remarks || "Defective - Scrapped or sent for repair"}`;
+
+      const stockNotes = [];
+
+      // If OK, restock item into inventory stock if not already restocked
+      if (isOk && !request.reviewNote?.includes("[STOCK_RESTOCKED]")) {
+        for (const target of allTargetItems) {
+          const tQty = Math.max(1, parseInt(target.quantity || 1, 10));
+          const tCode = target.code;
+          const tName = target.name;
+          const tId = target.id;
+          const tUnit = target.unit || "Nos";
+
+          let item = null;
+          if (tId) {
+            item = await prisma.inventoryItem.findUnique({ where: { id: tId } });
+          }
+          if (!item && tCode) {
+            item = await prisma.inventoryItem.findFirst({
+              where: { OR: [{ code: tCode }, { sku: tCode }] },
+            });
+          }
+          if (!item && tName) {
+            item = await prisma.inventoryItem.findFirst({
+              where: { name: tName },
+            });
+          }
+
+          if (item) {
+            const newQty = (item.quantity || 0) + tQty;
+            await prisma.inventoryItem.update({
+              where: { id: item.id },
+              data: { quantity: { increment: tQty } },
+            });
+            stockNotes.push(`[STOCK_RESTOCKED] Restocked ${tQty} ${item.unit || tUnit} for "${item.name}". New stock: ${newQty}`);
+          } else {
+            let finalCode = tCode ? tCode.trim() : null;
+            if (finalCode) {
+              const existingCode = await prisma.inventoryItem.findFirst({
+                where: { OR: [{ code: finalCode }, { sku: finalCode }] },
+              });
+              if (existingCode) {
+                finalCode = `${finalCode}RET${Date.now().toString().slice(-4)}`;
+              }
+            } else {
+              finalCode = `RET${Date.now().toString().slice(-6)}`;
+            }
+
+            const newItem = await prisma.inventoryItem.create({
+              data: {
+                name: tName || finalCode,
+                code: finalCode,
+                sku: finalCode,
+                category: "Tools",
+                quantity: tQty,
+                unit: tUnit,
+                minStock: 1,
+                maxStock: 100,
+                location: "Main Store / Warehouse",
+                warehouse: "Main Warehouse",
+                description: `Auto-added to inventory on Quality Tested Return (Request #${cleanReqId.slice(-6)}${employeeName ? ` returned by ${employeeName}` : ""})`,
+                date: new Date(),
+                createdByName: employeeName ? `Return: ${employeeName}` : "Employee Return",
+              },
+            });
+            stockNotes.push(`[STOCK_RESTOCKED] Added returned item to inventory as "${newItem.name}" (${newItem.code}) with initial stock ${newItem.quantity} ${newItem.unit}`);
+          }
+        }
+      }
+
+      const combinedReviewNote = [
+        request.reviewNote || "",
+        qualityTag,
+        ...stockNotes,
+      ].filter(Boolean).join(" | ").slice(0, 4000);
+
+      const updated = await prisma.employeeRequest.update({
+        where: { id: cleanReqId },
+        data: {
+          status: "COMPLETED",
+          reviewNote: combinedReviewNote,
+          reviewedById: req.user.id,
+          reviewedAt: new Date(),
+        },
+      });
+
+      return res.json({
+        message: isOk
+          ? "Quality Test passed! Return verified, item marked OK and restocked to inventory."
+          : "Quality Test recorded as NOT OK (Defective/Damaged). Completed without restocking to usable inventory.",
+        request: updated,
+      });
+    } catch (error) {
+      console.error("❌ QUALITY TEST ERROR:", error);
+      return res.status(500).json({ message: error.message || "Failed to process quality test." });
+    }
+  }
 );
 
 /*

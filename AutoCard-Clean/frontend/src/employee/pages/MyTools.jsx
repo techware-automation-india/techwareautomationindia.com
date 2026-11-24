@@ -115,9 +115,9 @@ const getReviewerInfo = (req) => {
 
 const getReturnStep = (req) => {
   const text = `${req?.status || ""} ${req?.reviewNote || ""} ${req?.adminNote || ""} ${req?.description || ""}`.toUpperCase();
-  if (text.includes("[PRODUCT_FOUND]") || req?.status === "COMPLETED") return 4;
-  if (text.includes("[ITEM_RETURNED]") || text.includes("[PHYSICALLY_RETURNED]")) return 3;
-  if (text.includes("[QUALITY_INSPECTED]") || req?.status === "APPROVED") return 2;
+  if (text.includes("[QUALITY_INSPECTED]") || req?.status === "COMPLETED") return 4;
+  if (text.includes("[PRODUCT_FOUND]") || text.includes("[STORE_RECEIVED]")) return 3;
+  if (text.includes("[ITEM_RETURNED]") || text.includes("[PHYSICALLY_RETURNED]")) return 2;
   return 1;
 };
 

@@ -61,7 +61,7 @@ const fmtWorkedHours = (value) => {
   if (value == null) return "—";
 
   const hours = Number(value);
-  if (Number.isNaN(hours)) return "—";
+  if (Number.isNaN(hours) || hours <= 0) return "—";
 
   const totalMinutes = Math.round(hours * 60);
   const h = Math.floor(totalMinutes / 60);
@@ -1127,11 +1127,15 @@ const Attendance = () => {
                         })()}
 
                         <td className="px-5 py-3 font-medium">
-                          {totalDailyWorkedHours > 0
-                            ? fmtWorkedHours(totalDailyWorkedHours)
-                            : r.status === "ABSENT" || (!r.checkIn && !r.checkOut)
-                            ? <span className="text-muted-foreground">—</span>
-                            : "0h 0m"}
+                          {isHolOrSun ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : totalDailyWorkedHours > 0 ? (
+                            fmtWorkedHours(totalDailyWorkedHours)
+                          ) : r.status === "ABSENT" || (!r.checkIn && !r.checkOut) ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            "0h 0m"
+                          )}
                         </td>
 
                         <td className="px-5 py-3 font-medium text-orange-600">
@@ -1370,7 +1374,7 @@ const Attendance = () => {
                       <td className="px-5 py-4 font-medium">
                         {fmtWorkedHours(
                           isHolidayOrSundayRecord(r)
-                            ? (r.workedHours ?? 0)
+                            ? 0
                             : getRegularHours(r.workedHours)
                         )}
                       </td>
@@ -1891,7 +1895,7 @@ const Attendance = () => {
                                   <div className="text-[10px] font-bold">
                                     {fmtWorkedHours(
                                       isSunOrHolCell
-                                        ? (r.workedHours ?? (r.checkIn && r.checkOut ? (new Date(r.checkOut) - new Date(r.checkIn)) / 3600000 : 0))
+                                        ? 0
                                         : getRegularHours(r.workedHours)
                                     )}
                                   </div>
@@ -2104,11 +2108,15 @@ const Attendance = () => {
                             </td>
 
                             <td className="px-4 py-3 font-medium">
-                              {rowCompleteWorkedHours > 0
-                                ? fmtWorkedHours(rowCompleteWorkedHours)
-                                : r.status === "ABSENT" || (!r.checkIn && !r.checkOut)
-                                  ? <span className="text-muted-foreground">—</span>
-                                  : "0h 0m"}
+                              {isSunOrHolRow ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : rowCompleteWorkedHours > 0 ? (
+                                fmtWorkedHours(rowCompleteWorkedHours)
+                              ) : r.status === "ABSENT" || (!r.checkIn && !r.checkOut) ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                "0h 0m"
+                              )}
                             </td>
 
                             <td className="px-4 py-3">

@@ -103,7 +103,7 @@ const fmtTime = (v) =>
 const fmtWorkedHours = (value) => {
   if (value == null) return "—";
   const hours = Number(value);
-  if (Number.isNaN(hours)) return "—";
+  if (Number.isNaN(hours) || hours <= 0) return "—";
   const totalMinutes = Math.round(hours * 60);
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
@@ -3310,7 +3310,7 @@ const getRequestTypeInfo = (request, attendanceRecord) => {
                                 );
                               })()}
                               <td className="py-3 pr-4">
-                                {fmtWorkedHours(Number(rec.workedHours))}
+                                {fmtWorkedHours(isHoliday ? 0 : Number(rec.workedHours))}
                               </td>
                               <td className="py-3 pr-4">
                                 {otHours ? (

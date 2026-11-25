@@ -23,11 +23,6 @@ function isModuleAllowed(moduleKey, permissions = {}) {
     "requests-forgot-punch",
     "requests-tools-inventory",
     "requests-track",
-    "leave",
-    "my-tools",
-    "my-projects",
-    "academic-calendar",
-    "academic-holidays",
   ];
 
   if (defaultBaseKeys.includes(moduleKey)) {
@@ -102,11 +97,11 @@ function isModuleAllowed(moduleKey, permissions = {}) {
   }
 
   if (moduleKey === "roles-access") {
-    return !!(
-      permissions["roles-access"]?.canView ||
-      permissions["roles-access"] === true ||
-      (permissions["roles-access"] && typeof permissions["roles-access"] === "object" && Object.values(permissions["roles-access"]).some(Boolean))
-    );
+    return false;
+  }
+
+  if (moduleKey === "hrms") {
+    return !!permissions["hrms"];
   }
 
   // Helper to check view permission

@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  Users,
   UserPlus,
   ClipboardList,
   CheckCircle,
@@ -21,6 +22,17 @@ import {
   Eye,
   AlertTriangle,
 } from "lucide-react";
+
+export const DEFAULT_CORE_MODULE_KEYS = [
+  'overview',
+  'mark-attendance',
+  'attendance',
+  'requests',
+  'requests-apply-leave',
+  'requests-forgot-punch',
+  'requests-tools-inventory',
+  'requests-track',
+];
 
 export const STANDARD_SUBMODULE_ACTIONS = [
   { key: 'view', label: 'View' },
@@ -75,43 +87,27 @@ export const INVENTORY_SUBMODULE_ACTIONS = {
 };
 
 export const MODULES = [
-  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { key: 'employee', label: 'Add Account', icon: UserPlus },
   {
-    key: 'requests',
-    label: 'Requests',
-    icon: ClipboardList,
+    key: 'hrms',
+    label: 'Team Management',
+    icon: Users,
     hasSubTypes: true,
+    description: 'Account onboarding, team attendance, shifts, roster, leaves & approvals',
     subModules: [
-      { key: 'requests-apply-leave', label: 'Apply for Leave', icon: CalendarDays, description: 'Submit leave applications', actions: STANDARD_SUBMODULE_ACTIONS },
-      { key: 'requests-forgot-punch', label: 'Forgot Punch / Time Edit', icon: Clock, description: 'Review employee check in, check out and time edit requests', actions: STANDARD_SUBMODULE_ACTIONS },
-      { key: 'requests-tools-inventory', label: 'Request Tools / Inventory', icon: Wrench, description: 'Request or return project tools and equipment', actions: STANDARD_SUBMODULE_ACTIONS },
-      { key: 'requests-track', label: 'Track All Requests', icon: FileText, description: 'View status of all submitted requests', actions: STANDARD_SUBMODULE_ACTIONS },
+      { key: 'employee', label: 'Add Account', icon: UserPlus, description: 'User onboarding & account management' },
+      { key: 'attendance-management', label: 'Team Attendance', icon: CalendarCheck, description: 'View & monitor team daily/monthly attendance' },
+      { key: 'shift-location', label: 'Shift & Location', icon: MapPin, description: 'Assign shifts & geofenced work locations' },
+      { key: 'roster', label: 'Roster', icon: CalendarRange, description: 'Schedule monthly shifts and roster plans' },
+      { key: 'leave-policy', label: 'Leave Policy & Holiday', icon: ClipboardList, description: 'Manage leave balances, policy rules & holiday calendar' },
     ],
   },
   {
     key: 'approvals',
-    label: 'Approvals',
+    label: 'Approvals Hub',
     icon: CheckCircle,
     hasSubTypes: true,
+    description: 'Grant authority to review and approve employee requisitions',
     subModules: APPROVAL_SUBTYPES,
-  },
-  { key: 'mark-attendance', label: 'Mark Attendance', icon: Clock },
-  { key: 'attendance', label: 'My Attendance', icon: Calendar },
-  { key: 'academic-calendar', label: 'Academic Calendar', icon: CalendarDays },
-  { key: 'attendance-management', label: 'Team Attendance (All Employees)', icon: CalendarCheck },
-  { key: 'roles-access', label: 'Roles & Access', icon: ShieldCheck },
-  { key: 'shift-location', label: 'Shifts & Locations', icon: MapPin },
-  { key: 'roster', label: 'Roster', icon: CalendarRange },
-  {
-    key: 'leave-policy',
-    label: 'Leave Policy & Holiday',
-    icon: ClipboardList,
-    hasSubTypes: true,
-    subModules: [
-      { key: 'leave-policy-types', label: 'Leave Policy', icon: FileText, description: 'Configure leave types, quotas & rules', actions: STANDARD_SUBMODULE_ACTIONS },
-      { key: 'leave-policy-holidays', label: 'Holiday Calendar', icon: CalendarDays, description: 'Manage organizational public holidays', actions: STANDARD_SUBMODULE_ACTIONS },
-    ],
   },
   {
     key: 'projects',

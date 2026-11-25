@@ -6,6 +6,7 @@ import { z } from "zod";
  */
 export const VALID_MODULES = [
   'overview',
+  'hrms',
   'employee',
   'customer',
   'requests',

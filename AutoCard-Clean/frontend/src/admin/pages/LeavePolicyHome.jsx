@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { ClipboardList, CalendarDays, Plus } from "lucide-react";
+import { ClipboardList, CalendarDays, Plus, ArrowLeft } from "lucide-react";
 import { getAuthUser } from "../../lib/auth.js";
 import { hasModuleAccess } from "../../lib/permissions.js";
 
@@ -39,6 +39,15 @@ const LeavePolicyHome = () => {
       {/* Header with Apply for Leave Button */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
+          <button
+            type="button"
+            onClick={() => navigate(isEmployeePath ? "/employee/hrms" : "/admin/hrms")}
+            className="p-2.5 rounded-xl border border-border bg-background hover:bg-secondary text-muted-foreground hover:text-foreground transition-all shrink-0 cursor-pointer shadow-xs"
+            aria-label="Back to Team Management"
+            title="Back to Team Management"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
             <ClipboardList className="h-6 w-6 text-primary" />
           </div>

@@ -17,6 +17,7 @@ const Machines = lazy(() => import("./pages/Machines.jsx"));
 const ChangePassword = lazy(() => import("./admin/pages/ChangePassword.jsx"));
 const AdminLayout = lazy(() => import("./admin/AdminLayout.jsx"));
 const Overview = lazy(() => import("./admin/pages/Overview.jsx"));
+const HrmsHub = lazy(() => import("./admin/pages/HrmsHub.jsx"));
 const Employee = lazy(() => import("./admin/pages/Employee.jsx"));
 const EmployeeList = lazy(() => import("./admin/pages/EmployeeList.jsx"));
 // CUSTOMER ADMIN PAGES COMMENTED OUT
@@ -138,6 +139,7 @@ const AppRoutes = () => {
 
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Overview />} />
+          <Route path="hrms" element={<HrmsHub />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
           {/* CUSTOMER ADMIN ROUTES COMMENTED OUT */}
@@ -156,6 +158,7 @@ const AppRoutes = () => {
           <Route path="leave-policy/types" element={<LeavePolicy />} />
           <Route path="leave-policy/holidays" element={<Holidays />} />
           <Route path="mark-attendance" element={<AdminMarkAttendance />} />
+          <Route path="my-attendance" element={<EmployeeAttendance />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="attendance-management" element={<Attendance />} />
           <Route path="attendance-requests" element={<AttendanceRequests />} />
@@ -173,6 +176,16 @@ const AppRoutes = () => {
 
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeOverview />} />
+          <Route
+            path="hrms"
+            element={
+              <RequireOnboarding>
+                <RequireModuleAccess moduleKey="hrms">
+                  <HrmsHub />
+                </RequireModuleAccess>
+              </RequireOnboarding>
+            }
+          />
 
           <Route path="my-tools" element={<MyTools />} />
           <Route path="mark-attendance" element={<EmployeeMarkAttendance />} />

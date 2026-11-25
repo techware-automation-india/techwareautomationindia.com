@@ -2088,7 +2088,7 @@ router.post(["/my", "/"], async (req, res) => {
 router.get(
   "/",
   checkRolePermission([
-    "approvals-forgot-punch", "requests", "approvals", "attendance", "attendance-management",
+    "approvals-forgot-punch", "approvals-tools-inventory", "approvals-tools", "requests", "approvals", "attendance", "attendance-management",
     "inventory", "view-inventory", "inventory-in", "inventory-out", "general-consumables", "requests-tools-inventory"
   ]),
 

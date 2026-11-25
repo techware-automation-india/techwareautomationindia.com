@@ -374,20 +374,6 @@ const Inventory = ({ defaultSubmodule = null }) => {
             </p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
-          {currentUser?.role === "ADMIN" && (
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2.5 rounded-xl border border-border bg-background hover:bg-secondary text-foreground transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer group"
-              title="Inventory Access Settings (Configure Employee Permissions)"
-            >
-              <Settings className="h-4 w-4 text-primary group-hover:rotate-45 transition-transform" />
-              <span className="text-xs sm:text-sm font-semibold">Access Settings</span>
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Submodules Grid */}

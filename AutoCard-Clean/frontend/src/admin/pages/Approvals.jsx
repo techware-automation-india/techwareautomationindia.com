@@ -2203,6 +2203,19 @@ const Approvals = () => {
       ? getAttendanceDetails(reasonModal.description)
       : null;
 
+  const canViewAttendanceSub = Boolean(permissions?.["approvals-attendance"]?.canView || permissions?.["approvals-attendance"] === true);
+  const canViewForgotPunchSub = Boolean(permissions?.["approvals-forgot-punch"]?.canView || permissions?.["approvals-forgot-punch"] === true);
+  const canViewLeaveSub = Boolean(permissions?.["approvals-leave"]?.canView || permissions?.["approvals-leave"] === true);
+  const canViewToolsSub = Boolean(
+    permissions?.["approvals-tools-inventory"]?.canView ||
+    permissions?.["approvals-tools-inventory"] === true ||
+    permissions?.["approvals-tools"]?.canView ||
+    permissions?.["approvals-tools"] === true ||
+    permissions?.["inventory-approval"]?.canView ||
+    permissions?.["inventory-approval"] === true
+  );
+  const isLimitedBySubPermissions = Boolean(!isAdmin && (canViewAttendanceSub || canViewForgotPunchSub || canViewLeaveSub || canViewToolsSub));
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -2239,22 +2252,28 @@ const Approvals = () => {
             {/* Permission indicator */}
             {!loadingPermissions && permissions && (
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {(permissions["approvals-attendance"]?.canView || permissions["approvals-attendance"] === true) && (
+                {canViewAttendanceSub && (
                   <span className="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
                     <Shield className="h-3 w-3" />
                     Attendance
                   </span>
                 )}
-                {(permissions["approvals-forgot-punch"]?.canView || permissions["approvals-forgot-punch"] === true) && (
+                {canViewForgotPunchSub && (
                   <span className="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                     <Shield className="h-3 w-3" />
                     Forgot Punch / Time Edit
                   </span>
                 )}
-                {(permissions["approvals-leave"]?.canView || permissions["approvals-leave"] === true) && (
+                {canViewLeaveSub && (
                   <span className="inline-flex items-center gap-1 rounded-lg bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
                     <Shield className="h-3 w-3" />
                     Leave
+                  </span>
+                )}
+                {canViewToolsSub && (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    <Shield className="h-3 w-3" />
+                    Tools &amp; Inventory
                   </span>
                 )}
               </div>
@@ -2281,10 +2300,10 @@ const Approvals = () => {
             aria-label="Filter approvals by category"
           >
             <option value="ALL">All Categories</option>
-            <option value="leave">Leave Approvals</option>
-            <option value="forgot-punch">Forgot Punch / Time Edit</option>
-            <option value="attendance">Unassigned Location</option>
-            <option value="tools-inventory">Tools & Inventory</option>
+            {(!isLimitedBySubPermissions || canViewLeaveSub) && <option value="leave">Leave Approvals</option>}
+            {(!isLimitedBySubPermissions || canViewForgotPunchSub) && <option value="forgot-punch">Forgot Punch / Time Edit</option>}
+            {(!isLimitedBySubPermissions || canViewAttendanceSub) && <option value="attendance">Unassigned Location</option>}
+            {(!isLimitedBySubPermissions || canViewToolsSub) && <option value="tools-inventory">Tools &amp; Inventory</option>}
           </select>
           <select
             value={statusFilter}

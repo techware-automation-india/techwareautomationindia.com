@@ -20,8 +20,6 @@ const DEFAULT_CORE_MODULE_KEYS = [
   "requests-forgot-punch",
   "requests-tools-inventory",
   "requests-track",
-  "academic-calendar",
-  "academic-holidays",
 ];
 
 // All routes require authentication

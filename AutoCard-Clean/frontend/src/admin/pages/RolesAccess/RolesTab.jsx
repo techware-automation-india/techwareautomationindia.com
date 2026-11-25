@@ -148,8 +148,9 @@ export default function RolesTab() {
     );
   }
 
-  const customRoles = roles.filter(r => !r.isDefault);
-  const defaultRoles = roles.filter(r => r.isDefault);
+  const assignableRoles = roles.filter(r => r.name?.toLowerCase().trim() !== 'admin');
+  const customRoles = assignableRoles.filter(r => !r.isDefault);
+  const defaultRoles = assignableRoles.filter(r => r.isDefault);
 
   return (
     <div className="space-y-6">

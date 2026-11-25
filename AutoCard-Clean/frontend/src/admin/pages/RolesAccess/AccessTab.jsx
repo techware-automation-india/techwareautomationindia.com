@@ -56,8 +56,13 @@ export default function AccessTab() {
         fetchRoles()
       ]);
       const usersList = Array.isArray(usersData) ? usersData : (usersData?.users || []);
-      setUsers(usersList);
-      setRoles(rolesData?.roles || []);
+      // Filter out admin user accounts from the employee access assignment list
+      const nonAdminUsers = usersList.filter((u) => u.role !== "ADMIN");
+      setUsers(nonAdminUsers);
+      // Exclude "Admin" role from dropdown to prevent accidental admin privilege escalation
+      const allRoles = rolesData?.roles || [];
+      const assignableRoles = allRoles.filter((r) => r.name?.toLowerCase().trim() !== "admin");
+      setRoles(assignableRoles);
     } catch (err) {
       if (!isBackground) {
         setError(err.message || "Failed to load employee access data");

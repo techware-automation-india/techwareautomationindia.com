@@ -3,6 +3,7 @@ import {
   Fingerprint,
   Clock,
   FileText,
+  Users,
   UserPlus,
   BadgeCheck,
   MapPin,
@@ -24,17 +25,7 @@ const defaultModules = [
     path: "/employee",
     icon: LayoutDashboard,
     description: "Your personal dashboard overview.",
-    alwaysVisible: true,
   },
- 
-  // {
-  //   key: "onboarding",
-  //   label: "Onboarding Form",
-  //   path: "/employee/onboarding",
-  //   icon: ClipboardList,
-  //   description: "Complete your onboarding details.",
-  //   alwaysVisible: true,
-  // },
   {
     key: "mark-attendance",
     label: "Mark Attendance",
@@ -55,83 +46,18 @@ const defaultModules = [
     path: "/employee/requests",
     icon: FileText,
     description: "Submit and track requests.",
-    alwaysVisible: true,
-  },
-  {
-    key: "academic-calendar",
-    label: "Academic Calendar",
-    path: "/employee/academic-calendar",
-    icon: CalendarDays,
-    description: "View academic calendar and important dates.",
-    alwaysVisible: true,
-  },
-  {
-    key: "my-projects",
-    label: "My Projects",
-    path: "/customer/projects",
-    icon: FolderKanban,
-    description: "View machinery projects and documentation.",
-    aliases: ["my-projects", "customer-projects"],
   },
 ];
 
 // Admin modules that can be delegated to employees via custom roles or permissions
 const adminModules = [
   {
-    key: "employee",
-    label: "Add Account",
-    path: "/employee/employee",
-    icon: UserPlus,
-    description: "Create user accounts and assign roles.",
-    adminKey: "employee",
-  },
-  {
-    key: "approvals",
-    label: "Approvals",
-    path: "/employee/approvals",
-    icon: BadgeCheck,
-    description: "Review and approve employee requests.",
-    adminKey: "approvals",
-  },
-  {
-    key: "attendance-management",
-    label: "Attendance Report",
-    path: "/employee/attendance-management",
-    icon: CalendarCheck,
-    description: "Company-wide attendance report.",
-    adminKey: "attendance-management",
-  },
-  {
-    key: "shift-location",
-    label: "Shift & Location",
-    path: "/employee/shift-location",
-    icon: MapPin,
-    description: "Shift and location management.",
-    adminKey: "shift-location",
-  },
-  {
-    key: "roster",
-    label: "Roster",
-    path: "/employee/roster",
-    icon: CalendarRange,
-    description: "Employee scheduling.",
-    adminKey: "roster",
-  },
-  {
-    key: "roles-access",
-    label: "Roles & Access",
-    path: "/employee/roles-access",
-    icon: ShieldCheck,
-    description: "Configure roles and permissions.",
-    adminKey: "roles-access",
-  },
-  {
-    key: "leave-policy",
-    label: "Leave Policy & Holiday",
-    path: "/employee/leave-policy",
-    icon: ClipboardList,
-    description: "Manage leave types, balances, rules and company holidays.",
-    adminKey: "leave-policy",
+    key: "hrms",
+    label: "Team Management",
+    path: "/employee/hrms",
+    icon: Users,
+    description: "Account onboarding, team attendance, shifts, roster, leaves & approvals hub.",
+    adminKey: "hrms",
   },
   {
     key: "assigned-projects",
@@ -173,15 +99,16 @@ export function getModulesByPermissions(permissions = {}) {
   const allowedModules = [];
 
   allModules.forEach((module) => {
-    // Default base modules marked alwaysVisible (like Mark Attendance, Attendance, Overview, Academic Calendar, Requests) are always visible to employees
+    // Only the 4 core employee modules are always visible by default:
+    // 1. Dashboard (overview)
+    // 2. Mark Attendance (mark-attendance)
+    // 3. Attendance history (attendance)
+    // 4. Requests (requests)
     if (
-      module.alwaysVisible ||
       module.key === "overview" ||
       module.key === "mark-attendance" ||
       module.key === "attendance" ||
-      module.key === "academic-calendar" ||
-      module.key === "requests" ||
-      module.key === "my-tools"
+      module.key === "requests"
     ) {
       if (!allowedModules.some((m) => m.path === module.path || m.key === module.key)) {
         allowedModules.push(module);
@@ -232,7 +159,7 @@ export function getModulesByPermissions(permissions = {}) {
         checkHasView(permissions["approvals-forgot-punch"]) ||
         checkHasView(permissions["approvals-tools-inventory"]) ||
         checkHasView(permissions["approvals-tools"]);
-      if (hasApprovalsSub) perm = true;
+      perm = hasApprovalsSub ? true : null;
     }
 
     // Leave policy parent key: check direct or submodules
@@ -258,29 +185,26 @@ export function getModulesByPermissions(permissions = {}) {
       if (hasInventorySub) perm = true;
     }
 
-    // Roles & Access: STRICTLY require explicit permission on 'roles-access'
+    // Roles & Access: Never show in employee sidebar under any circumstances
     if (module.key === "roles-access") {
-      perm = permissions["roles-access"];
+      perm = null;
     }
 
-    // Employee / Add Account: STRICTLY require explicit permission on 'employee'
-    if (module.key === "employee") {
-      perm = permissions["employee"];
-    }
-
-    // Shift & Location: STRICTLY require explicit permission on 'shift-location'
-    if (module.key === "shift-location") {
-      perm = permissions["shift-location"];
-    }
-
-    // Roster: STRICTLY require explicit permission on 'roster'
-    if (module.key === "roster") {
-      perm = permissions["roster"];
-    }
-
-    // Attendance Management (Team Attendance): STRICTLY require permission on 'attendance-management'
-    if (module.key === "attendance-management") {
-      perm = permissions["attendance-management"];
+    // Team Management (hrms): Show if user has 'hrms' OR any of its submodules (employee, attendance-management, shift-location, roster, leave-policy, approvals)
+    if (module.key === "hrms") {
+      const hasHrmsAccess =
+        checkHasView(permissions["hrms"]) ||
+        checkHasView(permissions["employee"]) ||
+        checkHasView(permissions["attendance-management"]) ||
+        checkHasView(permissions["shift-location"]) ||
+        checkHasView(permissions["roster"]) ||
+        checkHasView(permissions["leave-policy"]) ||
+        checkHasView(permissions["approvals"]) ||
+        checkHasView(permissions["approvals-leave"]) ||
+        checkHasView(permissions["approvals-attendance"]) ||
+        checkHasView(permissions["approvals-forgot-punch"]) ||
+        checkHasView(permissions["approvals-tools-inventory"]);
+      perm = hasHrmsAccess ? true : null;
     }
 
     // Assigned Projects: require permission on 'assigned-projects' or 'projects'

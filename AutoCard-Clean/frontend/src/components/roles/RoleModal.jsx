@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import ModuleSelector from "./ModuleSelector";
+import { DEFAULT_CORE_MODULE_KEYS } from "../../data/modules";
 
 /**
  * RoleModal Component
@@ -13,19 +14,6 @@ import ModuleSelector from "./ModuleSelector";
  * @param {object} role - Role object (for edit mode)
  * @param {function} onSave - Callback with role data
  */
-export const DEFAULT_CORE_MODULE_KEYS = [
-  'overview',
-  'mark-attendance',
-  'attendance',
-  'requests',
-  'requests-apply-leave',
-  'requests-forgot-punch',
-  'requests-tools-inventory',
-  'requests-track',
-  'academic-calendar',
-  'academic-holidays',
-];
-
 export default function RoleModal({ isOpen, onClose, mode = 'create', role = null, onSave }) {
   const [name, setName] = useState('');
   const [selectedModules, setSelectedModules] = useState([]);
@@ -39,13 +27,12 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
       const extractedKeys = rawModules
         .map((m) => (typeof m === 'string' ? m : m?.moduleKey))
         .filter((k) => typeof k === 'string' && k.trim().length > 0);
-      // Ensure default core modules are always included
-      const mergedKeys = Array.from(new Set([...DEFAULT_CORE_MODULE_KEYS, ...extractedKeys]));
-      setSelectedModules(mergedKeys);
+      // We only manage assignable modules in the selector UI (defaults are kept automatically)
+      const assignableKeys = extractedKeys.filter(k => !DEFAULT_CORE_MODULE_KEYS.includes(k));
+      setSelectedModules(assignableKeys);
     } else if (isOpen && mode === 'create') {
       setName('');
-      // Pre-select default base modules by default for new roles
-      setSelectedModules([...DEFAULT_CORE_MODULE_KEYS]);
+      setSelectedModules([]);
     }
     setError('');
   }, [isOpen, mode, role]);
@@ -74,10 +61,11 @@ export default function RoleModal({ isOpen, onClose, mode = 'create', role = nul
 
     setLoading(true);
     try {
+      const keysWithDefaults = Array.from(new Set([...selectedModules, ...DEFAULT_CORE_MODULE_KEYS]));
       await onSave({
         id: role?.id,
         name: name.trim(),
-        moduleKeys: selectedModules
+        moduleKeys: keysWithDefaults
       });
       onClose();
     } catch (err) {

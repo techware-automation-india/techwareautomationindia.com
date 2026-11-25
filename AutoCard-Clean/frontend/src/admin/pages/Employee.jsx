@@ -88,10 +88,17 @@ const Employee = ({ employeePermissions = null, isEmployeeView = false }) => {
       ]);
       setEmployees(empData.employees || []);
       const loadedRoles = rolesData?.roles || [];
-      setRoles(loadedRoles);
+      // Only show standard roles: Employee and Customer (exclude Admin and custom roles created from Role & Access)
+      const allowedRoles = loadedRoles.filter((r) => {
+        const name = r.name?.toLowerCase().trim();
+        return name === "employee" || name === "customer";
+      });
+      setRoles(allowedRoles);
       
-      // Auto-select default role
-      const defaultRole = loadedRoles.find((r) => r.isDefault || r.name.toLowerCase() === "employee");
+      // Auto-select default Employee role
+      const defaultRole =
+        allowedRoles.find((r) => r.isDefault || r.name.toLowerCase() === "employee") ||
+        allowedRoles[0];
       
       // Auto-generate next employee code ONLY (format: TAI-001, TAI-002, etc.)
       let nextCode;

@@ -101,7 +101,19 @@ function isModuleAllowed(moduleKey, permissions = {}) {
   }
 
   if (moduleKey === "hrms") {
-    return !!permissions["hrms"];
+    return !!(
+      permissions["hrms"] ||
+      permissions["employee"] ||
+      permissions["attendance-management"] ||
+      permissions["shift-location"] ||
+      permissions["roster"] ||
+      permissions["leave-policy"] ||
+      permissions["approvals"] ||
+      permissions["approvals-leave"] ||
+      permissions["approvals-attendance"] ||
+      permissions["approvals-forgot-punch"] ||
+      permissions["approvals-tools-inventory"]
+    );
   }
 
   // Helper to check view permission

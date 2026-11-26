@@ -20,9 +20,17 @@ const Overview = lazy(() => import("./admin/pages/Overview.jsx"));
 const HrmsHub = lazy(() => import("./admin/pages/HrmsHub.jsx"));
 const Employee = lazy(() => import("./admin/pages/Employee.jsx"));
 const EmployeeList = lazy(() => import("./admin/pages/EmployeeList.jsx"));
-// CUSTOMER ADMIN PAGES COMMENTED OUT
-// import Customer from "./admin/pages/Customer.jsx";
-// import CustomerList from "./admin/pages/CustomerList.jsx";
+// CUSTOMER ADMIN PAGES
+const CustomerHub = lazy(() => import("./admin/pages/CustomerHub.jsx"));
+const Customer = lazy(() => import("./admin/pages/Customer.jsx"));
+const CustomerList = lazy(() => import("./admin/pages/CustomerList.jsx"));
+const ServiceTickets = lazy(() => import("./admin/pages/ServiceTickets.jsx"));
+const MachineRegistry = lazy(() => import("./admin/pages/MachineRegistry.jsx"));
+const AdminCustomerDocuments = lazy(() => import("./admin/pages/CustomerDocuments.jsx"));
+const CustomerAmc = lazy(() => import("./admin/pages/CustomerAmc.jsx"));
+const CustomerSpares = lazy(() => import("./admin/pages/CustomerSpares.jsx"));
+const CustomerLogs = lazy(() => import("./admin/pages/CustomerLogs.jsx"));
+const CustomerReports = lazy(() => import("./admin/pages/CustomerReports.jsx"));
 const RequestsHome = lazy(() => import("./admin/pages/RequestsHome.jsx"));
 const AdminTrackRequests = lazy(() => import("./admin/pages/AdminTrackRequests.jsx"));
 const AdminAttendanceCorrection = lazy(() => import("./admin/pages/AdminAttendanceCorrection.jsx"));
@@ -77,6 +85,7 @@ const CustomerDocuments = lazy(() => import("./customer/pages/Documents.jsx"));
 const CustomerSupport = lazy(() => import("./customer/pages/Support.jsx"));
 const CustomerNotifications = lazy(() => import("./customer/pages/Notifications.jsx"));
 const CustomerSettings = lazy(() => import("./customer/pages/Settings.jsx"));
+const ProductCatalog = lazy(() => import("./customer/pages/ProductCatalog.jsx"));
 
 const dashboardPrefixes = ["/admin", "/employee", "/customer"];
 
@@ -142,9 +151,17 @@ const AppRoutes = () => {
           <Route path="hrms" element={<HrmsHub />} />
           <Route path="employee" element={<Employee />} />
           <Route path="employee-list" element={<EmployeeList />} />
-          {/* CUSTOMER ADMIN ROUTES COMMENTED OUT */}
-          {/* <Route path="customer" element={<Customer />} /> */}
-          {/* <Route path="customer-list" element={<CustomerList />} /> */}
+          {/* CUSTOMER ADMIN ROUTES */}
+          <Route path="customer-hub" element={<CustomerHub />} />
+          <Route path="customer" element={<Customer />} />
+          <Route path="customer-list" element={<CustomerList />} />
+          <Route path="customer-tickets" element={<ServiceTickets />} />
+          <Route path="customer-machines" element={<MachineRegistry />} />
+          <Route path="customer-documents" element={<AdminCustomerDocuments />} />
+          <Route path="customer-amc" element={<CustomerAmc />} />
+          <Route path="customer-spares" element={<CustomerSpares />} />
+          <Route path="customer-logs" element={<CustomerLogs />} />
+          <Route path="customer-reports" element={<CustomerReports />} />
           <Route path="requests" element={<RequestsHome />} />
           <Route path="requests/track" element={<AdminTrackRequests />} />
           <Route
@@ -164,6 +181,7 @@ const AppRoutes = () => {
           <Route path="attendance-requests" element={<AttendanceRequests />} />
           <Route path="projects" element={<Projects />} />
           <Route path="project/:id" element={<ProjectDetails />} />
+          <Route path="services" element={<Services />} />
           <Route path="assigned-projects" element={<EmployeeProjects />} />
           <Route path="my-projects" element={<CustomerProjects />} />
           <Route path="roles-access" element={<RolesAccess />} />
@@ -372,6 +390,7 @@ const AppRoutes = () => {
           <Route path="profile" element={<CustomerProfile />} />
           <Route path="projects" element={<CustomerProjects />} />
           <Route path="requests" element={<CustomerRequests />} />
+          <Route path="catalog" element={<ProductCatalog />} />
           <Route path="documents" element={<CustomerDocuments />} />
           <Route path="support" element={<CustomerSupport />} />
           <Route path="notifications" element={<CustomerNotifications />} />

@@ -53,24 +53,17 @@ const CustomerLayout = () => {
 
   const sidebarContent = (
     <>
-      <div className="h-16 flex items-center px-6 border-b border-border">
-        <Link to="/customer" className="font-display flex items-center gap-0">
-          <div className="flex flex-col justify-center">
-            <h1 className="text-[20px] md:text-[24px] lg:text-[28px] font-extrabold leading-none tracking-tight">
-              <span style={{ color: "#2A3791" }}>Tech</span>
-              <span style={{ color: "#2A3791" }}>ware</span>
-            </h1>
-            <p
-              className="text-[9px] md:text-[10px] lg:text-[11px] font-semibold mt-0.5"
-              style={{
-                letterSpacing: "0.28em",
-                lineHeight: 1.2,
-              }}
-            >
-              <span style={{ color: "#2A3791" }}>Automation </span>
-              <span style={{ color: "#339DE0" }}>(INDIA)</span>
-            </p>
-          </div>
+      <div className="h-16 flex items-center px-5 border-b border-border">
+        <Link to="/customer" className="flex items-center gap-2.5">
+          <img
+            src="/techwareLogo.svg"
+            alt="Techware Automation"
+            className="h-8 w-auto object-contain shrink-0"
+          />
+          <span className="text-xs font-bold tracking-tight leading-tight">
+            <span style={{ color: "#2A3791" }}>Techware </span>
+            <span style={{ color: "#339DE0" }}>Management System</span>
+          </span>
         </Link>
       </div>
 

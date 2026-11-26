@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Check,
   Edit2,
@@ -9,6 +10,7 @@ import {
   Trash2,
   Wrench,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiDelete, apiGet, apiPost, apiPut } from "../../lib/api.js";
@@ -195,6 +197,7 @@ const ServiceModal = ({ service, onClose, onSaved }) => {
 };
 
 const Services = ({ employeePermissions = null } = {}) => {
+  const navigate = useNavigate();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -273,12 +276,21 @@ const Services = ({ employeePermissions = null } = {}) => {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigate("/admin/customer-hub")}
+            className="p-2 rounded-xl border border-border bg-background hover:bg-secondary text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-xs"
+            aria-label="Back to Customer Hub"
+            title="Back to Customer Hub"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
             <Wrench className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold">Services</h1>
-            <p className="text-sm text-muted-foreground">Manually create and manage services shown to customers.</p>
+            <h1 className="font-display text-2xl font-bold">Services & AMC Catalog</h1>
+            <p className="text-sm text-muted-foreground">Configure industrial automation services and maintenance packages shown to customers.</p>
           </div>
         </div>
 

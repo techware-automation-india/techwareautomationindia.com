@@ -54,6 +54,13 @@ export const adminModules = [
     description: "Account onboarding, team attendance, shifts, roster, leaves & approvals.",
   },
   {
+    key: "customer",
+    label: "Customer",
+    path: "/admin/customer-hub",
+    icon: Building2,
+    description: "Client directory, onboarding, machine deployments, and customer services.",
+  },
+  {
     key: "projects",
     label: "Projects",
     path: "/admin/projects",
@@ -87,6 +94,7 @@ export const getAdminModulesByPermissions = (permissions) => {
       module.key === "attendance" ||
       module.key === "requests" ||
       module.key === "hrms" ||
+      module.key === "customer" ||
       module.key === "projects" ||
       module.key === "inventory" ||
       module.key === "roles-access"

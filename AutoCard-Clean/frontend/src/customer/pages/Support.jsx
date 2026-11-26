@@ -24,16 +24,16 @@ const Support = () => {
       // Set default values on error
       setSupportInfo({
         companyName: "Techware Automation India",
-        supportEmail: "support@techwareautomation.com",
+        supportEmail: "info@techwareautomation.com",
         supportPhone: "+91 9876543210",
         liveChatEnabled: false,
         supportHours: {
           monday: { open: "10:00 AM", close: "06:00 PM", isOpen: true },
-          tuesday: { open: "09:00 AM", close: "06:00 PM", isOpen: true },
-          wednesday: { open: "09:00 AM", close: "06:00 PM", isOpen: true },
-          thursday: { open: "09:00 AM", close: "06:00 PM", isOpen: true },
-          friday: { open: "09:00 AM", close: "06:00 PM", isOpen: true },
-          saturday: { open: "10:00 AM", close: "04:00 PM", isOpen: true },
+          tuesday: { open: "10:00 AM", close: "06:00 PM", isOpen: true },
+          wednesday: { open: "10:00 AM", close: "06:00 PM", isOpen: true },
+          thursday: { open: "10:00 AM", close: "06:00 PM", isOpen: true },
+          friday: { open: "10:00 AM", close: "06:00 PM", isOpen: true },
+          saturday: { open: "10:00 AM", close: "06:00 PM", isOpen: true },
           sunday: { open: "", close: "", isOpen: false }
         },
         faqs: []

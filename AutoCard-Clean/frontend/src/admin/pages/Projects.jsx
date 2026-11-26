@@ -20,6 +20,7 @@ import {
   List,
   Sparkles,
   ArrowUpRight,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api.js";
@@ -471,6 +472,15 @@ const Projects = () => {
         <div className="absolute right-0 top-0 -mt-6 -mr-6 h-48 w-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="p-2.5 rounded-xl border border-border bg-background hover:bg-secondary text-muted-foreground hover:text-foreground transition-all shrink-0 cursor-pointer shadow-xs self-start"
+              aria-label="Back"
+              title="Back"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20">
               <FolderKanban className="h-7 w-7" />
             </div>

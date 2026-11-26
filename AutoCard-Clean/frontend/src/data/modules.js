@@ -21,6 +21,9 @@ import {
   CheckSquare,
   Eye,
   AlertTriangle,
+  Building2,
+  Cpu,
+  LifeBuoy,
 } from "lucide-react";
 
 export const DEFAULT_CORE_MODULE_KEYS = [
@@ -108,6 +111,20 @@ export const MODULES = [
     hasSubTypes: true,
     description: 'Grant authority to review and approve employee requisitions',
     subModules: APPROVAL_SUBTYPES,
+  },
+  {
+    key: 'customer',
+    label: 'Customer',
+    icon: Building2,
+    hasSubTypes: true,
+    description: 'Client profiles, customer onboarding, projects & machine deployments',
+    subModules: [
+      { key: 'customer-list', label: 'Customer Directory', icon: Users, description: 'Browse and manage registered client profiles' },
+      { key: 'customer', label: 'Onboard Customer', icon: UserPlus, description: 'Create client accounts and portal access' },
+      { key: 'customer-machines', label: 'Machines & Asset Registry', icon: Cpu, description: 'Track deployed machines and warranty' },
+      { key: 'customer-tickets', label: 'Service & Breakdown Tickets', icon: LifeBuoy, description: 'Manage breakdown complaints and repairs' },
+      { key: 'customer-documents', label: 'Documents & Contracts Vault', icon: FileText, description: 'Store user manuals, schematics and AMC contracts' },
+    ],
   },
   {
     key: 'projects',

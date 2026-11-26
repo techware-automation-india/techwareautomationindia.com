@@ -41,6 +41,13 @@ export const customerModules = [
     icon: FileText,
     description: "Submit and track your service requests.",
   },
+  {
+    key: "catalog",
+    label: "Product Catalog",
+    path: "/customer/catalog",
+    icon: ShoppingBag,
+    description: "Browse automation parts, sizes, and place order requests.",
+  },
   
   {
     key: "documents",

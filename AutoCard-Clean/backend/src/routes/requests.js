@@ -3581,18 +3581,11 @@ async function validateInventoryStockAvailability(request, approvedMap = null) {
     const reservedStock = await computeReservedStockForItem(item, request.id);
     const availableUnreservedStock = Math.max(0, currentPhysicalStock - reservedStock);
 
+    // Stock shortage check disabled to allow backorder/over-approval
     if (availableUnreservedStock <= 0 || availableUnreservedStock < effectiveQty) {
-      return {
-        ok: false,
-        isShortage: true,
-        availableStock: availableUnreservedStock,
-        physicalStock: currentPhysicalStock,
-        reservedStock,
-        requestedQty: itm.quantity,
-        approvedQty: effectiveQty,
-        item,
-        message: `Product '${item.code || item.name}' has insufficient available stock. Physical stock: ${currentPhysicalStock}, Reserved for pending collections: ${reservedStock}, Available to approve: ${availableUnreservedStock} ${item.unit || "Nos"}, Approving: ${effectiveQty} ${item.unit || "Nos"}.`,
-      };
+      console.warn(
+        `[Stock Warning] Product '${item.code || item.name}' low stock: physical=${currentPhysicalStock}, reserved=${reservedStock}, approving=${effectiveQty}`
+      );
     }
   }
 

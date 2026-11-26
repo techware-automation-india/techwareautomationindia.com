@@ -53,13 +53,13 @@ export const adminModules = [
     icon: Users,
     description: "Account onboarding, team attendance, shifts, roster, leaves & approvals.",
   },
-  {
-    key: "customer",
-    label: "Customer",
-    path: "/admin/customer-hub",
-    icon: Building2,
-    description: "Client directory, onboarding, machine deployments, and customer services.",
-  },
+  // {
+  //   key: "customer",
+  //   label: "Customer",
+  //   path: "/admin/customer-hub",
+  //   icon: Building2,
+  //   description: "Client directory, onboarding, machine deployments, and customer services.",
+  // },
   {
     key: "projects",
     label: "Projects",
